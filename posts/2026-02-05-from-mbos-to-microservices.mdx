@@ -1,0 +1,547 @@
+---
+title: "From MBOs to Microservices: The Application Developer's Cloud-Native Journey"
+description: "A practical guide for Maximo application developers transitioning from 7.6 customization patterns to MAS 9 extensibility. Automation scripts, MBOs, UI development, and what changes."
+date: "2026-02-05"
+slug: "from-mbos-to-microservices"
+tags: ["MAS 9", "Development", "MBO", "Automation Scripts", "GraphQL", "API", "Customization"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "./images/blog2-mbos-to-microservices.png"
+
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+
+faqs:
+  - question: "Do my automation scripts work in MAS 9?"
+    answer: "Yes, automation scripts migrate and work in MAS Manage. However, some patterns—like direct SQL access or certain Java class references—may need adjustment. Plan for testing and review of complex scripts."
+  - question: "What happens to my custom MBOs?"
+    answer: "Custom MBOs require evaluation. Simple ones often migrate, but those with heavy Java dependencies or unsupported patterns may need redesign using MAS extensibility frameworks or external microservices."
+  - question: "Do I need to learn Kubernetes as an app developer?"
+    answer: "Minimally. Focus on APIs, GraphQL, and extensibility patterns. Know that your code runs in containers, but you don't need to manage Kubernetes directly. Think of it like knowing your app runs on an application server without being a WebSphere admin."
+  - question: "Is Python still used in MAS?"
+    answer: "Yes. Automation scripts still support Python (Jython). However, you'll increasingly work with REST/GraphQL APIs and may use Python externally for integrations and AI/ML workloads."
+
+keyTakeaways:
+  - "Automation scripts largely survive migration—test thoroughly but don't panic"
+  - "Custom MBOs need case-by-case evaluation: migrate, modernize, or externalize"
+  - "GraphQL becomes your primary API for data access—learn it"
+  - "UI customization shifts from Dojo to React patterns"
+  - "The 'extend don't modify' principle protects your upgrades"
+
+series:
+  name: "Developer Mindset Shift"
+  part: 2
+  total: 4
+---
+
+# From MBOs to Microservices: The Application Developer's Cloud-Native Journey
+
+> **Your automation script still runs. Your Java MBO? That's complicated.**
+
+If you've spent years building custom functionality in Maximo 7.6—automation scripts, custom MBOs, UI customizations, complex business logic—the move to MAS raises immediate questions. Will your code work? Do you need to rewrite everything? What new skills matter most?
+
+This blog answers those questions directly. No hand-waving about "cloud transformation." Practical guidance on what survives, what needs work, and what you should learn first.
+
+---
+
+## The Old Way: How We Built in 7.6
+
+Before we talk about where we're going, let's acknowledge where we've been. Maximo 7.6 development had clear patterns:
+
+### Automation Scripts
+
+The workhorse of Maximo customization. Python (Jython) or JavaScript, triggered by object events:
+
+```python
+# Classic 7.6 automation script - Work Order save validation
+from psdi.mbo import MboConstants
+
+wo_status = mbo.getString("STATUS")
+wo_type = mbo.getString("WORKTYPE")
+
+if wo_status == "APPR" and wo_type == "PM":
+    # Check if all tasks have estimates
+    taskset = mbo.getMboSet("WOACTIVITY")
+    task = taskset.moveFirst()
+    while task:
+        if task.isNull("ESTDUR"):
+            service.error("bmxerror", "tasks_need_estimates")
+        task = taskset.moveNext()
+```
+
+**What worked:**
+- Direct object access via `mbo` implicit variable
+- Familiar Python syntax
+- Event-driven (save, init, action, etc.)
+- Quick to deploy via database configuration
+
+**The limitations:**
+- Debuggin was painful (logs and prayer)
+- Version control was manual (export XML, hope for the best)
+- Testing meant clicking through the UI
+- Direct SQL temptation led to fragile code
+
+### Custom MBOs (Java Classes)
+
+When automation scripts weren't enough, you wrote Java:
+
+```java
+// Custom MBO extending Work Order behavior
+package custom.app.workorder;
+
+import psdi.mbo.*;
+import psdi.util.*;
+
+public class CustomWO extends psdi.app.workorder.WO {
+
+    @Override
+    public void save() throws MXException, RemoteException {
+        // Custom save logic
+        validateCustomBusinessRules();
+        super.save();
+    }
+
+    private void validateCustomBusinessRules() throws MXException {
+        // Complex validation that automation scripts couldn't handle
+    }
+}
+```
+
+**What worked:**
+- Full Java power when needed
+- Access to Maximo's internal APIs
+- Complex business logic encapsulation
+
+**The limitations:**
+- Compile, build, deploy cycle
+- Tight coupling to IBM's class hierarchy
+- Upgrade risk—IBM changes, your code breaks
+- Required Java expertise on the team
+
+### UI Customization
+
+Custom applications, modified screens, Start Center portlets:
+
+- **Application Designer** for screen layouts
+- **JSP modifications** for deeper changes
+- **Custom Java beans** for complex UI logic
+- **Dojo widgets** for rich interactions
+
+---
+
+## The New Reality: MAS Development Patterns
+
+MAS doesn't throw away everything you know, but it introduces new primary patterns and makes some old patterns optional or discouraged.
+
+### Automation Scripts: Still Here, Some Changes
+
+Good news first: **automation scripts survive migration and continue to work in MAS Manage.**
+
+The scripting engine still supports Python (Jython) and JavaScript. Your event-based triggers (save, init, action, validate) still fire. The implicit variables (`mbo`, `mboset`, `service`) still exist.
+
+**What changes:**
+
+1. **Direct SQL is more restricted**
+
+   In 7.6, you might have done this:
+   ```python
+   # DON'T do this in MAS
+   sqlf = SqlFormat(mbo, "select count(*) from workorder where status = :1")
+   sqlf.setObject(1, "WORKTYPE", "WONUM", "APPR")
+   count = MXServer.getMXServer().getDBManager().executeScalar(sqlf)
+   ```
+
+   In MAS, prefer API-based approaches:
+   ```python
+   # Better: Use MboSet for data access
+   woset = mbo.getMboSet("$RELATED", "WORKORDER", "status = 'APPR'")
+   count = woset.count()
+   ```
+
+2. **External service calls need network awareness**
+
+   MAS runs in containers. Your script calling an external service needs that service to be reachable from the cluster. Network policies matter.
+
+3. **Logging and debugging improve**
+
+   Logs aggregate to cluster-level tools. You can actually search and trace without SSH'ing into servers.
+
+**Migration approach:**
+- Export all scripts from 7.6
+- Review for direct SQL, external dependencies, IBM internal API usage
+- Test in MAS sandbox environment
+- Refactor problematic patterns before production
+
+### Custom MBOs: The Complicated Part
+
+This is where honest assessment matters. Custom MBOs fall into three categories:
+
+**Category 1: Simple Extensions (Usually Migrate)**
+
+```java
+// MBOs that add fields or simple validation
+public class CustomAsset extends Asset {
+    @Override
+    public void init() throws MXException {
+        super.init();
+        // Set default values
+    }
+}
+```
+
+These often migrate with minimal changes. Test thoroughly.
+
+**Category 2: Complex Business Logic (Evaluate Carefully)**
+
+MBOs with intricate logic, multiple IBM internal API dependencies, or deep integration with Maximo's transaction model need evaluation:
+
+- Can the logic move to automation scripts? (Easier to maintain)
+- Can it become an external microservice called via API?
+- Is it still needed, or does MAS provide the capability natively?
+
+**Category 3: Deep Framework Hooks (Likely Redesign)**
+
+MBOs that override fundamental framework behavior, hook into specific WebSphere features, or depend on deprecated APIs will likely need redesign.
+
+**The decision framework:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              CUSTOM MBO MIGRATION DECISION                   │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  Does it compile against MAS Manage APIs?                   │
+│  ├─ NO → Identify deprecated APIs, find alternatives        │
+│  └─ YES ↓                                                   │
+│                                                              │
+│  Does it have external dependencies?                        │
+│  ├─ YES → Verify network/cluster accessibility              │
+│  └─ NO ↓                                                    │
+│                                                              │
+│  Is the logic complex enough to warrant Java?               │
+│  ├─ NO → Consider refactoring to automation script          │
+│  └─ YES ↓                                                   │
+│                                                              │
+│  Could this be an external microservice?                    │
+│  ├─ YES → Consider API-based architecture                   │
+│  └─ NO → Migrate and test extensively                       │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### GraphQL: Your New Best Friend
+
+MAS exposes a GraphQL API that becomes your primary programmatic interface. If you haven't used GraphQL before, here's why it matters:
+
+**The 7.6 way (REST/OSLC):**
+```bash
+# Get work order - returns EVERYTHING
+GET /maximo/oslc/os/mxwo/12345
+
+# Response: 200+ fields you don't need
+```
+
+**The MAS way (GraphQL):**
+```graphql
+# Get exactly what you need
+query {
+  workOrder(wonum: "12345") {
+    wonum
+    description
+    status
+    asset {
+      assetnum
+      description
+    }
+    woactivity {
+      taskid
+      description
+      estdur
+    }
+  }
+}
+```
+
+**Why this matters:**
+- **Efficiency**: Request only needed fields
+- **Relationships**: Traverse related objects in one call
+- **Typing**: Schema defines what's possible
+- **Tooling**: Excellent IDE support, auto-complete, validation
+
+**Learning path:**
+1. Understand GraphQL concepts (queries, mutations, schemas)
+2. Explore MAS GraphQL playground (`/maximo/graphql`)
+3. Practice common patterns (fetch, create, update)
+4. Integrate into your scripts and external applications
+
+### UI Development: React Replaces Dojo
+
+MAS 9 introduces a React-based UI framework, replacing the legacy Dojo implementation.
+
+**If you've customized UI in 7.6:**
+
+| 7.6 Approach | MAS 9 Equivalent |
+|--------------|------------------|
+| Application Designer layouts | Still works for basic customization |
+| Custom Dojo widgets | Need React rewrite |
+| JSP modifications | Deprecated—use UI extensibility framework |
+| Custom Java beans for UI | Replace with API calls |
+
+**The mindset shift:**
+
+In 7.6, UI customization often meant reaching into server-side Java. In MAS, the UI is a client application that talks to APIs. Your backend logic stays on the server; the UI just renders and sends requests.
+
+```
+7.6: UI ↔ Java Beans ↔ MBOs ↔ Database
+
+MAS: UI (React) ↔ GraphQL API ↔ Manage Backend
+           ↓
+    External Services
+```
+
+**If you need deep UI customization:**
+- Learn React fundamentals (components, state, props)
+- Understand the MAS UI extensibility framework
+- Build custom components that integrate via published extension points
+
+---
+
+## Practical Transition: Your Existing Code
+
+Let's get concrete. Here's how to approach your current customization inventory:
+
+### Step 1: Inventory Everything
+
+Create a catalog of all customizations:
+
+| Type | Name | Complexity | Dependencies | Migration Risk |
+|------|------|------------|--------------|----------------|
+| Script | WO_SAVE_VALIDATE | Medium | None | Low |
+| Script | EXTERNAL_ERP_SYNC | High | External API | Medium |
+| MBO | CustomAsset.java | Low | Standard APIs | Low |
+| MBO | CustomInvoice.java | High | Deprecated APIs | High |
+| UI | Custom Dashboard | Medium | Dojo widgets | High |
+
+### Step 2: Categorize by Risk
+
+**Low Risk (Green Light):**
+- Simple automation scripts
+- Scripts using only standard MBO operations
+- MBOs with minimal logic
+
+**Medium Risk (Yellow Light):**
+- Scripts with external service calls
+- MBOs with moderate complexity
+- UI customizations using Application Designer only
+
+**High Risk (Red Light):**
+- Scripts with direct SQL
+- MBOs using deprecated or internal APIs
+- Heavy Dojo/JSP customizations
+- Anything touching WebSphere-specific features
+
+### Step 3: Prioritize Learning
+
+Based on your inventory, sequence your learning:
+
+**If mostly scripts:**
+1. GraphQL fundamentals (replace direct SQL patterns)
+2. MAS scripting differences
+3. External API calling from containers
+
+**If heavy MBO usage:**
+1. MAS extensibility framework
+2. Microservice patterns (for externalization)
+3. API design principles
+
+**If UI-heavy:**
+1. React fundamentals
+2. MAS UI extensibility
+3. Modern JavaScript tooling
+
+---
+
+## New Skills: The Prioritized Learning Path
+
+You can't learn everything at once. Here's what matters most, in order:
+
+### Priority 1: GraphQL (Weeks 1-2)
+
+This is the new lingua franca for Maximo data access. Invest here first.
+
+**Resources:**
+- [GraphQL.org Learn](https://graphql.org/learn/)
+- MAS GraphQL Playground (built into your instance)
+- Practice: Rewrite a common report query using GraphQL
+
+### Priority 2: REST API Patterns (Weeks 2-3)
+
+Understand modern API design even if you primarily use GraphQL.
+
+**Key concepts:**
+- HTTP methods (GET, POST, PUT, DELETE)
+- Status codes and error handling
+- Authentication (OAuth, API keys)
+- Rate limiting and pagination
+
+### Priority 3: Container Basics (Weeks 3-4)
+
+You don't need to become a Kubernetes admin, but understand:
+
+- What a container is (isolated runtime environment)
+- How MAS pods work (multiple replicas, scaling)
+- Where logs go (aggregated, searchable)
+- Network basics (services, ingress)
+
+### Priority 4: Modern Development Tooling (Ongoing)
+
+- **Git**: Version control everything (finally!)
+- **VS Code**: Modern IDE with Maximo extensions
+- **CI/CD concepts**: Automated testing and deployment
+
+---
+
+## A Practical Example: Migrating a Common Pattern
+
+Let's migrate a real-world customization: **automatic work order assignment based on asset location and skill requirements.**
+
+### The 7.6 Implementation
+
+**Automation script (WORKORDER.SAVE.ASSIGN):**
+```python
+# Runs on work order save
+from psdi.mbo import SqlFormat
+
+# Get asset location
+assetnum = mbo.getString("ASSETNUM")
+if assetnum:
+    asset = mbo.getMboSet("ASSET").getMbo(0)
+    location = asset.getString("LOCATION") if asset else None
+
+    if location and mbo.isNull("OWNER"):
+        # Find qualified person at this location
+        # DIRECT SQL - problematic
+        sql = """
+            SELECT personid FROM labor l
+            JOIN laborcraftrate lcr ON l.laborcode = lcr.laborcode
+            WHERE lcr.craft = :1
+            AND l.location = :2
+            AND l.status = 'ACTIVE'
+            FETCH FIRST 1 ROWS ONLY
+        """
+        # Execute and assign...
+```
+
+**Problems:**
+- Direct SQL creates upgrade risk
+- No error handling
+- Hard to test
+- Business logic buried in script
+
+### The MAS Implementation
+
+**Option A: Modernized Automation Script**
+```python
+# Same trigger, better patterns
+assetnum = mbo.getString("ASSETNUM")
+if assetnum and mbo.isNull("OWNER"):
+    # Get asset's location using MboSet (not SQL)
+    asset = mbo.getMboSet("ASSET").getMbo(0)
+    if asset:
+        location = asset.getString("LOCATION")
+        required_craft = mbo.getString("CREWID")  # or derive from work type
+
+        # Find qualified labor using MboSet relationships
+        laborset = MXServer.getMXServer().getMboSet("LABOR", mbo.getUserInfo())
+        laborset.setWhere(f"location = '{location}' and status = 'ACTIVE'")
+        laborset.setRelationship("LABORCRAFTRATE", f"craft = '{required_craft}'")
+
+        labor = laborset.moveFirst()
+        if labor:
+            mbo.setValue("OWNER", labor.getString("PERSONID"))
+```
+
+**Option B: External Microservice (for complex logic)**
+
+```python
+# Automation script calls external service
+import json
+from java.net import URL, HttpURLConnection
+
+def get_assignment(location, craft, worktype):
+    url = URL("https://assignment-service.internal/recommend")
+    conn = url.openConnection()
+    conn.setRequestMethod("POST")
+    conn.setRequestProperty("Content-Type", "application/json")
+    conn.setDoOutput(True)
+
+    payload = json.dumps({
+        "location": location,
+        "craft": craft,
+        "worktype": worktype
+    })
+
+    # Send request, get recommendation
+    # ... handle response
+    return recommended_person
+
+# Call it
+if mbo.isNull("OWNER"):
+    owner = get_assignment(location, craft, worktype)
+    if owner:
+        mbo.setValue("OWNER", owner)
+```
+
+**Option C: GraphQL Mutation (from external system)**
+
+```graphql
+mutation AssignWorkOrder($wonum: String!, $owner: String!) {
+  updateWorkOrder(
+    wonum: $wonum
+    input: {
+      owner: $owner
+    }
+  ) {
+    wonum
+    owner
+    status
+  }
+}
+```
+
+**Which to choose?**
+- Simple assignment logic → Option A (script)
+- Complex rules, ML-based → Option B (microservice)
+- External workflow system → Option C (GraphQL from outside)
+
+---
+
+## Key Takeaways
+
+1. **Automation scripts survive** — migrate, test, refactor problematic patterns
+2. **Custom MBOs need evaluation** — simple ones migrate, complex ones may need redesign
+3. **GraphQL is essential** — learn it early, use it often
+4. **UI development changes significantly** — React replaces Dojo
+5. **"Extend don't modify"** — the principle that protects your upgrades
+
+---
+
+## What's Next
+
+In Part 3, we'll address integration developers: how MIF evolves, event-driven architecture patterns, and the path from batch processing to real-time integration.
+
+---
+
+## References
+
+- [IBM MAS Manage Documentation](https://www.ibm.com/docs/en/mas-manage)
+- [GraphQL Official Documentation](https://graphql.org/learn/)
+- [MAS Scripting Guide](https://www.ibm.com/docs/en/mas-manage/continuous-delivery?topic=scripting)
+- [Maximo Developer Community](https://community.ibm.com/community/user/communities/community-home?communitykey=3d7261ae-48f7-481d-b675-a40eb407e0fd)
+
+---
+
+*This is Part 2 of the "Developer Mindset Shift" series. Previous: [The Maximo Developer's Identity Crisis](#) | Next: [Beyond MIF: The Event-Driven Awakening](#)*
