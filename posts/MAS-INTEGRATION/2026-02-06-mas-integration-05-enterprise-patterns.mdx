@@ -1,0 +1,1282 @@
+---
+title: "Enterprise Integration Patterns: App Connect, Kafka, and Beyond"
+description: "Building enterprise-grade integration pipelines with IBM App Connect Enterprise, Apache Kafka, cloud platform connectors, and iPaaS solutions. How to orchestrate complex data flows between MAS and your enterprise ecosystem."
+date: "2026-02-06"
+slug: "mas-enterprise-integration-patterns"
+tags: ["Maximo", "MAS Integration", "App Connect", "Kafka", "iPaaS", "Enterprise Integration", "Azure", "AWS"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-integration-part-5.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+faqs:
+  - question: "Do I need middleware like App Connect for MAS integrations?"
+    answer: "Not always. Simple point-to-point integrations can use MAS REST APIs directly. Middleware like App Connect adds value when you need data transformation, orchestration across multiple systems, error handling with retry logic, or when connecting systems that cannot call REST APIs directly."
+  - question: "Can I use Azure Logic Apps or AWS Step Functions instead of App Connect?"
+    answer: "Yes. MAS REST APIs are standard HTTP endpoints that work with any integration platform. Azure Logic Apps, AWS Step Functions, MuleSoft, Boomi, and other iPaaS solutions all work well with MAS. Choose based on your existing cloud platform and team expertise."
+  - question: "How does Kafka integrate with MAS specifically?"
+    answer: "MAS can publish events to Kafka topics when data changes occur. External systems subscribe to these topics to receive near-real-time updates. For inbound flows, external systems publish to Kafka topics and a consumer service calls MAS REST APIs to create or update records. IBM Event Streams (managed Kafka) is the recommended option on IBM Cloud."
+keyTakeaways:
+  - "App Connect Enterprise provides visual flow design, pre-built connectors, and enterprise-grade transformation capabilities for MAS integrations"
+  - "Kafka serves as the event backbone for high-volume, real-time data streaming between MAS and enterprise systems"
+  - "iPaaS platforms (Azure Logic Apps, AWS Step Functions, MuleSoft) are viable alternatives when organizations are already invested in a specific cloud ecosystem"
+  - "The choice of middleware depends on integration complexity, team skills, existing infrastructure, and the specific data flow patterns required"
+  - "Enterprise integration patterns like saga, event sourcing, and CQRS apply to MAS integrations just as they do to any microservices architecture"
+series:
+  name: "MAS INTEGRATION"
+  part: 5
+  total: 8
+---
+
+# Enterprise Integration Patterns: App Connect, Kafka, and Beyond
+
+**Series:** MAS INTEGRATION -- From Legacy MIF to Cloud-Native Integration | **Part 5 of 8**
+
+**Read Time:** 22 minutes
+
+---
+
+> **Who this is for:** Integration architects, middleware engineers, and senior developers who need to connect MAS to multiple enterprise systems using production-grade middleware. This post assumes you are comfortable with REST APIs (covered in Part 4) and are now ready to design the orchestration layer that ties everything together.
+
+> **The premise:** You do not connect enterprise systems with point-to-point REST calls. You build integration pipelines. This post shows you how.
+
+---
+
+## The Five-System Problem
+
+A large manufacturing company calls you in. They have just deployed MAS Manage for their maintenance operations. Now they need it connected to the rest of their enterprise:
+
+- **SAP S/4HANA** for financials, procurement, and material management
+- **Salesforce** for customer service cases that generate work orders
+- **A legacy CMMS** -- a 15-year-old .NET application with a SOAP API and a SQL Server database
+- **Azure IoT Hub** receiving telemetry from 12,000 sensors on the factory floor
+- **A Snowflake data lake** for cross-system analytics and executive dashboards
+
+Five systems. Four different protocols (REST, SOAP, MQTT, JDBC). Three different clouds (IBM, Azure, Snowflake). Two different data formats (JSON, XML). And one mandate from the CIO: every system must have consistent, near-real-time data, with a full audit trail.
+
+You look at the whiteboard. You think about writing a custom Node.js service that calls each API in sequence. You imagine the error handling. You imagine the retry logic. You imagine the logging. You imagine maintaining it at 2 AM when the SAP connection times out and 400 work orders are stuck in a queue that does not exist yet.
+
+Then you put the marker down and say: "We need middleware."
+
+This is not an exotic scenario. This is Tuesday for most enterprise Maximo deployments. And the difference between a successful integration architecture and a brittle mess of custom scripts comes down to one decision: choosing the right middleware and applying the right patterns.
+
+---
+
+## When Do You Need Middleware?
+
+Not every integration requires middleware. Here is the honest decision framework.
+
+### Point-to-Point Is Fine When
+
+You are connecting one or two systems. The data mapping is straightforward -- a work order in MAS maps cleanly to a maintenance order in the target system without complex transformation. Volumes are low (hundreds of records per day, not thousands per hour). Error handling can be simple: retry three times, then log and alert. And you have a developer who can maintain the custom integration code.
+
+In these cases, a well-written service that calls the MAS REST API directly is perfectly adequate. Over-engineering with middleware adds cost, complexity, and operational overhead that you do not need.
+
+### Middleware Becomes Essential When
+
+The integration landscape grows beyond a few systems. When you are orchestrating data flows across five, ten, or twenty systems, the combinatorial explosion of point-to-point connections becomes unmanageable. Middleware provides the centralized routing, transformation, and monitoring that keeps the architecture comprehensible.
+
+Here is the decision matrix:
+
+| Factor | Point-to-Point | Middleware Required |
+|--------|---------------|-------------------|
+| **Number of connected systems** | 1-3 systems | 4+ systems |
+| **Data transformation** | Simple field mapping | Complex transformation, enrichment, splitting |
+| **Protocol diversity** | All REST/HTTP | Mix of REST, SOAP, MQTT, file-based, database |
+| **Volume** | Hundreds/day | Thousands/hour or real-time streaming |
+| **Error handling** | Retry and log | Dead letter queues, compensation, replay |
+| **Orchestration** | Sequential steps | Parallel execution, conditional routing, saga |
+| **Audit requirements** | Application logs sufficient | Full message audit trail required |
+| **Team skills** | Strong developers available | Need visual/low-code integration tooling |
+| **SLA requirements** | Best-effort delivery | Guaranteed delivery with ordering |
+
+> **Practical rule of thumb:** If you find yourself writing custom error handling, retry logic, and message transformation in application code -- stop. That is middleware's job. Move the complexity out of your application and into a platform designed for it.
+
+---
+
+## IBM App Connect Enterprise
+
+IBM App Connect Enterprise (ACE) is the integration middleware that IBM positions alongside MAS. If your organization is in the IBM ecosystem, ACE is the natural first choice -- not because of vendor loyalty, but because it has the deepest native integration with Maximo.
+
+### Architecture Overview
+
+App Connect Enterprise operates on a flow-based programming model. You design integration flows that consist of a trigger (what starts the flow), a sequence of processing steps (transformation, routing, enrichment), and one or more target actions (create, update, or delete records in external systems).
+
+ACE can be deployed in three modes:
+
+| Deployment Mode | Description | Best For |
+|----------------|-------------|----------|
+| **App Connect on IBM Cloud** | Fully managed SaaS | Teams that want zero infrastructure management |
+| **App Connect Enterprise (containerized)** | Runs on OpenShift/Kubernetes | Organizations with existing container platforms |
+| **App Connect Enterprise (traditional)** | On-premises installation | Legacy environments with specific compliance needs |
+
+For MAS integrations, the containerized deployment on OpenShift is the most common pattern, because MAS itself runs on OpenShift. Running both MAS and ACE on the same cluster simplifies networking, security, and operations.
+
+### The Maximo Connector in App Connect
+
+App Connect includes a pre-built Maximo connector that understands Maximo's data model. This is not a generic REST connector -- it is aware of Maximo object structures, relationships, and business rules. The connector provides:
+
+- **Object-level operations:** Create, read, update, and delete records on any Maximo object structure (MXWO, MXASSET, MXPO, MXPR, etc.)
+- **Query support:** Use `oslc.where` clauses directly in the connector configuration
+- **Relationship traversal:** Navigate Maximo's object relationships (work order to asset to location) in a single flow step
+- **Attachment handling:** Upload and download attachments as part of integration flows
+- **Status changes:** Trigger Maximo status change actions (approve, complete, close) with proper business rule execution
+
+The connector handles authentication, session management, and API versioning automatically. You configure the connection once and use it across all flows.
+
+### Flow Designer: Building Integrations Visually
+
+The App Connect flow designer is a visual canvas where you drag and drop integration steps. For teams that are more comfortable with configuration than code, this dramatically reduces the time to build and maintain integrations.
+
+Here is a typical flow that synchronizes work orders from MAS to SAP:
+
+```yaml
+# App Connect flow: MAS Work Order → SAP Maintenance Order
+flow:
+  trigger:
+    type: webhook
+    source: mas-manage
+    event: workorder.created
+  steps:
+    - name: transform-to-sap
+      action: map
+      mapping:
+        OrderType: "PM01"
+        FunctionalLocation: "$.assetnum"
+        Description: "$.description"
+        Priority: "$.wopriority"
+    - name: create-sap-order
+      action: sap.createMaintenanceOrder
+      connection: sap-production
+      data: "$.transform-to-sap.output"
+    - name: update-maximo
+      action: maximo.updateWorkOrder
+      connection: mas-production
+      data:
+        wonum: "$.trigger.wonum"
+        externalrefid: "$.create-sap-order.orderNumber"
+```
+
+This flow does three things: it receives a webhook when a work order is created in MAS, transforms the data into SAP's format, creates a maintenance order in SAP, and writes the SAP order number back to the MAS work order's external reference field. In legacy MIF, this would have been an enterprise service with XSL transformation, a publish channel, an endpoint configuration, and a custom Java class for the callback. In App Connect, it is a single visual flow.
+
+### Transformation Capabilities
+
+App Connect supports multiple transformation approaches:
+
+**Field mapping** is the simplest -- map MAS field names to target field names with optional data type conversion. Priority 1 in MAS becomes "VERY HIGH" in ServiceNow.
+
+**JSONata expressions** allow computed transformations. You can concatenate fields, apply conditional logic, format dates, and perform mathematical operations:
+
+```jsonata
+{
+  "title": description & " - " & wonum,
+  "urgency": wopriority = 1 ? "critical" : wopriority = 2 ? "high" : "normal",
+  "due_date": $fromMillis($toMillis(targstartdate) + 86400000, '[Y0001]-[M01]-[D01]'),
+  "cost_center": $substringBefore(glaccount, "-")
+}
+```
+
+**Custom code nodes** let you write JavaScript for transformations that exceed what JSONata can express. Use these sparingly -- every custom code node is a maintenance liability.
+
+### Error Handling and Retry Patterns
+
+App Connect provides built-in error handling that eliminates the need for custom retry logic:
+
+| Error Handling Feature | Description |
+|----------------------|-------------|
+| **Automatic retry** | Configurable retry count and interval for transient failures |
+| **Error branch** | Alternative flow path when a step fails |
+| **Dead letter capture** | Failed messages stored for manual review and replay |
+| **Timeout configuration** | Per-step and per-flow timeout settings |
+| **Circuit breaker** | Automatic disabling of flows when error rates exceed thresholds |
+
+The error branch is particularly powerful. When the SAP step in our example fails, the error branch can: log the failure with full context, send a notification to the integration team, write the failed message to a dead letter queue, and update the MAS work order with a flag indicating the SAP sync failed. All without custom code.
+
+---
+
+## Apache Kafka Integration Patterns
+
+While App Connect handles orchestrated, request-response integration flows, Kafka serves a different purpose: it is the event backbone for high-volume, real-time data streaming. In a mature MAS integration architecture, App Connect and Kafka often coexist -- App Connect for orchestration, Kafka for event distribution.
+
+### Why Kafka for MAS
+
+Kafka solves three problems that REST APIs alone cannot:
+
+1. **Decoupling:** Producers and consumers do not need to know about each other. MAS publishes an event. Any number of downstream systems can subscribe. Adding a new consumer does not require changing the producer.
+
+2. **Durability:** Kafka retains messages for a configurable period (days, weeks, or indefinitely). If a consumer is down during an event, it catches up when it comes back online. No data is lost.
+
+3. **Scale:** Kafka handles millions of messages per second. When you have 12,000 IoT sensors each reporting every 30 seconds, you need a messaging system that does not blink.
+
+### Topic Architecture for MAS Events
+
+Topic naming is critical. A well-designed topic structure makes your Kafka cluster self-documenting. Here is the naming convention we recommend:
+
+```
+mas.manage.workorder.created
+mas.manage.workorder.statuschange
+mas.manage.purchaseorder.approved
+mas.manage.asset.moved
+mas.monitor.alert.triggered
+```
+
+The pattern is: `{platform}.{application}.{entity}.{event}`. This gives you:
+
+- **Platform-level filtering:** Subscribe to `mas.*` for all MAS events
+- **Application-level filtering:** Subscribe to `mas.manage.*` for all Manage events
+- **Entity-level filtering:** Subscribe to `mas.manage.workorder.*` for all work order events
+- **Event-level precision:** Subscribe to `mas.manage.workorder.statuschange` for exactly what you need
+
+Here is a more complete topic registry for a production deployment:
+
+| Topic | Trigger | Typical Consumers |
+|-------|---------|-------------------|
+| `mas.manage.workorder.created` | New work order saved | SAP, analytics, mobile |
+| `mas.manage.workorder.statuschange` | Work order status transition | SAP, dashboards, SLA tracking |
+| `mas.manage.workorder.completed` | Work order closed/completed | SAP (cost posting), analytics |
+| `mas.manage.purchaseorder.approved` | PO approval workflow completes | SAP (procurement), budget system |
+| `mas.manage.asset.created` | New asset registered | GIS, analytics, IoT platform |
+| `mas.manage.asset.moved` | Asset location changed | GIS, logistics |
+| `mas.manage.inventory.belowreorder` | Stock falls below reorder point | SAP (procurement), alerts |
+| `mas.monitor.alert.triggered` | IoT anomaly detected | Manage (auto work order), dashboards |
+| `mas.monitor.reading.critical` | Sensor reading exceeds threshold | Alerting, analytics |
+
+### Producer Patterns: MAS to Kafka
+
+When MAS data changes, you need to publish events to Kafka. There are two primary approaches:
+
+**Webhook-to-Kafka bridge:** MAS fires a webhook on data changes. A lightweight bridge service receives the webhook and publishes to the appropriate Kafka topic. This is the simplest pattern and works well for moderate volumes.
+
+**Change Data Capture (CDC):** For high-volume scenarios, Kafka Connect with a database CDC connector (Debezium) captures changes directly from the MAS database transaction log. This approach requires more infrastructure but provides guaranteed capture of every change, including bulk operations that might not fire webhooks.
+
+Here is a complete producer implementation using the webhook-to-Kafka bridge pattern:
+
+```python
+# mas_kafka_producer.py
+# Bridge service: receives MAS webhooks and publishes to Kafka
+
+import json
+import logging
+from datetime import datetime, timezone
+from confluent_kafka import Producer
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("mas-kafka-bridge")
+
+# Kafka producer configuration
+kafka_config = {
+    "bootstrap.servers": "kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092",
+    "security.protocol": "SASL_SSL",
+    "sasl.mechanism": "SCRAM-SHA-512",
+    "sasl.username": "mas-producer",
+    "sasl.password": "${KAFKA_PASSWORD}",  # From secrets manager
+    "acks": "all",                          # Wait for all replicas
+    "retries": 5,
+    "retry.backoff.ms": 1000,
+    "enable.idempotence": True,             # Exactly-once semantics
+    "compression.type": "snappy"
+}
+
+producer = Producer(kafka_config)
+
+
+def delivery_callback(err, msg):
+    """Called once for each message produced to indicate delivery result."""
+    if err is not None:
+        logger.error(f"Message delivery failed: {err}")
+    else:
+        logger.info(f"Message delivered to {msg.topic()} [{msg.partition()}] @ {msg.offset()}")
+
+
+def determine_topic(event_type, object_name):
+    """Map MAS webhook event to Kafka topic name."""
+    topic_map = {
+        ("workorder", "created"): "mas.manage.workorder.created",
+        ("workorder", "updated"): "mas.manage.workorder.statuschange",
+        ("workorder", "deleted"): "mas.manage.workorder.deleted",
+        ("asset", "created"): "mas.manage.asset.created",
+        ("asset", "updated"): "mas.manage.asset.updated",
+        ("po", "created"): "mas.manage.purchaseorder.created",
+        ("po", "approved"): "mas.manage.purchaseorder.approved",
+    }
+    return topic_map.get((object_name, event_type), f"mas.manage.{object_name}.{event_type}")
+
+
+@app.route("/webhook/mas", methods=["POST"])
+def handle_mas_webhook():
+    """Receive MAS webhook and publish to Kafka."""
+    payload = request.get_json()
+
+    event_type = payload.get("event", "unknown")
+    object_name = payload.get("objectName", "unknown").lower()
+    topic = determine_topic(event_type, object_name)
+
+    # Enrich with metadata
+    kafka_message = {
+        "source": "mas-manage",
+        "eventType": event_type,
+        "objectName": object_name,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "data": payload.get("data", {}),
+        "metadata": {
+            "siteid": payload.get("data", {}).get("siteid", ""),
+            "orgid": payload.get("data", {}).get("orgid", ""),
+            "changeby": payload.get("data", {}).get("changeby", ""),
+        }
+    }
+
+    # Use object key as Kafka message key for partition affinity
+    message_key = payload.get("data", {}).get("wonum") or \
+                  payload.get("data", {}).get("assetnum") or \
+                  payload.get("data", {}).get("ponum") or \
+                  "unknown"
+
+    producer.produce(
+        topic=topic,
+        key=message_key.encode("utf-8"),
+        value=json.dumps(kafka_message).encode("utf-8"),
+        callback=delivery_callback
+    )
+    producer.flush(timeout=10)
+
+    logger.info(f"Published to {topic}: key={message_key}")
+    return jsonify({"status": "published", "topic": topic}), 200
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
+```
+
+### Consumer Patterns: Kafka to MAS
+
+On the consumer side, you subscribe to topics and process events. The critical design decisions are: how you handle errors, how you manage offsets (your position in the topic), and how you scale with consumer groups.
+
+Here is a consumer that listens for SAP purchase order events and creates corresponding records in MAS:
+
+```python
+# mas_kafka_consumer.py
+# Consumer: reads from Kafka and creates/updates records in MAS
+
+import json
+import logging
+import requests
+from datetime import datetime, timezone
+from confluent_kafka import Consumer, KafkaError
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("mas-kafka-consumer")
+
+# Kafka consumer configuration
+kafka_config = {
+    "bootstrap.servers": "kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092",
+    "security.protocol": "SASL_SSL",
+    "sasl.mechanism": "SCRAM-SHA-512",
+    "sasl.username": "mas-consumer",
+    "sasl.password": "${KAFKA_PASSWORD}",
+    "group.id": "mas-manage-po-sync",
+    "auto.offset.reset": "earliest",
+    "enable.auto.commit": False,        # Manual commit after processing
+    "max.poll.interval.ms": 300000,
+    "session.timeout.ms": 45000,
+}
+
+# MAS API configuration
+MAS_BASE_URL = "https://masdev.example.com/maximo/api/os"
+MAS_API_KEY = "${MAS_API_KEY}"
+MAS_HEADERS = {
+    "Content-Type": "application/json",
+    "apikey": MAS_API_KEY
+}
+
+# Dead letter queue producer for failed messages
+from confluent_kafka import Producer
+dlq_producer = Producer({
+    "bootstrap.servers": "kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092",
+    "security.protocol": "SASL_SSL",
+    "sasl.mechanism": "SCRAM-SHA-512",
+    "sasl.username": "mas-consumer",
+    "sasl.password": "${KAFKA_PASSWORD}",
+})
+
+
+def send_to_dlq(topic, message, error_reason):
+    """Send failed message to dead letter queue."""
+    dlq_message = {
+        "originalTopic": topic,
+        "originalMessage": message,
+        "errorReason": str(error_reason),
+        "failedAt": datetime.now(timezone.utc).isoformat(),
+        "retryCount": message.get("_retryCount", 0)
+    }
+    dlq_producer.produce(
+        topic=f"dlq.{topic}",
+        value=json.dumps(dlq_message).encode("utf-8")
+    )
+    dlq_producer.flush(timeout=5)
+
+
+def create_po_in_mas(po_data):
+    """Create a purchase order in MAS via REST API."""
+    mas_po = {
+        "description": po_data.get("description", ""),
+        "vendor": po_data.get("vendorId", ""),
+        "poline": []
+    }
+
+    # Map SAP line items to MAS PO lines
+    for line in po_data.get("lineItems", []):
+        mas_po["poline"].append({
+            "itemnum": line.get("materialNumber", ""),
+            "description": line.get("description", ""),
+            "orderqty": line.get("quantity", 0),
+            "unitcost": line.get("unitPrice", 0),
+            "orderunit": line.get("unit", "EA"),
+        })
+
+    response = requests.post(
+        f"{MAS_BASE_URL}/mxpo",
+        headers=MAS_HEADERS,
+        json=mas_po,
+        timeout=30
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def process_message(msg_value, topic):
+    """Process a single Kafka message."""
+    event = json.loads(msg_value)
+    event_type = event.get("eventType", "")
+    data = event.get("data", {})
+
+    if "purchaseorder" in topic and event_type == "created":
+        result = create_po_in_mas(data)
+        logger.info(f"Created PO in MAS: {result.get('ponum', 'unknown')}")
+    else:
+        logger.warning(f"Unhandled event type: {event_type} on topic: {topic}")
+
+
+def run_consumer():
+    """Main consumer loop with error handling and manual offset commit."""
+    consumer = Consumer(kafka_config)
+    consumer.subscribe([
+        "erp.sap.purchaseorder.created",
+        "erp.sap.purchaseorder.updated"
+    ])
+
+    logger.info("Consumer started, waiting for messages...")
+
+    try:
+        while True:
+            msg = consumer.poll(timeout=1.0)
+
+            if msg is None:
+                continue
+            if msg.error():
+                if msg.error().code() == KafkaError._PARTITION_EOF:
+                    continue
+                logger.error(f"Consumer error: {msg.error()}")
+                continue
+
+            try:
+                process_message(msg.value().decode("utf-8"), msg.topic())
+                consumer.commit(message=msg)
+            except requests.exceptions.HTTPError as e:
+                logger.error(f"MAS API error: {e}")
+                send_to_dlq(msg.topic(), json.loads(msg.value()), e)
+                consumer.commit(message=msg)  # Commit to avoid reprocessing
+            except Exception as e:
+                logger.error(f"Processing error: {e}")
+                send_to_dlq(msg.topic(), json.loads(msg.value()), e)
+                consumer.commit(message=msg)
+
+    except KeyboardInterrupt:
+        logger.info("Consumer shutting down...")
+    finally:
+        consumer.close()
+
+
+if __name__ == "__main__":
+    run_consumer()
+```
+
+### Schema Registry and Avro
+
+In production, you do not send raw JSON to Kafka. You use a schema registry with Avro (or Protobuf) schemas to enforce data contracts between producers and consumers.
+
+The schema registry provides three critical capabilities:
+
+1. **Schema validation:** Messages that do not match the registered schema are rejected at publish time, not at consumption time. You catch data quality issues at the source.
+
+2. **Schema evolution:** When you add a field to a work order event, the schema registry enforces compatibility rules. Consumers using the old schema continue to work. Consumers using the new schema get the new field.
+
+3. **Documentation:** The schema registry is a living catalog of every event type in your system, with field names, types, and descriptions.
+
+Here is an Avro schema for a MAS work order event:
+
+```json
+{
+  "type": "record",
+  "name": "WorkOrderEvent",
+  "namespace": "com.mas.manage.events",
+  "doc": "Event emitted when a work order is created or updated in MAS Manage",
+  "fields": [
+    {"name": "eventId", "type": "string", "doc": "Unique event identifier (UUID)"},
+    {"name": "eventType", "type": {"type": "enum", "name": "EventType",
+      "symbols": ["CREATED", "UPDATED", "STATUS_CHANGE", "COMPLETED", "DELETED"]
+    }},
+    {"name": "timestamp", "type": "long", "logicalType": "timestamp-millis"},
+    {"name": "wonum", "type": "string"},
+    {"name": "description", "type": ["null", "string"], "default": null},
+    {"name": "status", "type": "string"},
+    {"name": "previousStatus", "type": ["null", "string"], "default": null},
+    {"name": "wopriority", "type": ["null", "int"], "default": null},
+    {"name": "worktype", "type": ["null", "string"], "default": null},
+    {"name": "assetnum", "type": ["null", "string"], "default": null},
+    {"name": "location", "type": ["null", "string"], "default": null},
+    {"name": "siteid", "type": "string"},
+    {"name": "orgid", "type": "string"},
+    {"name": "reportdate", "type": ["null", "long"], "logicalType": "timestamp-millis", "default": null},
+    {"name": "targstartdate", "type": ["null", "long"], "logicalType": "timestamp-millis", "default": null},
+    {"name": "changeby", "type": "string"},
+    {"name": "changedate", "type": "long", "logicalType": "timestamp-millis"}
+  ]
+}
+```
+
+### Consumer Groups and Scaling
+
+Kafka consumer groups let you scale consumption horizontally. When you have three consumers in the same group, Kafka distributes partitions across them. If one consumer falls behind, add another instance to the group -- Kafka rebalances automatically.
+
+Design your partition strategy around your message key. In the MAS context, use the primary business key (`wonum`, `assetnum`, `ponum`) as the Kafka message key. This guarantees that all events for a given work order land on the same partition and are processed in order by the same consumer. Ordering within a single entity is preserved even as you scale out.
+
+---
+
+## IBM Event Streams: Managed Kafka on IBM Cloud
+
+If your MAS deployment runs on IBM Cloud, IBM Event Streams is the managed Kafka service that eliminates cluster operations overhead. Event Streams is 100% Apache Kafka compatible, which means every Kafka client library, every Kafka Connect connector, and every Kafka Streams application works without modification.
+
+### Why Event Streams for MAS
+
+Three reasons drive the choice:
+
+1. **Operational simplicity:** No ZooKeeper management, no broker configuration, no capacity planning for storage. IBM handles the infrastructure. You design topics and write producers and consumers.
+
+2. **Security integration:** Event Streams integrates with IBM Cloud IAM for authentication and authorization. The same identity and access management that governs your MAS deployment governs your Kafka topics. One security model, one audit trail.
+
+3. **Co-location:** When MAS and Event Streams run in the same IBM Cloud region, network latency between them is negligible. Events published by MAS reach consumers in single-digit milliseconds.
+
+### Configuration and Topic Management
+
+Event Streams provides a web console for topic management, but production deployments should use infrastructure-as-code:
+
+```yaml
+# event-streams-topics.yaml
+# Terraform or IBM Cloud CLI configuration for MAS Kafka topics
+topics:
+  - name: mas.manage.workorder.created
+    partitions: 6
+    replication_factor: 3
+    config:
+      retention.ms: 604800000        # 7 days
+      cleanup.policy: delete
+      min.insync.replicas: 2
+      compression.type: snappy
+
+  - name: mas.manage.workorder.statuschange
+    partitions: 6
+    replication_factor: 3
+    config:
+      retention.ms: 2592000000       # 30 days (longer for audit)
+      cleanup.policy: delete
+      min.insync.replicas: 2
+
+  - name: mas.monitor.alert.triggered
+    partitions: 12                    # Higher throughput for IoT
+    replication_factor: 3
+    config:
+      retention.ms: 259200000        # 3 days
+      cleanup.policy: delete
+      min.insync.replicas: 2
+
+  - name: dlq.mas.manage.workorder.created
+    partitions: 3
+    replication_factor: 3
+    config:
+      retention.ms: 2592000000       # 30 days (keep DLQ messages longer)
+      cleanup.policy: delete
+```
+
+### Security: SASL and TLS
+
+Event Streams requires SASL_SSL for all connections. Every producer and consumer must authenticate with credentials managed through IBM Cloud IAM. TLS encryption is mandatory -- there is no plaintext option.
+
+For service-to-service authentication, use API keys scoped to specific topics. A producer that publishes work order events should have write access only to `mas.manage.workorder.*` topics. A consumer that reads those events should have read access only. The principle of least privilege applies to Kafka access exactly as it does to REST API access.
+
+### Monitoring with Event Streams UI
+
+Event Streams provides built-in monitoring for:
+
+- **Throughput:** Messages per second, bytes per second, per topic and per partition
+- **Consumer lag:** How far behind each consumer group is from the latest message. This is the single most important metric -- rising consumer lag means your consumers cannot keep up
+- **Partition health:** Leader election status, in-sync replica count, under-replicated partitions
+- **Connection metrics:** Active producer and consumer connections, authentication failures
+
+Set up alerts on consumer lag. When lag exceeds a threshold (say, 1000 messages for a critical topic), something is wrong: the consumer may be failing silently, the downstream system may be slow, or you may need to scale out your consumer group.
+
+---
+
+## Cloud Platform Connectors
+
+Not every organization is in the IBM ecosystem. Many MAS deployments coexist with Azure or AWS services, and those platforms have their own integration tooling. The good news: MAS REST APIs are standard HTTP endpoints. They work with any integration platform that can make HTTP calls -- which is all of them.
+
+### Azure Integration
+
+#### Azure Logic Apps with MAS
+
+Azure Logic Apps provides a visual workflow designer similar to App Connect, with native connectors for Azure services and HTTP connectors for everything else. For MAS, you use the HTTP connector with the MAS REST API.
+
+Here is a Logic Apps workflow that creates a MAS work order when a Dynamics 365 Field Service case is escalated:
+
+```json
+{
+  "definition": {
+    "triggers": {
+      "When_a_case_is_escalated": {
+        "type": "ApiConnectionWebhook",
+        "inputs": {
+          "host": {
+            "connection": {
+              "name": "@parameters('$connections')['dynamicscrm']['connectionId']"
+            }
+          },
+          "body": {
+            "entityName": "incident",
+            "message": 4,
+            "filterExpression": "prioritycode eq 1"
+          }
+        }
+      }
+    },
+    "actions": {
+      "Create_MAS_Work_Order": {
+        "type": "Http",
+        "inputs": {
+          "method": "POST",
+          "uri": "https://mashost.example.com/maximo/api/os/mxwo",
+          "headers": {
+            "Content-Type": "application/json",
+            "apikey": "@parameters('MAS_API_KEY')"
+          },
+          "body": {
+            "description": "@{triggerBody()?['title']} - Escalated from D365",
+            "reportedby": "@{triggerBody()?['customerid_account']?['name']}",
+            "wopriority": 1,
+            "worktype": "CM",
+            "siteid": "BEDFORD"
+          }
+        },
+        "runAfter": {}
+      },
+      "Update_D365_Case": {
+        "type": "ApiConnection",
+        "inputs": {
+          "host": {
+            "connection": {
+              "name": "@parameters('$connections')['dynamicscrm']['connectionId']"
+            }
+          },
+          "method": "patch",
+          "path": "/datasets/@{encodeURIComponent(encodeURIComponent('org'))}/tables/@{encodeURIComponent(encodeURIComponent('incidents'))}/items/@{encodeURIComponent(encodeURIComponent(triggerBody()?['incidentid']))}",
+          "body": {
+            "new_maximowonum": "@{body('Create_MAS_Work_Order')?['wonum']}"
+          }
+        },
+        "runAfter": {
+          "Create_MAS_Work_Order": ["Succeeded"]
+        }
+      }
+    }
+  }
+}
+```
+
+#### Azure Service Bus as Message Broker
+
+Azure Service Bus serves a role similar to Kafka but with different trade-offs. It provides queues (point-to-point) and topics (pub/sub), message sessions for ordered processing, and dead letter queues built in. Service Bus is a strong choice when you need guaranteed delivery with ordering but do not need Kafka's raw throughput or long-term message retention.
+
+For MAS integration, use Service Bus when your downstream consumers are Azure-native services (Azure Functions, Logic Apps, Azure SQL Database) and when your message volumes are in the thousands per hour range rather than millions.
+
+#### Azure Functions for Event Processing
+
+Azure Functions provide serverless compute for processing integration events. A common pattern: MAS publishes a webhook to an Azure Function, which transforms the data and writes it to Azure SQL Database, Cosmos DB, or Blob Storage.
+
+```javascript
+// Azure Function: MAS webhook handler
+// Triggered by HTTP webhook from MAS, writes to Azure Cosmos DB
+
+module.exports = async function (context, req) {
+    const event = req.body;
+
+    if (!event || !event.data) {
+        context.res = { status: 400, body: "Invalid webhook payload" };
+        return;
+    }
+
+    const workOrder = {
+        id: event.data.wonum,
+        wonum: event.data.wonum,
+        description: event.data.description,
+        status: event.data.status,
+        assetnum: event.data.assetnum,
+        location: event.data.location,
+        siteid: event.data.siteid,
+        orgid: event.data.orgid,
+        priority: event.data.wopriority,
+        syncTimestamp: new Date().toISOString(),
+        source: "mas-manage"
+    };
+
+    // Output binding writes to Cosmos DB automatically
+    context.bindings.cosmosDocument = workOrder;
+
+    context.res = {
+        status: 200,
+        body: { status: "synced", wonum: workOrder.wonum }
+    };
+};
+```
+
+### AWS Integration
+
+#### AWS Step Functions for Orchestration
+
+AWS Step Functions provide state machine-based orchestration for multi-step integration workflows. Unlike Logic Apps, which uses a visual flow designer, Step Functions are defined as JSON state machines. This makes them version-controllable and testable, but less accessible to non-developers.
+
+Here is a Step Functions state machine that orchestrates a MAS-to-SAP integration with error handling:
+
+```json
+{
+  "Comment": "MAS Work Order to SAP Maintenance Order with retry and DLQ",
+  "StartAt": "FetchWorkOrder",
+  "States": {
+    "FetchWorkOrder": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:123456789:function:fetch-mas-workorder",
+      "Parameters": {
+        "wonum.$": "$.wonum",
+        "masHost.$": "$.masHost"
+      },
+      "ResultPath": "$.workOrder",
+      "Next": "TransformForSAP",
+      "Retry": [
+        {
+          "ErrorEquals": ["MASApiError"],
+          "IntervalSeconds": 10,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "SendToDeadLetterQueue",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "TransformForSAP": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:123456789:function:transform-to-sap",
+      "Parameters": {
+        "workOrder.$": "$.workOrder"
+      },
+      "ResultPath": "$.sapOrder",
+      "Next": "CreateSAPOrder"
+    },
+    "CreateSAPOrder": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:123456789:function:create-sap-order",
+      "Parameters": {
+        "order.$": "$.sapOrder"
+      },
+      "ResultPath": "$.sapResult",
+      "Next": "UpdateMASWithSAPRef",
+      "Retry": [
+        {
+          "ErrorEquals": ["SAPConnectionError"],
+          "IntervalSeconds": 30,
+          "MaxAttempts": 5,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "SendToDeadLetterQueue",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "UpdateMASWithSAPRef": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:123456789:function:update-mas-externalref",
+      "Parameters": {
+        "wonum.$": "$.workOrder.wonum",
+        "sapOrderNumber.$": "$.sapResult.orderNumber"
+      },
+      "Next": "Success"
+    },
+    "SendToDeadLetterQueue": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:123456789:function:send-to-dlq",
+      "Parameters": {
+        "originalPayload.$": "$",
+        "error.$": "$.error"
+      },
+      "Next": "Failed"
+    },
+    "Success": {
+      "Type": "Succeed"
+    },
+    "Failed": {
+      "Type": "Fail",
+      "Error": "IntegrationFailed",
+      "Cause": "Work order sync failed after retries, sent to DLQ"
+    }
+  }
+}
+```
+
+#### Amazon EventBridge for Event Routing
+
+EventBridge is AWS's serverless event bus. It receives events from any source (including MAS webhooks via an API Gateway), applies rules to filter and route them, and delivers them to target services. Think of it as a lightweight, managed alternative to Kafka for event routing -- not a replacement for Kafka's streaming capabilities, but a simpler option when you do not need stream processing, replay, or long-term retention.
+
+For MAS integration, EventBridge works well as the event routing layer when your consumers are all AWS services (Lambda, SQS, Step Functions, SNS). A single MAS webhook pushes events to EventBridge, and rules distribute them to the right consumers based on event type, priority, or site.
+
+#### AWS Lambda for Serverless Processing
+
+Lambda functions handle the individual processing steps: transforming data, calling APIs, writing to databases. The pattern mirrors the Azure Functions approach -- lightweight, event-driven compute that scales automatically.
+
+---
+
+## The iPaaS Landscape
+
+If you are evaluating integration platforms beyond IBM's ecosystem, here is the landscape:
+
+| Platform | MAS Connector | Strengths | Best For |
+|----------|--------------|-----------|----------|
+| **IBM App Connect** | Native Maximo connector | Deep Maximo integration, visual flow designer, included with some MAS licenses | IBM ecosystem shops |
+| **MuleSoft Anypoint** | REST adapter (Maximo API) | Largest connector library (1500+), API management, strong governance | Multi-system enterprises with complex API landscapes |
+| **Dell Boomi** | REST adapter (Maximo API) | Ease of use, fast time-to-value, strong master data management | Mid-market companies, teams with limited integration expertise |
+| **Azure Logic Apps** | HTTP connector | Azure-native, 400+ connectors, serverless pricing, Power Platform integration | Microsoft ecosystem organizations |
+| **AWS Step Functions** | HTTP action via Lambda | Serverless, infrastructure-as-code, deep AWS integration | AWS-native organizations |
+| **Workato** | REST adapter (Maximo API) | Business-user friendly, recipe marketplace, strong automation capabilities | Organizations wanting business users to build integrations |
+
+### Selection Criteria
+
+The right choice depends on five factors:
+
+1. **Existing ecosystem:** If you are 80% Azure, use Logic Apps. If you are deep in IBM, use App Connect. Do not introduce a new platform for one integration.
+
+2. **Team skills:** App Connect and Boomi are designed for integration specialists. Step Functions and Lambda are designed for developers. Logic Apps sits in between. Match the tool to your team.
+
+3. **Integration complexity:** Simple data sync between two systems? Any platform works. Complex multi-system orchestration with saga patterns and compensation? App Connect or MuleSoft have the most mature orchestration capabilities.
+
+4. **Volume and latency requirements:** Thousands of messages per second with sub-second latency? You need Kafka regardless of which iPaaS you choose for orchestration. The iPaaS handles the flow design; Kafka handles the throughput.
+
+5. **Total cost:** SaaS iPaaS platforms charge per operation or per connection. At high volumes, the cost can be significant. Compare the TCO of managed iPaaS versus self-hosted middleware.
+
+---
+
+## Enterprise Integration Patterns Applied to MAS
+
+The enterprise integration patterns described by Gregor Hohpe and Bobby Woolf are not theoretical exercises -- they are the design patterns you apply every day when building MAS integration pipelines. Here are the six most relevant patterns for MAS.
+
+### Saga Pattern: Distributed Transactions Across MAS and ERP
+
+**The problem:** Creating a work order in MAS, a maintenance order in SAP, and a service ticket in ServiceNow must either all succeed or all roll back. But there is no distributed transaction coordinator across three independent systems.
+
+**The pattern:** The saga pattern replaces distributed transactions with a sequence of local transactions, each with a compensating action. If step 3 fails, you execute compensating actions for steps 2 and 1 in reverse order.
+
+**Applied to MAS:**
+
+| Step | Action | Compensating Action |
+|------|--------|-------------------|
+| 1 | Create work order in MAS (status: WAPPR) | Cancel work order in MAS |
+| 2 | Create maintenance order in SAP | Delete maintenance order in SAP |
+| 3 | Create service ticket in ServiceNow | Cancel service ticket in ServiceNow |
+| 4 | Update MAS work order with external references | (Already rolled back in step 1) |
+
+If the ServiceNow step fails, the saga coordinator deletes the SAP order and cancels the MAS work order. No data is left in an inconsistent state across the three systems.
+
+### Event Sourcing: Kafka as the Event Store
+
+**The problem:** You need a complete audit trail of every change to every work order, including who changed what, when, and why. You also need the ability to reconstruct the state of any work order at any point in time.
+
+**The pattern:** Instead of storing only the current state (the work order record in the database), you store every state change as an immutable event in Kafka. The current state is derived by replaying events.
+
+**Applied to MAS:** Every work order status change, field update, and assignment change publishes an event to Kafka with the full before-and-after state. Your analytics data lake consumes these events and can reconstruct any work order's complete history. This is particularly valuable for compliance-heavy industries (utilities, oil and gas, nuclear) where audit trails are regulatory requirements.
+
+### CQRS: Separating Read and Write Paths
+
+**The problem:** Your MAS REST API serves both operational writes (creating work orders, updating assets) and analytical reads (dashboard queries, reports, trend analysis). The read load is 10x the write load, and complex analytical queries are slowing down operational responses.
+
+**The pattern:** Command Query Responsibility Segregation (CQRS) separates the write path (commands go to MAS) from the read path (queries go to a read-optimized store). Events synchronize the read store with the write store.
+
+**Applied to MAS:** All write operations go through the MAS REST API as normal. But for read-heavy consumers -- dashboards, reports, analytics -- you maintain a read-optimized copy of the data in Elasticsearch, Snowflake, or a dedicated reporting database. Kafka events keep the read store synchronized within seconds.
+
+### Dead Letter Queue: Handling Failed Messages
+
+**The problem:** A Kafka consumer processing work order events encounters a malformed message. If it retries indefinitely, it blocks all subsequent messages. If it skips the message, data is lost.
+
+**The pattern:** After a configurable number of retries, the consumer sends the failed message to a dead letter queue (DLQ) -- a separate topic or queue for messages that could not be processed. The consumer continues with the next message. A separate process monitors the DLQ for manual review and replay.
+
+**Applied to MAS:** Every Kafka consumer in your MAS integration architecture should have a corresponding DLQ topic. The naming convention `dlq.{original-topic}` makes it easy to correlate. Set up alerts when the DLQ depth exceeds zero -- a non-empty DLQ means data is not flowing and someone needs to investigate.
+
+### Circuit Breaker: Protecting MAS from Downstream Failures
+
+**The problem:** Your integration flow calls the SAP API after every work order status change. SAP goes down for maintenance. Your integration keeps retrying, creating a backlog of thousands of requests. When SAP comes back, the backlog floods SAP with requests, causing it to go down again.
+
+**The pattern:** The circuit breaker tracks the error rate for calls to a downstream system. When errors exceed a threshold, the circuit "opens" and all calls are immediately failed without attempting the connection. After a cooldown period, the circuit enters a "half-open" state and allows one test call. If it succeeds, the circuit closes and normal operation resumes.
+
+**Applied to MAS:** Implement circuit breakers on every outbound connection in your integration flows. App Connect has this built in. If you are writing custom integration code, use a library like `pybreaker` (Python) or `opossum` (Node.js). The circuit breaker protects both MAS (from retry storms) and the downstream system (from request floods on recovery).
+
+### Idempotent Consumer: Safe Message Reprocessing
+
+**The problem:** A Kafka consumer processes a message and calls the MAS REST API to create a work order. The API call succeeds, but the consumer crashes before committing the Kafka offset. On restart, the consumer reprocesses the same message and creates a duplicate work order.
+
+**The pattern:** Make your consumers idempotent -- processing the same message twice produces the same result as processing it once. Use a unique identifier from the message (event ID, business key) to check whether the record already exists before creating it.
+
+**Applied to MAS:** Before creating a record in MAS, query for an existing record with the same business key. Use the `externalrefid` field to store the source system's identifier, and query with `oslc.where=externalrefid="EVENT-UUID"` before inserting. If the record exists, update it instead of creating a duplicate.
+
+---
+
+## Data Transformation Patterns
+
+The data flowing between MAS and external systems rarely matches one-to-one. MAS has its own data model -- sites, organizations, sets, object structures -- that does not map cleanly to SAP's company codes, Salesforce's accounts, or ServiceNow's assignment groups. Transformation is where most integration complexity lives.
+
+### JSON-to-JSON Transformation
+
+The most common transformation: mapping JSON fields from one system to another. Here is a transformation module that converts MAS work orders to a generic external format:
+
+```javascript
+// transform.js
+// Transformation layer for MAS data to external system formats
+
+const PRIORITY_MAP = {
+  1: "CRITICAL",
+  2: "HIGH",
+  3: "MEDIUM",
+  4: "LOW",
+  5: "PLANNED"
+};
+
+const STATUS_MAP = {
+  "WAPPR": "PENDING_APPROVAL",
+  "APPR": "APPROVED",
+  "INPRG": "IN_PROGRESS",
+  "COMP": "COMPLETED",
+  "CLOSE": "CLOSED",
+  "CAN": "CANCELLED"
+};
+
+function transformWorkOrderToSAP(masWo) {
+  return {
+    OrderType: masWo.worktype === "CM" ? "PM01" : "PM02",
+    FunctionalLocation: masWo.location || "",
+    Equipment: masWo.assetnum || "",
+    Description: truncate(masWo.description, 40),  // SAP short text limit
+    LongText: masWo.description_longdescription || "",
+    Priority: mapPriorityToSAP(masWo.wopriority),
+    PlannerGroup: masWo.persongroup || "",
+    MainWorkCenter: masWo.siteid || "",
+    RequiredStartDate: formatSAPDate(masWo.targstartdate),
+    RequiredEndDate: formatSAPDate(masWo.targcompdate),
+    ExternalReference: masWo.wonum,
+    UserStatus: STATUS_MAP[masWo.status] || "UNKNOWN"
+  };
+}
+
+function transformSAPOrderToMAS(sapOrder) {
+  return {
+    description: sapOrder.Description || sapOrder.ShortText,
+    externalrefid: sapOrder.OrderNumber,
+    wopriority: mapSAPPriorityToMAS(sapOrder.Priority),
+    worktype: sapOrder.OrderType === "PM01" ? "CM" : "PM",
+    targstartdate: parseSAPDate(sapOrder.RequiredStartDate),
+    targcompdate: parseSAPDate(sapOrder.RequiredEndDate),
+    location: sapOrder.FunctionalLocation,
+    assetnum: sapOrder.Equipment,
+    siteid: determineSiteFromSAPPlant(sapOrder.MainWorkCenter)
+  };
+}
+
+function mapPriorityToSAP(masPriority) {
+  const sapMap = { 1: "1", 2: "2", 3: "3", 4: "4", 5: "4" };
+  return sapMap[masPriority] || "3";
+}
+
+function mapSAPPriorityToMAS(sapPriority) {
+  const masMap = { "1": 1, "2": 2, "3": 3, "4": 4 };
+  return masMap[sapPriority] || 3;
+}
+
+function formatSAPDate(isoDate) {
+  if (!isoDate) return "";
+  const d = new Date(isoDate);
+  return d.toISOString().split("T")[0].replace(/-/g, "");  // YYYYMMDD
+}
+
+function parseSAPDate(sapDate) {
+  if (!sapDate || sapDate.length !== 8) return null;
+  return `${sapDate.slice(0,4)}-${sapDate.slice(4,6)}-${sapDate.slice(6,8)}T00:00:00Z`;
+}
+
+function truncate(str, maxLen) {
+  if (!str) return "";
+  return str.length > maxLen ? str.substring(0, maxLen - 3) + "..." : str;
+}
+
+function determineSiteFromSAPPlant(plant) {
+  const plantSiteMap = {
+    "1000": "BEDFORD",
+    "2000": "NASHUA",
+    "3000": "PORTLAND"
+  };
+  return plantSiteMap[plant] || "BEDFORD";
+}
+
+module.exports = { transformWorkOrderToSAP, transformSAPOrderToMAS };
+```
+
+### XML-to-JSON: The Legacy Bridge
+
+Many legacy systems still speak XML. When integrating MAS (JSON-native) with SOAP-based or XML-based systems, you need an XML-to-JSON bridge. Here is the pattern:
+
+```javascript
+// xml-bridge.js
+// Bidirectional XML/JSON transformation for legacy system integration
+
+const { XMLParser, XMLBuilder } = require("fast-xml-parser");
+
+const xmlParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+  textNodeName: "#text"
+});
+
+const xmlBuilder = new XMLBuilder({
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+  textNodeName: "#text",
+  format: true
+});
+
+function legacyXmlToMasJson(xmlString) {
+  const parsed = xmlParser.parse(xmlString);
+  const order = parsed.MaintenanceOrder || parsed.WorkOrder;
+
+  return {
+    description: order.Description || "",
+    assetnum: order.EquipmentNumber || order.AssetID || "",
+    location: order.LocationCode || "",
+    wopriority: parseInt(order.Priority) || 3,
+    worktype: order.OrderCategory === "Corrective" ? "CM" : "PM",
+    externalrefid: order["@_id"] || order.OrderNumber || "",
+    siteid: order.Plant || "BEDFORD"
+  };
+}
+
+function masJsonToLegacyXml(masData) {
+  const xmlObj = {
+    MaintenanceOrder: {
+      "@_id": masData.wonum,
+      "@_xmlns": "http://legacy.example.com/maintenance/v1",
+      OrderNumber: masData.wonum,
+      Description: masData.description,
+      EquipmentNumber: masData.assetnum,
+      LocationCode: masData.location,
+      Priority: String(masData.wopriority),
+      OrderCategory: masData.worktype === "CM" ? "Corrective" : "Preventive",
+      Status: masData.status,
+      Plant: masData.siteid,
+      CreatedDate: new Date().toISOString()
+    }
+  };
+
+  return xmlBuilder.build(xmlObj);
+}
+
+module.exports = { legacyXmlToMasJson, masJsonToLegacyXml };
+```
+
+### Handling Maximo-Specific Constructs
+
+MAS data models include concepts that do not exist in most external systems: sites, organizations, item sets, company sets, and the relationship between them. When transforming data, you must handle these constructs explicitly.
+
+**Multi-site mapping:** MAS uses `siteid` and `orgid` to scope records. SAP uses company codes and plants. You need a mapping table that translates between them:
+
+| MAS siteid | MAS orgid | SAP Company Code | SAP Plant |
+|------------|-----------|-----------------|-----------|
+| BEDFORD | EAGLENA | 1000 | 1000 |
+| NASHUA | EAGLENA | 1000 | 2000 |
+| PORTLAND | EAGLENA | 1000 | 3000 |
+
+**Item sets:** MAS allows multiple item sets per organization, meaning the same item number can exist in different sets with different descriptions. When mapping to SAP material numbers, you must qualify items by both `itemnum` and `itemsetid`.
+
+**GL account structure:** MAS GL accounts are structured as segments separated by hyphens. SAP uses cost center and cost element combinations. The mapping between them is organization-specific and must be maintained as reference data in your integration layer.
+
+---
+
+## Monitoring and Observability
+
+An integration pipeline that you cannot monitor is an integration pipeline that will fail silently. Build observability into your integration architecture from day one, not as an afterthought.
+
+### End-to-End Tracing
+
+Every integration flow should carry a correlation ID from source to destination. When a work order is created in MAS, a UUID is generated and passed through every step: the webhook, the Kafka message, the transformation, the SAP API call, and the callback to MAS. When something fails, the correlation ID lets you trace the exact path the message took across every system.
+
+**Implementation:** Add a `correlationId` field to your Kafka message headers and HTTP headers. Pass it through every service call. Log it at every processing step.
+
+### Metrics: What to Measure
+
+| Metric | What It Tells You | Alert Threshold |
+|--------|-------------------|----------------|
+| **Messages processed/sec** | Throughput of your integration pipeline | Below baseline by more than 50% |
+| **End-to-end latency** | Time from MAS event to external system update | Above SLA (e.g., more than 60 seconds) |
+| **Error rate** | Percentage of messages that fail processing | Above 1% |
+| **Kafka consumer lag** | How far behind consumers are from producers | Above 500 messages for critical topics |
+| **DLQ depth** | Number of unprocessed failed messages | Above 0 |
+| **API response time** | Latency of MAS and external system API calls | Above 5 seconds |
+| **Circuit breaker state** | Whether downstream connections are healthy | Any circuit in OPEN state |
+| **Retry count** | Number of retries per message | Average above 2 |
+
+### Alerting Patterns
+
+Not every metric needs a page-the-on-call alert. Use a tiered alerting strategy:
+
+**P1 (page immediately):** DLQ depth rising, circuit breaker open on critical path, zero throughput on a critical topic, end-to-end latency exceeding SLA.
+
+**P2 (notify during business hours):** Consumer lag above threshold, error rate above 1%, retry rate elevated.
+
+**P3 (review weekly):** Throughput trends, latency percentiles, capacity utilization.
+
+### Dashboard Design
+
+A production integration dashboard should answer three questions at a glance:
+
+1. **Is data flowing?** -- Throughput charts for each topic and flow, with sparklines showing the last 24 hours.
+2. **Is anything failing?** -- Error rates, DLQ depths, and circuit breaker states, highlighted in red when out of bounds.
+3. **Is anything slow?** -- Latency percentiles (p50, p95, p99) for each integration flow, with the SLA threshold marked.
+
+Use Grafana with Prometheus metrics for custom dashboards, or leverage the built-in monitoring in your middleware platform (App Connect's dashboard, Event Streams' monitoring, Azure Logic Apps' run history).
+
+---
+
+## Reference Architecture
+
+Here is the complete enterprise integration architecture for a MAS deployment connecting to five enterprise systems. This is not theoretical -- it is the architecture pattern we have deployed across multiple manufacturing and utilities clients.
+
+### Architecture Components
+
+| Layer | Component | Role |
+|-------|-----------|------|
+| **Source of Truth** | MAS Manage | Asset, work order, inventory, and procurement data |
+| **Event Backbone** | Apache Kafka (IBM Event Streams) | Real-time event distribution, decoupling producers from consumers |
+| **Orchestration** | IBM App Connect Enterprise | Flow design, transformation, multi-system coordination |
+| **ERP** | SAP S/4HANA | Financials, procurement, material management |
+| **CRM** | Salesforce | Customer service cases, service requests |
+| **IoT** | Azure IoT Hub | Sensor telemetry from 12,000 factory floor devices |
+| **Legacy** | Custom CMMS (.NET/SOAP) | Historical maintenance records, gradual decommission |
+| **Analytics** | Snowflake Data Lake | Cross-system analytics, executive dashboards |
+| **Observability** | Prometheus + Grafana | Pipeline monitoring, alerting, and dashboards |
+| **Schema Management** | Confluent Schema Registry | Event schema enforcement and evolution |
+
+### Data Flow Summary
+
+| Flow | Source | Path | Target | Pattern |
+|------|--------|------|--------|---------|
+| Work order sync | MAS | Kafka topic then App Connect flow | SAP | Event-driven with orchestration |
+| Case-to-WO | Salesforce | App Connect flow | MAS | Request-response |
+| Sensor telemetry | Azure IoT Hub | Azure Functions then Kafka then MAS Monitor | MAS | Streaming with transformation |
+| Legacy sync | Custom CMMS | SOAP-to-REST bridge then MAS REST API | MAS | Protocol bridge |
+| Analytics feed | MAS (all objects) | Kafka topics then Kafka Connect | Snowflake | CDC with streaming |
+| Asset health alerts | MAS Monitor | Kafka topic then App Connect | MAS Manage (auto work order) | Event-driven |
+
+### Integration Flow Details
+
+**Flow 1: MAS to SAP (work order completion triggers cost posting)**
+
+A technician completes a work order in MAS Manage. MAS fires a webhook to the Kafka bridge service, which publishes to `mas.manage.workorder.completed`. App Connect has a Kafka consumer trigger on this topic. The flow transforms the work order data to SAP's maintenance order format, calls the SAP API to post actual costs, and writes the SAP document number back to the MAS work order.
+
+**Flow 2: Salesforce to MAS (customer case creates work order)**
+
+A customer service agent in Salesforce escalates a case. A Salesforce process builder calls an App Connect webhook. App Connect transforms the case data to a MAS work order, creates the work order via the MAS REST API, and writes the MAS work order number back to the Salesforce case.
+
+**Flow 3: IoT Hub to MAS (sensor anomaly creates work order)**
+
+A temperature sensor on a pump reports a reading above threshold. Azure IoT Hub routes the message to an Azure Function, which enriches it with asset metadata and publishes to Kafka topic `mas.monitor.alert.triggered`. MAS Monitor consumes the event and creates an alert. App Connect monitors the alert topic and, for critical alerts, creates a corrective maintenance work order in MAS Manage automatically.
+
+**Flow 4: Legacy CMMS to MAS (migration data sync)**
+
+The legacy CMMS exposes a SOAP API. A bridge service converts SOAP responses to JSON and calls the MAS REST API to create records. This flow runs on a nightly batch schedule during the migration period, synchronizing historical maintenance records, asset data, and spare parts catalogs.
+
+**Flow 5: MAS to Snowflake (analytics data feed)**
+
+Kafka Connect with the Snowflake sink connector consumes all `mas.manage.*` topics and writes events to Snowflake staging tables. DBT transformations in Snowflake produce the analytics models that feed executive dashboards. This flow runs continuously with near-real-time latency.
+
+---
+
+## Key Takeaways
+
+1. **Middleware is not optional for enterprise integration.** If you are connecting MAS to more than three systems, you need middleware. The question is which middleware, not whether you need it.
+
+2. **App Connect is the default for IBM shops.** The native Maximo connector, visual flow designer, and OpenShift deployment model make it the natural choice if you are already in the IBM ecosystem.
+
+3. **Kafka is the event backbone.** Regardless of which iPaaS you choose for orchestration, Kafka (or a managed equivalent) should handle event distribution. It provides the decoupling, durability, and scale that direct API calls cannot.
+
+4. **Azure and AWS platforms work with MAS.** MAS REST APIs are standard HTTP endpoints. Logic Apps, Step Functions, Lambda, and Azure Functions all integrate natively. Choose based on your existing cloud investments.
+
+5. **Enterprise integration patterns are not academic.** Sagas, circuit breakers, dead letter queues, and idempotent consumers are practical necessities in production MAS integrations. Implement them from the start, not after the first production incident.
+
+6. **Transformation is where complexity lives.** Mapping MAS data models (sites, orgs, item sets) to external system data models is the hardest part of integration. Invest in a well-designed transformation layer with explicit mapping tables.
+
+7. **Monitor everything.** Consumer lag, DLQ depth, error rates, and end-to-end latency are the four metrics that tell you whether your integration pipeline is healthy. If you cannot see them at a glance, your pipeline will fail silently.
+
+---
+
+## References
+
+- [IBM App Connect Enterprise Documentation](https://www.ibm.com/docs/en/app-connect/12.0)
+- [IBM App Connect -- Maximo Connector Reference](https://www.ibm.com/docs/en/app-connect/saas?topic=connectors-maximo)
+- [Apache Kafka Documentation](https://kafka.apache.org/documentation/)
+- [IBM Event Streams Documentation](https://cloud.ibm.com/docs/EventStreams)
+- [Confluent Schema Registry](https://docs.confluent.io/platform/current/schema-registry/index.html)
+- [Azure Logic Apps Documentation](https://learn.microsoft.com/en-us/azure/logic-apps/)
+- [AWS Step Functions Developer Guide](https://docs.aws.amazon.com/step-functions/latest/dg/welcome.html)
+- [Amazon EventBridge User Guide](https://docs.aws.amazon.com/eventbridge/latest/userguide/what-is-amazon-eventbridge.html)
+- [MuleSoft Anypoint Platform](https://docs.mulesoft.com/general/)
+- [Enterprise Integration Patterns -- Gregor Hohpe and Bobby Woolf](https://www.enterpriseintegrationpatterns.com/)
+- [IBM Maximo REST API Reference](https://www.ibm.com/docs/en/mam/7.6.1?topic=integration-maximo-rest-api)
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 4 -- Mastering the MAS REST API: A Practitioner's Guide](/blog/mas-rest-api-guide) |
+| **Next:** | [Part 6 -- ERP Integration Modernization: SAP, Oracle, and the New Playbook](/blog/mas-erp-integration-modernization) |
+
+[View the full MAS INTEGRATION series index](/blog/mas-integration-series-index)
+
+---
+
+*Part 5 of the "MAS INTEGRATION" series | Published by TheMaximoGuys*

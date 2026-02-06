@@ -1,0 +1,1564 @@
+---
+title: "IoT and Real-Time Integration: Connecting the Physical World"
+description: "How MAS connects physical assets to digital systems through Maximo Monitor, MQTT protocols, IoT sensor data streams, real-time anomaly detection, and condition-based maintenance triggers. The integration frontier that legacy Maximo could never reach."
+date: "2026-02-06"
+slug: "mas-iot-realtime-integration"
+tags: ["Maximo", "MAS Integration", "IoT", "MQTT", "Maximo Monitor", "Real-Time", "Sensor Data", "Condition-Based Maintenance"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-integration-part-7.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+faqs:
+  - question: "What is the difference between Maximo Monitor and Maximo Manage for IoT?"
+    answer: "Maximo Manage is the core EAM system for work orders, assets, and maintenance. Maximo Monitor is the IoT data platform that ingests sensor data, detects anomalies, and triggers alerts. Monitor analyzes real-time data streams; Manage acts on the insights by creating work orders or updating asset conditions. They work together as a connected system."
+  - question: "What IoT protocols does MAS support?"
+    answer: "MAS Monitor supports MQTT as the primary IoT protocol, with HTTP REST as an alternative for lower-frequency data. MQTT is preferred for high-frequency sensor data due to its lightweight publish-subscribe model. Data can also be ingested via Kafka topics or through IoT platform connectors (AWS IoT Core, Azure IoT Hub)."
+  - question: "How many sensor data points can MAS Monitor handle?"
+    answer: "MAS Monitor is built on a scalable time-series architecture that can handle millions of data points per day depending on deployment size. Performance depends on the number of devices, data frequency, and the complexity of analytics functions applied. The platform scales horizontally with Kubernetes."
+  - question: "Can MAS automatically create work orders from sensor alerts?"
+    answer: "Yes. This is one of the most powerful capabilities of the MAS suite. Monitor detects anomalies or threshold breaches, generates alerts, and can automatically trigger work order creation in Manage through event-driven integration. This is condition-based maintenance in action."
+keyTakeaways:
+  - "MAS Monitor brings IoT integration capabilities that were impossible in legacy Maximo 7.x"
+  - "MQTT is the primary protocol for high-frequency sensor data ingestion into MAS Monitor"
+  - "The Monitor-to-Manage pipeline enables true condition-based maintenance: sense, detect, alert, act"
+  - "IoT integration requires thinking in data streams, not transactions — a fundamental paradigm shift for Maximo developers"
+  - "Edge computing and IoT gateways solve the bandwidth and latency challenges of connecting remote assets"
+series:
+  name: "MAS INTEGRATION"
+  part: 7
+  total: 8
+---
+
+# IoT and Real-Time Integration: Connecting the Physical World
+
+**Series:** MAS INTEGRATION -- Mastering Modern Maximo Integration | **Part 7 of 8**
+
+**Read Time:** 22-28 minutes
+
+---
+
+> **Who this is for:** Integration architects, reliability engineers, IoT developers, and maintenance leaders who want to connect physical assets to MAS through sensor data, real-time monitoring, and condition-based maintenance automation. Whether you are deploying your first vibration sensor or scaling an IoT platform across thousands of assets, this is the integration frontier that changes everything.
+
+> **The shift in one sentence:** MAS Monitor transforms Maximo from a system that records what happened to a system that knows what is happening -- and what is about to happen next.
+
+---
+
+## The Same Pump, Two Completely Different Outcomes
+
+There is a centrifugal pump at a water treatment facility in the Midwest. Model P-4420. Installed in 2019. It runs 22 hours a day, pushing 800 gallons per minute through a secondary clarifier. It is a critical asset. When it goes down, the treatment process backs up within four hours.
+
+### The Legacy Outcome: 2024
+
+In legacy Maximo 7.6, this pump is on a calendar-based preventive maintenance schedule. PM every 90 days. A technician shows up in January for the quarterly inspection. Checks the oil, checks the seals, listens for unusual noise, logs the readings on a paper form, and enters them into Maximo that afternoon.
+
+The pump sounds fine in January.
+
+By mid-February, a bearing inside the pump housing begins to degrade. The vibration level increases by 0.3 mm/s per week. The motor draws slightly more current. The discharge pressure drops by half a bar. Nobody notices. The pump is not scheduled for another inspection until April.
+
+On March 8th, at 2:47 AM, the bearing fails catastrophically. The pump seizes. The overnight operator hears the alarm and shuts down the line. The maintenance supervisor gets a phone call at 3:15 AM.
+
+What follows is predictable and expensive:
+
+- Emergency work order created at 3:30 AM
+- Technician called in for overtime at 4:00 AM
+- Bearing not in stock -- rush shipment ordered at 7:00 AM ($2,400 expedited shipping)
+- Parts arrive at 2:00 PM the next day
+- Pump back online 28 hours after failure
+- Total cost: $18,500 (parts, labor, overtime, expedited shipping, lost production)
+
+The pump had been telling anyone who would listen that it was failing. For six weeks. Nobody was listening.
+
+### The MAS Outcome: 2026
+
+Same pump. Same facility. But now there is a vibration sensor on the bearing housing, a temperature sensor on the motor casing, and a flow meter on the discharge line. Each sensor publishes readings every five seconds to MAS Monitor via MQTT.
+
+On February 14th, Monitor's analytics function detects a subtle upward trend in vibration. The rolling 24-hour average has increased from a baseline of 2.8 mm/s to 3.4 mm/s. The rate of change is 0.04 mm/s per day and accelerating. The built-in anomaly detection model flags this as an early-stage bearing degradation pattern.
+
+Monitor generates a severity-2 alert: "PUMP P-4420 -- Bearing vibration trend indicates degradation. Estimated 21 days to failure threshold."
+
+The alert triggers an automated action. A planned work order appears in Maximo Manage:
+
+- Work order WO-78234 created automatically
+- Priority: 2 (High, but not emergency)
+- Description: "Replace bearing assembly -- early degradation detected by vibration monitoring"
+- Planned materials: bearing kit pre-identified from asset BOM
+- Target completion: within 14 days (well before predicted failure)
+- Assigned to the next available maintenance window
+
+The parts are ordered through normal procurement at standard pricing ($340 shipping). The work is scheduled during a planned downtime window on February 28th. A technician replaces the bearing in 3 hours. Total cost: $2,100.
+
+Same pump. Same failure mode. **$16,400 saved. Zero unplanned downtime. Zero overtime. Zero emergency.**
+
+> This is not a theoretical scenario. This is what IoT integration with MAS Monitor actually delivers. And it is the reason this is the most exciting integration frontier in the entire MAS ecosystem.
+
+---
+
+## Why IoT Changes Everything for Maximo
+
+For two decades, Maximo has been a system of record. It records what happened. Work was performed, parts were consumed, costs were incurred, and Maximo captured it all. This is valuable. But it is inherently backward-looking.
+
+IoT integration flips the orientation entirely. MAS Monitor makes Maximo a system of awareness. It knows the current state of your assets. It detects when that state begins to change. It predicts what will happen next. And it acts before problems become failures.
+
+### The Maintenance Evolution
+
+The journey is well documented, but it is worth framing in terms of what each stage demands from your integration architecture:
+
+| Maintenance Strategy | Data Requirement | Integration Pattern | Maximo Version |
+|---------------------|-----------------|-------------------|---------------|
+| **Reactive** | Failure notification | Manual entry or basic alarms | Maximo 4.x+ |
+| **Calendar PM** | Time-based schedules | None (internal scheduling) | Maximo 5.x+ |
+| **Usage-Based PM** | Meter readings | Periodic batch uploads or manual entry | Maximo 6.x+ |
+| **Condition-Based** | Real-time sensor data | Continuous streaming (IoT) | MAS Monitor |
+| **Predictive** | Historical + real-time + ML models | AI/ML pipeline integration | MAS Monitor + Predict |
+
+Notice the integration complexity jump between usage-based and condition-based maintenance. You go from periodic batch uploads -- maybe a meter reading once a day, once a week -- to continuous data streams generating thousands of readings per sensor per day.
+
+This is a fundamentally different integration problem. You are not moving transactions anymore. You are processing data streams. And that is why legacy Maximo 7.x, with MIF as its integration backbone, could never get here.
+
+### The Data Volume Reality
+
+Let's quantify what "continuous data streams" actually means. Consider a single asset -- that centrifugal pump -- with five sensors:
+
+| Sensor | Reading Frequency | Data Points/Day | Data Points/Year |
+|--------|------------------|----------------|-----------------|
+| Vibration (X-axis) | Every 5 seconds | 17,280 | 6,307,200 |
+| Vibration (Y-axis) | Every 5 seconds | 17,280 | 6,307,200 |
+| Temperature | Every 30 seconds | 2,880 | 1,051,200 |
+| Flow rate | Every 10 seconds | 8,640 | 3,153,600 |
+| Motor current | Every 10 seconds | 8,640 | 3,153,600 |
+
+**One pump: 54,720 data points per day. 19.97 million data points per year.**
+
+Now multiply by a real facility. A water treatment plant might have 200 monitored assets. A manufacturing plant might have 500. A utility with 50 substations might have 5,000.
+
+At 500 assets with 5 sensors each, you are looking at **27.3 million data points per day**. At 5,000 assets, you are approaching **274 million data points per day**.
+
+MIF was designed to move hundreds or thousands of transactions per day. Not hundreds of millions of time-series data points. This is why MAS Monitor exists as a separate, purpose-built platform -- and why IoT integration requires entirely different architectural thinking.
+
+### What Was Impossible in 7.x
+
+To be explicit about what legacy Maximo could not do:
+
+- **No native MQTT support** -- MIF speaks HTTP, JMS, JDBC, and flat files. Not MQTT.
+- **No time-series data storage** -- Maximo's relational database is optimized for transactional records, not high-frequency time-series data
+- **No real-time analytics** -- MIF processes messages sequentially through queues. There is no streaming analytics pipeline.
+- **No anomaly detection** -- MIF has processing rules for data transformation, not machine learning models for pattern detection
+- **No edge integration** -- MIF assumes a reliable, always-connected network between endpoints. Edge devices with intermittent connectivity were not in the design scope.
+
+MAS Monitor addresses every one of these limitations. It is not an upgrade to MIF. It is an entirely new integration platform purpose-built for the IoT use case.
+
+---
+
+## MAS Monitor Architecture
+
+Before you start connecting sensors, you need to understand how Monitor processes data from ingestion to action. Here is the complete architecture:
+
+```
+                        MAS MONITOR ARCHITECTURE
+  ==============================================================
+
+  PHYSICAL WORLD                    DATA INGESTION LAYER
+  +-----------------+              +----------------------+
+  | Sensors         | ---MQTT----> | MQTT Broker          |
+  | (Vibration,     |              | (IoT Platform)       |
+  |  Temp, Flow,    | ---HTTP----> | REST Endpoint        |
+  |  Pressure,      |              |                      |
+  |  Current)       | ---Kafka---> | Kafka Consumer       |
+  +-----------------+              +----------------------+
+                                            |
+                                            v
+                                   +-------------------+
+                                   | Device Registry   |
+                                   | - Device Types    |
+                                   | - Device IDs      |
+                                   | - Metric Schemas  |
+                                   +-------------------+
+                                            |
+                                            v
+                              +---------------------------+
+                              | TIME-SERIES DATA STORE    |
+                              | (Db2 Data Lake / COS)     |
+                              | - Raw metric storage      |
+                              | - Partitioned by device   |
+                              | - Retention policies      |
+                              +---------------------------+
+                                            |
+                                            v
+                              +---------------------------+
+                              | ANALYTICS PIPELINE        |
+                              | - Built-in functions      |
+                              |   (mean, std, anomaly)    |
+                              | - Custom Python functions  |
+                              |   (ML models, rules)      |
+                              | - Scheduled execution     |
+                              | - Grain: 5min/15min/1hr   |
+                              +---------------------------+
+                                            |
+                                            v
+                              +---------------------------+
+                              | ANOMALY & ALERT ENGINE    |
+                              | - Threshold evaluation    |
+                              | - ML anomaly scoring      |
+                              | - Alert severity mapping  |
+                              | - Alert deduplication     |
+                              +---------------------------+
+                                            |
+                                            v
+                    +-------------------------------------------+
+                    |          INTEGRATION LAYER                |
+                    |                                           |
+                    |   +----------+  +----------+  +--------+ |
+                    |   | Manage   |  | Health   |  | Predict| |
+                    |   | (Work    |  | (Asset   |  | (ML    | |
+                    |   |  Orders) |  |  Scores) |  | Models)| |
+                    |   +----------+  +----------+  +--------+ |
+                    +-------------------------------------------+
+```
+
+### Layer by Layer
+
+**Data Ingestion Layer.** This is where the physical world meets the digital platform. Monitor accepts data through three primary channels:
+
+- **MQTT** -- The primary protocol for high-frequency sensor data. Lightweight, publish-subscribe, designed for constrained devices and unreliable networks. This is what you will use for most IoT integrations.
+- **HTTP REST** -- For lower-frequency data submissions or when MQTT is not an option. Simpler to implement but higher overhead per message. Good for hourly or daily readings from enterprise systems.
+- **Kafka** -- For enterprise-scale data pipelines where sensor data is already flowing through a Kafka cluster. Monitor consumes from Kafka topics directly.
+
+**Device Registry.** Every device that sends data to Monitor must be registered. The registry defines device types (pump, motor, compressor), individual device IDs (PUMP-001, PUMP-002), and the metric schemas that each device type produces. This is the bridge between the IoT world (device IDs) and the Maximo world (asset numbers).
+
+**Time-Series Data Store.** Monitor stores raw metric data in a time-series optimized store -- typically backed by Db2 Warehouse or Cloud Object Storage depending on the deployment model. Data is partitioned by device and time, with configurable retention policies. Hot data (recent readings) lives in fast storage for real-time analytics. Cold data (historical readings) moves to cheaper storage for long-term trend analysis.
+
+**Analytics Pipeline.** This is the brain. Monitor provides built-in analytics functions (rolling averages, standard deviations, min/max, rate of change) and supports custom Python functions for domain-specific logic. Functions execute on a configurable grain -- every 5 minutes, every 15 minutes, every hour -- processing the raw data into actionable derived metrics.
+
+**Anomaly and Alert Engine.** Derived metrics feed into the alert engine, which evaluates thresholds, anomaly scores, and complex multi-variable conditions. When conditions are met, alerts are generated with severity levels and descriptive context. Deduplication ensures that a sustained anomaly generates one alert, not thousands.
+
+**Integration Layer.** Alerts flow to other MAS applications. Manage receives work order creation requests. Health receives asset condition updates that affect health scores. Predict receives data for training and inference on remaining useful life models. This is where IoT data becomes maintenance action.
+
+---
+
+## MQTT Protocol Deep Dive: The Language of IoT
+
+If REST APIs are the language of enterprise integration (as we covered in Part 2), MQTT is the language of IoT. You will encounter it in every MAS Monitor implementation, and understanding its mechanics is essential.
+
+### Why MQTT, Not HTTP
+
+HTTP was designed for the web: request-response, stateless, human-readable headers. It works brilliantly for APIs. But for IoT, it has significant limitations:
+
+| Characteristic | HTTP | MQTT |
+|---------------|------|------|
+| **Message overhead** | Large headers (300+ bytes minimum) | 2-byte fixed header |
+| **Pattern** | Request-response (pull) | Publish-subscribe (push) |
+| **Connection** | Stateless (reconnect per request) | Persistent connection |
+| **Bandwidth** | High per message | Minimal per message |
+| **Battery impact** | High (reconnection overhead) | Low (persistent connection) |
+| **Network tolerance** | Requires stable connection | Handles intermittent connectivity |
+| **Fan-out** | One-to-one | One-to-many (via broker) |
+
+When a sensor is publishing a reading every 5 seconds, the difference between a 300-byte HTTP header and a 2-byte MQTT header is not trivial. Over a day, that single sensor generates 17,280 messages. The header overhead alone at HTTP scale would be 5 MB per day per sensor. With MQTT, it is 34 KB.
+
+At scale, MQTT is not just better. It is the only practical option.
+
+### The Publish-Subscribe Model
+
+MQTT uses a broker-mediated publish-subscribe pattern:
+
+```
+                    MQTT PUBLISH-SUBSCRIBE MODEL
+
+  +-----------+                              +-----------+
+  | Sensor A  |---publish "pump/001/temp"--->|           |
+  +-----------+                              |           |
+                                             |   MQTT    |----> Subscriber 1
+  +-----------+                              |   BROKER  |      (MAS Monitor)
+  | Sensor B  |---publish "pump/001/vib"---->|           |
+  +-----------+                              |           |----> Subscriber 2
+                                             |           |      (Local Dashboard)
+  +-----------+                              |           |
+  | Sensor C  |---publish "pump/002/temp"--->|           |----> Subscriber 3
+  +-----------+                              +-----------+      (Data Historian)
+```
+
+Publishers (sensors) send messages to topics. Subscribers (Monitor, dashboards, historians) listen to topics they care about. The broker handles routing. Publishers and subscribers never communicate directly -- they do not even need to know each other exists.
+
+This decoupling is powerful. You can add a new subscriber (say, a local display panel) without changing anything about the sensors or Monitor. You can add a new sensor without reconfiguring the subscribers. The broker handles it all.
+
+### Topics and Topic Hierarchy
+
+MQTT topics are hierarchical strings separated by forward slashes. For MAS Monitor, the standard topic structure follows the IBM IoT Platform convention:
+
+```
+iot-2/type/{deviceType}/id/{deviceId}/evt/{eventType}/fmt/{format}
+```
+
+For example:
+
+```
+iot-2/type/pump/id/PUMP-001/evt/metrics/fmt/json
+iot-2/type/motor/id/MTR-042/evt/metrics/fmt/json
+iot-2/type/compressor/id/COMP-007/evt/alarm/fmt/json
+```
+
+Subscribers can use wildcards to listen broadly:
+
+- **Single-level wildcard (+):** `iot-2/type/pump/id/+/evt/metrics/fmt/json` -- all pumps, metrics only
+- **Multi-level wildcard (#):** `iot-2/type/pump/#` -- all pumps, all events, all formats
+
+### Quality of Service (QoS) Levels
+
+MQTT provides three QoS levels that control delivery guarantees:
+
+| QoS Level | Name | Guarantee | Use Case |
+|-----------|------|-----------|----------|
+| **0** | At most once | Fire and forget. No acknowledgment. | High-frequency readings where occasional loss is acceptable (temperature every 5 sec) |
+| **1** | At least once | Acknowledged. May deliver duplicates. | Standard sensor readings. Most common for MAS Monitor. |
+| **2** | Exactly once | Four-step handshake. Guaranteed single delivery. | Critical alarms, meter readings for billing, compliance data |
+
+For most MAS Monitor integrations, **QoS 1 is the sweet spot**. You get delivery confirmation without the overhead of QoS 2. Monitor's analytics pipeline is designed to handle the occasional duplicate -- a rolling average does not break if one data point appears twice.
+
+Use QoS 2 only when exact-once semantics matter: financial meter readings, regulatory compliance data, or critical safety alarms where a duplicate could trigger a duplicate response.
+
+### Retained Messages and Last Will
+
+Two MQTT features that are particularly useful for IoT:
+
+**Retained Messages.** When a sensor publishes with the "retain" flag, the broker stores that message. Any new subscriber to that topic immediately receives the last retained message. This is valuable for "current state" topics -- a new dashboard connecting to the system instantly knows the last reading from every sensor, without waiting for the next publish cycle.
+
+**Last Will and Testament (LWT).** When a device connects to the broker, it can register a "last will" message. If the device disconnects unexpectedly (network failure, power loss, hardware crash), the broker automatically publishes the LWT message. This is how you detect device failures:
+
+```
+# Device registers its LWT on connection:
+LWT Topic: iot-2/type/pump/id/PUMP-001/evt/status/fmt/json
+LWT Payload: {"deviceId": "PUMP-001", "status": "offline", "timestamp": "..."}
+
+# If PUMP-001 disconnects unexpectedly, the broker publishes this message
+# Monitor receives it and can trigger a "device offline" alert
+```
+
+### MQTT in Practice: Connecting a Sensor to MAS Monitor
+
+Here is a complete example of an MQTT client publishing sensor data to MAS Monitor. This is the kind of code that runs on an IoT gateway or edge device:
+
+```python
+import paho.mqtt.client as mqtt
+import json
+import time
+from datetime import datetime, timezone
+
+# -------------------------------------------------------
+# Configuration
+# -------------------------------------------------------
+MQTT_BROKER = "mas-monitor-mqtt.example.com"
+MQTT_PORT = 8883  # TLS
+DEVICE_TYPE = "pump"
+DEVICE_ID = "PUMP-001"
+DEVICE_TOKEN = "your-device-token"
+
+# MQTT topic following IBM IoT Platform convention
+TOPIC = f"iot-2/type/{DEVICE_TYPE}/id/{DEVICE_ID}/evt/metrics/fmt/json"
+
+# -------------------------------------------------------
+# Callback functions
+# -------------------------------------------------------
+def on_connect(client, userdata, flags, rc):
+    if rc == 0:
+        print(f"Connected to MAS Monitor MQTT broker")
+    else:
+        print(f"Connection failed with code {rc}")
+
+def on_publish(client, userdata, mid):
+    print(f"Message {mid} published successfully")
+
+def on_disconnect(client, userdata, rc):
+    if rc != 0:
+        print(f"Unexpected disconnect. Attempting reconnect...")
+
+# -------------------------------------------------------
+# Client setup
+# -------------------------------------------------------
+client = mqtt.Client(client_id=f"{DEVICE_TYPE}-{DEVICE_ID}")
+client.username_pw_set("use-token-auth", DEVICE_TOKEN)
+client.tls_set()  # Enable TLS for secure communication
+
+# Register callbacks
+client.on_connect = on_connect
+client.on_publish = on_publish
+client.on_disconnect = on_disconnect
+
+# Register Last Will and Testament
+lwt_payload = json.dumps({
+    "deviceId": DEVICE_ID,
+    "status": "offline",
+    "timestamp": datetime.now(timezone.utc).isoformat()
+})
+client.will_set(
+    f"iot-2/type/{DEVICE_TYPE}/id/{DEVICE_ID}/evt/status/fmt/json",
+    lwt_payload,
+    qos=1,
+    retain=True
+)
+
+# Connect with automatic reconnect
+client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
+client.loop_start()
+
+# -------------------------------------------------------
+# Publish sensor readings
+# -------------------------------------------------------
+def read_sensors():
+    """
+    In production, this reads from actual sensor hardware
+    via Modbus, OPC-UA, analog input, or serial protocol.
+    """
+    return {
+        "vibration_mm_s": 4.2,
+        "temperature_c": 72.5,
+        "flow_rate_lpm": 245.8,
+        "pressure_bar": 3.1,
+        "current_amps": 12.4
+    }
+
+try:
+    while True:
+        metrics = read_sensors()
+        payload = json.dumps({
+            "deviceId": DEVICE_ID,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "metrics": metrics
+        })
+
+        result = client.publish(TOPIC, payload, qos=1)
+        result.wait_for_publish()
+
+        time.sleep(5)  # Every 5 seconds
+
+except KeyboardInterrupt:
+    print("Shutting down...")
+    client.loop_stop()
+    client.disconnect()
+```
+
+This is a minimal but production-ready pattern. Notice the key elements: TLS encryption, QoS 1 for reliable delivery, Last Will and Testament for disconnect detection, and structured JSON payloads with ISO 8601 timestamps.
+
+---
+
+## Connecting IoT Platforms to MAS Monitor
+
+Most organizations are not starting from scratch with IoT. You likely have existing sensor infrastructure running through AWS IoT Core, Azure IoT Hub, or another platform. The good news: MAS Monitor does not require you to rip and replace. You bridge.
+
+### AWS IoT Core to MAS Monitor
+
+If your sensors already publish to AWS IoT Core, you can bridge data to MAS Monitor using an AWS IoT Rule that forwards messages to Monitor's MQTT broker or HTTP endpoint:
+
+```
+                AWS IoT Core --> MAS Monitor Bridge
+
+  +----------+      +----------------+      +------------------+
+  | Sensors  |----->| AWS IoT Core   |----->| IoT Rule         |
+  | (Field)  | MQTT | (MQTT Broker)  |      | (SQL + Action)   |
+  +----------+      +----------------+      +------------------+
+                                                    |
+                                          +---------+---------+
+                                          |                   |
+                                          v                   v
+                                   +------------+    +--------------+
+                                   | Lambda     |    | HTTP Action  |
+                                   | Function   |    | (Direct to   |
+                                   | (Transform |    |  Monitor API)|
+                                   |  + Forward)|    +--------------+
+                                   +------------+
+                                          |
+                                          v
+                                   +--------------+
+                                   | MAS Monitor  |
+                                   | MQTT/HTTP    |
+                                   +--------------+
+```
+
+The AWS IoT Rule uses a SQL-like syntax to select and transform messages:
+
+```sql
+-- AWS IoT Rule SQL
+SELECT
+  topic(3) as deviceType,
+  topic(5) as deviceId,
+  timestamp() as ingestTime,
+  vibration_mm_s,
+  temperature_c,
+  flow_rate_lpm,
+  pressure_bar,
+  current_amps
+FROM
+  'sensors/+/+/metrics'
+WHERE
+  vibration_mm_s IS NOT NULL
+```
+
+The rule triggers a Lambda function that transforms the AWS IoT payload into MAS Monitor format and publishes it to Monitor's MQTT broker:
+
+```python
+# AWS Lambda: Bridge AWS IoT Core to MAS Monitor
+import json
+import paho.mqtt.publish as publish
+from datetime import datetime, timezone
+
+MAS_MQTT_BROKER = "mas-monitor-mqtt.example.com"
+MAS_MQTT_PORT = 8883
+MAS_DEVICE_TOKEN = "bridge-device-token"
+
+def lambda_handler(event, context):
+    """
+    Receives sensor data from AWS IoT Rule
+    and forwards to MAS Monitor MQTT broker.
+    """
+    device_type = event.get("deviceType", "unknown")
+    device_id = event.get("deviceId", "unknown")
+
+    # Transform to MAS Monitor payload format
+    mas_payload = json.dumps({
+        "deviceId": device_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "metrics": {
+            "vibration_mm_s": event.get("vibration_mm_s"),
+            "temperature_c": event.get("temperature_c"),
+            "flow_rate_lpm": event.get("flow_rate_lpm"),
+            "pressure_bar": event.get("pressure_bar"),
+            "current_amps": event.get("current_amps")
+        }
+    })
+
+    # MAS Monitor topic structure
+    topic = f"iot-2/type/{device_type}/id/{device_id}/evt/metrics/fmt/json"
+
+    # Publish to MAS Monitor
+    publish.single(
+        topic,
+        payload=mas_payload,
+        hostname=MAS_MQTT_BROKER,
+        port=MAS_MQTT_PORT,
+        auth={
+            "username": "use-token-auth",
+            "password": MAS_DEVICE_TOKEN
+        },
+        tls={},
+        qos=1
+    )
+
+    return {"statusCode": 200, "body": "Forwarded to MAS Monitor"}
+```
+
+### Azure IoT Hub to MAS Monitor
+
+Azure IoT Hub uses a similar bridging pattern, but leverages Azure Functions and Event Hubs for the data pipeline:
+
+```
+                Azure IoT Hub --> MAS Monitor Bridge
+
+  +----------+      +----------------+      +------------------+
+  | Sensors  |----->| Azure IoT Hub  |----->| Event Hub        |
+  | (Field)  | MQTT | (Device Mgmt)  |      | (Built-in        |
+  +----------+      +----------------+      |  Endpoint)       |
+                                            +------------------+
+                                                    |
+                                                    v
+                                            +------------------+
+                                            | Azure Function   |
+                                            | (Transform +     |
+                                            |  Forward to MAS) |
+                                            +------------------+
+                                                    |
+                                                    v
+                                            +--------------+
+                                            | MAS Monitor  |
+                                            | HTTP API     |
+                                            +--------------+
+```
+
+```python
+# Azure Function: Bridge IoT Hub to MAS Monitor
+import json
+import logging
+import requests
+from datetime import datetime, timezone
+import azure.functions as func
+
+MAS_MONITOR_URL = "https://mas-monitor-api.example.com/api/v1/data"
+MAS_API_KEY = "your-mas-api-key"
+
+def main(event: func.EventHubEvent):
+    """
+    Triggered by Azure IoT Hub messages via Event Hub.
+    Transforms and forwards to MAS Monitor HTTP API.
+    """
+    message = json.loads(event.get_body().decode("utf-8"))
+
+    device_id = event.iothub_metadata.get("connection-device-id", "unknown")
+
+    # Transform to MAS Monitor format
+    mas_payload = {
+        "deviceId": device_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "metrics": {
+            "vibration_mm_s": message.get("vibration"),
+            "temperature_c": message.get("temperature"),
+            "flow_rate_lpm": message.get("flow_rate"),
+            "pressure_bar": message.get("pressure"),
+            "current_amps": message.get("current")
+        }
+    }
+
+    # Forward to MAS Monitor via HTTP
+    response = requests.post(
+        MAS_MONITOR_URL,
+        json=mas_payload,
+        headers={
+            "Authorization": f"Bearer {MAS_API_KEY}",
+            "Content-Type": "application/json"
+        }
+    )
+
+    logging.info(
+        f"Forwarded {device_id} data to MAS Monitor: {response.status_code}"
+    )
+```
+
+### Edge Gateways and Protocol Translation
+
+Not all sensors speak MQTT. In many industrial environments, you will encounter:
+
+- **Modbus TCP/RTU** -- Common for PLCs, VFDs, and older industrial sensors
+- **OPC-UA** -- The standard for modern industrial automation
+- **BACnet** -- Building automation (HVAC, lighting, fire systems)
+- **HART** -- Process instrumentation (pressure, flow, level transmitters)
+- **Analog 4-20mA** -- Legacy sensors with analog current loop output
+
+An IoT gateway translates these protocols to MQTT for Monitor ingestion:
+
+```
+                     EDGE GATEWAY ARCHITECTURE
+
+  +----------------+
+  | Modbus Sensors |--Modbus TCP-->+
+  +----------------+               |
+                                   |    +-----------------+
+  +----------------+               +--->|                 |
+  | OPC-UA Server  |--OPC-UA------>|   | IoT Gateway     |---MQTT--->  MAS
+  +----------------+               |   | (Edge Device)   |            Monitor
+                                   |   |                 |
+  +----------------+               |   | - Protocol      |
+  | BACnet Devices |--BACnet----->+   |   translation   |
+  +----------------+               |   | - Data          |
+                                   |   |   normalization |
+  +----------------+               |   | - Local         |
+  | 4-20mA Sensors |--Analog I/O->+   |   buffering     |
+  +----------------+                   | - Store and     |
+                                       |   forward       |
+                                       +-----------------+
+```
+
+The gateway is responsible for:
+
+1. **Protocol translation** -- Converting Modbus registers, OPC-UA nodes, or BACnet objects into JSON payloads
+2. **Data normalization** -- Scaling raw values (e.g., 4-20mA to engineering units), applying calibration offsets
+3. **Local buffering** -- Storing data locally when the network connection to Monitor is unavailable
+4. **Store-and-forward** -- Replaying buffered data when connectivity is restored, preserving data continuity
+5. **Edge filtering** -- Optionally discarding redundant readings (e.g., only publish when the value changes by more than a threshold)
+
+---
+
+## Sensor Data Models: Structuring IoT Data for MAS
+
+Getting data into Monitor is one thing. Getting it in the right structure is another. Monitor uses a specific data model that maps physical sensors to Maximo assets.
+
+### Device Types
+
+A device type is a template that defines what kind of data a class of devices produces. Think of it as a schema:
+
+```json
+{
+  "deviceType": "centrifugal_pump",
+  "description": "Centrifugal pump with standard monitoring package",
+  "metadata": {
+    "manufacturer": "Grundfos",
+    "model_series": "CR",
+    "monitoring_package": "standard_5sensor"
+  },
+  "metrics": [
+    {
+      "name": "vibration_mm_s",
+      "type": "number",
+      "unit": "mm/s",
+      "description": "Bearing housing vibration velocity (RMS)",
+      "min": 0,
+      "max": 50,
+      "precision": 2
+    },
+    {
+      "name": "temperature_c",
+      "type": "number",
+      "unit": "celsius",
+      "description": "Motor casing temperature",
+      "min": -20,
+      "max": 200,
+      "precision": 1
+    },
+    {
+      "name": "flow_rate_lpm",
+      "type": "number",
+      "unit": "liters_per_minute",
+      "description": "Discharge flow rate",
+      "min": 0,
+      "max": 2000,
+      "precision": 1
+    },
+    {
+      "name": "pressure_bar",
+      "type": "number",
+      "unit": "bar",
+      "description": "Discharge pressure",
+      "min": 0,
+      "max": 25,
+      "precision": 2
+    },
+    {
+      "name": "current_amps",
+      "type": "number",
+      "unit": "amperes",
+      "description": "Motor current draw",
+      "min": 0,
+      "max": 100,
+      "precision": 1
+    }
+  ]
+}
+```
+
+### Device Registration
+
+Each physical device is registered as an instance of a device type:
+
+```json
+{
+  "deviceId": "PUMP-001",
+  "deviceType": "centrifugal_pump",
+  "description": "Primary feed pump - Building A",
+  "metadata": {
+    "maximo_asset_num": "A-PUMP-4420",
+    "maximo_site_id": "BEDFORD",
+    "maximo_location": "WTP-BLDG-A-RM101",
+    "installation_date": "2019-06-15",
+    "serial_number": "GF-CR-2019-88421"
+  },
+  "location": {
+    "latitude": 42.4906,
+    "longitude": -71.2760
+  }
+}
+```
+
+The critical field here is `maximo_asset_num`. This is the bridge between the IoT world (where the device is "PUMP-001") and the Maximo world (where the asset is "A-PUMP-4420"). When Monitor generates an alert, this mapping is how the resulting work order gets created against the correct asset in Manage.
+
+### Dimension Tables
+
+Dimension tables in Monitor provide additional context that enriches the raw sensor data. They link IoT device metadata to Maximo asset attributes:
+
+```json
+{
+  "dimensionTable": "pump_specifications",
+  "columns": [
+    {"name": "device_id", "type": "string", "key": true},
+    {"name": "maximo_asset", "type": "string"},
+    {"name": "rated_flow_lpm", "type": "number"},
+    {"name": "rated_pressure_bar", "type": "number"},
+    {"name": "rated_current_amps", "type": "number"},
+    {"name": "baseline_vibration_mm_s", "type": "number"},
+    {"name": "max_temperature_c", "type": "number"},
+    {"name": "criticality", "type": "string"}
+  ],
+  "data": [
+    {
+      "device_id": "PUMP-001",
+      "maximo_asset": "A-PUMP-4420",
+      "rated_flow_lpm": 800,
+      "rated_pressure_bar": 5.0,
+      "rated_current_amps": 15.0,
+      "baseline_vibration_mm_s": 2.8,
+      "max_temperature_c": 85,
+      "criticality": "HIGH"
+    },
+    {
+      "device_id": "PUMP-002",
+      "maximo_asset": "A-PUMP-4421",
+      "rated_flow_lpm": 600,
+      "rated_pressure_bar": 4.0,
+      "rated_current_amps": 12.0,
+      "baseline_vibration_mm_s": 2.5,
+      "max_temperature_c": 80,
+      "criticality": "MEDIUM"
+    }
+  ]
+}
+```
+
+Why do dimension tables matter? Because the same vibration reading means very different things for different pumps. A vibration level of 4.5 mm/s might be normal for a large, high-flow pump but alarming for a smaller unit. Dimension tables provide the asset-specific baselines and thresholds that make analytics meaningful.
+
+---
+
+## Analytics Functions in Monitor: The Brain
+
+Raw sensor data is noise. Analytics functions transform noise into signal. Monitor provides both built-in functions and the ability to deploy custom Python functions for domain-specific logic.
+
+### Built-In Analytics Functions
+
+Monitor ships with a library of analytics functions that cover the most common monitoring use cases:
+
+| Function | What It Does | Example Use |
+|----------|-------------|-------------|
+| **AlertHighValue** | Fires when a metric exceeds a threshold | Temperature &gt; 85C |
+| **AlertLowValue** | Fires when a metric drops below a threshold | Flow rate &lt; 100 LPM |
+| **AlertOutOfRange** | Fires when a metric is outside a defined range | Pressure not between 2.5 and 5.5 bar |
+| **AnomalyDetection** | ML-based anomaly scoring on metric data | Unusual vibration pattern |
+| **MovingAverage** | Rolling average over a time window | 1-hour rolling average of temperature |
+| **StdDeviation** | Standard deviation over a window | Vibration stability assessment |
+| **RateOfChange** | Derivative of metric value over time | How fast is vibration increasing? |
+| **FFT (Spectral)** | Frequency domain analysis of vibration data | Identify specific fault frequencies |
+
+These functions are configured through the Monitor UI -- no coding required. You select a metric, choose a function, set parameters (threshold value, window size, sensitivity), and Monitor applies it to every incoming reading for that device type.
+
+### Custom Python Functions
+
+When built-in functions are not enough, you write custom Python functions. These are deployed to Monitor as reusable analytics modules. Here is a practical example -- detecting bearing wear from vibration trends:
+
+```python
+# Custom Monitor analytics function
+# Detect vibration trend indicating bearing wear
+import numpy as np
+import pandas as pd
+
+
+class VibrationTrendAlert:
+    """
+    Analyzes vibration data over a rolling window to detect
+    upward trends that indicate bearing degradation.
+
+    A sustained increase in vibration velocity (mm/s) typically
+    precedes bearing failure by 2-6 weeks. This function calculates
+    the slope of the rolling mean and alerts when the rate of
+    increase exceeds a configurable threshold.
+    """
+
+    def __init__(self, window_size=24, threshold_slope=0.15):
+        self.window_size = window_size  # hours
+        self.threshold_slope = threshold_slope  # mm/s per hour
+
+    def execute(self, df):
+        """Analyze vibration trend over rolling window."""
+        df = df.sort_values('timestamp')
+
+        # Calculate rolling mean to smooth out noise
+        df['vibration_rolling_mean'] = df['vibration_mm_s'].rolling(
+            window=self.window_size,
+            min_periods=int(self.window_size * 0.75)
+        ).mean()
+
+        # Calculate slope of rolling mean (rate of change)
+        df['vibration_slope'] = df['vibration_rolling_mean'].diff()
+
+        # Detect sustained upward trend
+        df['trend_sustained'] = df['vibration_slope'].rolling(
+            window=6  # 6 consecutive positive slopes
+        ).apply(lambda x: all(x > 0)).fillna(0)
+
+        # Alert if upward trend exceeds threshold
+        df['bearing_wear_alert'] = (
+            (df['vibration_slope'] > self.threshold_slope) &
+            (df['trend_sustained'] == 1)
+        ).astype(int)
+
+        # Estimate days to failure threshold (7.1 mm/s per ISO 10816)
+        df['estimated_days_to_threshold'] = np.where(
+            df['vibration_slope'] > 0,
+            (7.1 - df['vibration_rolling_mean']) / (df['vibration_slope'] * 24),
+            np.nan
+        )
+
+        return df
+```
+
+Here is another example -- multi-variable correlation that detects pump cavitation by analyzing the relationship between vibration, flow rate, and pressure simultaneously:
+
+```python
+# Custom Monitor analytics function
+# Detect pump cavitation through multi-variable correlation
+import numpy as np
+import pandas as pd
+
+
+class CavitationDetector:
+    """
+    Pump cavitation produces a characteristic signature:
+    - Increased vibration (especially high-frequency)
+    - Decreased discharge pressure
+    - Fluctuating or decreased flow rate
+    - Increased noise (if acoustic sensor present)
+
+    This function detects the correlated pattern rather than
+    relying on any single metric threshold.
+    """
+
+    def __init__(self, sensitivity=0.7):
+        self.sensitivity = sensitivity  # 0.0 to 1.0
+
+    def execute(self, df):
+        """Detect cavitation through multi-variable analysis."""
+        df = df.sort_values('timestamp')
+
+        # Normalize metrics to z-scores for comparison
+        for col in ['vibration_mm_s', 'pressure_bar', 'flow_rate_lpm']:
+            mean = df[col].rolling(window=72).mean()  # 72-period baseline
+            std = df[col].rolling(window=72).std()
+            df[f'{col}_zscore'] = (df[col] - mean) / std
+
+        # Cavitation signature:
+        # vibration UP (positive z) + pressure DOWN (negative z) +
+        # flow UNSTABLE (high variance)
+        df['flow_variance'] = df['flow_rate_lpm'].rolling(window=12).var()
+        flow_var_mean = df['flow_variance'].rolling(window=72).mean()
+        flow_var_std = df['flow_variance'].rolling(window=72).std()
+        df['flow_instability'] = (df['flow_variance'] - flow_var_mean) / flow_var_std
+
+        # Combined cavitation score (0 to 1)
+        df['cavitation_score'] = np.clip(
+            (
+                np.maximum(df['vibration_mm_s_zscore'], 0) * 0.4 +
+                np.maximum(-df['pressure_bar_zscore'], 0) * 0.3 +
+                np.maximum(df['flow_instability'], 0) * 0.3
+            ) / 3,
+            0, 1
+        )
+
+        # Alert when score exceeds sensitivity threshold
+        df['cavitation_alert'] = (
+            df['cavitation_score'] > self.sensitivity
+        ).astype(int)
+
+        return df
+```
+
+These custom functions are powerful because they encode domain expertise. A maintenance engineer who understands pump cavitation can express that knowledge as an analytics function that runs continuously across every pump in the fleet. The knowledge is no longer locked in one person's head -- it is operationalized at scale.
+
+---
+
+## The Monitor-to-Manage Pipeline: From Sensor Reading to Work Order
+
+This is the end-to-end flow that makes IoT integration transformative. It is not enough to collect data and generate alerts. The value comes when alerts automatically trigger maintenance action. Here is the complete pipeline:
+
+```
+     THE MONITOR-TO-MANAGE PIPELINE
+     ================================
+
+  1. SENSE         Sensor publishes reading via MQTT
+     |             {"vibration_mm_s": 4.8, ...}
+     v
+  2. INGEST        Monitor receives and stores in time-series DB
+     |             Raw data: 17,280 points/day/sensor
+     v
+  3. ANALYZE       Analytics function processes data
+     |             VibrationTrendAlert detects upward slope
+     v
+  4. DETECT        Anomaly engine evaluates analytics output
+     |             bearing_wear_alert = 1, severity = HIGH
+     v
+  5. ALERT         Alert generated in Monitor
+     |             "PUMP-001: Bearing degradation detected"
+     v
+  6. TRIGGER       Alert triggers automated action
+     |             Event published to integration bus
+     v
+  7. CREATE        Work order created in Manage
+     |             WO-78234: Priority 2, planned materials
+     v
+  8. ACT           Maintenance team executes planned work
+                   Bearing replaced during scheduled window
+```
+
+### Step 6 in Detail: The Alert-to-Action Trigger
+
+The bridge between Monitor alerts and Manage work orders is the integration action. In Monitor, you configure alert triggers that fire when conditions are met. The trigger can invoke a REST API call to Manage to create a work order:
+
+```json
+{
+  "alertTrigger": {
+    "name": "bearing_wear_auto_wo",
+    "description": "Create work order when bearing wear alert fires",
+    "condition": {
+      "metric": "bearing_wear_alert",
+      "operator": "equals",
+      "value": 1,
+      "severity": "HIGH",
+      "sustained_minutes": 30
+    },
+    "action": {
+      "type": "create_work_order",
+      "target": "maximo_manage",
+      "parameters": {
+        "siteid": "{{device.metadata.maximo_site_id}}",
+        "assetnum": "{{device.metadata.maximo_asset_num}}",
+        "location": "{{device.metadata.maximo_location}}",
+        "description": "Bearing degradation detected - vibration trend alert",
+        "longdescription": "MAS Monitor detected sustained upward vibration trend on {{device.deviceId}}. Rolling mean: {{metrics.vibration_rolling_mean}} mm/s. Slope: {{metrics.vibration_slope}} mm/s/hr. Estimated days to threshold: {{metrics.estimated_days_to_threshold}}.",
+        "wopriority": 2,
+        "worktype": "CM",
+        "classstructureid": "PUMP_REPAIR",
+        "failurecode": "BEARING",
+        "status": "WAPPR"
+      }
+    },
+    "deduplication": {
+      "window_hours": 168,
+      "key": "{{device.deviceId}}_bearing_wear"
+    }
+  }
+}
+```
+
+Key elements in this configuration:
+
+- **Sustained condition** -- The alert must persist for 30 minutes before triggering. This prevents false positives from momentary spikes.
+- **Template variables** -- Device metadata (site, asset number, location) and real-time metrics are injected into the work order description. The technician sees exactly what was detected and why.
+- **Deduplication** -- A 168-hour (7-day) window prevents duplicate work orders for the same condition. If the bearing wear alert fires continuously for a week, only one work order is created.
+
+### Step 7 in Detail: Work Order Creation via API
+
+The automated action calls the Manage REST API to create the work order:
+
+```python
+# Monitor-to-Manage integration: Create work order from alert
+import requests
+import json
+from datetime import datetime, timezone, timedelta
+
+MANAGE_API_URL = "https://mas-manage.example.com/maximo/oslc/os/mxwo"
+MANAGE_API_KEY = "your-manage-api-key"
+
+
+def create_work_order_from_alert(alert_data, device_metadata):
+    """
+    Called by Monitor alert trigger.
+    Creates a planned work order in Manage with full context.
+    """
+    # Calculate target date (14 days from alert)
+    target_date = (
+        datetime.now(timezone.utc) + timedelta(days=14)
+    ).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+    work_order = {
+        "siteid": device_metadata["maximo_site_id"],
+        "assetnum": device_metadata["maximo_asset_num"],
+        "location": device_metadata["maximo_location"],
+        "description": (
+            f"Bearing degradation detected - {alert_data['device_id']}"
+        ),
+        "description_longdescription": (
+            f"<p>MAS Monitor Alert: Bearing Wear Detected</p>"
+            f"<p>Device: {alert_data['device_id']}</p>"
+            f"<p>Vibration Rolling Mean: "
+            f"{alert_data['vibration_rolling_mean']:.2f} mm/s</p>"
+            f"<p>Vibration Slope: "
+            f"{alert_data['vibration_slope']:.3f} mm/s/hr</p>"
+            f"<p>Estimated Days to Threshold: "
+            f"{alert_data['estimated_days_to_threshold']:.0f}</p>"
+            f"<p>Alert generated: "
+            f"{datetime.now(timezone.utc).isoformat()}</p>"
+        ),
+        "wopriority": 2,
+        "worktype": "CM",
+        "targstartdate": datetime.now(timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%S+00:00"
+        ),
+        "targcompdate": target_date,
+        "status": "WAPPR",
+        "failurecode": "BEARING",
+        "classstructureid": "PUMP_REPAIR"
+    }
+
+    response = requests.post(
+        MANAGE_API_URL,
+        json=work_order,
+        headers={
+            "apikey": MANAGE_API_KEY,
+            "Content-Type": "application/json"
+        }
+    )
+
+    if response.status_code == 201:
+        wo_data = response.json()
+        print(f"Work order created: {wo_data.get('wonum')}")
+        return wo_data
+    else:
+        print(f"Failed to create work order: {response.status_code}")
+        print(response.text)
+        return None
+```
+
+This pipeline -- sense, ingest, analyze, detect, alert, trigger, create, act -- is the complete realization of condition-based maintenance. Every step is automated. The only human involvement is the technician performing the actual repair, armed with full context about what was detected and why.
+
+---
+
+## Condition-Based Maintenance Patterns
+
+Now that you understand the pipeline, let's look at the patterns you will implement most often. Each pattern has different complexity, data requirements, and business value.
+
+### Pattern 1: Single-Threshold Alerts
+
+The simplest pattern. A metric exceeds a defined limit.
+
+```
+IF temperature_c > 85 THEN alert("Motor overheating", severity=HIGH)
+IF vibration_mm_s > 7.1 THEN alert("Vibration exceeds ISO limit", severity=CRITICAL)
+IF pressure_bar < 1.5 THEN alert("Low discharge pressure", severity=MEDIUM)
+```
+
+This is essentially what SCADA systems have done for decades. But in MAS Monitor, the alert connects directly to the maintenance workflow -- creating a work order, not just flashing a light on a control panel that someone might or might not notice.
+
+### Pattern 2: Multi-Variable Correlation
+
+More sophisticated. Evaluates relationships between metrics rather than individual thresholds.
+
+```
+IF vibration_mm_s > baseline + 2*std
+   AND temperature_c > baseline + 1.5*std
+   AND current_amps > rated * 1.1
+THEN alert("Multi-variable degradation pattern", severity=HIGH)
+```
+
+This catches conditions that no single metric would flag. A pump might have slightly elevated vibration (within threshold), slightly elevated temperature (within threshold), and slightly elevated current (within threshold) -- but the combination of all three moving in the same direction at the same time is a strong signal of degradation.
+
+### Pattern 3: Degradation Curves
+
+The most valuable pattern. Rather than alerting on current state, you project future state and alert based on predicted time to failure.
+
+```
+CALCULATE vibration_slope over 7-day window
+CALCULATE remaining_useful_life = (failure_threshold - current_value) / slope
+IF remaining_useful_life < 21 days
+THEN alert("Predicted failure within 3 weeks", severity=HIGH)
+IF remaining_useful_life < 7 days
+THEN alert("Predicted failure within 1 week", severity=CRITICAL)
+```
+
+This gives the maintenance team maximum lead time for planning and parts procurement. A 21-day warning is the difference between a planned repair and an emergency.
+
+### Pattern 4: Seasonal Baseline Adjustment
+
+In many environments, "normal" changes with the seasons. An HVAC chiller that runs at 75% load in summer and 20% in winter has very different baseline metrics.
+
+```
+DEFINE baselines:
+  summer (Jun-Aug): vibration=3.2, temp=78, current=14.5
+  winter (Dec-Feb): vibration=2.1, temp=52, current=8.2
+  spring/fall: vibration=2.6, temp=65, current=11.3
+
+EVALUATE against current season baseline, not static threshold
+```
+
+Without seasonal adjustment, you either get false alarms all summer (thresholds too tight) or missed detections all winter (thresholds too loose).
+
+### Calendar PM vs. Condition-Based: The Comparison
+
+| Dimension | Calendar-Based PM | Condition-Based Maintenance |
+|-----------|-------------------|---------------------------|
+| **Trigger** | Fixed schedule (every 90 days) | Actual asset condition |
+| **Data required** | None (time-based) | Continuous sensor data |
+| **Maintenance performed** | Whether needed or not | Only when condition warrants |
+| **Failure prevention** | Moderate (misses between PMs) | High (continuous monitoring) |
+| **Over-maintenance risk** | High (performing PMs on healthy assets) | Low (driven by actual condition) |
+| **Parts procurement** | Stock for scheduled PMs | Procure based on predicted need |
+| **Labor scheduling** | Predictable calendar | Planned with lead time from alerts |
+| **Cost efficiency** | Moderate | High (25-40% reduction typical) |
+| **Implementation complexity** | Low | Moderate to high |
+| **Applicable asset types** | All assets | Critical assets with measurable degradation patterns |
+| **Integration requirement** | Maximo Manage only | MAS Monitor + Manage + sensors + network |
+
+> **The practical reality:** Condition-based maintenance does not replace calendar PM for every asset. It targets your most critical, most expensive-to-fail assets. A $200 sump pump might stay on a calendar PM. A $50,000 centrifugal pump with a $15,000 failure cost justifies the sensor investment in the first incident it prevents.
+
+---
+
+## Edge Computing: Processing at the Boundary
+
+Not every sensor reading needs to travel to the cloud. Edge computing processes data at or near the source, sending only what matters to MAS Monitor. This is essential for three reasons.
+
+### Why Edge Matters
+
+**Bandwidth.** A facility with 500 sensors generating readings every 5 seconds produces 4.3 million messages per day. Transmitting every raw reading to a cloud-based Monitor instance is expensive and often impractical, especially for facilities with limited network connectivity (remote wellheads, offshore platforms, rural water systems).
+
+**Latency.** Some conditions require immediate response. If a motor current spikes to 200% of rated, you cannot wait for a round trip to the cloud. The edge device must detect and act locally (shut down the motor) within milliseconds, while simultaneously reporting to Monitor for logging and analysis.
+
+**Cost.** Cloud IoT platforms charge per message or per GB ingested. At 4.3 million messages per day, the ingestion costs alone can exceed the value of the monitoring. Edge processing reduces cloud traffic by 80-95% through filtering, aggregation, and intelligent forwarding.
+
+### Edge Gateway Architecture
+
+```
+                     EDGE COMPUTING ARCHITECTURE
+
+  FIELD LEVEL                 EDGE LEVEL              CLOUD LEVEL
+  +----------+               +------------------+    +-----------+
+  | Sensor 1 |--Modbus------>|                  |    |           |
+  | Sensor 2 |--Modbus------>|  Edge Gateway    |    |   MAS     |
+  | Sensor 3 |--4-20mA----->|                  |    |  Monitor  |
+  | Sensor 4 |--OPC-UA----->|  +------------+  |    |           |
+  | Sensor 5 |--MQTT------->|  | Protocol   |  |    | Ingests:  |
+  +----------+               |  | Translation|  |    | - 5-min   |
+                              |  +-----+------+  |    |   averages|
+  +----------+               |        |          |    | - Alerts  |
+  | PLC      |--Modbus------>|  +-----v------+  |    | - Change  |
+  | Systems  |               |  | Local       |  |    |   events  |
+  +----------+               |  | Analytics  |  |    |           |
+                              |  | - Threshold|  |    +-----------+
+                              |  | - Rate of  |  |         ^
+                              |  |   change   |  |         |
+                              |  | - Filtering|  |-MQTT----+
+                              |  +-----+------+  |  (Filtered)
+                              |        |          |
+                              |  +-----v------+  |
+                              |  | Local Store |  |
+                              |  | (SQLite/    |  |
+                              |  |  InfluxDB)  |  |
+                              |  | Store and   |  |
+                              |  | forward     |  |
+                              |  +-------------+  |
+                              +------------------+
+```
+
+### Data Filtering and Aggregation at the Edge
+
+The edge gateway applies three levels of filtering:
+
+**Dead-band filtering.** Only publish when the value changes by more than a defined threshold. If the temperature is steady at 72.5 degrees Celsius, there is no value in sending 17,280 identical readings per day. Publish only when the temperature changes by more than 0.5 degrees.
+
+```python
+# Edge dead-band filter
+class DeadBandFilter:
+    def __init__(self, threshold):
+        self.threshold = threshold
+        self.last_published = {}
+
+    def should_publish(self, metric_name, current_value):
+        last = self.last_published.get(metric_name)
+        if last is None:
+            self.last_published[metric_name] = current_value
+            return True
+        if abs(current_value - last) >= self.threshold:
+            self.last_published[metric_name] = current_value
+            return True
+        return False
+
+# Only publish temperature when it changes by 0.5C or more
+temp_filter = DeadBandFilter(threshold=0.5)
+if temp_filter.should_publish("temperature_c", reading):
+    client.publish(topic, payload)
+```
+
+**Time-based aggregation.** Collect readings every 5 seconds locally, but publish 5-minute averages to Monitor. This reduces cloud traffic by a factor of 60 while preserving trend information.
+
+**Exception-based reporting.** Always publish immediately when a reading exceeds a threshold, regardless of dead-band or aggregation rules. Critical events skip the filter.
+
+### Store-and-Forward for Intermittent Connectivity
+
+Remote assets often have unreliable network connections. The edge gateway stores readings in a local database (SQLite, InfluxDB, or even a simple file) when the connection to Monitor is down, then forwards the backlog when connectivity is restored:
+
+```python
+# Edge store-and-forward pattern
+import sqlite3
+import json
+from datetime import datetime, timezone
+
+class StoreAndForward:
+    def __init__(self, db_path="/var/edge/sensor_buffer.db"):
+        self.conn = sqlite3.connect(db_path)
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS sensor_buffer (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                topic TEXT,
+                payload TEXT,
+                timestamp TEXT,
+                forwarded INTEGER DEFAULT 0
+            )
+        """)
+
+    def store(self, topic, payload):
+        """Buffer a message locally."""
+        self.conn.execute(
+            "INSERT INTO sensor_buffer (topic, payload, timestamp) "
+            "VALUES (?, ?, ?)",
+            (topic, payload, datetime.now(timezone.utc).isoformat())
+        )
+        self.conn.commit()
+
+    def forward_pending(self, mqtt_client, batch_size=100):
+        """Forward buffered messages when connectivity is restored."""
+        cursor = self.conn.execute(
+            "SELECT id, topic, payload FROM sensor_buffer "
+            "WHERE forwarded = 0 ORDER BY id LIMIT ?",
+            (batch_size,)
+        )
+        rows = cursor.fetchall()
+        forwarded_ids = []
+
+        for row_id, topic, payload in rows:
+            result = mqtt_client.publish(topic, payload, qos=1)
+            if result.rc == 0:
+                forwarded_ids.append(row_id)
+
+        if forwarded_ids:
+            placeholders = ",".join("?" * len(forwarded_ids))
+            self.conn.execute(
+                f"UPDATE sensor_buffer SET forwarded = 1 "
+                f"WHERE id IN ({placeholders})",
+                forwarded_ids
+            )
+            self.conn.commit()
+
+        return len(forwarded_ids)
+
+    def purge_forwarded(self, days_old=7):
+        """Clean up successfully forwarded messages."""
+        self.conn.execute(
+            "DELETE FROM sensor_buffer WHERE forwarded = 1 "
+            "AND timestamp < datetime('now', ?)",
+            (f"-{days_old} days",)
+        )
+        self.conn.commit()
+```
+
+### IBM Edge Application Manager
+
+For enterprise-scale edge deployments, IBM Edge Application Manager (IEAM) provides centralized management of edge devices and workloads:
+
+- **Workload deployment** -- Push analytics functions, protocol translators, and filtering logic to edge gateways from a central console
+- **Policy-based management** -- Define policies like "all pump gateways run the vibration analytics workload" and IEAM ensures compliance
+- **Rolling updates** -- Update edge software across hundreds of gateways without visiting each site
+- **Monitoring** -- Track edge device health, connectivity, and data forwarding status from the MAS admin console
+
+IEAM is not required for edge integration -- you can manage edge gateways manually with SSH and scripts. But at scale (50+ gateways), centralized management becomes essential for operational reliability.
+
+---
+
+## Real-World Use Cases
+
+Theory is important. But you came here for practical application. Here are three real-world IoT integration patterns we have seen deliver measurable results.
+
+### Use Case 1: Water/Wastewater -- Pump and Motor Monitoring
+
+**Industry context:** A regional water authority operates 14 treatment plants and 87 lift stations. The fleet includes 340 pumps, 280 of which are classified as critical (failure causes service disruption within 4-8 hours).
+
+**Sensors deployed:**
+- Vibration (accelerometer on bearing housing) -- 5-second interval
+- Temperature (RTD on motor casing) -- 30-second interval
+- Flow rate (magnetic flow meter on discharge) -- 10-second interval
+- Motor current (CT on power feed) -- 10-second interval
+- Wet well level (ultrasonic level sensor) -- 30-second interval
+
+**Analytics configured:**
+- VibrationTrendAlert (bearing wear detection)
+- CavitationDetector (multi-variable cavitation pattern)
+- AlertHighValue on temperature (&gt; 85 degrees Celsius)
+- AlertLowValue on flow rate (&lt; 50% of rated flow)
+- Motor current vs. flow correlation (detects impeller wear)
+
+**Monitor-to-Manage integration:**
+- Severity-1 alerts: auto-create priority-1 work order, page on-call technician
+- Severity-2 alerts: auto-create priority-2 work order, assign to next maintenance window
+- Severity-3 alerts: log in Monitor dashboard, include in weekly maintenance review
+
+**Business outcome (12 months):**
+- Unplanned pump failures reduced by 73% (from 44 to 12 per year)
+- Emergency overtime reduced by 61%
+- Expedited parts shipping costs reduced by 82%
+- Total maintenance cost reduction: 31% ($1.2M annual savings)
+- Regulatory compliance incidents (missed treatment targets due to pump failure): zero
+
+### Use Case 2: Manufacturing -- CNC Machine Health
+
+**Industry context:** An aerospace components manufacturer operates 48 CNC machining centers across two facilities. Each machine produces high-precision parts with tolerances measured in microns. A machine failure during a machining cycle can scrap a part worth $15,000-$80,000.
+
+**Sensors deployed:**
+- Spindle vibration (triaxial accelerometer) -- 1-second interval during cutting
+- Spindle temperature (thermocouple) -- 5-second interval
+- Coolant flow rate and temperature -- 10-second interval
+- Servo motor current (X, Y, Z axes) -- 5-second interval
+- Tool breakage detection (acoustic emission sensor) -- continuous streaming
+
+**Analytics configured:**
+- Spindle bearing health index (composite of vibration, temperature, current)
+- Tool wear estimation (correlation of cutting forces with tool age)
+- Thermal drift compensation (predict dimensional error from temperature gradients)
+- Coolant system degradation (flow rate trend analysis)
+
+**Monitor-to-Manage integration:**
+- Spindle health index &lt; 70%: auto-schedule spindle service in next planned downtime window
+- Tool wear &gt; 80% of estimated life: alert operator to change tool at next part boundary
+- Coolant flow degradation: auto-create PM for coolant system filter and pump inspection
+
+**Business outcome (12 months):**
+- Unplanned machine downtime reduced by 58%
+- Scrap rate from machine-related defects reduced by 42%
+- Spindle bearing catastrophic failures: zero (previously 3-4 per year at $25,000 each)
+- Overall Equipment Effectiveness (OEE) improved from 72% to 84%
+
+### Use Case 3: Facilities -- HVAC System Optimization
+
+**Industry context:** A commercial real estate portfolio of 12 office buildings (total 2.4 million square feet). HVAC represents 45% of energy costs. Tenant comfort complaints drive lease renewal decisions.
+
+**Sensors deployed:**
+- Zone temperature and humidity (every floor zone) -- 60-second interval
+- Air handler unit vibration and current -- 30-second interval
+- Chiller approach temperature and refrigerant pressure -- 30-second interval
+- VAV box position and airflow -- 60-second interval
+- Outdoor air temperature and humidity (weather station) -- 300-second interval
+
+**Analytics configured:**
+- Chiller efficiency degradation (COP calculation vs. baseline)
+- AHU belt wear detection (vibration signature analysis)
+- Zone temperature prediction (forecast comfort issues before tenants complain)
+- Seasonal baseline adjustment (different thresholds for heating vs. cooling season)
+- Simultaneous heating and cooling detection (energy waste)
+
+**Monitor-to-Manage integration:**
+- Chiller efficiency below 80% of design COP: auto-create maintenance work order
+- AHU belt wear alert: schedule belt replacement in next maintenance window
+- Zone temperature deviation &gt; 2 degrees Celsius from setpoint for &gt; 30 minutes: alert building engineer
+- Simultaneous heating/cooling detected: alert controls team (operational issue, not maintenance)
+
+**Business outcome (12 months):**
+- Energy costs reduced by 18% ($430K annual savings across portfolio)
+- Tenant comfort complaints reduced by 64%
+- HVAC-related emergency calls reduced by 55%
+- Preventive maintenance labor optimized: 22% fewer PM work orders with better asset outcomes
+
+---
+
+## Scaling IoT Integration: Thousands of Devices
+
+A pilot with 10 sensors on 2 pumps is straightforward. Scaling to 5,000 sensors across 200 facilities introduces challenges that require deliberate architectural decisions.
+
+### Topic Partitioning Strategies
+
+When you have thousands of devices publishing to the same MQTT broker, topic design matters for performance and manageability:
+
+```
+# Strategy 1: Partition by facility
+iot-2/facility/PLANT-A/type/pump/id/PUMP-001/evt/metrics/fmt/json
+iot-2/facility/PLANT-B/type/pump/id/PUMP-042/evt/metrics/fmt/json
+
+# Strategy 2: Partition by criticality tier
+iot-2/tier/critical/type/pump/id/PUMP-001/evt/metrics/fmt/json
+iot-2/tier/standard/type/valve/id/VLV-088/evt/metrics/fmt/json
+
+# Strategy 3: Partition by data frequency
+iot-2/freq/high/type/pump/id/PUMP-001/evt/vibration/fmt/json    (5 sec)
+iot-2/freq/medium/type/pump/id/PUMP-001/evt/temperature/fmt/json (30 sec)
+iot-2/freq/low/type/pump/id/PUMP-001/evt/inspection/fmt/json     (daily)
+```
+
+Partitioning by criticality or frequency allows you to apply different processing pipelines, retention policies, and resource allocation to different tiers. Critical assets get the full analytics pipeline. Standard assets get basic threshold monitoring.
+
+### Data Retention Policies
+
+Not all data needs to live forever. Define a tiered retention policy:
+
+| Data Tier | Retention | Storage | Access Pattern | Example |
+|-----------|-----------|---------|---------------|---------|
+| **Hot** | 7 days | In-memory / SSD | Real-time analytics, dashboards | Last week of 5-second readings |
+| **Warm** | 90 days | Standard database | Trend analysis, report generation | Last quarter of 5-minute aggregates |
+| **Cold** | 3 years | Object storage (COS) | Historical analysis, audit, ML training | Multi-year daily summaries |
+| **Archive** | 7+ years | Tape / deep archive | Regulatory compliance | Compressed annual summaries |
+
+The key principle: **aggregate as you age.** Five-second readings aggregate to 5-minute averages after 7 days. Five-minute averages aggregate to hourly averages after 90 days. Hourly averages aggregate to daily summaries after 3 years. You preserve the trends while dramatically reducing storage costs.
+
+### Performance Optimization
+
+At scale, these optimizations make the difference between a system that runs smoothly and one that buckles under load:
+
+**Batch ingestion.** Instead of publishing individual readings, batch multiple readings into a single MQTT message:
+
+```json
+{
+  "deviceId": "PUMP-001",
+  "batch": [
+    {"timestamp": "2026-02-06T10:30:00Z", "vibration_mm_s": 4.2, "temperature_c": 72.5},
+    {"timestamp": "2026-02-06T10:30:05Z", "vibration_mm_s": 4.3, "temperature_c": 72.5},
+    {"timestamp": "2026-02-06T10:30:10Z", "vibration_mm_s": 4.1, "temperature_c": 72.6},
+    {"timestamp": "2026-02-06T10:30:15Z", "vibration_mm_s": 4.4, "temperature_c": 72.5},
+    {"timestamp": "2026-02-06T10:30:20Z", "vibration_mm_s": 4.2, "temperature_c": 72.5},
+    {"timestamp": "2026-02-06T10:30:25Z", "vibration_mm_s": 4.5, "temperature_c": 72.6}
+  ]
+}
+```
+
+Six readings in one message instead of six messages. At 5,000 devices, this reduces the broker message rate by 80-85%.
+
+**Analytics function grain optimization.** Not every function needs to run on every reading. A 24-hour rolling average can recalculate every 15 minutes, not every 5 seconds. Match the analytics grain to the information value:
+
+| Analytics Function | Appropriate Grain | Reasoning |
+|-------------------|-------------------|-----------|
+| Threshold alerts | Per reading (real-time) | Safety-critical, must respond immediately |
+| Moving averages | 5-15 minutes | Trend smoothing does not need per-second resolution |
+| Anomaly detection | 15-60 minutes | ML models evaluate patterns, not individual points |
+| Degradation curves | 1-4 hours | Long-term trends evolve slowly |
+| Seasonal baselines | Daily | Seasons do not change minute to minute |
+
+**Horizontal scaling.** Monitor runs on Kubernetes. When ingestion load exceeds capacity, scale the ingestion pods horizontally. When analytics processing is the bottleneck, scale the analytics pods. Kubernetes auto-scaling handles this based on CPU and memory thresholds.
+
+---
+
+## Key Takeaways
+
+1. **MAS Monitor brings IoT capabilities that were impossible in legacy Maximo 7.x.** MIF was designed for transactional integration -- hundreds of messages per day. IoT demands millions of data points per day per facility. Monitor is a purpose-built platform for this entirely different integration challenge.
+
+2. **MQTT is the primary protocol for high-frequency sensor data.** Its lightweight publish-subscribe model, persistent connections, QoS levels, and tolerance for unreliable networks make it the right choice for industrial IoT. Learn MQTT. It is the language of this domain.
+
+3. **The Monitor-to-Manage pipeline enables true condition-based maintenance.** Sense, detect, alert, act. The sensor reading that detects a bearing degradation trend becomes a planned work order in Manage -- automatically, with full context, with parts pre-identified. This is the highest-value integration in the MAS ecosystem.
+
+4. **IoT integration requires thinking in data streams, not transactions.** This is a fundamental paradigm shift for Maximo developers. You are not moving records between systems. You are processing continuous data flows, applying analytics functions, and extracting actionable signals from noise. The skills and architectural patterns are different.
+
+5. **Edge computing is not optional at scale.** Processing data at the boundary -- filtering, aggregating, buffering -- is essential for bandwidth, latency, and cost reasons. Design your IoT architecture with edge in mind from the start, not as an afterthought.
+
+6. **Start with your most critical, most expensive-to-fail assets.** Condition-based maintenance does not need to cover every asset in your fleet on day one. The pump that costs $18,500 when it fails unexpectedly is where you start. The ROI justifies the sensor investment within the first prevented incident.
+
+7. **Custom analytics functions operationalize domain expertise.** The maintenance engineer who understands pump cavitation, bearing wear signatures, or compressor surge can encode that knowledge as a Python function that runs continuously across the entire fleet. This is organizational knowledge at scale.
+
+8. **The integration landscape is broader than Monitor alone.** Monitor connects to Health (asset condition scores), Predict (remaining useful life models), and Manage (work orders and maintenance execution). The full value of IoT integration comes from the connected suite, not any single application.
+
+---
+
+## References
+
+- [IBM Maximo Monitor Documentation](https://www.ibm.com/docs/en/masv-and-l/maximo-monitor/cd)
+- [IBM IoT Platform MQTT Documentation](https://www.ibm.com/docs/en/watsonx/watsonxdata/latest?topic=mqtt)
+- [MQTT Protocol Specification (OASIS)](https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.0.html)
+- [Eclipse Paho MQTT Python Client](https://eclipse.dev/paho/files/paho.mqtt.python/html/)
+- [IBM Edge Application Manager](https://www.ibm.com/docs/en/ieam)
+- [ISO 10816 - Mechanical Vibration Evaluation](https://www.iso.org/standard/72408.html)
+- [AWS IoT Core Documentation](https://docs.aws.amazon.com/iot/latest/developerguide/)
+- [Azure IoT Hub Documentation](https://learn.microsoft.com/en-us/azure/iot-hub/)
+- [Apache Kafka for IoT Data Pipelines](https://kafka.apache.org/documentation/)
+- [Condition-Based Maintenance Best Practices (SMRP)](https://smrp.org/)
+
+---
+
+**Series Navigation:**
+
+**Previous:** [Part 6 -- ERP Integration Modernization: SAP, Oracle, and the New Playbook](/blog/mas-erp-integration-modernization)
+
+**Next:** [Part 8 -- Integration Security, Governance, and the Future](/blog/mas-integration-security-governance)
+
+[View the full MAS INTEGRATION series index](/blog/mas-integration-series-index)
+
+---
+
+*Part 7 of the "MAS INTEGRATION" series | Published by TheMaximoGuys*
+
+*IoT integration is the frontier where the physical and digital worlds converge inside MAS. You have seen how Monitor ingests sensor data, how analytics functions transform readings into insights, and how the Monitor-to-Manage pipeline turns insights into maintenance action. In Part 8, we close the series with the governance, security, and future direction of integration in MAS -- because connecting everything to everything introduces risks that must be managed as deliberately as the integrations themselves.*

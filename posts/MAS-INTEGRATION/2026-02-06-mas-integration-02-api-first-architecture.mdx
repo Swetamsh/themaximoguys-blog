@@ -1,0 +1,955 @@
+---
+title: "MAS Integration Architecture: The API-First Revolution"
+description: "How MAS transforms Maximo integration from MIF-centric XML processing to an API-first architecture built on REST, OSLC, and cloud-native microservices. The architectural foundation for every modern Maximo integration."
+date: "2026-02-06"
+slug: "mas-api-first-architecture"
+tags: ["Maximo", "MAS Integration", "REST API", "OSLC", "API-First", "Cloud-Native", "Microservices"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-integration-part-2.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+faqs:
+  - question: "What is the difference between OSLC API and NextGen REST API in MAS?"
+    answer: "The OSLC API follows the Open Services for Lifecycle Collaboration standard and has been available since Maximo 7.6. The NextGen REST API is a newer, more intuitive REST interface introduced with MAS that provides cleaner URL patterns, better query support, and improved performance. Both coexist in MAS."
+  - question: "Can I use both MIF and REST APIs simultaneously?"
+    answer: "Yes. MAS supports both MIF and REST APIs running concurrently. This allows organizations to maintain existing MIF integrations while building new ones with REST APIs, enabling a gradual migration strategy."
+  - question: "Is GraphQL supported in MAS?"
+    answer: "MAS does not natively support GraphQL as of the current release. However, you can place a GraphQL gateway in front of the MAS REST APIs if your organization requires GraphQL. The REST APIs provide flexible query capabilities including field selection, filtering, and pagination that address many of the same needs."
+keyTakeaways:
+  - "MAS shifts from MIF-centric integration to API-first architecture where REST APIs are the primary integration mechanism"
+  - "The OSLC API and NextGen REST API coexist in MAS, each serving different use cases"
+  - "API-first architecture enables self-service integration — developers can discover and use APIs without middleware expertise"
+  - "MAS microservices architecture means each application (Manage, Monitor, Health) has its own API surface"
+  - "The transformation is not just technical — it changes how integration teams are organized and how projects are delivered"
+series:
+  name: "MAS INTEGRATION"
+  part: 2
+  total: 8
+---
+
+# MAS Integration Architecture: The API-First Revolution
+
+**Series:** MAS INTEGRATION -- Mastering Modern Maximo Integration | **Part 2 of 8**
+
+**Read Time:** 20-25 minutes
+
+---
+
+> **Who this is for:** Integration architects, middleware engineers, and developers who need to understand how MAS fundamentally changes the way Maximo connects to everything else. Whether you are planning a migration or starting fresh on MAS, this is the architectural foundation for every integration you will build.
+
+> **The shift in one sentence:** MAS replaces the MIF-centric, XML-driven, middleware-expert-required integration model with an API-first architecture where any developer can discover, authenticate, and call Maximo services in minutes.
+
+---
+
+## The Two-Week Integration vs. The 30-Minute Integration
+
+Picture this scenario. You have been asked to build a simple integration: an external system needs to query Maximo for work orders in "Waiting for Approval" status and display them in a dashboard.
+
+### The Legacy Approach: Two Weeks
+
+In Maximo 7.6, here is what that "simple" request actually involved:
+
+**Week 1:**
+1. Submit a request to the Maximo admin to create or modify an Object Structure for work orders
+2. Wait for the admin to configure the Object Structure in the Integration Framework application
+3. Define an Enterprise Service with the appropriate operation (Query)
+4. Configure an External System record with endpoint details
+5. Set up a Publish Channel if bidirectional communication is needed
+6. Configure processing rules for data filtering and transformation
+7. Define the HTTP endpoint or JMS queue for message delivery
+
+**Week 2:**
+8. Build and deploy the EAR file with any custom Java classes
+9. Test the integration in the development environment
+10. Debug XML namespace issues in the SOAP response
+11. Troubleshoot character encoding problems in the XML payload
+12. Work with the middleware team to configure the ESB routing
+13. Coordinate with the network team to open firewall ports
+14. Document the integration for operations
+
+Two weeks. Multiple teams. At least four people involved. For a query.
+
+### The MAS Approach: 30 Minutes
+
+In MAS, that same developer opens a terminal and types:
+
+```bash
+# Query work orders in WAPPR status — that's it
+curl -X GET "https://mas-host/maximo/oslc/os/mxwo?oslc.where=status=%22WAPPR%22&oslc.select=wonum,description,status,statusdate,reportedby&oslc.pageSize=50" \
+  -H "apikey: l4k8j2m9n1p5q7r3s6t0u8v2w4x" \
+  -H "Accept: application/json"
+```
+
+Response in JSON, paginated, filtered to exactly the fields needed. No Object Structure configuration. No Enterprise Service setup. No EAR deployment. No middleware team.
+
+Thirty minutes from request to working integration, including time to read the API documentation.
+
+> **This is not an exaggeration.** We have timed this transition with real teams. The productivity difference between MIF-configured integrations and REST API integrations is measured in orders of magnitude, not percentages.
+
+The question is not whether this is better. The question is: what architectural changes make this possible, and how do you take full advantage of them?
+
+---
+
+## The API-First Philosophy
+
+Before we dive into endpoints and authentication methods, let's establish what "API-first" actually means. It is not just "we have APIs now." API-first is an architectural philosophy that changes how you think about integration at a fundamental level.
+
+### APIs as Products, Not Afterthoughts
+
+In the legacy world, MIF was the integration mechanism, and it was designed primarily for IBM's own use cases -- connecting Maximo to other IBM products, handling bulk data loads, and supporting enterprise service bus patterns. External developers were an afterthought.
+
+In an API-first architecture, APIs are treated as products:
+
+- **They have consumers** -- other teams, partners, third-party applications
+- **They have documentation** -- self-describing, with examples and schemas
+- **They have versioning** -- so consumers can rely on stability
+- **They have SLAs** -- response time guarantees, availability targets
+- **They have lifecycle management** -- deprecation notices, migration guides
+
+This is a fundamental shift in mindset. You are not configuring a framework anymore. You are consuming a product.
+
+### Self-Service Discovery
+
+In the MIF world, discovering what integrations were possible required:
+- Access to the Maximo admin console
+- Knowledge of Object Structures and their contents
+- Understanding of which Enterprise Services existed
+- Documentation maintained (or more often, not maintained) by the integration team
+
+In MAS, API discovery is self-service:
+
+```bash
+# Discover all available Object Structures (API endpoints)
+curl -X GET "https://mas-host/maximo/oslc/os" \
+  -H "apikey: YOUR_API_KEY" \
+  -H "Accept: application/json"
+```
+
+That single call returns every available resource set -- work orders, assets, locations, purchase orders, service requests, and hundreds more. Each resource set tells you its URL, supported operations, and queryable fields.
+
+No admin access required. No documentation hunting. No waiting for someone to tell you what's available.
+
+### Documentation-Driven Development
+
+MAS exposes OpenAPI (Swagger) documentation for its REST APIs. This means:
+
+- **Interactive exploration** -- developers can try API calls directly in the browser
+- **Code generation** -- client libraries can be auto-generated for any language
+- **Contract testing** -- API contracts are machine-readable and testable
+- **Onboarding acceleration** -- new team members can explore the API surface independently
+
+```
+# Access the OpenAPI specification
+https://mas-host/maximo/api/docs
+```
+
+Compare this to the legacy experience of reading IBM's InfoCenter documentation, which described MIF concepts but rarely showed you the actual data structures or gave you runnable examples.
+
+---
+
+## MAS Integration Architecture Overview
+
+Let's look at the big picture. Here is how integration traffic flows through MAS:
+
+```
++------------------------------------------------------------------+
+|                    EXTERNAL SYSTEMS                               |
+|  [ ERP ]  [ GIS ]  [ SCADA ]  [ Mobile ]  [ BI ]  [ Custom ]    |
++----+----------+--------+----------+--------+----------+----------+
+     |          |        |          |        |          |
+     v          v        v          v        v          v
++------------------------------------------------------------------+
+|                 INGRESS / API GATEWAY                             |
+|  Route-based load balancing | TLS termination | Rate limiting    |
++------------------------------------------------------------------+
+     |                                              |
+     v                                              v
++-----------------------------+   +-----------------------------+
+|     SYNCHRONOUS APIs        |   |    ASYNCHRONOUS EVENTS      |
+|                             |   |                             |
+|  OSLC REST API              |   |  Kafka Event Bus            |
+|  /maximo/oslc/os/{resource} |   |  Topics per domain          |
+|                             |   |                             |
+|  NextGen REST API           |   |  Webhooks                   |
+|  /maximo/api/os/{resource}  |   |  Outbound notifications     |
+|                             |   |                             |
++-----------------------------+   +-----------------------------+
+     |                                              |
+     v                                              v
++------------------------------------------------------------------+
+|                    MAS APPLICATION SERVICES                       |
+|                                                                  |
+|  +----------+  +---------+  +--------+  +---------+             |
+|  | Manage   |  | Monitor |  | Health |  | Predict |             |
+|  | (Core    |  | (IoT    |  | (Asset |  | (ML     |             |
+|  |  EAM)    |  |  Data)  |  |  Cond.)|  |  Models)|             |
+|  +----------+  +---------+  +--------+  +---------+             |
+|       |              |           |            |                   |
+|       +--------------+-----------+------------+                  |
+|                      |                                           |
+|              Inter-service communication                         |
+|              (Kafka / Internal APIs)                             |
++------------------------------------------------------------------+
+     |
+     v
++------------------------------------------------------------------+
+|                    DATA LAYER                                     |
+|  [ Database ]  [ Object Storage ]  [ ML Model Store ]           |
++------------------------------------------------------------------+
+```
+
+### Key Architectural Principles
+
+**1. Single Entry Point**
+
+All external traffic enters through the OpenShift ingress controller, which provides TLS termination, route-based load balancing, and rate limiting. There is no direct access to individual services -- everything goes through the front door.
+
+**2. Dual Communication Model**
+
+MAS supports both synchronous (REST API request/response) and asynchronous (Kafka event streaming) communication. You choose the model that fits your use case:
+
+- **Synchronous** -- when you need an immediate response (query work orders, create a PO)
+- **Asynchronous** -- when you need to react to changes (work order completed, asset status changed)
+
+**3. Service Independence**
+
+Each MAS application (Manage, Monitor, Health, Predict) has its own API surface and its own scaling profile. Monitor can scale independently of Manage. Health can be updated without touching Predict. This is a direct consequence of the microservices architecture.
+
+**4. API Gateway Layer**
+
+The ingress layer acts as an API gateway, providing:
+
+- Authentication enforcement
+- Rate limiting and throttling
+- Request routing to the appropriate service
+- TLS encryption for all traffic
+- Access logging for audit trails
+
+---
+
+## OSLC API Deep Dive
+
+The OSLC (Open Services for Lifecycle Collaboration) API has been available since Maximo 7.6, but in MAS it becomes a first-class citizen rather than a secondary interface to MIF.
+
+### Understanding OSLC Resources
+
+OSLC organizes Maximo data into two concepts:
+
+- **Resource Sets** -- collections of resources (like a database table). Example: all work orders
+- **Member Resources** -- individual resources within a set (like a database row). Example: work order WO-1001
+
+### URL Structure
+
+```
+Base URL:  https://mas-host/maximo/oslc/os/{objectstructure}
+
+Examples:
+  /maximo/oslc/os/mxwo          -- Work Orders (MXWO object structure)
+  /maximo/oslc/os/mxasset       -- Assets (MXASSET object structure)
+  /maximo/oslc/os/mxsr          -- Service Requests
+  /maximo/oslc/os/mxpo          -- Purchase Orders
+  /maximo/oslc/os/mxinventory   -- Inventory
+  /maximo/oslc/os/mxperson      -- Person records
+```
+
+The `{objectstructure}` maps directly to the Object Structures you already know from MIF. The difference is that you no longer need to configure an Enterprise Service, External System, and endpoint to use them. They are available immediately via HTTP.
+
+### Query Capabilities
+
+OSLC provides a rich query language through URL parameters:
+
+**`oslc.where` -- Filtering**
+
+```bash
+# Work orders in WAPPR status
+oslc.where=status="WAPPR"
+
+# Work orders with priority less than 3
+oslc.where=wopriority<3
+
+# Work orders at a specific site, created after a date
+oslc.where=siteid="BEDFORD" and reportdate>"2026-01-01T00:00:00-05:00"
+
+# Work orders with status in a list
+oslc.where=status in ["WAPPR","APPR","INPRG"]
+
+# Combined conditions
+oslc.where=status="WAPPR" and wopriority<3 and worktype="CM"
+```
+
+**`oslc.select` -- Field Selection**
+
+```bash
+# Return only specific fields (reduces payload size significantly)
+oslc.select=wonum,description,status,statusdate,reportedby
+
+# Include related resources (child objects)
+oslc.select=wonum,description,status,asset{assetnum,description},location{location,description}
+```
+
+**`oslc.pageSize` and `oslc.pageno` -- Pagination**
+
+```bash
+# Return 50 records per page
+oslc.pageSize=50
+
+# Get the third page
+oslc.pageno=3
+```
+
+**`oslc.orderBy` -- Sorting**
+
+```bash
+# Sort by priority ascending, then by status date descending
+oslc.orderBy=+wopriority,-statusdate
+```
+
+### Complete OSLC API Examples
+
+**Query work orders with filtering, field selection, and pagination:**
+
+```bash
+# Query work orders using OSLC API
+curl -X GET "https://mas-host/maximo/oslc/os/mxwo?oslc.where=status=%22WAPPR%22&oslc.select=wonum,description,status&oslc.pageSize=50" \
+  -H "apikey: YOUR_API_KEY" \
+  -H "Accept: application/json"
+```
+
+**Response:**
+
+```json
+{
+  "member": [
+    {
+      "wonum": "WO-1001",
+      "description": "Replace bearing on Pump P-101",
+      "status": "WAPPR",
+      "href": "https://mas-host/maximo/oslc/os/mxwo/_V08tMTAwMQ--"
+    },
+    {
+      "wonum": "WO-1002",
+      "description": "Inspect cooling tower fan assembly",
+      "status": "WAPPR",
+      "href": "https://mas-host/maximo/oslc/os/mxwo/_V08tMTAwMg--"
+    }
+  ],
+  "responseInfo": {
+    "totalCount": 147,
+    "pagenum": 1,
+    "href": "https://mas-host/maximo/oslc/os/mxwo?oslc.where=status=%22WAPPR%22&oslc.pageSize=50"
+  }
+}
+```
+
+**Create a new work order:**
+
+```bash
+curl -X POST "https://mas-host/maximo/oslc/os/mxwo" \
+  -H "apikey: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "x-method-override: PATCH" \
+  -H "patchtype: MERGE" \
+  -d '{
+    "description": "Emergency repair on Compressor C-205",
+    "siteid": "BEDFORD",
+    "worktype": "EM",
+    "wopriority": 1,
+    "assetnum": "C-205",
+    "reportedby": "WILSON"
+  }'
+```
+
+**Update an existing work order:**
+
+```bash
+curl -X POST "https://mas-host/maximo/oslc/os/mxwo/_V08tMTAwMQ--" \
+  -H "apikey: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "x-method-override: PATCH" \
+  -H "patchtype: MERGE" \
+  -d '{
+    "description": "Emergency repair on Compressor C-205 - UPDATED",
+    "wopriority": 2
+  }'
+```
+
+**Query with related resources (work order with asset and location details):**
+
+```bash
+curl -X GET "https://mas-host/maximo/oslc/os/mxwo?oslc.where=wonum=%22WO-1001%22&oslc.select=wonum,description,status,asset{assetnum,description,serialnum},location{location,description}" \
+  -H "apikey: YOUR_API_KEY" \
+  -H "Accept: application/json"
+```
+
+### OSLC Limitations to Be Aware Of
+
+While OSLC is powerful, it has some rough edges:
+
+- **URL encoding** -- query parameters must be properly URL-encoded, which makes complex queries difficult to read
+- **The `x-method-override` pattern** -- updates require a POST with an override header rather than a native PATCH or PUT, which is non-standard REST
+- **Verbose response structure** -- OSLC responses include metadata fields that add payload size
+- **Limited bulk operations** -- creating or updating multiple records requires individual API calls in the OSLC pattern
+- **Error messages** -- error responses can be cryptic, especially for authentication and authorization failures
+
+These limitations are exactly why IBM introduced the NextGen REST API.
+
+---
+
+## NextGen REST API
+
+The NextGen REST API is a newer, cleaner REST interface that addresses many of the OSLC API's usability issues. It coexists with OSLC in MAS -- you can use either or both.
+
+### URL Structure
+
+```
+Base URL:  https://mas-host/maximo/api/os/{objectstructure}
+
+Examples:
+  /maximo/api/os/mxwo          -- Work Orders
+  /maximo/api/os/mxasset       -- Assets
+  /maximo/api/os/mxsr          -- Service Requests
+  /maximo/api/os/mxpo          -- Purchase Orders
+```
+
+Notice the path difference: `/maximo/api/os/` instead of `/maximo/oslc/os/`. Same object structures, cleaner interface.
+
+### Improved Query Syntax
+
+The NextGen API uses a more intuitive query syntax:
+
+```bash
+# NextGen query -- cleaner parameter names
+curl -X GET "https://mas-host/maximo/api/os/mxwo?_queryFilter=status=%22WAPPR%22&_fields=wonum,description,status&_limit=50&_offset=0" \
+  -H "apikey: YOUR_API_KEY" \
+  -H "Accept: application/json"
+```
+
+### Native HTTP Methods
+
+Unlike OSLC's `x-method-override` workaround, the NextGen API supports native HTTP methods:
+
+```bash
+# Create (POST)
+curl -X POST "https://mas-host/maximo/api/os/mxwo" \
+  -H "apikey: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"description": "New work order", "siteid": "BEDFORD"}'
+
+# Update (PATCH) -- native PATCH, no override headers needed
+curl -X PATCH "https://mas-host/maximo/api/os/mxwo/WO-1001" \
+  -H "apikey: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"wopriority": 1}'
+
+# Delete (DELETE)
+curl -X DELETE "https://mas-host/maximo/api/os/mxwo/WO-1001" \
+  -H "apikey: YOUR_API_KEY"
+```
+
+### Bulk Operations
+
+The NextGen API supports bulk operations, which is a significant improvement for integrations that need to process many records:
+
+```bash
+# Bulk create multiple work orders in a single request
+curl -X POST "https://mas-host/maximo/api/os/mxwo?_bulk=true" \
+  -H "apikey: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '[
+    {"description": "PM on Pump P-101", "siteid": "BEDFORD", "worktype": "PM"},
+    {"description": "PM on Pump P-102", "siteid": "BEDFORD", "worktype": "PM"},
+    {"description": "PM on Pump P-103", "siteid": "BEDFORD", "worktype": "PM"}
+  ]'
+```
+
+### OSLC vs NextGen REST: Comparison
+
+| Aspect | OSLC API | NextGen REST API |
+|--------|----------|------------------|
+| **Base Path** | `/maximo/oslc/os/` | `/maximo/api/os/` |
+| **Standard** | OSLC 2.0 specification | Custom REST |
+| **Available Since** | Maximo 7.6 | MAS (Manage 8.x+) |
+| **Query Syntax** | `oslc.where`, `oslc.select` | `_queryFilter`, `_fields` |
+| **Pagination** | `oslc.pageSize`, `oslc.pageno` | `_limit`, `_offset` |
+| **HTTP Methods** | POST with `x-method-override` | Native GET, POST, PATCH, DELETE |
+| **Bulk Operations** | Not supported natively | Supported via `_bulk=true` |
+| **Response Format** | OSLC-standard with metadata | Cleaner JSON responses |
+| **Sorting** | `oslc.orderBy` | `_orderBy` |
+| **Saved Queries** | Supported via `savedQuery` | Supported via `_savedQuery` |
+| **Action Invocation** | Via `oslc.action` | Via `_action` |
+| **Maturity** | Battle-tested, widely documented | Newer, evolving |
+| **Community Examples** | Extensive | Growing |
+
+### Which Should You Use?
+
+**Choose OSLC when:**
+- You have existing integrations built on OSLC patterns
+- You need to follow the OSLC standard for interoperability with other OSLC-compliant tools
+- You want the largest pool of community examples and Stack Overflow answers
+- You are working with third-party tools that expect OSLC endpoints
+
+**Choose NextGen REST when:**
+- You are building new integrations from scratch
+- You need bulk operations
+- You want cleaner, more intuitive API patterns
+- Your developers are more familiar with standard REST conventions
+- You need native HTTP method support
+
+**The pragmatic answer:** For new integrations, start with NextGen REST. For existing integrations, keep using OSLC until there is a reason to migrate. Both are fully supported and will continue to be.
+
+---
+
+## Authentication Methods
+
+MAS supports multiple authentication mechanisms. Understanding when to use each one is critical for secure, reliable integrations.
+
+### API Keys
+
+API keys are the simplest authentication method and the most common for server-to-server integrations.
+
+**How to generate an API key:**
+1. Log in to Maximo Manage
+2. Navigate to Administration &gt; API Keys (or use the user profile menu)
+3. Generate a new API key for the desired user
+4. Store the key securely -- it is shown only once
+
+**Using an API key:**
+
+```bash
+# API key in the header (recommended)
+curl -X GET "https://mas-host/maximo/oslc/os/mxwo" \
+  -H "apikey: YOUR_API_KEY" \
+  -H "Accept: application/json"
+
+# API key as a query parameter (less secure -- visible in logs)
+curl -X GET "https://mas-host/maximo/oslc/os/mxwo?apikey=YOUR_API_KEY" \
+  -H "Accept: application/json"
+```
+
+**Best practices for API keys:**
+- Always send the key in the `apikey` header, not as a query parameter
+- Generate keys for service accounts, not individual users
+- Rotate keys on a regular schedule (quarterly at minimum)
+- Store keys in a secrets manager (HashiCorp Vault, AWS Secrets Manager, Kubernetes Secrets)
+- Never commit API keys to source control
+
+### OAuth 2.0 / OIDC Tokens
+
+For integrations that require user-context authentication or compliance with enterprise SSO policies, MAS supports OAuth 2.0 and OpenID Connect (OIDC).
+
+**Token acquisition flow:**
+
+```bash
+# Step 1: Obtain an access token from the OIDC provider
+curl -X POST "https://auth-provider/oauth2/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials&client_id=YOUR_CLIENT_ID&client_secret=YOUR_CLIENT_SECRET&scope=openid"
+```
+
+**Response:**
+
+```json
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "openid"
+}
+```
+
+```bash
+# Step 2: Use the token to call MAS APIs
+curl -X GET "https://mas-host/maximo/oslc/os/mxwo?oslc.pageSize=10" \
+  -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Accept: application/json"
+```
+
+**When to use OAuth/OIDC:**
+- User-delegated access (acting on behalf of a specific user)
+- Compliance requirements that mandate token-based authentication
+- Integration with enterprise identity providers (Azure AD, Okta, Ping)
+- Short-lived access tokens are preferable for security reasons
+
+### LTPA Tokens (Legacy Compatibility)
+
+For backward compatibility with existing integrations that use LTPA (Lightweight Third-Party Authentication) tokens from WebSphere, MAS Manage still supports LTPA-based authentication. However, this is a legacy pattern and should not be used for new integrations.
+
+```bash
+# LTPA token authentication (legacy -- avoid for new integrations)
+curl -X GET "https://mas-host/maximo/oslc/os/mxwo" \
+  -H "Cookie: LtpaToken2=YOUR_LTPA_TOKEN" \
+  -H "Accept: application/json"
+```
+
+### Authentication Method Decision Matrix
+
+| Factor | API Key | OAuth 2.0 / OIDC | LTPA |
+|--------|---------|-------------------|------|
+| **Complexity** | Low | Medium-High | Low |
+| **Security Level** | Good | Excellent | Moderate |
+| **Token Expiration** | No (manual rotation) | Yes (configurable) | Yes (fixed) |
+| **User Context** | Service account only | User-specific possible | User-specific |
+| **Best For** | Server-to-server, batch jobs | User-delegated, SSO | Legacy migration |
+| **MAS Recommendation** | New server integrations | User-facing applications | Avoid for new work |
+
+---
+
+## Legacy vs Modern Integration: The Complete Comparison
+
+This is the table you will reference repeatedly during migration planning. It captures every dimension of the integration transformation.
+
+| Aspect | Legacy MIF | MAS REST API |
+|--------|-----------|--------------|
+| **Protocol** | XML/SOAP over HTTP or JMS | REST/JSON over HTTPS |
+| **Data Format** | XML with namespace declarations | JSON (clean, lightweight) |
+| **Discovery** | Manual documentation, tribal knowledge | Self-documenting endpoints, OpenAPI/Swagger |
+| **Authentication** | App server security (LDAP via WebSphere) | API keys, OAuth 2.0, OIDC |
+| **Configuration Effort** | Object Structure + Enterprise Service + External System + Endpoint | API key + URL |
+| **Time to First Integration** | Days to weeks | Minutes to hours |
+| **Developer Experience** | Maximo-expert-only | Any REST-capable developer |
+| **Error Handling** | Queue-based, manual intervention | HTTP status codes, structured error responses |
+| **Debugging** | Server logs, MIF queue tables, XML parsing | HTTP response codes, JSON error bodies, API tools |
+| **Scalability** | Vertical (bigger JVM) | Horizontal (more pods) |
+| **Bulk Operations** | Supported via MIF batch processing | NextGen REST `_bulk` parameter |
+| **Real-Time Capability** | Limited (polling via CRON tasks) | Native (webhooks, Kafka events) |
+| **Versioning** | No formal versioning | API versioning support |
+| **Rate Limiting** | No native support | Configurable at API gateway level |
+| **Monitoring** | MIF queue depth, server logs | API metrics, response times, error rates |
+| **Testing** | Complex (requires full MIF stack) | Simple (curl, Postman, any HTTP client) |
+| **Documentation** | IBM InfoCenter (often outdated) | Interactive OpenAPI docs |
+| **Middleware Required** | Often (ESB for routing/transformation) | Optional (iPaaS for complex orchestration) |
+
+> **The bottom line:** REST APIs reduce the barrier to entry from "Maximo integration specialist with years of MIF experience" to "any developer who can make an HTTP call." That is not a small change. That is a democratization of Maximo integration.
+
+---
+
+## Microservices Integration Model
+
+One of the most significant architectural differences in MAS is that it is not one monolithic application anymore. Each MAS application is a separate service with its own API surface, its own data store, and its own scaling characteristics.
+
+### How MAS Applications Communicate
+
+```
++----------+          +----------+
+|          |  Events  |          |
+|  Manage  +--------->+  Monitor |
+|  (EAM)   |<---------+  (IoT)   |
+|          |          |          |
++----+-----+          +----+-----+
+     |                     |
+     |    +----------+     |
+     +--->+          +<----+
+          |  Health  |
+          |  (Cond.) |
+          +----+-----+
+               |
+          +----+-----+
+          |          |
+          | Predict  |
+          |  (ML)    |
+          +----------+
+```
+
+**Manage to Monitor:** When Manage creates or updates an asset, Monitor needs to know so it can associate IoT sensor data with the correct asset. This happens through Kafka events -- Manage publishes an `asset.created` or `asset.updated` event, and Monitor subscribes.
+
+**Monitor to Manage:** When Monitor detects an anomaly in sensor readings (temperature spike, vibration increase), it publishes an event that can trigger automatic work order creation in Manage.
+
+**Manage + Monitor to Health:** Health consumes data from both Manage (maintenance history, failure records) and Monitor (real-time sensor data) to calculate asset health scores. These scores flow back to Manage for display in the asset applications.
+
+**Health to Predict:** Predict uses health scores, historical maintenance data, and sensor trends from Monitor to build machine learning models that forecast when assets will fail. Predictions are published back to Manage as recommended actions.
+
+### Each Service is Independently Addressable
+
+This is critical for integration architects. You do not interact with "MAS" as a single entity. You interact with specific services:
+
+```bash
+# Manage API -- work orders, assets, inventory, procurement
+https://mas-host/maximo/api/os/mxwo
+https://mas-host/maximo/api/os/mxasset
+
+# Monitor API -- IoT device management, sensor data
+https://mas-host/api/monitor/v1/devices
+https://mas-host/api/monitor/v1/data
+
+# Health API -- asset health scores, condition data
+https://mas-host/api/health/v1/assets/{assetnum}/health
+
+# Predict API -- failure predictions, recommendations
+https://mas-host/api/predict/v1/assets/{assetnum}/predictions
+```
+
+### Why This Matters for Integration
+
+**Independent scaling.** If your integration generates heavy API traffic against Manage, only the Manage pods scale up. Monitor and Health are unaffected.
+
+**Independent deployment.** IBM can update Monitor without touching Manage. Your Manage integrations continue working while Monitor gets new features.
+
+**Independent failure domains.** If the Predict service is temporarily unavailable, your work order integration with Manage continues working. In the monolithic Maximo 7.6 world, any component failure could take down the entire application.
+
+**Targeted integration.** Your ERP needs to talk to Manage (work orders, POs). Your SCADA system needs to talk to Monitor (sensor data). Your asset strategy team needs Health and Predict. Each integration targets the specific service it needs, rather than connecting to a monolithic application and hoping the right component handles the request.
+
+---
+
+## API Design Patterns in MAS
+
+Beyond simple CRUD operations, MAS REST APIs support several advanced patterns that are essential for real-world integrations.
+
+### CRUD Operations
+
+The foundation of any REST API. MAS maps CRUD to HTTP methods:
+
+| Operation | HTTP Method | Example |
+|-----------|------------|---------|
+| Create | POST | `POST /maximo/api/os/mxwo` |
+| Read (single) | GET | `GET /maximo/api/os/mxwo/WO-1001` |
+| Read (list) | GET | `GET /maximo/api/os/mxwo?_limit=50` |
+| Update | PATCH | `PATCH /maximo/api/os/mxwo/WO-1001` |
+| Delete | DELETE | `DELETE /maximo/api/os/mxwo/WO-1001` |
+
+### Saved Queries
+
+MAS allows you to define server-side saved queries and invoke them via the API. This is powerful for complex, reusable query patterns:
+
+```bash
+# Use a saved query defined in Maximo
+curl -X GET "https://mas-host/maximo/oslc/os/mxwo?savedQuery=OVERDUE_PMS" \
+  -H "apikey: YOUR_API_KEY" \
+  -H "Accept: application/json"
+```
+
+Saved queries encapsulate complex WHERE clauses, joins, and business logic on the server side, simplifying the client integration code.
+
+### Action Invocation
+
+Beyond CRUD, you often need to invoke business logic -- changing a work order status, approving a purchase requisition, or generating PMs. MAS exposes these as "actions" on resources:
+
+```bash
+# Change work order status using an action
+curl -X POST "https://mas-host/maximo/oslc/os/mxwo/_V08tMTAwMQ--?action=wsmethod:changeStatus" \
+  -H "apikey: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "APPR",
+    "memo": "Approved via automated integration"
+  }'
+```
+
+This is significant because it invokes the same business logic that the Maximo UI uses -- status validation, workflow triggers, escalation processing. A direct database update would bypass all of this. An API action call respects it.
+
+### Attachments
+
+Managing document attachments through the API:
+
+```bash
+# Upload an attachment to a work order
+curl -X POST "https://mas-host/maximo/oslc/os/mxwo/_V08tMTAwMQ--/doclinks" \
+  -H "apikey: YOUR_API_KEY" \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@inspection_report.pdf" \
+  -F "description=Q1 Inspection Report" \
+  -F "doctype=Attachments"
+```
+
+```bash
+# List attachments on a work order
+curl -X GET "https://mas-host/maximo/oslc/os/mxwo/_V08tMTAwMQ--/doclinks" \
+  -H "apikey: YOUR_API_KEY" \
+  -H "Accept: application/json"
+```
+
+### Related Resources
+
+OSLC and NextGen APIs support navigating relationships between resources:
+
+```bash
+# Get work order with all related child work orders
+curl -X GET "https://mas-host/maximo/oslc/os/mxwo?oslc.where=wonum=%22WO-1001%22&oslc.select=wonum,description,children{wonum,description,status}" \
+  -H "apikey: YOUR_API_KEY" \
+  -H "Accept: application/json"
+```
+
+This eliminates the "N+1 query problem" that plagued legacy integrations -- where you had to make one API call to get the parent record, then N additional calls to get each child record.
+
+---
+
+## Integration Developer Experience
+
+The developer experience is one of the most underappreciated aspects of the MAS transformation. It is not just that the APIs exist -- it is that they are discoverable, testable, and usable without specialized Maximo knowledge.
+
+### API Exploration with Swagger/OpenAPI
+
+MAS provides interactive API documentation via Swagger UI:
+
+```
+https://mas-host/maximo/api/docs
+```
+
+From this interface, a developer can:
+- Browse all available endpoints
+- Read field descriptions and data types
+- Try API calls directly in the browser
+- See response schemas and example payloads
+- Understand required vs. optional fields
+
+This is a dramatic improvement over the legacy experience of reading IBM's InfoCenter documentation, which described MIF concepts abstractly but rarely gave you runnable examples.
+
+### Postman Collections
+
+For teams that use Postman (and most integration teams do), MAS APIs are straightforward to organize into collections:
+
+```
+MAS Integration Collection/
+  Authentication/
+    - Get API Key Token
+    - Get OAuth Token
+  Work Orders/
+    - Query Work Orders (OSLC)
+    - Query Work Orders (NextGen)
+    - Create Work Order
+    - Update Work Order
+    - Change Status
+    - Add Attachment
+  Assets/
+    - Query Assets
+    - Create Asset
+    - Update Asset Specifications
+  Service Requests/
+    - Create Service Request
+    - Query Open SRs
+```
+
+Each request in the collection can include environment variables for different MAS instances (development, test, production), making it easy to test the same integration against multiple environments.
+
+### Code Generation
+
+Because MAS provides OpenAPI specifications, you can auto-generate client libraries:
+
+```bash
+# Generate a TypeScript client from the OpenAPI spec
+npx openapi-generator-cli generate \
+  -i https://mas-host/maximo/api/docs/openapi.json \
+  -g typescript-axios \
+  -o ./maximo-client
+```
+
+```bash
+# Generate a Python client
+openapi-generator generate \
+  -i https://mas-host/maximo/api/docs/openapi.json \
+  -g python \
+  -o ./maximo-client-python
+```
+
+This means your integration team does not need to hand-write HTTP client code. The API contract generates the code, and developers work with strongly typed objects in their language of choice.
+
+### Developer Onboarding: From Weeks to Hours
+
+Here is the concrete impact on developer onboarding:
+
+| Onboarding Step | Legacy MIF | MAS REST API |
+|----------------|-----------|--------------|
+| Environment access | Request admin access, wait for provisioning | Generate API key in self-service portal |
+| Learn the API | Read InfoCenter docs, attend training | Browse Swagger UI, run examples |
+| First working call | Days (configure Object Structure, Enterprise Service, etc.) | Minutes (curl command with API key) |
+| Build integration | Weeks (MIF expertise required) | Days (standard REST development) |
+| Debug issues | Read server logs, inspect MIF queues | Read HTTP status codes, inspect JSON responses |
+| Get help | Ask the one MIF expert on the team | Stack Overflow, community forums, AI assistants |
+
+> **The cultural shift:** In the MIF world, integration was a specialization. Only the MIF experts could build integrations. In the API-first world, integration is a standard development activity. Any developer who knows HTTP and JSON can build a Maximo integration. This changes team structures, project timelines, and organizational capability.
+
+---
+
+## Migration Considerations: When to Keep MIF, When to Move to REST
+
+Not every integration should be migrated immediately. Some should not be migrated at all. Here is a decision framework.
+
+### Keep MIF When:
+
+- **The integration is stable and working** -- "if it ain't broke, don't fix it" applies when the cost of migration outweighs the benefits
+- **Complex processing rules are in place** -- MIF processing rules that transform, filter, and route data may be expensive to replicate in REST patterns
+- **Inbound flat file processing** -- MIF's flat file adapter handles complex fixed-width and delimited file parsing that would require custom code in a REST approach
+- **The external system only speaks SOAP/XML** -- if the other end of the integration cannot consume REST/JSON, migrating the Maximo side alone does not help
+- **The integration is scheduled for decommissioning** -- if the external system is being replaced in the next 12-18 months, migrating its integration to REST is wasted effort
+
+### Move to REST When:
+
+- **Building new integrations** -- all new integrations should use REST APIs by default
+- **The integration is a simple query or update** -- REST APIs handle simple CRUD operations with dramatically less configuration than MIF
+- **Real-time response is needed** -- MIF's batch processing model cannot match REST's synchronous request/response
+- **Multiple teams need to integrate** -- REST's self-service discovery and simple authentication make it accessible to any developer
+- **You need to scale independently** -- REST API calls scale with the MAS pod infrastructure; MIF scales with the monolithic JVM
+- **Mobile or web applications are consumers** -- modern front-end frameworks expect REST/JSON APIs, not SOAP/XML
+
+### Migration Decision Framework
+
+| Question | If Yes | If No |
+|----------|--------|-------|
+| Is this a new integration? | Use REST API | Continue evaluation |
+| Is the integration causing operational issues? | Prioritize migration to REST | Lower priority |
+| Does the external system support REST/JSON? | Good candidate for REST migration | Keep MIF or use a translation layer |
+| Does the integration use complex MIF processing rules? | Plan for refactoring effort | Simpler migration |
+| Is the integration a simple read/write? | Excellent REST candidate | Evaluate complexity |
+| Will the external system be replaced within 18 months? | Keep MIF, migrate when new system is in place | Proceed with REST migration |
+| Do multiple teams need to consume this integration? | REST (self-service) strongly preferred | MIF acceptable if single team |
+| Is near-real-time response required? | REST or events (not MIF batch) | MIF batch acceptable |
+
+### The Hybrid Strategy
+
+In practice, most organizations will run MIF and REST APIs concurrently for an extended period. This is not a failure -- it is a pragmatic reality. The key is to establish clear policies:
+
+1. **All new integrations use REST APIs** -- no exceptions
+2. **Existing MIF integrations migrate when triggered** -- by external system upgrades, operational issues, or business requirement changes
+3. **Set a deprecation target** -- "All MIF integrations migrated by Q4 2027" gives teams a timeline without forcing premature migration
+4. **Track integration inventory** -- know which integrations are MIF, which are REST, and what the migration plan is for each
+
+---
+
+## Key Takeaways
+
+1. **MAS shifts from MIF-centric to API-first** -- REST APIs are the primary integration mechanism, not a secondary option behind MIF
+
+2. **The OSLC API and NextGen REST API coexist** -- OSLC for backward compatibility and OSLC-standard compliance, NextGen REST for cleaner patterns and bulk operations
+
+3. **API-first enables self-service integration** -- any developer can discover, authenticate, and call Maximo APIs without middleware expertise or admin assistance
+
+4. **MAS microservices architecture means independent API surfaces** -- Manage, Monitor, Health, and Predict each have their own APIs, scaling profiles, and deployment lifecycles
+
+5. **Authentication has modernized** -- API keys for simplicity, OAuth 2.0/OIDC for enterprise security requirements, with clear guidance on when to use each
+
+6. **Advanced API patterns go beyond CRUD** -- saved queries, action invocations, attachments, and related resources enable sophisticated integrations without custom middleware
+
+7. **Developer experience is dramatically improved** -- OpenAPI docs, Postman collections, code generation, and self-service API keys reduce onboarding from weeks to hours
+
+8. **MIF does not disappear immediately** -- run MIF and REST concurrently, migrate incrementally, and establish clear policies for new vs. existing integrations
+
+---
+
+## References
+
+- [IBM MAS REST API Documentation](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=apis-rest-api)
+- [OSLC API Guide for Maximo](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=apis-oslc-api)
+- [IBM MAS Integration Framework Overview](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=configuring-integration-framework)
+- [OpenAPI Specification](https://swagger.io/specification/)
+- [OAuth 2.0 Authorization Framework (RFC 6749)](https://datatracker.ietf.org/doc/html/rfc6749)
+- [REST API Design Best Practices](https://restfulapi.net/)
+- [Apache Kafka Documentation](https://kafka.apache.org/documentation/)
+
+---
+
+**Series Navigation:**
+
+**Previous:** [Part 1 -- The Legacy Integration Landscape: A Deep Dive into MIF](/blog/legacy-mif-deep-dive)
+
+**Next:** [Part 3 -- From Publish Channels to Events: The Event-Driven Transformation](/blog/mas-event-driven-transformation)
+
+[View the full MAS INTEGRATION series index](/blog/mas-integration-series-index)
+
+---
+
+*Part 2 of the "MAS INTEGRATION" series | Published by TheMaximoGuys*
+
+*The API-first revolution is not about replacing one technology with another. It is about fundamentally changing who can build integrations, how fast they can build them, and how reliably they run. In Part 3, we leave synchronous APIs behind and dive into the event-driven world -- where MAS replaces publish channels and JMS queues with Kafka topics and real-time event streaming.*

@@ -1,0 +1,1266 @@
+---
+title: "From Publish Channels to Events: The Event-Driven Transformation"
+description: "How MAS transforms Maximo's legacy publish and invocation channels into modern event-driven integration patterns using webhooks, Kafka event streams, and asynchronous messaging. A side-by-side mapping from old to new."
+date: "2026-02-06"
+slug: "mas-event-driven-transformation"
+tags: ["Maximo", "MAS Integration", "Event-Driven", "Kafka", "Webhooks", "Publish Channels", "Async Integration"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-integration-part-3.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+faqs:
+  - question: "What replaces Publish Channels in MAS?"
+    answer: "MAS provides multiple replacements depending on your pattern: webhooks for simple event notification, Kafka topics for high-throughput event streaming, and the MAS Integration Service for orchestrated outbound flows. The best choice depends on your latency requirements, volume, and consumer architecture."
+  - question: "Can I still use JMS queues in MAS?"
+    answer: "MIF's JMS-based queuing still functions in MAS Manage for backward compatibility. However, Kafka provides a more scalable, durable, and cloud-native alternative for new event-driven integrations. JMS queues should be considered legacy."
+  - question: "What is the difference between webhooks and Kafka events in MAS?"
+    answer: "Webhooks are HTTP push notifications — MAS calls your endpoint when an event occurs. Simple but no built-in retry or replay. Kafka events are published to persistent topics — consumers pull at their own pace with built-in durability, replay, and scalability. Choose webhooks for simple notifications, Kafka for mission-critical event streams."
+keyTakeaways:
+  - "Legacy Publish Channels map to webhooks, Kafka topics, or outbound REST calls depending on the use case"
+  - "Event-driven architecture decouples producers from consumers, enabling independent scaling and evolution"
+  - "Kafka provides durable, replayable event streams that solve the message loss problems inherent in legacy JMS queues"
+  - "Webhooks offer the simplest path for lightweight event notification to external systems"
+  - "The shift from synchronous MIF processing to asynchronous event streams fundamentally changes integration design patterns"
+series:
+  name: "MAS INTEGRATION"
+  part: 3
+  total: 8
+---
+
+# From Publish Channels to Events: The Event-Driven Transformation
+
+**Series:** MAS INTEGRATION -- From Legacy MIF to Cloud-Native Integration | **Part 3 of 8**
+
+**Read Time:** 22 minutes
+
+> **Who this is for:** Integration developers, solution architects, and migration teams responsible for transforming outbound Maximo integrations from legacy MIF publish channels to modern event-driven patterns. Especially valuable if you manage integrations that push data to ERP systems, data warehouses, or downstream operational platforms.
+
+---
+
+## The Night 50,000 Messages Went Missing
+
+It is 2:47 AM on a Tuesday. Your phone buzzes with a P1 alert. The overnight ERP sync between Maximo 7.6 and SAP has failed.
+
+You log in. The MIF outbound queue -- `MAXIFACEOUTQUEUE` -- has 50,247 messages backed up. The publish channel for work order status changes has been firing all day, but the JMS endpoint lost its connection to the middleware server at 11:14 PM. Nobody noticed for three hours. By the time the connection dropped, thousands of work order updates, material receipts, and labor transactions had piled into the queue table with nowhere to go.
+
+You know the drill. You have done this before. Check the endpoint. Restart the JMS listener. Clear the error flags on the queue entries. Then watch as the system tries to process 50,000 messages sequentially, hammering the SAP interface at a rate that will take hours to clear -- assuming nothing else fails along the way. Meanwhile, the morning shift is starting, generating new transactions that stack on top of the backlog.
+
+The ERP team calls. Their nightly batch reconciliation failed because the data never arrived. Finance cannot close the period. Procurement cannot see the latest PO receipts. The plant manager wants to know why the maintenance completion report shows yesterday's numbers.
+
+This is the legacy outbound integration nightmare. And every Maximo administrator who has managed publish channels at scale has lived some version of it.
+
+**Now imagine the same scenario in MAS with Kafka.**
+
+The work order status change fires an event to a Kafka topic: `mas.manage.workorder.statuschange`. The event is written to a durable, replicated log. The SAP consumer -- running as an independent microservice -- goes offline at 11:14 PM for maintenance. But Kafka does not care. The events keep flowing into the topic. They are persisted to disk across multiple brokers. Nothing is lost. Nothing backs up inside Maximo.
+
+At 11:52 PM, the SAP consumer comes back online. It checks its last committed offset -- the bookmark that tells it where it left off -- and starts reading from exactly that point. Within minutes, it has caught up on the missed events. No manual intervention. No queue table bloat. No 2:47 AM phone call. No P1 incident.
+
+The morning shift starts generating new events. The consumer processes them in near real-time alongside the catch-up stream. Finance gets their data. Procurement sees the receipts. The plant manager's report is accurate.
+
+**This is the event-driven transformation.** And it is not a theoretical improvement. It is the difference between an integration architecture that requires you to babysit it at 3 AM and one that handles failure gracefully by design.
+
+Let us break down exactly how we get from the legacy model to the modern one.
+
+---
+
+## The Legacy Outbound Model: How Publish Channels Work
+
+Before we map to modern patterns, you need a precise understanding of the legacy outbound pipeline. If you have been building publish channel integrations for years, this will be review. But the specificity matters -- because each step in this pipeline maps to a different component in the modern architecture.
+
+### The Publish Channel Pipeline
+
+Here is the complete flow when a data change triggers an outbound message in Maximo 7.6:
+
+```
+Step 1: Data Change Event
+   A user (or automation) changes data in Maximo
+   Example: Work order WO-12345 status changes from WAPPR to APPR
+         |
+         v
+Step 2: Event Listener Detection
+   MIF's event listener detects the change via database triggers
+   or application event hooks (Java-based listeners on MBO save)
+         |
+         v
+Step 3: Publish Channel Evaluation
+   The publish channel evaluates whether this change qualifies
+   for outbound processing:
+   - Is the channel enabled?
+   - Does the event match the channel's event type filter?
+   - Do the channel's conditions/skip rules exclude this record?
+         |
+         v
+Step 4: Object Structure Serialization
+   The associated Object Structure (e.g., MXWO) serializes
+   the Maximo data into XML format, following the structure
+   definition that maps MBOs to XML elements
+         |
+         v
+Step 5: Processing Rules
+   User-defined processing rules execute in sequence:
+   - XSL transformations reshape the XML
+   - Class-based rules run custom Java logic
+   - Split rules divide messages
+   - Combination rules merge related data
+         |
+         v
+Step 6: Endpoint Routing
+   The processed XML message is routed to the configured
+   endpoint handler:
+   - JMS Queue (most common for ERP)
+   - HTTP/SOAP Web Service
+   - Flat File (CSV, XML, fixed-width)
+   - IFACETABLE (database staging table)
+         |
+         v
+Step 7: Delivery Confirmation (or Failure)
+   - Success: message acknowledged, queue entry marked complete
+   - Failure: message flagged in MAXIFACEOUTQUEUE with error
+     status, requiring manual intervention or retry
+```
+
+### What Made This Work
+
+To be fair, this pipeline is powerful. It handles complex transformations, supports multiple output formats, and provides a declarative configuration model that does not require custom code for many integration scenarios. For its era, MIF was sophisticated.
+
+### What Made This Break
+
+But the pipeline has fundamental architectural constraints that become painful at scale:
+
+**Synchronous coupling.** When the publish channel fires, the processing pipeline executes within the same transaction context as the data change. If the endpoint is slow or unavailable, the entire chain blocks. In severe cases, this can block the user's save operation -- a user clicks "Approve" on a work order and waits thirty seconds because the publish channel is trying to reach a downed JMS broker.
+
+**Single-threaded queue processing.** The outbound queue (`MAXIFACEOUTQUEUE`) processes messages sequentially by default. Even with configurable thread pools, the architecture is fundamentally constrained by the queue table's transactional model. Under heavy load, the queue becomes a bottleneck.
+
+**No replay capability.** Once a message fails and is cleared from the queue (or the queue table is purged during maintenance), the data is gone. There is no mechanism to "replay" events from a point in time. If something goes wrong downstream and you need to reprocess a day's worth of changes, you are writing custom SQL queries against Maximo's transaction log -- if you are lucky enough to have one.
+
+**XML overhead.** Every outbound message is serialized to XML, even when the downstream consumer needs JSON or a flat format. The XML processing adds CPU overhead, memory consumption, and network bandwidth. Large object structures with deep hierarchies produce XML documents that can be hundreds of kilobytes per message.
+
+---
+
+## The Legacy Inbound Model: Enterprise Services
+
+The inbound pipeline mirrors the outbound one in reverse. Understanding it is essential because many organizations have tightly coupled inbound and outbound flows -- the SAP integration that pushes purchase orders into Maximo and pulls work order completions out of it.
+
+### The Enterprise Service Pipeline
+
+```
+Step 1: External System Sends Message
+   An external system sends data to a Maximo endpoint
+   Example: SAP sends a purchase order via JMS or HTTP/SOAP
+         |
+         v
+Step 2: Endpoint Receives Message
+   The configured endpoint handler receives the message:
+   - JMS listener picks up from queue
+   - HTTP servlet receives SOAP request
+   - CRON task reads from flat file directory
+   - IFACETABLE processor reads staging table rows
+         |
+         v
+Step 3: Enterprise Service Routing
+   The Enterprise Service maps the inbound message to:
+   - The correct Object Structure
+   - The appropriate processing action (Add, Update, Delete, Sync)
+         |
+         v
+Step 4: Processing Rules (Inbound)
+   Inbound processing rules transform the external data format
+   to match Maximo's expected XML structure:
+   - XSL transformations
+   - Custom Java processing classes
+   - Value mapping and defaults
+         |
+         v
+Step 5: Object Structure Deserialization
+   The Object Structure maps the transformed XML to Maximo
+   MBO (Managed Business Object) fields, creating or updating
+   records in the appropriate tables
+         |
+         v
+Step 6: Business Rule Validation
+   Maximo's business rules validate the data:
+   - Required field checks
+   - Status change validations
+   - Cross-reference lookups
+   - Workflow triggers
+         |
+         v
+Step 7: Response
+   - Success: acknowledgment returned, data committed
+   - Failure: error message returned, transaction rolled back
+     Message may be flagged in MAXIFACEINQUEUE for retry
+```
+
+### The Coupling Problem
+
+The critical issue with both pipelines is **tight coupling**. The sender must know exactly where the receiver is, what format it expects, and be prepared to handle its failures. When the receiver is down, the sender either blocks (synchronous) or queues locally (asynchronous via JMS), but in either case the sender is architecturally dependent on the receiver's availability and performance.
+
+This coupling creates cascading failure scenarios. A slow ERP system backs up the Maximo outbound queue. The queue table grows. Database performance degrades. Users experience slowdowns on unrelated operations because the same database is serving both application queries and queue table writes. The integration problem becomes an application performance problem.
+
+---
+
+## Why Legacy Patterns Break at Scale
+
+If you are running a single Maximo instance with a handful of integrations processing a few hundred messages per day, MIF works fine. The problems emerge when you scale -- more integrations, more messages, more consumers, more stringent latency requirements.
+
+Here are the specific failure modes:
+
+### 1. Queue Table Bloat
+
+`MAXIFACEOUTQUEUE` and `MAXIFACEINQUEUE` are database tables. Every outbound and inbound message passes through them. At high volumes, these tables grow to millions of rows. Database queries against them slow down. Index maintenance becomes expensive. Archiving requires custom scripts. We have seen environments where the queue tables consumed more storage than the actual application data.
+
+**The numbers:** A moderately busy site generating 5,000 outbound messages per day accumulates 1.8 million queue entries per year. With XML payloads averaging 15 KB each, that is 27 GB of queue data annually -- in a database table that was designed for transient message passing, not long-term storage.
+
+### 2. Thread Pool Exhaustion
+
+MIF uses configurable thread pools for processing inbound and outbound messages. Under sustained load, these threads can become exhausted -- all threads are blocked waiting for slow endpoints, leaving no capacity for new messages. The default configuration is conservative (often 5-10 threads), and increasing the pool size trades processing capacity for database connection consumption.
+
+### 3. No Back-Pressure Mechanism
+
+When the outbound endpoint cannot keep up with the rate of events, MIF has no mechanism to signal the producer to slow down. Events keep firing, messages keep queuing, and the system either runs out of queue capacity or exhausts its thread pool. There is no graceful degradation -- only escalating failure.
+
+### 4. Synchronous Processing Chains
+
+Many legacy integrations use invocation channels -- synchronous, request/response patterns where Maximo calls an external service and waits for the response before continuing. If that external service is slow (or down), every Maximo user who triggers the invocation channel experiences the delay. We have seen entire Maximo environments grind to a halt because a single invocation channel to a slow web service was blocking the application server's thread pool.
+
+### 5. XML Serialization Overhead
+
+Every message passes through XML serialization (outbound) or deserialization (inbound). For complex object structures with deep hierarchies -- a work order with tasks, labor, materials, and attachments -- the XML processing is computationally expensive. At high volumes, XML processing can consume a significant percentage of the application server's CPU capacity.
+
+### 6. No Native Event Schema Evolution
+
+When the data model changes -- a new field is added to the object structure, a required field becomes optional, a data type changes -- every consumer of that publish channel must be updated simultaneously. There is no schema versioning, no backward compatibility mechanism, and no way for consumers to handle multiple schema versions gracefully. This creates a coordination problem that slows down both Maximo upgrades and integration changes.
+
+---
+
+## The Event-Driven Architecture in MAS
+
+MAS introduces an integration model built on fundamentally different principles. Instead of "Maximo pushes data to a specific destination," the model becomes "Maximo announces what happened, and interested systems subscribe to the announcements they care about."
+
+This is not just a protocol change. It is an architectural paradigm shift that affects how you design, build, deploy, and operate integrations.
+
+### Core Concepts
+
+**Events as first-class citizens.** In the legacy model, outbound messages are a side effect of data changes -- the publish channel fires because something happened. In the event-driven model, events are the primary output. When a work order status changes, the system produces a well-defined event with a schema, a timestamp, and a unique identifier. The event is a product, not a byproduct.
+
+**Producer-consumer decoupling.** The system that produces events (MAS) does not know or care which systems consume them. It publishes events to topics. Consumers subscribe to topics. Producers and consumers can be developed, deployed, scaled, and updated independently. If you add a new consumer next month -- say, a real-time dashboard that displays work order approvals -- you subscribe it to the existing topic. MAS does not need any configuration changes.
+
+**Event topics vs. point-to-point queues.** Legacy JMS queues are point-to-point: one producer, one consumer. When a message is consumed, it is gone. Kafka topics are pub/sub with persistence: one producer, many consumers. Each consumer maintains its own read position (offset). The same event can be consumed by an ERP integration, a data warehouse loader, a real-time dashboard, and an analytics pipeline -- independently, at their own pace, without interfering with each other.
+
+**Delivery guarantees.** Kafka provides configurable delivery semantics:
+
+- **At-most-once:** Fire and forget. Fast but messages can be lost.
+- **At-least-once:** Messages are guaranteed to be delivered but may be delivered more than once. Consumers must handle duplicates (idempotency).
+- **Exactly-once:** Transactional semantics ensure each message is processed exactly once. Higher overhead but strongest guarantee.
+
+For most Maximo integration scenarios, **at-least-once** with idempotent consumers is the sweet spot -- durable delivery with manageable complexity.
+
+### The Event Flow in MAS
+
+```
+Step 1: Data Change in MAS Manage
+   A user or process changes data
+   Example: Work order WO-12345 approved
+         |
+         v
+Step 2: Event Emission
+   MAS emits a structured event (JSON) with:
+   - Event type (workorder.statuschange)
+   - Timestamp (ISO 8601)
+   - Correlation ID (for tracing)
+   - Payload (changed data)
+         |
+         v
+Step 3: Event Published to Topic
+   The event is published to a Kafka topic:
+   mas.manage.workorder.statuschange
+   - Partitioned by site ID for ordering guarantees
+   - Replicated across brokers for durability
+         |
+         v
+Step 4: Consumers Subscribe and Process
+   Independent consumers read from the topic:
+   - ERP sync consumer (group: erp-sync)
+   - Data warehouse loader (group: dw-loader)
+   - Dashboard updater (group: dashboard)
+   Each consumer tracks its own offset independently
+         |
+         v
+Step 5: Consumer Acknowledgment
+   Each consumer commits its offset after successful processing
+   - If a consumer fails, it restarts from its last committed offset
+   - No data loss, no manual intervention
+```
+
+Notice what is absent: no queue table, no XML serialization, no synchronous coupling, no single-consumer bottleneck. The producer (MAS) publishes once. Consumers process independently. Failures are isolated. Recovery is automatic.
+
+---
+
+## Webhooks in MAS: The Simplest Event Pattern
+
+Not every integration needs the full power of Kafka. For simple event notifications -- "something happened, go check it out" -- MAS provides webhooks. A webhook is an HTTP callback: when an event occurs in MAS, it sends an HTTP POST request to a URL you specify.
+
+### When to Use Webhooks
+
+- **Simple notifications:** Alert a monitoring system when a critical asset goes down
+- **Trigger external workflows:** Start a ServiceNow ticket when a work order is created
+- **Low-volume events:** Status changes on high-priority assets (dozens per day, not thousands)
+- **Prototype and development:** Quick integration testing before building a full Kafka consumer
+
+### Webhook Configuration in MAS
+
+Webhook configuration in MAS follows a straightforward registration model. You define:
+
+1. **Event type:** Which MAS events trigger the webhook (e.g., work order status change, asset creation, PO approval)
+2. **Target URL:** The HTTP endpoint that receives the event payload
+3. **Authentication:** How MAS authenticates to your endpoint (API key, OAuth token, or HMAC signature)
+4. **Filters:** Optional conditions that narrow which events fire the webhook (e.g., only work orders at the BEDFORD site, only status changes to COMP)
+
+### Webhook Payload Format
+
+When a webhook fires, MAS sends a JSON payload to your registered endpoint. Here is an example of a work order status change event:
+
+```json
+{
+  "eventType": "workorder.statuschange",
+  "timestamp": "2026-02-06T14:30:00Z",
+  "data": {
+    "wonum": "WO-12345",
+    "previousStatus": "WAPPR",
+    "newStatus": "APPR",
+    "changedBy": "MAXADMIN",
+    "siteid": "BEDFORD"
+  }
+}
+```
+
+And here is how you would receive and process that webhook in a simple Node.js endpoint:
+
+```javascript
+const express = require('express');
+const app = express();
+app.use(express.json());
+
+app.post('/webhooks/maximo', (req, res) => {
+  const event = req.body;
+
+  // Validate the event type
+  if (event.eventType === 'workorder.statuschange') {
+    console.log(
+      `WO ${event.data.wonum} changed from ${event.data.previousStatus} ` +
+      `to ${event.data.newStatus} by ${event.data.changedBy}`
+    );
+
+    // Process the event: update ERP, send notification, trigger workflow
+    processWorkOrderStatusChange(event.data);
+  }
+
+  // Respond with 200 to acknowledge receipt
+  res.status(200).json({ received: true });
+});
+
+app.listen(3000, () => {
+  console.log('Webhook receiver listening on port 3000');
+});
+```
+
+### Webhook Retry Policies
+
+Webhooks are inherently less reliable than Kafka because they depend on HTTP delivery. MAS implements retry policies to handle transient failures:
+
+- **Initial delivery:** MAS sends the HTTP POST to your endpoint
+- **Failure detection:** If your endpoint returns a non-2xx status code (or the connection times out), MAS marks the delivery as failed
+- **Retry schedule:** MAS retries failed deliveries with exponential backoff -- typically at 1 minute, 5 minutes, 15 minutes, and 1 hour intervals
+- **Dead letter:** After a configurable number of retries (default: 5), the event is moved to a dead letter store for manual review
+
+**Critical limitation:** Webhooks do not provide replay. If your endpoint was down for a day and missed 500 events, you cannot ask MAS to resend them after the retry window expires. For mission-critical integrations where data loss is unacceptable, use Kafka instead.
+
+### Webhook Security
+
+Never expose an unauthenticated webhook endpoint to the internet. MAS supports several authentication mechanisms for webhook delivery:
+
+- **HMAC signatures:** MAS signs each webhook payload with a shared secret. Your endpoint verifies the signature before processing. This is the recommended approach.
+- **API key headers:** MAS includes an API key in a custom HTTP header. Your endpoint validates the key.
+- **mTLS:** Mutual TLS authentication for environments that require certificate-based trust.
+
+Here is an example of HMAC signature verification:
+
+```javascript
+const crypto = require('crypto');
+
+function verifyWebhookSignature(payload, signature, secret) {
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(JSON.stringify(payload))
+    .digest('hex');
+
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expectedSignature)
+  );
+}
+
+app.post('/webhooks/maximo', (req, res) => {
+  const signature = req.headers['x-mas-signature'];
+
+  if (!verifyWebhookSignature(req.body, signature, WEBHOOK_SECRET)) {
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+
+  // Signature verified -- process the event
+  processEvent(req.body);
+  res.status(200).json({ received: true });
+});
+```
+
+---
+
+## Kafka Event Streams: The Enterprise Pattern
+
+For high-volume, mission-critical integrations, Kafka is the backbone of event-driven architecture in MAS. If you are integrating with ERP systems, data warehouses, real-time analytics platforms, or any system where message loss is unacceptable, Kafka is the answer.
+
+### Why Kafka
+
+Kafka solves every pain point we identified in the legacy model:
+
+| Legacy Pain Point | Kafka Solution |
+|-------------------|----------------|
+| Queue table bloat (MAXIFACEOUTQUEUE) | Events stored in distributed log files, not database tables |
+| Single-consumer bottleneck | Multiple consumer groups read independently from the same topic |
+| No replay capability | Consumers can rewind to any offset and reprocess events |
+| No back-pressure | Consumers pull at their own pace; producers are never blocked |
+| Synchronous coupling | Producers and consumers are fully decoupled |
+| Message loss on failure | Events are replicated across multiple brokers |
+
+### Kafka Topics for Maximo Events
+
+MAS publishes events to Kafka topics following a hierarchical naming convention:
+
+```
+mas.manage.{entity}.{eventtype}
+```
+
+Examples:
+
+| Topic | Description |
+|-------|-------------|
+| `mas.manage.workorder.statuschange` | Work order status transitions |
+| `mas.manage.workorder.create` | New work order creation |
+| `mas.manage.workorder.update` | Work order field modifications |
+| `mas.manage.asset.statuschange` | Asset status transitions |
+| `mas.manage.asset.move` | Asset location changes |
+| `mas.manage.po.approve` | Purchase order approvals |
+| `mas.manage.inventory.issue` | Inventory issue transactions |
+| `mas.manage.sr.create` | New service request creation |
+
+This naming convention lets consumers subscribe to exactly the events they need. An ERP integration might subscribe to `mas.manage.workorder.statuschange` and `mas.manage.po.approve`. A real-time dashboard might subscribe to `mas.manage.workorder.*` (wildcard) to capture all work order events.
+
+### Partition Strategies
+
+Kafka topics are divided into partitions for parallel processing. The partition strategy determines how events are distributed across partitions and, critically, which events are guaranteed to be processed in order.
+
+**Recommended partition strategy for Maximo events: partition by site ID.**
+
+```
+Topic: mas.manage.workorder.statuschange
+  Partition 0: BEDFORD site events
+  Partition 1: NASHUA site events
+  Partition 2: TEXAS site events
+  ...
+```
+
+This guarantees that all events for a given site are processed in order within that partition, while events across sites are processed in parallel. For a multi-site Maximo deployment, this provides the right balance of ordering guarantees and parallel throughput.
+
+Alternative strategies:
+
+- **Partition by entity key** (e.g., WONUM): Guarantees ordering per work order. Use this when event ordering within a single entity matters (e.g., status change sequence).
+- **Round-robin** (no key): Maximum throughput, no ordering guarantees. Use this for events where ordering does not matter (e.g., audit log entries).
+
+### Consumer Group Patterns
+
+A consumer group is a set of consumer instances that cooperate to process events from a topic. Kafka distributes partitions across the consumers in a group, so each partition is processed by exactly one consumer in the group.
+
+```
+Topic: mas.manage.workorder.statuschange (6 partitions)
+
+Consumer Group: erp-sync
+  Consumer 1: Partitions 0, 1    (BEDFORD, NASHUA)
+  Consumer 2: Partitions 2, 3    (TEXAS, CHICAGO)
+  Consumer 3: Partitions 4, 5    (LONDON, TOKYO)
+
+Consumer Group: data-warehouse
+  Consumer 1: Partitions 0, 1, 2 (BEDFORD, NASHUA, TEXAS)
+  Consumer 2: Partitions 3, 4, 5 (CHICAGO, LONDON, TOKYO)
+
+Consumer Group: dashboard
+  Consumer 1: All 6 partitions   (single instance, low volume)
+```
+
+Each consumer group processes every event independently. The ERP sync consumers, data warehouse loaders, and dashboard updaters all receive the same events but process them at their own pace, with their own logic, without interfering with each other.
+
+**This is the fundamental advantage over legacy JMS queues.** In the legacy model, if you wanted three systems to receive the same work order status change, you needed three separate publish channels (or a complex fan-out configuration). In Kafka, you publish once, and each consumer group independently reads the full stream.
+
+### Kafka Consumer Example
+
+Here is a complete Python consumer that processes work order status change events from Kafka:
+
+```python
+from kafka import KafkaConsumer
+import json
+
+consumer = KafkaConsumer(
+    'mas.manage.workorder.statuschange',
+    bootstrap_servers=['kafka-broker:9092'],
+    group_id='erp-sync-consumer',
+    value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+    auto_offset_reset='earliest'
+)
+
+for message in consumer:
+    event = message.value
+    print(f"Work Order {event['wonum']} changed to {event['newStatus']}")
+    # Process event: sync to ERP, update dashboard, trigger workflow
+```
+
+And here is a more production-ready version with error handling, logging, and idempotency:
+
+```python
+from kafka import KafkaConsumer
+import json
+import logging
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('erp-sync')
+
+# Configure HTTP session with retry logic for ERP calls
+session = requests.Session()
+retries = Retry(total=3, backoff_factor=1, status_forcelist=[502, 503, 504])
+session.mount('https://', HTTPAdapter(max_retries=retries))
+
+# Track processed events for idempotency
+processed_events = set()
+
+def process_work_order_event(event):
+    """Process a single work order status change event."""
+    event_id = f"{event['wonum']}_{event['timestamp']}"
+
+    # Idempotency check: skip if already processed
+    if event_id in processed_events:
+        logger.info(f"Skipping duplicate event: {event_id}")
+        return True
+
+    try:
+        # Map Maximo status to ERP status code
+        erp_status = map_status_to_erp(event['newStatus'])
+
+        # Call ERP API to update work order status
+        response = session.post(
+            'https://erp.company.com/api/workorders/status',
+            json={
+                'externalId': event['wonum'],
+                'status': erp_status,
+                'site': event['siteid'],
+                'timestamp': event['timestamp'],
+                'changedBy': event['changedBy']
+            },
+            headers={'Authorization': f'Bearer {ERP_API_TOKEN}'},
+            timeout=30
+        )
+        response.raise_for_status()
+
+        processed_events.add(event_id)
+        logger.info(
+            f"Synced WO {event['wonum']} status "
+            f"{event['previousStatus']} -> {event['newStatus']} to ERP"
+        )
+        return True
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to sync WO {event['wonum']} to ERP: {e}")
+        return False
+
+def map_status_to_erp(maximo_status):
+    """Map Maximo status codes to ERP equivalents."""
+    status_map = {
+        'WAPPR': 'PENDING_APPROVAL',
+        'APPR': 'APPROVED',
+        'INPRG': 'IN_PROGRESS',
+        'COMP': 'COMPLETED',
+        'CLOSE': 'CLOSED',
+        'CAN': 'CANCELLED'
+    }
+    return status_map.get(maximo_status, 'UNKNOWN')
+
+# Main consumer loop
+consumer = KafkaConsumer(
+    'mas.manage.workorder.statuschange',
+    bootstrap_servers=['kafka-broker-1:9092', 'kafka-broker-2:9092'],
+    group_id='erp-sync-consumer',
+    value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+    auto_offset_reset='earliest',
+    enable_auto_commit=False,  # Manual commit for reliability
+    max_poll_records=100
+)
+
+logger.info("ERP sync consumer started. Listening for work order events...")
+
+for message in consumer:
+    event = message.value
+    success = process_work_order_event(event)
+
+    if success:
+        # Commit offset only after successful processing
+        consumer.commit()
+    else:
+        logger.warning(
+            f"Event processing failed for WO {event.get('wonum')}. "
+            f"Will retry on next poll."
+        )
+        # Do not commit -- message will be redelivered
+```
+
+**Key design patterns in this consumer:**
+
+- **Manual offset commits:** The consumer only commits its offset after successful processing. If the consumer crashes or the ERP call fails, the event will be redelivered on restart.
+- **Idempotency:** The `processed_events` set prevents duplicate processing. In production, you would use a persistent store (Redis, database) instead of an in-memory set.
+- **Retry logic:** The HTTP session is configured with automatic retries for transient ERP failures.
+- **Status mapping:** Business logic translates Maximo status codes to ERP equivalents -- the same transformation that would have been an XSL processing rule in the legacy model.
+
+---
+
+## Legacy to Modern Mapping Table
+
+This is the reference table you will return to throughout your migration. Every legacy MIF pattern has a modern equivalent -- but the right choice depends on your specific requirements.
+
+| Legacy Pattern | Modern Equivalent | When to Use Modern | Migration Complexity |
+|---------------|-------------------|-------------------|---------------------|
+| Publish Channel &rarr; JMS | Kafka Topic | High-volume, durable event streams requiring replay capability | Medium |
+| Publish Channel &rarr; HTTP | Webhook or Outbound REST Call | Simple notifications, low-volume events, prototype integrations | Low |
+| Publish Channel &rarr; Flat File | REST API bulk export or Kafka &rarr; File Sink Connector | Batch file generation for legacy consumers that require files | Medium |
+| Enterprise Service &rarr; JMS | Kafka Consumer &rarr; REST API | Inbound event processing with decoupled, scalable consumption | Medium |
+| Enterprise Service &rarr; HTTP/SOAP | REST API Endpoint (JSON) | Direct inbound data operations via modern API protocols | Low |
+| Invocation Channel (sync) | Synchronous REST API Call | Request/response patterns where the caller needs an immediate answer | Low |
+| Interface Tables (IFACETABLE) | REST API Bulk Operations | Batch data loading where staging tables are the current pattern | Medium |
+| MIF CRON Task Polling | Event-Driven Triggers | Real-time processing replacing scheduled batch intervals | Low-Medium |
+| XSL Processing Rules | Middleware Transformation (App Connect) or Consumer-Side Logic | Complex data transformation between source and target formats | Medium-High |
+| Object Structure XML Schema | JSON Event Schema with Schema Registry | Defining the contract between event producer and consumers | Medium |
+
+### Reading the Migration Complexity Column
+
+- **Low:** Configuration change or simple code translation. Can often be completed in days.
+- **Medium:** Requires architectural redesign of the integration flow. Typically weeks of effort including testing.
+- **Medium-High:** Involves significant business logic migration (XSL transformations, custom Java processing classes) that must be reimplemented in a different technology.
+
+---
+
+## Migration Patterns: From Legacy to Modern
+
+Let us walk through the four most common migration patterns in detail.
+
+### Pattern 1: Publish Channel to Webhook (Simplest Path)
+
+**When to use:** Low-volume outbound events where you need a quick migration path. The downstream system can receive HTTP callbacks. Message loss is tolerable (or handled by application-level reconciliation).
+
+**Legacy flow:**
+
+```
+Maximo Data Change
+  -> Publish Channel
+    -> Object Structure (XML)
+      -> Processing Rules
+        -> HTTP Endpoint (SOAP)
+```
+
+**Modern flow:**
+
+```
+MAS Data Change
+  -> Webhook Event (JSON)
+    -> Your HTTP Endpoint (REST)
+```
+
+**What changes:**
+- XML becomes JSON (simpler, smaller, universally supported)
+- SOAP becomes REST (no WSDL, no envelope, no namespace headaches)
+- Processing rules move to the consumer side (your endpoint transforms the data)
+- Object structure mapping is replaced by the webhook event schema
+
+**What to watch for:**
+- Webhooks are "fire and forget" with limited retries. If your endpoint is down for an extended period, you may miss events.
+- No built-in transformation layer. If your downstream system expects a specific format that differs from the webhook payload, you need to handle the transformation in your receiver.
+
+### Pattern 2: Publish Channel to Kafka (Most Scalable)
+
+**When to use:** High-volume outbound events, mission-critical integrations where message loss is unacceptable, or scenarios where multiple downstream systems need the same events.
+
+**Legacy flow:**
+
+```
+Maximo Data Change
+  -> Publish Channel
+    -> Object Structure (XML)
+      -> Processing Rules (XSL)
+        -> JMS Queue
+          -> Single Consumer (Java/MDB)
+            -> ERP Update
+```
+
+**Modern flow:**
+
+```
+MAS Data Change
+  -> Kafka Event (JSON)
+    -> Kafka Topic (persistent, replicated)
+      -> Consumer Group 1: ERP Sync
+      -> Consumer Group 2: Data Warehouse
+      -> Consumer Group 3: Dashboard
+      -> Consumer Group N: (any future consumer)
+```
+
+**What changes:**
+- JMS queue becomes Kafka topic (persistent, multi-consumer, replayable)
+- Single consumer becomes multiple independent consumer groups
+- XSL processing rules become consumer-side transformation logic
+- XML becomes JSON
+- Queue table monitoring becomes Kafka consumer lag monitoring
+
+**What to watch for:**
+- Kafka requires infrastructure (brokers, ZooKeeper/KRaft, schema registry). MAS on Cloud Pak includes Kafka via Event Streams, but on-premises deployments need to provision and manage the Kafka cluster.
+- Consumer groups require careful partition assignment for ordering guarantees.
+- Schema evolution must be managed explicitly (use Avro with Schema Registry for production deployments).
+
+### Pattern 3: Enterprise Service to REST API Endpoint
+
+**When to use:** Inbound integrations where external systems push data into Maximo. The external system can be updated to call REST APIs instead of SOAP/JMS endpoints.
+
+**Legacy flow:**
+
+```
+External System
+  -> SOAP/JMS Message (XML)
+    -> Enterprise Service
+      -> Processing Rules (XSL)
+        -> Object Structure
+          -> Maximo MBO (save)
+```
+
+**Modern flow:**
+
+```
+External System
+  -> REST API Call (JSON)
+    -> MAS REST/OSLC Endpoint
+      -> Maximo Record (save)
+```
+
+**What changes:**
+- SOAP/XML becomes REST/JSON
+- Enterprise service routing becomes direct API endpoint targeting
+- Inbound processing rules become unnecessary (the API expects a defined JSON schema)
+- Object structure mapping is handled by the OSLC resource definition
+
+**What to watch for:**
+- Authentication changes. The external system needs to authenticate via API key or OAuth token instead of whatever mechanism was used for the legacy endpoint.
+- Field mapping differences. The REST API field names may differ from the legacy object structure element names. You need to map the external system's output to the API's expected input.
+- Bulk operations. If the legacy integration used batch processing (sending hundreds of records in a single XML message), you need to use the REST API's bulk operation capabilities or implement batching in the caller.
+
+### Pattern 4: Interface Tables to Bulk REST Operations
+
+**When to use:** Batch integrations that currently use interface tables (IFACETABLE) as staging areas for data exchange. Common in ERP integrations where nightly batch loads move data between systems.
+
+**Legacy flow:**
+
+```
+External ETL Process
+  -> INSERT into MAXIFACEIN / custom staging table
+    -> CRON Task polls staging table
+      -> Enterprise Service processes rows
+        -> Maximo MBO (save)
+```
+
+**Modern flow:**
+
+```
+External Process
+  -> REST API Bulk POST (JSON array)
+    -> MAS processes records
+      -> Maximo Records (save)
+        -> Response with per-record status
+```
+
+**What changes:**
+- Database staging tables become REST API calls
+- CRON task polling becomes on-demand API invocation
+- Row-by-row processing becomes bulk operation with batch semantics
+- Error handling shifts from stuck queue entries to API response codes
+
+**What to watch for:**
+- Batch size limits. The REST API has practical limits on how many records you can send in a single request. Plan for pagination (e.g., 500 records per batch).
+- Transaction semantics. Interface tables processed within a single database transaction. REST API bulk operations may have different transaction boundaries (per-record vs. per-batch). Understand how partial failures are handled.
+- Scheduling. If the batch must run at a specific time (nightly, hourly), you need an external scheduler (cron, Kubernetes CronJob, orchestration platform) to trigger the API calls.
+
+### Migration Decision Flowchart
+
+Use this decision tree to select the right migration pattern for each of your legacy integrations:
+
+```
+START: What is the legacy integration pattern?
+  |
+  |--> Publish Channel (Outbound)?
+  |      |
+  |      |--> Is message loss acceptable?
+  |      |      |
+  |      |      |--> YES: Are there multiple consumers?
+  |      |      |      |
+  |      |      |      |--> NO:  Use WEBHOOK (Pattern 1)
+  |      |      |      |--> YES: Use KAFKA (Pattern 2)
+  |      |      |
+  |      |      |--> NO: Use KAFKA (Pattern 2)
+  |      |
+  |      |--> Volume > 1,000 events/day?
+  |             |
+  |             |--> YES: Use KAFKA (Pattern 2)
+  |             |--> NO:  Use WEBHOOK (Pattern 1)
+  |
+  |--> Enterprise Service (Inbound)?
+  |      |
+  |      |--> Can the sender call REST APIs?
+  |             |
+  |             |--> YES: Use REST API (Pattern 3)
+  |             |--> NO:  Use KAFKA Consumer -> REST API
+  |                       (Kafka acts as protocol bridge)
+  |
+  |--> Invocation Channel (Sync)?
+  |      |
+  |      |--> Use Synchronous REST API Call
+  |           (Direct replacement, simplest migration)
+  |
+  |--> Interface Tables (Batch)?
+         |
+         |--> Use Bulk REST Operations (Pattern 4)
+              Consider Kafka for very large batches
+              that benefit from streaming semantics
+```
+
+---
+
+## Error Handling: Old vs New
+
+Error handling is where the event-driven model delivers its most dramatic improvement over legacy MIF. Let us compare the two approaches across common failure scenarios.
+
+### Scenario 1: Downstream System Unavailable
+
+**Legacy (MIF):**
+1. Publish channel fires, message routed to JMS endpoint
+2. JMS broker connection fails
+3. Message written to `MAXIFACEOUTQUEUE` with ERROR status
+4. Message sits in queue table indefinitely until manually reviewed
+5. Admin identifies the error, checks endpoint connectivity, retries
+6. If more events fire while the endpoint is down, they all queue up with ERROR status
+7. When connectivity is restored, admin must manually retry all failed messages (or run a batch retry script)
+8. If queue entries were purged during maintenance, those messages are permanently lost
+
+**Modern (Kafka):**
+1. MAS publishes event to Kafka topic -- succeeds immediately (Kafka broker is independent of downstream systems)
+2. Consumer attempts to process event, downstream system is unavailable
+3. Consumer does not commit its offset
+4. On next poll, Kafka redelivers the event
+5. Consumer retries with exponential backoff
+6. When downstream system recovers, consumer catches up automatically
+7. No manual intervention. No data loss. No queue table cleanup.
+
+### Scenario 2: Consumer Bug Produces Incorrect Results
+
+**Legacy (MIF):**
+1. Publish channel sends 5,000 messages overnight
+2. Custom Java consumer has a bug -- it processes the messages but writes incorrect data to the ERP
+3. Bug is discovered the next morning
+4. The messages have already been consumed from the JMS queue -- they are gone
+5. To reprocess, you must either query Maximo's transaction log (if you have one) or manually generate correction records
+6. Hours of manual work, risk of further errors
+
+**Modern (Kafka):**
+1. MAS publishes 5,000 events to Kafka topic overnight
+2. Consumer has a bug -- it processes events incorrectly
+3. Bug is discovered the next morning
+4. Fix the bug in the consumer code
+5. Reset the consumer group's offset to the point before the error (e.g., midnight)
+6. Consumer reprocesses all 5,000 events with the corrected logic
+7. Automated, reliable, auditable
+
+### Scenario 3: New Consumer Needs Historical Data
+
+**Legacy (MIF):**
+1. A new analytics team wants to receive all work order status changes
+2. There is no way to replay historical publish channel messages
+3. The team must build a custom extract from Maximo's database to bootstrap their system
+4. Going forward, you configure a new publish channel (or modify the existing one to fan out to a second endpoint)
+5. Any gap between the historical extract and the live feed requires manual reconciliation
+
+**Modern (Kafka):**
+1. A new analytics team wants work order status change events
+2. They deploy a new consumer with a new consumer group ID
+3. They set `auto_offset_reset='earliest'` to read from the beginning of the topic
+4. Their consumer processes the entire event history (up to the topic's retention period)
+5. Seamless transition from historical backfill to live event processing
+6. No changes to MAS, no changes to existing consumers
+
+### Dead Letter Queues
+
+Both models support the concept of a dead letter queue (DLQ) -- a holding area for messages that cannot be processed after multiple attempts. But the implementations differ significantly:
+
+**Legacy DLQ (MIF):**
+- Failed messages stay in `MAXIFACEOUTQUEUE` / `MAXIFACEINQUEUE` with an error flag
+- No automatic retry with backoff
+- Manual intervention required to review, fix, and retry each message
+- Queue table grows with every failure, impacting database performance
+- No tooling for bulk retry or error categorization
+
+**Modern DLQ (Kafka):**
+- A dedicated Kafka topic (e.g., `mas.manage.workorder.statuschange.dlq`) receives events that fail after configurable retry attempts
+- Automatic retry with exponential backoff before DLQ routing
+- DLQ consumers can implement automated recovery logic (e.g., retry with different parameters, alert operations team, log for audit)
+- DLQ events retain the full original payload plus error metadata (failure reason, retry count, timestamps)
+- Events in the DLQ can be replayed back to the original topic after the underlying issue is resolved
+
+---
+
+## Real-World Migration Example: Work Order Status Change
+
+Let us walk through a complete, end-to-end migration of one of the most common Maximo integrations: syncing work order status changes to an ERP system.
+
+### The Legacy Implementation
+
+**Architecture:**
+
+```
+Maximo 7.6
+  -> Publish Channel: WOSTATUSTOERP
+    -> Object Structure: MXWO (filtered to status-relevant fields)
+      -> Processing Rule: XSL transformation (Maximo XML -> ERP XML format)
+        -> JMS Endpoint: erp.inbound.queue (WebSphere MQ)
+          -> Message-Driven Bean (Java EE)
+            -> ERP SOAP Web Service call
+```
+
+**Legacy Publish Channel Configuration (conceptual):**
+
+```
+Publish Channel: WOSTATUSTOERP
+  Object Structure: MXWO
+  Event Filter: WORKORDER.STATUS changed
+  Skip Condition: WORKORDER.ISTASK = 1 (skip task records)
+  Endpoint: ERPJMSENDPOINT (JMS, WebSphere MQ)
+  Processing Rule: WOSTATUSXSL (XSL transformation)
+```
+
+**Legacy XSL Processing Rule (simplified):**
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<xsl:stylesheet version="1.0"
+  xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+
+  <xsl:template match="/SyncMXWO/MXWOSet/WORKORDER">
+    <ERPWorkOrderUpdate>
+      <ExternalID><xsl:value-of select="WONUM"/></ExternalID>
+      <Status>
+        <xsl:choose>
+          <xsl:when test="STATUS='APPR'">APPROVED</xsl:when>
+          <xsl:when test="STATUS='INPRG'">IN_PROGRESS</xsl:when>
+          <xsl:when test="STATUS='COMP'">COMPLETED</xsl:when>
+          <xsl:when test="STATUS='CLOSE'">CLOSED</xsl:when>
+          <xsl:otherwise>UNKNOWN</xsl:otherwise>
+        </xsl:choose>
+      </Status>
+      <Site><xsl:value-of select="SITEID"/></Site>
+      <ChangedDate><xsl:value-of select="CHANGEDATE"/></ChangedDate>
+      <ChangedBy><xsl:value-of select="CHANGEBY"/></ChangedBy>
+    </ERPWorkOrderUpdate>
+  </xsl:template>
+
+</xsl:stylesheet>
+```
+
+**Legacy Java Consumer (Message-Driven Bean, simplified):**
+
+```java
+@MessageDriven(activationConfig = {
+    @ActivationConfigProperty(
+        propertyName = "destinationType",
+        propertyValue = "javax.jms.Queue"),
+    @ActivationConfigProperty(
+        propertyName = "destination",
+        propertyValue = "erp.inbound.queue")
+})
+public class ERPWorkOrderConsumer implements MessageListener {
+
+    @Override
+    public void onMessage(Message message) {
+        try {
+            TextMessage textMsg = (TextMessage) message;
+            String xmlPayload = textMsg.getText();
+
+            // Parse the transformed XML
+            Document doc = parseXML(xmlPayload);
+            String externalId = getElementValue(doc, "ExternalID");
+            String status = getElementValue(doc, "Status");
+            String site = getElementValue(doc, "Site");
+
+            // Call ERP SOAP web service
+            ERPServicePort erpService = getERPService();
+            UpdateWorkOrderRequest request = new UpdateWorkOrderRequest();
+            request.setExternalId(externalId);
+            request.setStatus(status);
+            request.setSite(site);
+
+            UpdateWorkOrderResponse response =
+                erpService.updateWorkOrder(request);
+
+            if (!response.isSuccess()) {
+                throw new RuntimeException(
+                    "ERP update failed: " + response.getErrorMessage()
+                );
+            }
+
+        } catch (Exception e) {
+            // Message will be redelivered by JMS (up to max retries)
+            throw new RuntimeException("Processing failed", e);
+        }
+    }
+}
+```
+
+**Problems with this implementation:**
+- The XSL transformation runs inside Maximo's JVM, consuming application server resources
+- The JMS endpoint creates a hard dependency on WebSphere MQ availability
+- The MDB runs in a Java EE application server that must be separately deployed and managed
+- If the ERP SOAP service is slow, JMS messages back up, eventually affecting Maximo's outbound queue
+- No replay capability -- if the MDB has a bug, processed messages cannot be reprocessed
+- Adding a second consumer (e.g., a data warehouse) requires a new publish channel or JMS bridge
+
+### The Modern Implementation
+
+**Architecture:**
+
+```
+MAS Manage
+  -> Kafka Event: mas.manage.workorder.statuschange
+    -> Kafka Topic (6 partitions, 3x replication)
+      -> Consumer Group: erp-sync-consumer
+        -> Python service
+          -> ERP REST API call
+```
+
+**MAS Event Payload (automatically generated on status change):**
+
+```json
+{
+  "eventType": "workorder.statuschange",
+  "eventId": "evt-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "timestamp": "2026-02-06T14:30:00Z",
+  "source": "mas-manage-bedford",
+  "data": {
+    "wonum": "WO-12345",
+    "description": "Replace HVAC compressor - Building A",
+    "previousStatus": "WAPPR",
+    "newStatus": "APPR",
+    "changedBy": "MAXADMIN",
+    "siteid": "BEDFORD",
+    "orgid": "EAGLENA",
+    "isTask": false,
+    "parentWonum": null
+  }
+}
+```
+
+**Modern Consumer (Python, production-ready):**
+
+```python
+from kafka import KafkaConsumer, TopicPartition
+import json
+import logging
+import requests
+import time
+from datetime import datetime
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(name)s %(levelname)s %(message)s'
+)
+logger = logging.getLogger('erp-sync')
+
+# ERP status mapping (replaces XSL transformation)
+STATUS_MAP = {
+    'WAPPR': 'PENDING_APPROVAL',
+    'APPR': 'APPROVED',
+    'INPRG': 'IN_PROGRESS',
+    'COMP': 'COMPLETED',
+    'CLOSE': 'CLOSED',
+    'CAN': 'CANCELLED'
+}
+
+# Configuration
+ERP_API_URL = 'https://erp.company.com/api/v2/workorders/status'
+ERP_API_TOKEN = 'your-oauth-token-here'
+KAFKA_BROKERS = ['kafka-1:9092', 'kafka-2:9092', 'kafka-3:9092']
+MAX_RETRIES = 3
+RETRY_BACKOFF = 2  # seconds, doubles each retry
+
+def sync_to_erp(event, retry_count=0):
+    """Sync a work order status change to the ERP system."""
+    try:
+        erp_status = STATUS_MAP.get(
+            event['data']['newStatus'], 'UNKNOWN'
+        )
+
+        response = requests.post(
+            ERP_API_URL,
+            json={
+                'externalId': event['data']['wonum'],
+                'status': erp_status,
+                'site': event['data']['siteid'],
+                'organization': event['data']['orgid'],
+                'timestamp': event['timestamp'],
+                'changedBy': event['data']['changedBy'],
+                'source': 'mas-manage',
+                'eventId': event['eventId']  # For ERP-side idempotency
+            },
+            headers={
+                'Authorization': f'Bearer {ERP_API_TOKEN}',
+                'Content-Type': 'application/json',
+                'X-Correlation-Id': event['eventId']
+            },
+            timeout=30
+        )
+        response.raise_for_status()
+
+        logger.info(
+            f"Synced WO {event['data']['wonum']} "
+            f"({event['data']['previousStatus']} -> "
+            f"{event['data']['newStatus']}) to ERP. "
+            f"ERP response: {response.status_code}"
+        )
+        return True
+
+    except requests.exceptions.RequestException as e:
+        if retry_count < MAX_RETRIES:
+            wait_time = RETRY_BACKOFF * (2 ** retry_count)
+            logger.warning(
+                f"ERP sync failed for WO {event['data']['wonum']}, "
+                f"retry {retry_count + 1}/{MAX_RETRIES} in {wait_time}s: {e}"
+            )
+            time.sleep(wait_time)
+            return sync_to_erp(event, retry_count + 1)
+        else:
+            logger.error(
+                f"ERP sync permanently failed for WO "
+                f"{event['data']['wonum']} after {MAX_RETRIES} retries: {e}"
+            )
+            return False
+
+def main():
+    consumer = KafkaConsumer(
+        'mas.manage.workorder.statuschange',
+        bootstrap_servers=KAFKA_BROKERS,
+        group_id='erp-sync-consumer',
+        value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+        auto_offset_reset='earliest',
+        enable_auto_commit=False,
+        max_poll_records=50,
+        session_timeout_ms=30000,
+        heartbeat_interval_ms=10000
+    )
+
+    logger.info("ERP sync consumer started. Awaiting events...")
+
+    for message in consumer:
+        event = message.value
+
+        # Skip task records (replaces MIF skip condition)
+        if event.get('data', {}).get('isTask', False):
+            consumer.commit()
+            continue
+
+        success = sync_to_erp(event)
+
+        if success:
+            consumer.commit()
+        else:
+            # Log failure -- event will be redelivered on next poll
+            # In production, route to dead letter topic after N failures
+            logger.error(
+                f"Unrecoverable failure for partition "
+                f"{message.partition} offset {message.offset}. "
+                f"Event will be retried."
+            )
+
+if __name__ == '__main__':
+    main()
+```
+
+### Side-by-Side Comparison
+
+| Aspect | Legacy (MIF + JMS + Java) | Modern (Kafka + Python) |
+|--------|--------------------------|------------------------|
+| **Data format** | XML (verbose, requires XSL) | JSON (compact, universally supported) |
+| **Transport** | JMS via WebSphere MQ | Kafka topic (persistent, replicated) |
+| **Transformation** | XSL stylesheet in Maximo | Python dict mapping in consumer |
+| **Consumer runtime** | Java EE MDB in app server | Standalone Python process (or container) |
+| **Replay capability** | None -- consumed messages are gone | Full replay from any offset |
+| **Multiple consumers** | Requires new publish channel per consumer | Add new consumer group -- no MAS changes |
+| **Error handling** | JMS redelivery (limited), then manual | Exponential backoff + dead letter topic |
+| **Monitoring** | MIF queue table queries, MQ dashboard | Kafka consumer lag metrics, Prometheus/Grafana |
+| **Deployment** | Embedded in Java EE server | Container image, Kubernetes deployment |
+| **Scaling** | Add threads to MDB pool | Add consumer instances to consumer group |
+| **Lines of code** | ~150 (Java + XSL + config) | ~120 (Python, self-contained) |
+| **Infrastructure dependencies** | WebSphere MQ, Java EE server | Kafka cluster (included in MAS Cloud Pak) |
+
+---
+
+## Key Takeaways
+
+The event-driven transformation is not a incremental upgrade to MIF -- it is a fundamentally different way of thinking about how Maximo communicates with the outside world. Here is what matters most:
+
+**1. Events replace messages.** In the legacy model, you configure Maximo to send messages to specific destinations. In the event-driven model, Maximo announces what happened (events), and interested systems subscribe to those announcements. This inversion of control eliminates the tight coupling that causes cascading failures.
+
+**2. Kafka solves the durability problem.** The single biggest improvement over legacy JMS queues is Kafka's persistent, replayable event log. Messages are not lost when consumers go offline. Historical events can be reprocessed. New consumers can bootstrap from the event history. This fundamentally changes how you design for failure.
+
+**3. Webhooks are the 80/20 solution.** Not every integration needs Kafka. For simple notifications, low-volume events, and quick prototypes, webhooks provide a dramatically simpler path. Start with webhooks. Graduate to Kafka when you need durability, replay, or multi-consumer fan-out.
+
+**4. The transformation logic moves to the consumer.** In MIF, transformations (XSL, processing rules) run inside Maximo, consuming application server resources. In the event-driven model, consumers own their own transformation logic. This decouples transformation evolution from Maximo upgrades and lets each consumer format data exactly as it needs.
+
+**5. Monitoring changes fundamentally.** You stop monitoring queue table row counts and start monitoring consumer lag -- how far behind each consumer group is from the latest event. Consumer lag is the single most important metric in a Kafka-based integration architecture. If lag is growing, a consumer is falling behind. If lag is zero, everything is caught up.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas)
+- [IBM Event Streams (Kafka) on Cloud Pak for Integration](https://www.ibm.com/docs/en/cloud-paks/cp-integration)
+- [Apache Kafka Documentation](https://kafka.apache.org/documentation/)
+- [IBM Maximo Integration Framework Guide](https://www.ibm.com/docs/en/mam/7.6.1?topic=integrating-integration-framework)
+- [Kafka Consumer Group Protocol](https://kafka.apache.org/documentation/#consumerconfigs)
+- [OASIS OSLC Core Specification](https://open-services.net/spec/core/)
+- [Designing Event-Driven Systems (Ben Stopford, Confluent)](https://www.confluent.io/designing-event-driven-systems/)
+- [Enterprise Integration Patterns (Hohpe, Woolf)](https://www.enterpriseintegrationpatterns.com/)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 2 -- MAS Integration Architecture: The API-First Revolution](/blog/mas-api-first-architecture) |
+| **Next:** | [Part 4 -- Mastering the MAS REST API: A Practitioner's Guide](/blog/mas-rest-api-guide) |
+
+[View the full MAS INTEGRATION series index &rarr;](/blog/mas-integration-series-index)
+
+*Part 3 of the "MAS INTEGRATION" series | Published by TheMaximoGuys*
