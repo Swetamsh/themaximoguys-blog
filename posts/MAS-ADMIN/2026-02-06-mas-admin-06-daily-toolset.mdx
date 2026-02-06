@@ -1,0 +1,877 @@
+---
+title: "The Daily Toolset of MAS Admins"
+description: "A hands-on tour of the tools MAS administrators use every day -- from the MAS System Health Dashboard and oc CLI to Grafana dashboards and Prometheus alerting. Includes command examples, workflow walkthroughs, and a morning routine checklist."
+date: "2026-02-06"
+slug: "daily-toolset-mas-admins"
+tags: ["MAS Admin", "Toolset", "OpenShift", "Grafana", "Prometheus", "oc CLI", "Monitoring", "Troubleshooting", "Dashboard"]
+draft: false
+tier: "admin"
+author: "The Maximo Guys"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "/images/mas-admin/mas-admin-part-6.png"
+
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+
+faqs:
+  - question: "Do SaaS and on-prem MAS admins use the same tools?"
+    answer: "They share a common set -- the MAS System Health Dashboard, Integration Service Log Viewer, Systems UI, and IBM Support Portal are used by both. On-prem admins add the OpenShift Web Console, oc CLI, pod-level diagnostics, OLM, and observability tools like Grafana and Prometheus. SaaS admins interact with the platform at a higher level of abstraction."
+  - question: "Can I use kubectl instead of the oc CLI?"
+    answer: "Yes, for most Kubernetes-native operations kubectl works fine on OpenShift. However, oc includes OpenShift-specific commands (oc adm, oc new-project, route management) that kubectl does not. We recommend using oc as your primary CLI for consistency."
+  - question: "How do I set up monitoring if my organization has no Prometheus experience?"
+    answer: "OpenShift ships with a built-in monitoring stack (Prometheus, Alertmanager, Grafana). For most MAS deployments, the built-in stack is sufficient to start. Focus on understanding the pre-configured dashboards and alerts first, then customize as you learn. The OpenShift documentation provides step-by-step guides for enabling user workload monitoring."
+
+keyTakeaways:
+  - "SaaS admins rely on the MAS System Health Dashboard, Integration Log Viewer, Keycloak/Azure AD, and IBM Support Portal as their daily tools"
+  - "On-prem admins add the OpenShift Web Console, oc CLI, pod-level logs, OLM, Grafana, and Prometheus to their toolkit"
+  - "The morning health check routine is the single most important habit a MAS admin can develop"
+  - "Grafana dashboards and Prometheus alerts replace the manual monitoring scripts of legacy Maximo"
+  - "A structured troubleshooting decision tree prevents ad-hoc debugging and reduces mean time to resolution"
+
+series:
+  name: "MAS ADMIN"
+  part: 6
+  total: 8
+---
+
+# The Daily Toolset of MAS Admins
+
+> **Who this is for:** MAS administrators (SaaS and on-prem) who want a practical walkthrough of the tools they will use every day. If you are transitioning from legacy Maximo and wondering "what replaces my old tools?" -- this post is your answer.
+
+**Read time:** 17 minutes
+
+---
+
+Every tradesperson knows their tools. A carpenter does not wonder which saw to use. A plumber does not search for the right wrench. The tools are an extension of the work itself.
+
+MAS administration has its own toolkit, and it is entirely different from what you used in legacy Maximo. No more WebSphere admin console. No more tailing SystemOut.log. No more IBM HTTP Server plugin configuration files. The new tools are more powerful but also more numerous, and knowing which tool to reach for in each situation is what separates a confident admin from a stressed one.
+
+In this post, we walk through every tool in the MAS admin's daily kit -- what it does, when to use it, and how to use it effectively. We have organized by deployment model (SaaS vs on-prem) and included the workflows and command examples you will actually need.
+
+---
+
+## The Shared Toolset: SaaS and On-Prem
+
+These tools are used by every MAS admin, regardless of deployment model.
+
+### MAS System Health Dashboard
+
+**What it is:** A built-in web dashboard within the MAS Suite Administration interface that provides real-time health status of all deployed applications, services, and components.
+
+**What it replaces:** Custom monitoring scripts, manual WAS health checks, and the "log into the admin console and click around" approach from legacy Maximo.
+
+**What you see:**
+- Overall suite health status (green, yellow, red)
+- Individual application health (Manage, Monitor, Health, Assist, etc.)
+- Workspace status and deployment state
+- License utilization and AppPoints consumption
+- Recent events and status changes
+
+**Common workflows:**
+
+1. **Morning health check** -- Open the dashboard first thing. Green across the board means a quiet morning. Any yellow or red requires immediate investigation.
+
+2. **Post-upgrade validation** -- After a SaaS update or on-prem operator upgrade, the health dashboard confirms all applications returned to healthy state.
+
+3. **Capacity monitoring** -- AppPoints utilization trending toward the license limit triggers a conversation with management about license expansion or user optimization.
+
+**How to access:**
+Navigate to `https://admin.mas-instance.example.com` and select "Suite administration." The health dashboard is the default landing view.
+
+### Integration Service Log Viewer
+
+**What it is:** A log viewer within MAS that shows integration message processing, errors, and status for all configured integration endpoints.
+
+**What it replaces:** MIF (Maximo Integration Framework) queue tables, manual database queries against MAXINTMSGTRK, and the old Integration > Messages interface.
+
+**What you see:**
+- Integration message queue status
+- Failed messages with error details
+- Message processing timestamps
+- Retry status and reprocessing controls
+
+**Common workflows:**
+
+1. **Failed message diagnosis** -- When an integration partner reports missing data, search the log viewer for the specific transaction. The error detail usually points to the root cause: schema mismatch, authentication failure, or timeout.
+
+2. **Message reprocessing** -- Select failed messages, review the error, fix the underlying issue (correct the source data, fix the endpoint configuration), then trigger reprocessing.
+
+3. **Throughput monitoring** -- During high-volume periods (month-end close, seasonal maintenance ramps), monitor message processing rates to ensure the integration pipeline is keeping up.
+
+### Message Reprocessing
+
+**What it is:** The ability to retry failed integration messages after the root cause has been resolved. This is accessed through the Integration Service interface.
+
+**What it replaces:** Manual database manipulation of MIF queue records and the reprocessing functionality in the legacy Integration application.
+
+**Key difference from legacy:** In legacy Maximo, reprocessing a failed MIF message sometimes required direct database intervention -- updating queue status columns, clearing error flags. In MAS, reprocessing is a supported UI operation with proper error handling and audit logging.
+
+### Systems UI (Tenant Administration)
+
+**What it is:** The administrative interface for managing MAS configuration at the tenant and workspace level. This is where you manage users, security groups, applications, and system-level settings.
+
+**What it replaces:** A combination of the Maximo Security Groups application, Users application, System Properties, and various admin screens scattered across legacy Maximo.
+
+**What you see:**
+- User management and provisioning
+- Security group configuration
+- Application entitlements per workspace
+- System properties and configuration
+- Database configuration settings
+- Cron task management (for Manage application)
+
+**Common workflows:**
+
+1. **User provisioning** -- Add new users, assign security groups, set application access. In MAS, this often ties to your identity provider (Keycloak/Azure AD) for SSO, with MAS-side security groups controlling authorization.
+
+2. **Security group management** -- Create or modify security groups that control what users can see and do. This is conceptually the same as legacy Maximo but accessed through the MAS interface.
+
+3. **Cron task management** -- For Maximo Manage, cron tasks (scheduled jobs) are still configured through the administration interface, similar to legacy.
+
+### Identity Provider (Keycloak or Azure AD)
+
+**What it is:** The external identity provider that handles user authentication for MAS. MAS delegates authentication to Keycloak (bundled with MAS) or an external IdP like Azure AD, Okta, or Ping Identity.
+
+**What it replaces:** WebSphere security domains, LDAP configuration in WAS, and the vmmsync command for user synchronization.
+
+**Common workflows:**
+
+1. **SSO troubleshooting** -- User cannot log in. Check the IdP for the user's account status, verify group membership, check token claims, review OIDC/SAML configuration.
+
+2. **New user federation** -- Connect a new LDAP directory or identity source to Keycloak. Map external groups to MAS security groups.
+
+3. **MFA configuration** -- Enable multi-factor authentication for privileged users or all users depending on security policy.
+
+**Keycloak common tasks:**
+
+```bash
+# Access Keycloak admin console
+# URL: https://keycloak.mas-instance.example.com/auth/admin
+
+# Common Keycloak admin CLI operations (if needed)
+# Export a realm configuration
+/opt/keycloak/bin/kcadm.sh get realms/mas -o > realm-backup.json
+
+# List users in a realm
+/opt/keycloak/bin/kcadm.sh get users -r mas --limit 100
+```
+
+### API Gateway
+
+**What it is:** The entry point for all API traffic to MAS. It handles authentication, rate limiting, routing, and in some deployments, API versioning.
+
+**What it replaces:** Direct HTTP access to Maximo's OSLC/REST APIs through the IBM HTTP Server plugin.
+
+**Common workflows:**
+
+1. **API troubleshooting** -- An integration partner gets 401 errors. Check API key validity, token expiration, and gateway logs to identify the authentication failure.
+
+2. **Rate limit monitoring** -- A poorly written integration script is flooding the API. Identify the source, communicate with the integration team, and configure appropriate rate limits.
+
+3. **API key management** -- Generate, rotate, and revoke API keys for integration partners and automated scripts.
+
+### IBM Support Portal
+
+**What it is:** IBM's support platform for opening cases, searching knowledge bases, and downloading fixes.
+
+**What it replaces:** The same IBM Support Portal (it has not changed much), but how you use it has. In MAS, support cases often involve pod logs, operator status output, and Custom Resource definitions rather than WAS thread dumps and MAXLOG entries.
+
+**What to include in a MAS support case:**
+
+```bash
+# Gather diagnostic information for IBM Support
+# Pod status
+oc get pods -n mas-inst1-core -o wide > diag-pods.txt
+
+# Pod descriptions for troubled pods
+oc describe pod TROUBLED_POD -n mas-inst1-core > diag-pod-describe.txt
+
+# Recent pod logs
+oc logs TROUBLED_POD -n mas-inst1-core --tail=500 > diag-pod-logs.txt
+
+# Operator logs
+oc logs deployment/ibm-mas-operator -n mas-inst1-core --tail=500 > diag-operator-logs.txt
+
+# MAS Custom Resource status
+oc get suite inst1 -n mas-inst1-core -o yaml > diag-suite-cr.yaml
+
+# Events
+oc get events -n mas-inst1-core --sort-by='.lastTimestamp' > diag-events.txt
+
+# Package everything for the support case
+tar czf mas-diagnostics-$(date +%Y%m%d).tar.gz diag-*.txt diag-*.yaml
+```
+
+> **Key insight:** The quality of your support case determines how quickly IBM can help. A case with "MAS is down" gets triaged slowly. A case with pod status, operator logs, CR output, and a clear timeline gets routed to the right engineer immediately.
+
+---
+
+## On-Prem Additional Tools
+
+On-prem admins use everything above plus the following tools that provide visibility into the infrastructure layer.
+
+### OpenShift Web Console
+
+**What it is:** A web-based graphical interface for managing the OpenShift cluster. It provides visual access to workloads, networking, storage, operators, and cluster settings.
+
+**What it replaces:** The WebSphere admin console (conceptually). Where WAS gave you a tree view of cells, nodes, and servers, OpenShift gives you a view of projects, workloads, and services.
+
+**What you see:**
+- **Home/Overview** -- Cluster health, resource utilization, alerts
+- **Workloads** -- Pods, Deployments, StatefulSets, Jobs, CronJobs
+- **Networking** -- Services, Routes, Ingress, NetworkPolicies
+- **Storage** -- PersistentVolumeClaims, PersistentVolumes, StorageClasses
+- **Operators** -- Installed operators, OperatorHub, subscriptions
+- **Monitoring** -- Dashboards, metrics, alerts (built-in Prometheus)
+- **Administration** -- Cluster settings, RBAC, resource quotas
+
+**Common workflows:**
+
+1. **Visual pod health check** -- Navigate to Workloads > Pods, filter by the MAS namespace. Instantly see which pods are Running, Pending, or in error states. Click a pod to see its events, logs, and resource utilization.
+
+2. **Operator management** -- Navigate to Operators > Installed Operators. View the MAS operator, its managed resources, and any pending install plans that need approval.
+
+3. **Storage monitoring** -- Navigate to Storage > PersistentVolumeClaims. Check binding status, capacity utilization, and which pods are using which volumes.
+
+4. **Alert review** -- Navigate to Monitoring > Alerts. See active alerts, their severity, and when they fired. This is often the first place to check after the MAS health dashboard.
+
+### The oc CLI: Your Command-Line Workhorse
+
+**What it is:** The OpenShift command-line tool. It extends kubectl with OpenShift-specific commands and is the primary tool for scriptable, repeatable cluster operations.
+
+**What it replaces:** wsadmin scripting, WAS admin console clicks, and manual file system operations on the WAS server.
+
+**Essential daily commands:**
+
+```bash
+# === Authentication ===
+# Log in to the cluster
+oc login https://api.ocp-cluster.example.com:6443 -u admin
+
+# Check current context
+oc whoami
+oc whoami --show-server
+
+# Switch to a project/namespace
+oc project mas-inst1-core
+
+# === Pod Management ===
+# List pods with status
+oc get pods -n mas-inst1-core
+
+# Get detailed pod information
+oc describe pod POD_NAME -n mas-inst1-core
+
+# Stream live logs
+oc logs -f POD_NAME -n mas-inst1-core -c CONTAINER_NAME
+
+# Get logs from the previous container instance (after a restart)
+oc logs POD_NAME -n mas-inst1-core -c CONTAINER_NAME --previous
+
+# Get logs from the last hour
+oc logs POD_NAME -n mas-inst1-core --since=1h
+
+# Execute a command inside a pod
+oc exec -it POD_NAME -n mas-inst1-core -c CONTAINER_NAME -- /bin/bash
+
+# Copy files from a pod to local
+oc cp mas-inst1-core/POD_NAME:/path/to/file ./local-file
+
+# === Resource Monitoring ===
+# Node resource utilization
+oc adm top nodes
+
+# Pod resource utilization in a namespace
+oc adm top pods -n mas-inst1-core --sort-by=memory
+
+# === Events ===
+# Recent events in a namespace (sorted by time)
+oc get events -n mas-inst1-core --sort-by='.lastTimestamp'
+
+# Warning events only
+oc get events -n mas-inst1-core --field-selector type=Warning
+
+# === Operator Management ===
+# List installed operators
+oc get csv -n mas-inst1-core
+
+# Check operator subscriptions
+oc get subscription -n mas-inst1-core
+
+# View pending install plans
+oc get installplan -n mas-inst1-core
+
+# Approve an install plan
+oc patch installplan PLAN_NAME -n mas-inst1-core --type merge -p '{"spec":{"approved":true}}'
+
+# === Certificates ===
+# List TLS secrets
+oc get secrets -n mas-inst1-core --field-selector type=kubernetes.io/tls
+
+# Check certificate expiration
+oc get secret SECRET_NAME -n mas-inst1-core -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -noout -dates
+
+# === Custom Resources ===
+# View MAS Suite resource
+oc get suite -n mas-inst1-core -o yaml
+
+# View MAS workspace
+oc get workspace -n mas-inst1-core -o yaml
+
+# View Manage application
+oc get manageapp -n mas-inst1-manage -o yaml
+```
+
+> **Key insight:** Build a personal library of oc command aliases and scripts. The commands you run most frequently should be muscle memory. We have seen admins create shell aliases like `maspods` for `oc get pods -n mas-inst1-core` and `maslogs` for streaming the most common pod logs. Small efficiencies compound over months.
+
+### Pod Logs and Events
+
+**What it is:** The diagnostic output from individual containers and the Kubernetes event stream. This is where you find the "why" behind pod failures.
+
+**What it replaces:** SystemOut.log, SystemErr.log, ffdc dumps, and WAS trace strings.
+
+**Reading pod logs effectively:**
+
+```bash
+# Basic log retrieval
+oc logs POD_NAME -n mas-inst1-core
+
+# Multi-container pod: specify the container
+oc logs POD_NAME -n mas-inst1-core -c maximo-all
+
+# Tail and follow (like tail -f)
+oc logs -f POD_NAME -n mas-inst1-core --tail=100
+
+# Search logs for specific errors
+oc logs POD_NAME -n mas-inst1-core --since=2h | grep -i "error\|exception\|fatal"
+
+# Get logs from all pods matching a label
+oc logs -l app=manage -n mas-inst1-manage --tail=50
+```
+
+**Reading events effectively:**
+
+```bash
+# Events tell you what Kubernetes itself observed
+oc get events -n mas-inst1-core --sort-by='.lastTimestamp'
+
+# Common event types and what they mean:
+# FailedScheduling -- No node has enough resources for the pod
+# ImagePullBackOff -- Cannot pull the container image (auth? network? tag?)
+# CrashLoopBackOff -- Container starts and crashes repeatedly
+# OOMKilled -- Container exceeded its memory limit
+# FailedMount -- PVC mount failed (storage issue)
+# Unhealthy -- Liveness or readiness probe failed
+```
+
+### Operator Lifecycle Manager (OLM)
+
+**What it is:** The framework within OpenShift that manages operator installation, upgrades, and dependencies. It is how MAS operators are delivered and updated.
+
+**What it replaces:** Manual fix pack installation, EAR deployment processes, and the careful dance of stopping WAS, deploying, and restarting.
+
+**Common OLM workflows:**
+
+1. **Check operator health:**
+
+```bash
+# See all ClusterServiceVersions (installed operator versions)
+oc get csv -n mas-inst1-core
+# Output shows name, display, version, phase (Succeeded = healthy)
+
+# Check catalog sources (where operators come from)
+oc get catalogsource -n openshift-marketplace
+
+# Verify the IBM catalog is available
+oc get catalogsource ibm-operator-catalog -n openshift-marketplace -o jsonpath='{.status.connectionState.lastObservedState}'
+```
+
+2. **Manage upgrade approvals:**
+
+```bash
+# List install plans
+oc get installplan -n mas-inst1-core
+
+# View details of a pending install plan
+oc get installplan PLAN_NAME -n mas-inst1-core -o jsonpath='{.spec.clusterServiceVersionNames}'
+
+# Approve an install plan (triggers the upgrade)
+oc patch installplan PLAN_NAME -n mas-inst1-core --type merge -p '{"spec":{"approved":true}}'
+```
+
+3. **Check subscription configuration:**
+
+```bash
+# View subscription details (channel, approval strategy)
+oc get subscription ibm-mas-operator -n mas-inst1-core -o yaml
+```
+
+The `installPlanApproval` field is critical. Set to `Automatic`, upgrades happen without intervention. Set to `Manual`, you must approve each install plan. We recommend `Manual` for production to control upgrade timing.
+
+### Grafana: Visualization and Dashboards
+
+**What it is:** An open-source analytics and visualization platform. In MAS on-prem, Grafana connects to Prometheus (and optionally other data sources) to display real-time and historical metrics.
+
+**What it replaces:** Custom monitoring scripts, WAS Performance Monitoring Infrastructure (PMI), Tivoli Performance Viewer, and spreadsheet-based trend analysis.
+
+**Key dashboards for MAS admins:**
+
+1. **Cluster Overview** -- Node count, CPU utilization, memory utilization, pod count, storage utilization
+2. **Namespace Workloads** -- Per-namespace pod status, resource consumption, restart counts
+3. **Pod Resource Details** -- CPU and memory for individual pods over time, limit vs actual utilization
+4. **API Performance** -- Request rate, latency percentiles (p50, p95, p99), error rate
+5. **Certificate Expiration** -- Days until expiration for all managed certificates
+
+**Creating a custom MAS health dashboard:**
+
+```json
+{
+  "dashboard": {
+    "title": "MAS Application Health",
+    "panels": [
+      {
+        "title": "MAS Pod Count by Status",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "count(kube_pod_status_phase{namespace=~\"mas-.*\", phase=\"Running\"})",
+            "legendFormat": "Running"
+          },
+          {
+            "expr": "count(kube_pod_status_phase{namespace=~\"mas-.*\", phase!=\"Running\"})",
+            "legendFormat": "Not Running"
+          }
+        ]
+      },
+      {
+        "title": "MAS Pod Memory Utilization",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "sum(container_memory_working_set_bytes{namespace=~\"mas-.*\"}) by (pod) / sum(kube_pod_container_resource_limits{namespace=~\"mas-.*\", resource=\"memory\"}) by (pod) * 100",
+            "legendFormat": "{{ pod }}"
+          }
+        ]
+      },
+      {
+        "title": "MAS Pod Restart Count (24h)",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "increase(kube_pod_container_status_restarts_total{namespace=~\"mas-.*\"}[24h]) > 0",
+            "legendFormat": "{{ pod }}"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Prometheus: Metrics and Alerting
+
+**What it is:** A time-series database and monitoring system that collects metrics from Kubernetes components, applications, and custom exporters. OpenShift includes a built-in Prometheus instance.
+
+**What it replaces:** Custom monitoring scripts that queried WAS PMI counters, database-based health checks, and Tivoli Monitoring agents.
+
+**Essential PromQL queries for MAS admins:**
+
+```promql
+# Pod CPU utilization as percentage of limit
+sum(rate(container_cpu_usage_seconds_total{namespace=~"mas-.*"}[5m])) by (pod)
+/
+sum(kube_pod_container_resource_limits{namespace=~"mas-.*", resource="cpu"}) by (pod)
+* 100
+
+# Pod memory utilization as percentage of limit
+sum(container_memory_working_set_bytes{namespace=~"mas-.*"}) by (pod)
+/
+sum(kube_pod_container_resource_limits{namespace=~"mas-.*", resource="memory"}) by (pod)
+* 100
+
+# Pod restart rate (restarts per hour)
+rate(kube_pod_container_status_restarts_total{namespace=~"mas-.*"}[1h]) * 3600
+
+# HTTP request rate by response code (if metrics are exposed)
+sum(rate(http_requests_total{namespace=~"mas-.*"}[5m])) by (code)
+
+# PVC utilization (if kubelet metrics are available)
+kubelet_volume_stats_used_bytes{namespace=~"mas-.*"}
+/
+kubelet_volume_stats_capacity_bytes{namespace=~"mas-.*"}
+* 100
+```
+
+**Setting up alerting rules:**
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: mas-admin-alerts
+  namespace: mas-inst1-core
+spec:
+  groups:
+    - name: mas-health
+      rules:
+        # Alert when a MAS pod has been restarting
+        - alert: MASPodRestarting
+          expr: increase(kube_pod_container_status_restarts_total{namespace=~"mas-.*"}[1h]) > 3
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "MAS pod {{ $labels.pod }} restarted {{ $value }} times in 1 hour"
+            description: "Investigate pod {{ $labels.pod }} in namespace {{ $labels.namespace }}"
+
+        # Alert when pod memory is above 85% of limit
+        - alert: MASPodHighMemory
+          expr: |
+            (container_memory_working_set_bytes{namespace=~"mas-.*"}
+            / kube_pod_container_resource_limits{namespace=~"mas-.*", resource="memory"})
+            * 100 > 85
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "MAS pod {{ $labels.pod }} memory at {{ $value }}% of limit"
+
+        # Alert when no MAS pods are running in a namespace
+        - alert: MASNamespaceDown
+          expr: count(kube_pod_status_phase{namespace=~"mas-.*", phase="Running"}) by (namespace) == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "No running pods in MAS namespace {{ $labels.namespace }}"
+
+        # Alert when PVC is above 80% capacity
+        - alert: MASStorageHigh
+          expr: |
+            (kubelet_volume_stats_used_bytes{namespace=~"mas-.*"}
+            / kubelet_volume_stats_capacity_bytes{namespace=~"mas-.*"})
+            * 100 > 80
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "PVC {{ $labels.persistentvolumeclaim }} at {{ $value }}% capacity"
+```
+
+---
+
+## Comparison: Legacy Tools vs MAS Tools
+
+This table maps your old tools to their modern equivalents. Bookmark this -- it is the Rosetta Stone for the transition.
+
+| Task | Legacy Maximo 7.6 Tool | MAS SaaS Tool | MAS On-Prem Tool |
+|---|---|---|---|
+| **Application health** | WAS admin console, custom scripts | MAS Health Dashboard | MAS Health Dashboard + Grafana |
+| **Application logs** | SystemOut.log, ffdc | Integration Log Viewer | `oc logs`, centralized logging |
+| **User management** | Maximo Users app | MAS Systems UI | MAS Systems UI |
+| **Security groups** | Maximo Security Groups app | MAS Systems UI | MAS Systems UI |
+| **SSO / authentication** | WAS security, LDAP sync | Keycloak / Azure AD | Keycloak / Azure AD |
+| **Integration monitoring** | MIF queues, MAXINTMSGTRK | Integration Log Viewer | Integration Log Viewer + pod logs |
+| **Performance monitoring** | WAS PMI, Tivoli | MAS Health Dashboard | Prometheus + Grafana |
+| **Deployment** | EAR deploy via WAS | IBM-managed (SaaS) | OLM operators, CRs |
+| **Patching** | Fix pack install, WAS restart | IBM-managed (SaaS) | Operator upgrades via install plans |
+| **Certificate management** | Manual cert install in WAS | IBM-managed (SaaS) | cert-manager, `oc` commands |
+| **Database monitoring** | Direct SQL, DB admin tools | Limited visibility | DB admin tools + pod metrics |
+| **Backup** | DB export, filesystem copy | IBM-managed (SaaS) | etcd backup, CR export, mongodump |
+| **Scaling** | WAS cluster members | IBM-managed (SaaS) | CR replica count, HPA |
+| **Support cases** | IBM PMR with WAS logs | IBM Support Portal with API logs | IBM Support with pod logs, CRs, events |
+
+---
+
+## The Morning Routine: A MAS Admin's Health Check
+
+The most valuable habit a MAS admin can develop is a consistent morning health check. Here is the routine we recommend, refined from working with multiple MAS teams.
+
+### SaaS Admin Morning Routine (15-20 minutes)
+
+**Step 1: MAS Health Dashboard (3 minutes)**
+- Open the suite administration dashboard
+- Confirm all applications show green health status
+- Check for any recent events or status changes overnight
+- Note any pending SaaS updates or maintenance notifications
+
+**Step 2: Integration Health (5 minutes)**
+- Open the Integration Service Log Viewer
+- Check for failed messages since yesterday
+- Review error counts by integration endpoint
+- Reprocess any messages that failed due to transient issues (timeouts, temporary partner outages)
+
+**Step 3: User and Access Review (3 minutes)**
+- Check for pending user provisioning requests
+- Review any SSO authentication errors from overnight
+- Confirm IdP (Keycloak/Azure AD) is healthy and responding
+
+**Step 4: License Check (2 minutes)**
+- Review AppPoints utilization trend
+- Flag if utilization is trending above 80% of allocation
+
+**Step 5: Support Portal (2 minutes)**
+- Check any open IBM support cases for updates
+- Review recent IBM security advisories or alerts
+
+### On-Prem Admin Morning Routine (25-35 minutes)
+
+**Everything in the SaaS routine plus:**
+
+**Step 6: Cluster Health (5 minutes)**
+
+```bash
+# Node status -- any NotReady?
+oc get nodes
+
+# Any pods not in Running state?
+oc get pods -n mas-inst1-core --field-selector=status.phase!=Running
+oc get pods -n mas-inst1-manage --field-selector=status.phase!=Running
+oc get pods -n mongoce --field-selector=status.phase!=Running
+
+# Resource pressure -- any node above 80%?
+oc adm top nodes
+```
+
+**Step 7: Alert Review (3 minutes)**
+
+```bash
+# Check firing alerts
+oc get prometheusrules -n mas-inst1-core
+# Or navigate to Monitoring > Alerts in the OpenShift console
+```
+
+Open the Grafana MAS health dashboard. Review:
+- Pod restart counts (should be 0 for the last 24 hours)
+- Memory and CPU utilization trends
+- API response latency (any spikes?)
+
+**Step 8: Certificate Check (2 minutes)**
+
+```bash
+# Check for certificates expiring in the next 30 days
+oc get certificates -n mas-inst1-core -o custom-columns=NAME:.metadata.name,EXPIRY:.status.notAfter,READY:.status.conditions[0].status
+```
+
+**Step 9: Storage Check (2 minutes)**
+
+```bash
+# Check PVC status -- all should be Bound
+oc get pvc -n mas-inst1-core
+oc get pvc -n mas-inst1-manage
+oc get pvc -n mongoce
+```
+
+**Step 10: Backup Verification (3 minutes)**
+
+```bash
+# Verify last backup job completed successfully
+oc get jobs -n mas-backup --sort-by='.status.startTime' | tail -5
+
+# Check MongoDB backup logs
+oc logs job/mongo-backup-latest -n mongoce --tail=20
+```
+
+> **Key insight:** The morning routine should take 30 minutes at most. If it consistently takes longer, you need better automation or dashboards. The goal is not to investigate problems during the morning check -- it is to identify them for investigation.
+
+---
+
+## Troubleshooting Decision Tree
+
+When something goes wrong, having a structured approach prevents the wild goose chases that waste hours. Here is the decision tree we recommend.
+
+### Level 1: Is MAS Accessible?
+
+**Can users reach the MAS login page?**
+
+- **No** --&gt; Check DNS resolution, load balancer health, OpenShift router pods, and ingress routes
+  ```bash
+  oc get pods -n openshift-ingress
+  oc get routes -n mas-inst1-core
+  ```
+- **Yes, but login fails** --&gt; Check IdP health (Keycloak/Azure AD), OIDC configuration, certificate validity
+  ```bash
+  # Check Keycloak pods
+  oc get pods -n mas-inst1-core -l app=keycloak
+  # Check certificate validity
+  oc get secret keycloak-tls -n mas-inst1-core -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -noout -dates
+  ```
+- **Yes, login works** --&gt; Move to Level 2
+
+### Level 2: Is the Application Healthy?
+
+**Check MAS Health Dashboard -- any applications in error state?**
+
+- **Yes, application shows unhealthy** --&gt; Check application pods
+  ```bash
+  oc get pods -n mas-inst1-manage --field-selector=status.phase!=Running
+  oc describe pod TROUBLED_POD -n mas-inst1-manage
+  oc logs TROUBLED_POD -n mas-inst1-manage --tail=200
+  ```
+- **All applications show healthy but users report issues** --&gt; Move to Level 3
+
+### Level 3: Is It a Performance Issue?
+
+**Check resource utilization:**
+
+```bash
+# Pod resource consumption
+oc adm top pods -n mas-inst1-manage --sort-by=cpu
+oc adm top pods -n mas-inst1-manage --sort-by=memory
+```
+
+- **High CPU** --&gt; Check for runaway processes, consider scaling replicas
+- **High memory** --&gt; Check for memory leaks (steadily increasing over time), increase limits or add replicas
+- **Low resource usage but slow** --&gt; Check database performance (coordinate with DBA team), check network latency, check storage I/O
+
+### Level 4: Is It an Integration Issue?
+
+**Check integration message flow:**
+
+- Open Integration Service Log Viewer
+- Search for failed messages in the relevant timeframe
+- Check integration pod health
+  ```bash
+  oc get pods -n mas-inst1-core -l app=integration
+  oc logs POD_NAME -n mas-inst1-core --since=1h | grep -i "error\|timeout\|refused"
+  ```
+
+- **Messages failing with authentication errors** --&gt; Check API keys, token expiration, IdP health
+- **Messages failing with timeout** --&gt; Check target system availability, network connectivity
+- **Messages failing with data errors** --&gt; Check source data format, schema compatibility
+
+### Level 5: Escalation
+
+If levels 1-4 do not identify the issue:
+
+1. Gather diagnostic data (pod status, logs, events, CR status)
+2. Check IBM known issues and tech notes
+3. Open an IBM support case with the gathered diagnostics
+4. Engage the appropriate infrastructure team (platform, DBA, network, security) based on the symptoms
+
+---
+
+## Building Your Personal Toolkit
+
+Beyond the standard tools, experienced MAS admins build a personal toolkit of scripts, aliases, and shortcuts. Here are recommendations from the field.
+
+### Shell Aliases
+
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+
+# Quick namespace switches
+alias mascore='oc project mas-inst1-core'
+alias masmanage='oc project mas-inst1-manage'
+alias masmongo='oc project mongoce'
+
+# Quick health checks
+alias maspods='oc get pods -n mas-inst1-core --sort-by=.status.startTime'
+alias masbad='oc get pods --all-namespaces --field-selector=status.phase!=Running,status.phase!=Succeeded'
+alias masnodes='oc adm top nodes'
+alias masevents='oc get events -n mas-inst1-core --sort-by=.lastTimestamp | tail -30'
+
+# Quick log access
+alias maslog='oc logs -f -n mas-inst1-core'
+alias managelog='oc logs -f -n mas-inst1-manage'
+```
+
+### Diagnostic Script
+
+Create a single script that gathers all diagnostic information for a support case:
+
+```bash
+#!/bin/bash
+# mas-diagnostics.sh -- Gather MAS diagnostic information
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+OUTDIR="mas-diag-${TIMESTAMP}"
+mkdir -p "${OUTDIR}"
+
+echo "Gathering MAS diagnostics..."
+
+# Cluster info
+oc version > "${OUTDIR}/cluster-version.txt"
+oc get nodes -o wide > "${OUTDIR}/nodes.txt"
+oc adm top nodes > "${OUTDIR}/node-resources.txt"
+
+# MAS namespaces
+for NS in mas-inst1-core mas-inst1-manage mongoce; do
+  echo "Processing namespace: ${NS}"
+  oc get pods -n "${NS}" -o wide > "${OUTDIR}/pods-${NS}.txt"
+  oc get events -n "${NS}" --sort-by='.lastTimestamp' > "${OUTDIR}/events-${NS}.txt"
+  oc adm top pods -n "${NS}" > "${OUTDIR}/top-pods-${NS}.txt" 2>/dev/null
+
+  # Get logs from non-running pods
+  for POD in $(oc get pods -n "${NS}" --field-selector=status.phase!=Running -o name 2>/dev/null); do
+    PODNAME=$(basename "${POD}")
+    oc describe "${POD}" -n "${NS}" > "${OUTDIR}/describe-${PODNAME}.txt"
+    oc logs "${POD}" -n "${NS}" --tail=500 > "${OUTDIR}/logs-${PODNAME}.txt" 2>/dev/null
+  done
+done
+
+# Custom Resources
+oc get suite -n mas-inst1-core -o yaml > "${OUTDIR}/suite-cr.yaml" 2>/dev/null
+oc get workspace -n mas-inst1-core -o yaml > "${OUTDIR}/workspace-cr.yaml" 2>/dev/null
+oc get csv -n mas-inst1-core > "${OUTDIR}/operators.txt"
+
+# Certificates
+oc get certificates --all-namespaces > "${OUTDIR}/certificates.txt" 2>/dev/null
+
+# Storage
+oc get pvc --all-namespaces | grep "mas-\|mongo" > "${OUTDIR}/pvcs.txt"
+
+# Package it
+tar czf "${OUTDIR}.tar.gz" "${OUTDIR}/"
+echo "Diagnostics saved to ${OUTDIR}.tar.gz"
+```
+
+### Bookmark Collection
+
+Maintain a browser bookmark folder with quick links to:
+- MAS Suite Administration
+- Keycloak Admin Console
+- OpenShift Web Console
+- Grafana Dashboards
+- Prometheus Queries
+- IBM Support Portal
+- IBM MAS Documentation
+- Team Runbook / Wiki
+
+---
+
+## Key Takeaways
+
+1. **Know your tools before you need them.** During an outage is the worst time to learn a new interface. Spend time exploring each tool during calm periods.
+
+2. **The morning routine prevents surprises.** A consistent 20-30 minute health check catches problems before users report them.
+
+3. **Build a personal toolkit.** Shell aliases, diagnostic scripts, and bookmark collections compound into significant time savings.
+
+4. **Follow the decision tree.** Structured troubleshooting beats random investigation every time. Start broad (is it accessible?) and narrow down systematically.
+
+5. **Gather diagnostics proactively.** Whether for IBM support or your own investigation, having comprehensive diagnostic data from the moment of the issue dramatically reduces resolution time.
+
+---
+
+## References
+
+- [IBM MAS Administration Guide](https://www.ibm.com/docs/en/mas-cd/maximo-manage/continuous-delivery)
+- [Red Hat OpenShift CLI Reference](https://docs.openshift.com/container-platform/latest/cli_reference/openshift_cli/getting-started-cli.html)
+- [Prometheus Querying Basics](https://prometheus.io/docs/prometheus/latest/querying/basics/)
+- [Grafana Getting Started](https://grafana.com/docs/grafana/latest/getting-started/)
+- [Kubernetes Troubleshooting Guide](https://kubernetes.io/docs/tasks/debug/)
+- [OpenShift Monitoring Documentation](https://docs.openshift.com/container-platform/latest/monitoring/monitoring-overview.html)
+
+---
+
+**Series Navigation:**
+
+**Previous:** [Part 5 — Skills MAS SysAdmins Must Learn](/blog/skills-mas-admins-need)
+**Next:** [Part 7 — Troubleshooting in MAS vs Maximo 7.6: The Complete Comparison Guide](/blog/troubleshooting-mas-vs-legacy)
+
+[View the full MAS ADMIN series index →](/blog/mas-admin-series-index)
+
+---
+
+*Part 6 of the "MAS ADMIN" series | Published by TheMaximoGuys*

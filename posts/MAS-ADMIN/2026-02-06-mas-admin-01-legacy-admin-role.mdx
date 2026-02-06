@@ -1,0 +1,494 @@
+---
+title: "The Legacy Maximo Administrator Role: A Love Letter to the 7.x Era"
+description: "A deep dive into the traditional Maximo 7.x administrator role — the WebSphere configuration, EAR deployments, JVM tuning, and server-level troubleshooting that defined two decades of Maximo operations. Understanding what we're leaving behind helps us navigate what comes next."
+date: "2026-02-06"
+slug: "legacy-maximo-admin-role"
+tags: ["Maximo", "MAS Admin", "WebSphere", "Legacy", "7.x", "Administration", "Migration", "Cloud-Native"]
+draft: false
+tier: "admin"
+author: "The Maximo Guys"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "/images/mas-admin/mas-admin-part-1.png"
+
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+
+faqs:
+  - question: "Will my WebSphere administration skills still be useful in MAS?"
+    answer: "The specific WebSphere skills (JVM tuning, EAR deployment, connection pooling) don't transfer directly. However, the underlying concepts — understanding application server behavior, diagnosing performance issues, managing authentication flows — absolutely transfer. You'll apply the same diagnostic thinking to OpenShift and Kubernetes."
+  - question: "Does MAS eliminate the need for a Maximo administrator?"
+    answer: "No. MAS changes what the administrator does, not whether one is needed. The role shifts from server operator to platform operator, from infrastructure caretaker to governance and observability specialist. Organizations still need someone who understands both Maximo and the operational environment."
+  - question: "Can I still access the database directly in MAS?"
+    answer: "In MAS on-premises deployments, database access is possible but discouraged for routine operations — APIs should be the primary interface. In MAS SaaS, direct database access is not available. All data operations go through supported APIs and the application layer."
+
+keyTakeaways:
+  - "The legacy Maximo admin role was a hybrid of server operator, database caretaker, application specialist, and security manager"
+  - "WebSphere configuration, EAR deployments, and JVM tuning formed the core technical identity of 7.x admins"
+  - "MAS eliminates the application server layer entirely — no WebSphere, no EAR files, no monolithic JVM"
+  - "The diagnostic and troubleshooting mindset transfers even when the specific tools do not"
+  - "Understanding what we are leaving behind is the first step toward embracing what comes next"
+
+series:
+  name: "MAS ADMIN"
+  part: 1
+  total: 8
+---
+
+# The Legacy Maximo Administrator Role: A Love Letter to the 7.x Era
+
+> **Who this is for:** Maximo administrators who have spent years — or decades — managing Maximo 7.x environments, and anyone on a migration team who needs to understand what the traditional admin role looked like before MAS changed everything.
+
+**Estimated read time: 18 minutes**
+
+---
+
+## 5:47 AM on a Tuesday: A Day in the Life
+
+The phone buzzes on the nightstand. You don't even need to look at the caller ID — only one system generates alerts at this hour.
+
+You pull up the VPN on your laptop, still in bed, and SSH into the WebSphere admin console. The Maximo application server cluster shows one node down. JVM heap exhaustion — again. The nightly PM generation CRON task ran alongside a large MIF inbound integration batch, and the combination overwhelmed the memory allocation you'd carefully tuned just three months ago.
+
+You restart the node. You check the SystemOut.log. You verify the database connections recovered cleanly. You watch the session count climb back to normal. By 6:30 AM, everything is stable. You make coffee and start your actual workday.
+
+This is the legacy Maximo administrator experience. Not the glamorous parts you see in IBM training materials — the real, 3-AM-phone-call, know-every-thread-dump, remember-which-fix-pack-broke-BIRT reality.
+
+And for almost two decades, it was a deeply satisfying role.
+
+---
+
+## The Server Operator: Owning the Foundation
+
+The traditional Maximo administrator was, first and foremost, a **server operator**. You didn't just run an application — you owned the entire stack from the operating system up through the application server to the Maximo application itself.
+
+### WebSphere Application Server: Your Domain
+
+WebSphere was the heart of your daily life. We've seen admins who could navigate the WAS admin console with their eyes closed — because they practically had to during 2 AM incident calls.
+
+**JVM Heap Configuration**
+
+Every Maximo environment had its own personality when it came to memory. You learned through experience — and often through outages — exactly how much heap to allocate:
+
+```
+# Typical JVM arguments for a production Maximo 7.6 instance
+-Xms4096m -Xmx8192m
+-XX:+UseG1GC
+-XX:MaxGCPauseMillis=200
+-verbose:gc
+-Xloggc:/opt/IBM/WebSphere/profiles/maximo/logs/gc.log
+```
+
+That `-Xmx8192m` wasn't arbitrary. It represented weeks of load testing, garbage collection log analysis, and production observation. You knew that 6GB wasn't enough during month-end reporting, and 10GB caused GC pauses that made the UI unresponsive.
+
+> **Key insight:** The JVM tuning expertise that legacy admins developed wasn't just technical knowledge — it was institutional knowledge. Each environment had tuning parameters that reflected years of organizational learning about usage patterns, integration loads, and peak periods.
+
+**Session Management and Clustering**
+
+In environments with hundreds of concurrent users, session management was a constant balancing act:
+
+- Session timeout values (too short frustrates users, too long exhausts memory)
+- Session persistence strategy (memory-to-memory replication vs. database)
+- Sticky sessions vs. session affinity in load-balanced clusters
+- Session invalidation during deployments
+
+You managed WebSphere clusters — typically two to four nodes behind an HTTP server plugin or an external load balancer. Each node needed individual attention: sometimes one node would develop a memory leak that the others didn't, and you'd need to figure out why.
+
+**Connection Pooling**
+
+The WebSphere data source configuration was deceptively simple in the admin console but critically important in production:
+
+```
+# Data Source settings you monitored constantly
+Maximum connections: 75
+Minimum connections: 10
+Connection timeout: 180 seconds
+Unused timeout: 1800 seconds
+Aged timeout: 0
+Reap time: 180 seconds
+```
+
+You learned the hard way what happens when the connection pool is too small during peak usage (users see "cannot obtain connection" errors) or too large (database server gets overwhelmed). Getting these numbers right was part science, part art, and part knowing that the facilities management team runs a massive report every Monday at 9 AM.
+
+---
+
+## The Deployment Specialist: EAR Files and Fix Packs
+
+### EAR Deployments: The Ritual
+
+Every Maximo upgrade, fix pack, or customization deployment followed a ritual that legacy admins know intimately:
+
+1. **Build the EAR file** using `buildmaximoear.cmd` or `buildmaximoear.sh`
+2. **Back up the existing EAR** (because you've been burned before)
+3. **Stop the application servers** in the correct order
+4. **Deploy the new EAR** through the WAS admin console or `wsadmin`
+5. **Update the database** with `updatedb` and `maxinst` scripts
+6. **Restart everything** — and watch the logs like a hawk
+7. **Validate** — log in, check Start Centers, run a quick work order cycle
+
+```bash
+# The classic Maximo EAR build sequence
+cd /opt/IBM/SMP/maximo/deployment
+./buildmaximoear.sh
+
+# WebSphere deployment via wsadmin
+/opt/IBM/WebSphere/profiles/Dmgr01/bin/wsadmin.sh -lang jython
+AdminApp.update('MAXIMO', 'app', '[-operation contentupdatealiases -contents /opt/IBM/SMP/maximo/deployment/default/maximo.ear]')
+AdminConfig.save()
+```
+
+A clean deployment took two to four hours. A complicated one — with database schema changes, BIRT report updates, and custom Java classes — could take an entire weekend maintenance window.
+
+> **Key insight:** EAR deployments were all-or-nothing. If the new EAR had a problem, you rolled back the entire application. There was no concept of deploying just one module or feature independently. This monolithic deployment model shaped how organizations planned releases — quarterly at best, annually in risk-averse environments.
+
+### Fix Pack Management
+
+IBM released fix packs on a regular cadence, and applying them was a carefully orchestrated process:
+
+1. Read the fix pack documentation (every line of it)
+2. Test in development
+3. Test in staging
+4. Schedule production maintenance window
+5. Apply, validate, document
+6. Deal with the one thing that broke that wasn't in the release notes
+
+You maintained spreadsheets tracking which fix packs and interim fixes were applied to which environment. Version drift between environments was a constant concern — "works in dev but not production" often traced back to a missing interim fix.
+
+---
+
+## The Database Caretaker: Direct SQL and Data Fixes
+
+### Living in the Database
+
+In the 7.x era, the database wasn't just storage — it was your troubleshooting tool, your reporting engine, and sometimes your emergency repair kit.
+
+Every experienced Maximo admin had a collection of SQL scripts:
+
+```sql
+-- Check for stuck workflows
+SELECT wo.wonum, wo.status, wf.active
+FROM workorder wo
+JOIN wfinstance wf ON wo.wonum = wf.ownertable
+WHERE wf.active = 1
+AND wo.status IN ('COMP', 'CLOSE');
+
+-- Find long-running CRON task instances
+SELECT ct.crontaskname, ci.instancename, ci.schedule,
+       ci.active, ci.runasmaxadmin
+FROM crontaskdef ct
+JOIN crontaskinstance ci ON ct.crontaskname = ci.crontaskname
+WHERE ci.active = 1
+ORDER BY ct.crontaskname;
+
+-- Emergency: clear stuck MIF queue entries
+SELECT * FROM maxifaceinqueue
+WHERE processingtime IS NULL
+AND queuename = 'MXINQUEUE'
+AND createtime < CURRENT_TIMESTAMP - 2 DAYS;
+```
+
+You knew MAXIMO's data model — not from reading IBM documentation, but from years of writing queries against it. `MAXATTRIBUTE`, `MAXOBJECT`, `MAXRELATIONSHIP` — these system tables were your map to understanding what Maximo was doing under the hood.
+
+### Direct Data Fixes
+
+In the legacy world, sometimes the fastest path to resolution was a direct database update. A work order stuck in a bad status? A purchase order that couldn't be approved because of a data inconsistency? An integration that loaded records with incorrect org/site values?
+
+```sql
+-- The kind of fix you hoped you'd never need but always did
+UPDATE workorder
+SET status = 'WAPPR', statusdate = CURRENT_TIMESTAMP,
+    changeby = 'MAXADMIN', changedate = CURRENT_TIMESTAMP
+WHERE wonum = 'WO-123456'
+AND siteid = 'PLANT_A';
+
+-- Don't forget the status history
+INSERT INTO wostatus (wonum, status, changedate, changeby, siteid, orgid)
+VALUES ('WO-123456', 'WAPPR', CURRENT_TIMESTAMP, 'MAXADMIN', 'PLANT_A', 'ORG1');
+```
+
+Was this best practice? No. Was it necessary at 4 AM when production was down? Absolutely. Every legacy admin has stories about the SQL statement that saved the day — and the one that didn't go as planned.
+
+> **Key insight:** Direct database access gave admins both tremendous power and tremendous risk. The ability to fix data issues in minutes also meant the ability to create new ones. This dual nature is precisely why MAS moves away from direct database access — not to limit admins, but to protect the data integrity that the platform guarantees.
+
+---
+
+## The Security Manager: LDAP, SSL, and Access Control
+
+### LDAP Integration Through WebSphere
+
+In Maximo 7.x, user authentication was tightly coupled to WebSphere's security configuration:
+
+- **Federated repositories** — mapping LDAP groups to WebSphere roles
+- **Custom login modules** — for organizations with complex authentication needs
+- **Certificate management** — SSL certs for LDAP connections, web server, and inter-server communication
+- **SSO configuration** — LTPA tokens between WebSphere servers, Tivoli Access Manager or similar
+
+The WebSphere security configuration was notoriously fragile. One wrong LDAP filter, one expired certificate, and nobody could log in to Maximo on Monday morning.
+
+```xml
+<!-- Fragment from WebSphere LDAP configuration -->
+<federatedRepository>
+  <primaryRealm name="defaultRealm">
+    <participatingBaseEntry name="o=defaultWIMFileBasedRealm"/>
+    <participatingBaseEntry name="ou=maximo,dc=company,dc=com"/>
+  </primaryRealm>
+</federatedRepository>
+```
+
+You maintained these configurations across development, test, and production environments — each pointing to different LDAP servers, each with slightly different group structures, and each requiring independent testing after any change.
+
+### Maximo Security Groups
+
+Beyond the infrastructure-level authentication, you also managed Maximo's internal security model:
+
+- Security groups and their application-level permissions
+- Conditional expression-based data restrictions
+- GL account security and site-level access
+- Collection/storeroom security
+- Read/write/delete permissions per application per group
+
+The interplay between WebSphere authentication and Maximo authorization was one of the most complex areas of the traditional admin role. When a user reported "I can't see work orders for Plant B," the troubleshooting path could lead through LDAP group membership, WebSphere role mapping, Maximo security group conditions, organization-level access, and data-level restrictions.
+
+---
+
+## The Integration Gatekeeper: MIF, CRON Tasks, and Queues
+
+### Maximo Integration Framework
+
+The admin's role in MIF management went beyond configuration. You were the operational owner:
+
+- **Queue monitoring** — watching `MAXIFACEINQUEUE` and `MAXIFACEOUTQUEUE` for stuck messages
+- **Error processing** — reviewing failed integration messages, diagnosing XSL transformation errors
+- **Performance tuning** — adjusting thread counts, batch sizes, and polling intervals for CRON tasks
+- **Endpoint management** — maintaining HTTP, JMS, and file-based endpoints
+
+```
+# MIF queue processing parameters you tuned
+MIF.MAXINQUEUE.NUMTHREADS=5
+MIF.MAXINQUEUE.BATCHSIZE=100
+MIF.MAXOUTQUEUE.NUMTHREADS=3
+MIF.MAXOUTQUEUE.BATCHSIZE=50
+```
+
+When an ERP integration fell behind, you were the one who noticed the queue depth growing, diagnosed whether it was a Maximo issue or a network/endpoint issue, and either tuned the processing parameters or coordinated with the integration team.
+
+### CRON Task Management
+
+CRON tasks were the heartbeat of Maximo automation:
+
+| CRON Task | Purpose | Admin Concern |
+|-----------|---------|---------------|
+| `PMWOGEN` | Generate PMs | Memory consumption, timing |
+| `REORDER` | Reorder point processing | Database locks during execution |
+| `ESCALATION` | Escalation processing | Email server connectivity |
+| `JMSCRONQUEUE` | JMS queue processing | Queue depth monitoring |
+| `LSNRCRON` | Event listener | Event queue health |
+| `REPORTSCHEDULE` | Scheduled reports | BIRT server availability |
+
+You knew which CRON tasks conflicted with each other, which ones should never run during business hours, and which ones would occasionally hang and need manual intervention. This scheduling knowledge was rarely documented — it lived in the admin's head.
+
+---
+
+## The Report Server Manager: BIRT and Beyond
+
+The BIRT reporting server was a separate infrastructure component that legacy admins managed:
+
+- Deploying BIRT report designs (`.rptdesign` files)
+- Configuring BIRT connection pools to the Maximo database
+- Managing the BIRT viewer web application
+- Troubleshooting report generation failures
+- Scaling the report server for month-end or year-end reporting loads
+
+For organizations using Cognos or other external reporting tools, the admin also managed the data extraction and JDBC connectivity. Reports were a constant source of support requests — "My report is slow," "My report shows wrong data," "My report doesn't generate."
+
+---
+
+## The Emotional Attachment: Why This Matters
+
+Here is something that IBM documentation and migration guides never mention: **legacy Maximo admins are emotionally invested in their expertise**.
+
+And why shouldn't they be? Consider what a senior Maximo admin has built over a decade or more:
+
+- **Deep institutional knowledge** — knowing that the Tuesday night batch runs slowly because of a vendor-specific database locking behavior that took months to diagnose
+- **Personal toolkits** — SQL scripts, monitoring queries, runbooks, and checklists refined over hundreds of incidents
+- **Relationships** — the DBA who helps with emergency queries, the network team that prioritizes your tickets, the WebSphere SME who answers the phone at midnight
+- **Identity** — "I'm the Maximo admin" is a professional identity, not just a job title
+
+When we say "MAS eliminates WebSphere," what some admins hear is "MAS eliminates the skills you spent years building." That's a legitimate emotional response. Acknowledging it isn't weakness — it's the necessary first step toward channeling that expertise into new forms.
+
+We've seen this transition in person. The admins who struggle most are those who resist acknowledging the emotional component. The ones who transition best are those who say: "I understand that my WebSphere skills won't transfer directly. What does transfer? How do I build new skills on top of the foundation I already have?"
+
+---
+
+## The Reality Check: What MAS Eliminates
+
+Let's be direct about what disappears in MAS. There is no value in sugarcoating this.
+
+### Gone Entirely
+
+| Legacy Component | MAS Status | What Replaces It |
+|-----------------|------------|-----------------|
+| WebSphere Application Server | Eliminated | Liberty runtime in containers, managed by operators |
+| EAR file deployments | Eliminated | Container image deployments via operators |
+| JVM heap tuning (manual) | Eliminated | Pod resource limits and autoscaling |
+| Direct DB access (routine) | Eliminated (SaaS) / Discouraged (On-Prem) | APIs and application-layer tools |
+| LDAP in WebSphere | Eliminated | OIDC/OAuth2 via Keycloak or external IdP |
+| BIRT report server | Eliminated | Maximo native reports, Cognos integration, or external BI |
+| Manual fix pack application | Eliminated | Operator-driven continuous updates |
+| WAS admin console | Eliminated | OpenShift console, CLI, and MAS Suite admin |
+
+### Significantly Changed
+
+| Legacy Responsibility | How It Changes |
+|----------------------|----------------|
+| Server monitoring | Moves to pod/container observability (Prometheus, Grafana) |
+| Log analysis | Centralized logging (EFK/ELK stack, or cloud-native equivalent) |
+| Security configuration | OIDC/OAuth2 through MAS Suite Administration |
+| CRON task management | Still exists in Manage, but scheduled differently |
+| MIF queue management | Still exists, plus new Integration Service patterns |
+| Backup and recovery | Managed services (SaaS) or platform-level tools (On-Prem) |
+| SSL certificate management | Cert-manager in OpenShift handles rotation automatically |
+
+### Still Familiar
+
+| Responsibility | Why It Survives |
+|---------------|----------------|
+| Maximo security groups | Business-level access control still lives in the application |
+| Application configuration | System properties, org/site settings remain |
+| User and role management | Same concepts, different identity backend |
+| Data model understanding | MAXOBJECT, MAXATTRIBUTE still matter for troubleshooting |
+| Workflow and escalation config | Same business logic engine |
+
+---
+
+## A Day in Two Worlds: Legacy vs. MAS
+
+To make the contrast tangible, here is the same operational day in both worlds:
+
+| Time | Legacy Admin Day | MAS Admin Day |
+|------|-----------------|---------------|
+| 6:00 AM | Check WebSphere node health, review SystemOut.log | Check MAS Suite dashboard, review pod status |
+| 7:00 AM | Investigate overnight CRON task failures in DB | Review CRON task logs in centralized logging |
+| 8:00 AM | Process stuck MIF queue entries via SQL | Monitor Integration Service health via API dashboard |
+| 9:00 AM | Help desk: user can't log in (LDAP group issue) | Help desk: user can't log in (SSO/OIDC token issue) |
+| 10:00 AM | Deploy hot fix: rebuild EAR, stop cluster, deploy, restart | Request hot fix: IBM applies patch, verify in test |
+| 11:00 AM | Tune JVM for afternoon reporting load | Review pod autoscaling configuration |
+| 1:00 PM | Troubleshoot slow report (BIRT server issue) | Troubleshoot slow report (API performance, query plan) |
+| 2:00 PM | SSL certificate expiring next week — manual renewal | Cert-manager handles rotation — verify it completed |
+| 3:00 PM | Coordinate with DBA on database maintenance window | Coordinate with platform team on cluster upgrade window |
+| 4:00 PM | Document today's changes in SharePoint runbook | Update configuration in version-controlled repo |
+| 5:00 PM | Set up overnight monitoring alerts (Nagios/Zabbix) | Verify Prometheus alerting rules are current |
+
+The workday length hasn't changed. The cognitive load hasn't changed. The constant context-switching hasn't changed. But the **nature** of each task has shifted — from hands-on infrastructure work to platform orchestration and governance.
+
+---
+
+## The Cloud-Native Foundation: What MAS Actually Is
+
+Before we can discuss the new admin role in subsequent parts of this series, it helps to understand what MAS actually brings to the table architecturally.
+
+### Containerized, Not Just Hosted
+
+MAS doesn't run Maximo inside WebSphere inside a VM in the cloud. That would be "cloud-hosted" — same architecture, different location. Instead, MAS is **cloud-native**:
+
+- **Applications run as containers** — lightweight, isolated, reproducible
+- **Kubernetes (OpenShift) orchestrates** — scheduling, scaling, healing
+- **Operators manage lifecycle** — installation, upgrades, configuration
+- **Services communicate via APIs** — not shared memory, not direct database calls
+
+### Operator-Driven
+
+The MAS operators are the most significant architectural change for administrators. An operator is a Kubernetes-native automation controller that:
+
+- Installs MAS components based on a declarative specification
+- Monitors the running state against the desired state
+- Automatically remediates configuration drift
+- Handles upgrades by rolling out new container versions
+- Scales services based on defined rules
+
+In the legacy world, the admin performed all of these functions manually. In MAS, the operator handles the mechanics, and the admin defines the desired state and monitors the outcome.
+
+### Microservices Architecture
+
+MAS decomposes what was a single monolithic application into distinct services:
+
+- **Manage** — the core work management, asset, inventory, procurement functions
+- **Monitor** — IoT data collection and anomaly detection
+- **Health** — asset health scoring and condition monitoring
+- **Predict** — predictive failure analytics
+- **Assist** — AI-powered technician guidance
+- **Visual Inspection** — image-based inspection via AI
+
+Each service has its own lifecycle, its own scaling profile, and its own operational characteristics. The admin no longer manages one big application — they oversee a suite of interconnected services.
+
+---
+
+## What Transfers: The Skills That Cross the Bridge
+
+Despite the dramatic technology shift, significant parts of the legacy admin's skill set transfer directly:
+
+1. **Diagnostic thinking** — the ability to trace a user-reported problem through multiple system layers doesn't depend on whether those layers are WebSphere and Oracle or Kubernetes and PostgreSQL
+
+2. **Performance intuition** — understanding that a slow response usually means either the application is doing too much work, the database is under-performing, or the infrastructure is resource-constrained applies universally
+
+3. **Change management discipline** — the habit of testing changes in lower environments, maintaining rollback plans, and documenting what changed and why
+
+4. **Security mindset** — understanding least-privilege access, separation of duties, and audit requirements
+
+5. **Stakeholder communication** — translating technical issues into business impact for management, and business requirements into technical specifications for engineering teams
+
+6. **Maximo domain knowledge** — understanding how work orders flow, how PM generation works, how security groups interact with data restrictions, how integrations move data between systems
+
+These skills are more valuable in MAS than they were in 7.x, precisely because the infrastructure complexity has increased even as the admin's direct control over it has decreased.
+
+---
+
+## Preparing for the Shift: A Self-Assessment Checklist
+
+Before diving into the new role (covered in Parts 2 and 3), assess where you stand today:
+
+- [ ] I understand basic container concepts (images, containers, pods)
+- [ ] I have logged into an OpenShift or Kubernetes dashboard at least once
+- [ ] I understand what a REST API is and have used tools like Postman
+- [ ] I know the difference between authentication and authorization at a conceptual level
+- [ ] I am familiar with OIDC or OAuth2 at a high level
+- [ ] I have experience with centralized logging tools (ELK, Splunk, or similar)
+- [ ] I understand what "declarative configuration" means vs. "imperative commands"
+- [ ] I can read YAML configuration files
+- [ ] I am willing to learn new tools while leveraging my existing Maximo knowledge
+
+If you checked fewer than four items, start with foundational cloud-native learning before diving into MAS-specific administration. If you checked four or more, you're in a strong position to build on your existing foundation.
+
+---
+
+## Key Takeaways
+
+- **The legacy admin role was comprehensive** — spanning server operations, database management, security configuration, integration oversight, and application support across two decades of Maximo deployments
+- **WebSphere was the center of the admin's world** — JVM tuning, EAR deployments, connection pools, LDAP integration, and clustering defined the daily experience
+- **MAS eliminates the application server layer entirely** — no WebSphere, no EAR files, no monolithic JVM to tune
+- **The emotional investment in legacy skills is real and valid** — acknowledging this is the first step toward a successful transition
+- **Diagnostic thinking, performance intuition, and domain expertise transfer directly** — the tools change, but the mindset endures
+
+---
+
+## References
+
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas)
+- [IBM Maximo 7.6 System Administration Guide](https://www.ibm.com/docs/en/mam/7.6.1)
+- [Red Hat OpenShift Container Platform](https://docs.openshift.com/container-platform/latest/welcome/index.html)
+- [Kubernetes Operators Explained](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/)
+- [WebSphere Application Server Traditional Documentation](https://www.ibm.com/docs/en/was)
+
+---
+
+**Series Navigation:**
+
+**Previous:** This is Part 1 — the beginning of the series
+**Next:** [Part 2 — New Responsibilities in MAS: What SaaS and On-Prem Admins Actually Do Now](/blog/new-mas-admin-responsibilities)
+
+[View the full MAS ADMIN series index →](/blog/mas-admin-series-index)
+
+---
+
+*Part 1 of the "MAS ADMIN" series | Published by TheMaximoGuys*
+
+*The legacy Maximo admin role was one of the most demanding and rewarding positions in enterprise asset management. What comes next isn't a replacement — it's an evolution. In Part 2, we'll map every old responsibility to its new equivalent and introduce the skills that define the modern MAS administrator.*

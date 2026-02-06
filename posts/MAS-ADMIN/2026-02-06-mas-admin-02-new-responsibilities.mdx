@@ -1,0 +1,680 @@
+---
+title: "New Responsibilities in MAS: What SaaS and On-Prem Admins Actually Do Now"
+description: "A comprehensive guide to the new MAS administrator responsibilities — from Kubernetes fundamentals and operator management to API-first troubleshooting, Zero Trust security, and AppPoints licensing. Covers both SaaS and on-prem deployment models with real commands and examples."
+date: "2026-02-06"
+slug: "new-mas-admin-responsibilities"
+tags: ["MAS Admin", "Kubernetes", "OpenShift", "Operators", "API", "Zero Trust", "AppPoints", "SaaS", "On-Prem", "Cloud-Native"]
+draft: false
+tier: "admin"
+author: "The Maximo Guys"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "/images/mas-admin/mas-admin-part-2.png"
+
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+
+faqs:
+  - question: "Do I need to become a Kubernetes expert to administer MAS?"
+    answer: "No. You need Kubernetes literacy, not mastery. You should understand pods, services, and basic oc/kubectl commands for troubleshooting. The MAS operators handle most of the orchestration complexity. Think of it as needing to read Kubernetes, not write it from scratch."
+  - question: "What is the shared responsibility model in MAS?"
+    answer: "In MAS SaaS, IBM manages infrastructure, platform, and application runtime — you manage users, configuration, integrations, and governance. In MAS on-prem, you share more responsibility with IBM: you manage the OpenShift platform, and IBM's operators manage the MAS application lifecycle. The exact boundary depends on your deployment model."
+  - question: "How does AppPoints licensing work practically?"
+    answer: "AppPoints is a token-based licensing model where each MAS application consumes a certain number of points per user. You monitor consumption through the MAS admin dashboard and IBM License Service. The key shift is from static named-user licenses to dynamic consumption-based tracking."
+
+keyTakeaways:
+  - "The new MAS admin role centers on six core areas: microservices awareness, Kubernetes literacy, operator management, API-first troubleshooting, Zero Trust security, and AppPoints licensing"
+  - "Kubernetes literacy means understanding pods, logs, and health checks — not writing Helm charts from scratch"
+  - "Operators are the new automation engine — they replace the manual install, upgrade, and configuration work that legacy admins performed"
+  - "The shared responsibility model defines clear boundaries between what IBM manages and what you manage"
+  - "AppPoints licensing requires active monitoring and optimization, replacing the static license model of 7.x"
+
+series:
+  name: "MAS ADMIN"
+  part: 2
+  total: 8
+---
+
+# New Responsibilities in MAS: What SaaS and On-Prem Admins Actually Do Now
+
+> **Who this is for:** Maximo administrators transitioning to MAS (either SaaS or on-premises), platform engineers supporting MAS deployments, and IT managers who need to understand how to staff and skill their MAS operations teams.
+
+**Estimated read time: 22 minutes**
+
+---
+
+## The New Job Description Nobody Wrote
+
+In our experience, the most common question from admins preparing for MAS is not "What do I need to learn?" It's "What does my job actually look like day to day?"
+
+IBM's documentation explains each MAS component. Red Hat's documentation explains OpenShift. But nobody wrote the guide that says: "Here is what the MAS administrator does on a Tuesday afternoon when something breaks." This is that guide.
+
+Regardless of whether your organization runs MAS as a SaaS subscription or as an on-premises deployment on your own OpenShift cluster, the admin role now centers around six core areas. Some of these will feel familiar with new tooling. Others will feel completely new.
+
+---
+
+## 1. Understanding MAS Microservices: The Suite You Operate
+
+### The Architecture You Need to Know
+
+MAS is not one application. It is a suite of applications deployed as independent services, each with its own pods, databases, and scaling characteristics:
+
+| Application | Function | Admin Relevance |
+|------------|----------|-----------------|
+| **Manage** | Core work management, assets, inventory, procurement | Highest — this is where most user activity occurs |
+| **Monitor** | IoT data ingestion and dashboards | Moderate — data pipeline health, device connectivity |
+| **Health** | Asset health scoring | Low to moderate — model configuration, scoring accuracy |
+| **Predict** | Predictive failure analytics | Moderate — model training data, prediction accuracy |
+| **Assist** | AI-powered technician guidance | Low — content management, AI model accuracy |
+| **Visual Inspection** | Image-based quality inspection | Low — edge device management, model updates |
+| **IoT** | Device connectivity and data ingestion | Moderate — connection health, data throughput |
+| **Optimizer** | Schedule optimization | Low to moderate — optimization run health |
+
+**Why this matters for admins:** Each application can fail independently. A problem in Monitor does not necessarily affect Manage. Understanding these boundaries means faster incident triage — you can quickly determine which service is affected and focus your troubleshooting there.
+
+### Real Scenario: Troubleshooting a Slow Manage Application
+
+In the legacy world, "Maximo is slow" meant investigating one application server. In MAS, "Manage is slow" could mean:
+
+1. The Manage pods are under-resourced (CPU/memory pressure)
+2. The database backing Manage is experiencing lock contention
+3. An integration is flooding the Manage API
+4. A CRON task inside Manage is consuming resources
+5. The OpenShift node hosting Manage pods is resource-constrained
+
+The diagnostic approach is similar to legacy — eliminate variables systematically — but the tools are different.
+
+---
+
+## 2. Kubernetes and Container Fundamentals: Your New Literacy
+
+### What You Need to Know (and What You Don't)
+
+We've seen admins panic when they hear "you need to learn Kubernetes." Let's be precise about what MAS admins actually need.
+
+**You need to understand:**
+
+- **Pods** — the basic unit of deployment (think of it as a running instance of a service)
+- **Services** — how pods are discovered and accessed within the cluster
+- **Deployments/StatefulSets** — how Kubernetes ensures the right number of pods are running
+- **Namespaces** — how MAS isolates its components within the cluster
+- **Resource limits** — CPU and memory boundaries for each pod
+- **Health checks** — liveness and readiness probes that determine if a pod is healthy
+- **ConfigMaps and Secrets** — how configuration and credentials are stored
+
+**You don't need to know (initially):**
+
+- How to build Kubernetes manifests from scratch
+- Networking policy details (CNI, Calico, OVN)
+- Storage class internals
+- Custom Resource Definitions (beyond MAS-specific ones)
+- Cluster installation and lifecycle management
+
+### Essential Commands for MAS Admins
+
+Here are the `oc` (OpenShift CLI) commands you'll use most frequently. These are the equivalent of your old WebSphere admin console and `tail -f SystemOut.log`:
+
+```bash
+# Check the overall health of MAS pods in the core namespace
+oc get pods -n mas-{instance}-core
+# Example output:
+# NAME                                    READY   STATUS    RESTARTS   AGE
+# admin-dashboard-5d9f8b7c6-x2k9p        1/1     Running   0          3d
+# api-gateway-7c4d6f8e9-m3n7q            1/1     Running   0          3d
+# coreidp-6b8f9c7d5-p4r2s                2/2     Running   0          3d
+
+# Check Manage application pods specifically
+oc get pods -n mas-{instance}-manage
+# Look for: STATUS=Running, READY shows all containers ready, RESTARTS low
+
+# View logs for a specific pod (like reading SystemOut.log)
+oc logs -f pod/manage-maxinst-7b9d6f-k2m4p -n mas-{instance}-manage
+
+# View logs for a specific container within a multi-container pod
+oc logs -f pod/manage-server-bundle-5d8c7b-x9p3q -c serverBundle -n mas-{instance}-manage
+
+# Check pod resource usage (like monitoring JVM heap)
+oc adm top pods -n mas-{instance}-manage
+
+# Describe a pod to see events, conditions, and resource limits
+oc describe pod/manage-server-bundle-5d8c7b-x9p3q -n mas-{instance}-manage
+
+# Check recent events in a namespace (great for diagnosing startup failures)
+oc get events -n mas-{instance}-manage --sort-by='.lastTimestamp'
+```
+
+> **Key insight:** The `oc` command is your new admin console. Just as you once navigated WebSphere's tree of servers, applications, and resources, you now navigate namespaces, pods, and containers. The concept is identical — the syntax is different.
+
+### Reading Pod Health: What the Numbers Mean
+
+When you run `oc get pods`, the output tells a story:
+
+```
+NAME                              READY   STATUS             RESTARTS   AGE
+manage-server-bundle-5d8c7b       1/1     Running            0          5d
+manage-server-bundle-9f3e2a       1/1     Running            0          5d
+manage-crontask-7b4d6f            1/1     Running            2          5d
+manage-mea-api-3c8e9f             0/1     CrashLoopBackOff   15         1h
+```
+
+Here is how to read this:
+
+- **1/1 Running, 0 restarts** — Healthy. Both containers in the pod are running, no recent issues.
+- **1/1 Running, 2 restarts** — Mostly healthy but has restarted twice. Check logs around restart times.
+- **0/1 CrashLoopBackOff, 15 restarts** — Problem. This pod keeps starting, crashing, and restarting. Investigate immediately.
+
+```bash
+# Investigate the crashing pod
+oc logs pod/manage-mea-api-3c8e9f -n mas-{instance}-manage --previous
+# The --previous flag shows logs from the LAST run before the crash
+
+# Check the pod's events for scheduling or resource issues
+oc describe pod/manage-mea-api-3c8e9f -n mas-{instance}-manage | grep -A 20 "Events:"
+```
+
+---
+
+## 3. Operators: The Automation Engine You Supervise
+
+### What Operators Replace
+
+In the legacy world, the admin personally performed:
+- Installation (run installer, configure database, build EAR, deploy)
+- Upgrades (download fix pack, apply scripts, rebuild EAR, redeploy)
+- Configuration changes (edit properties, restart servers)
+- Health monitoring (check logs, verify services, test connectivity)
+- Scaling (add cluster nodes, configure load balancer)
+
+In MAS, **operators do all of this automatically** based on a desired-state specification that you define. The admin's role shifts from performer to supervisor.
+
+### The MAS Operator Hierarchy
+
+MAS uses a layered operator model:
+
+```
+IBM MAS Operator (top level)
+├── Manage Operator
+├── Monitor Operator
+├── Health Operator
+├── Predict Operator
+├── Assist Operator
+├── IoT Operator
+├── Visual Inspection Operator
+└── Dependencies
+    ├── MongoDB Operator (for MAS core)
+    ├── Kafka/AMQ Streams Operator (for IoT/events)
+    ├── Cert-Manager (for TLS certificates)
+    ├── Service Binding Operator
+    └── IBM Suite License Service
+```
+
+Each operator watches its custom resources and reconciles the actual state to match the desired state. If a Manage pod crashes, the Manage operator detects this and creates a replacement. If you change a configuration value in the MAS custom resource, the operator rolls out the change across all affected pods.
+
+### Monitoring Operator Health
+
+```bash
+# Check that all MAS operators are running
+oc get csv -n mas-{instance}-core
+# CSV = ClusterServiceVersion; this shows installed operators and their status
+# Look for: Phase = Succeeded
+
+# Check the MAS Suite custom resource status
+oc get suite -n mas-{instance}-core -o yaml
+# Look for the status section — it shows the health of each component
+
+# Check specific application activation
+oc get manageapp -n mas-{instance}-manage -o yaml
+# The status section shows deployment health, database connectivity, etc.
+
+# View operator logs for troubleshooting
+oc logs deployment/ibm-mas-operator -n mas-{instance}-core
+```
+
+### Real Scenario: Operator-Managed Upgrade
+
+When IBM releases an update for Manage, here is what the admin's involvement looks like in MAS on-prem:
+
+1. **IBM publishes** a new operator version in the catalog
+2. **Admin reviews** release notes and known issues
+3. **Admin approves** the update (or configures automatic approval)
+4. **Operator updates** itself to the new version
+5. **Operator reconciles** — detects the new desired state, begins rolling update
+6. **Pods are replaced** one by one (rolling strategy, no full outage)
+7. **Admin monitors** the rollout, watching for errors
+8. **Admin validates** — functional testing after the update completes
+
+Compare this to the legacy EAR deployment ritual (stop cluster, deploy EAR, restart, pray). The admin's role has shifted from executor to reviewer and validator.
+
+> **Key insight:** Operators don't eliminate the admin's judgment — they eliminate the admin's manual labor. You still decide when to update, what to test, and how to validate. The operator handles the mechanics of making it happen.
+
+---
+
+## 4. API-First Troubleshooting: Your New Diagnostic Toolkit
+
+### The Shift from Logs-First to API-First
+
+In the legacy world, troubleshooting started with log files. You'd SSH into the server, tail the SystemOut.log, and search for exceptions. That approach doesn't scale in a distributed microservices environment where logs come from dozens of pods across multiple services.
+
+MAS admin troubleshooting follows a layered approach:
+
+1. **Dashboard first** — MAS Suite Administration dashboard shows system health
+2. **API health checks** — verify service endpoints are responding
+3. **Pod status** — use `oc` commands to check container health
+4. **Centralized logs** — search aggregated logs, not individual files
+5. **Distributed traces** — follow a request across services (when available)
+
+### Health Check Patterns
+
+```bash
+# Check MAS API gateway health
+curl -s -o /dev/null -w "%{http_code}" \
+  https://api.mas-{instance}.{domain}/api/v1/health
+
+# Check Manage application health endpoint
+curl -s https://manage.mas-{instance}.{domain}/maximo/api/health \
+  -H "Authorization: Bearer ${TOKEN}" | jq .
+
+# Check Integration Service health
+curl -s https://api.mas-{instance}.{domain}/api/integration/v1/health \
+  -H "Authorization: Bearer ${TOKEN}" | jq .
+```
+
+### Working with the Maximo REST API
+
+The REST API is now your primary interface for data operations, replacing much of what you previously did through direct SQL:
+
+```bash
+# Query work orders via API (replaces direct SQL queries)
+curl -s "https://manage.mas-{instance}.{domain}/maximo/oslc/os/mxwo?\
+oslc.where=status=%22WAPPR%22\
+&oslc.select=wonum,description,status,statusdate\
+&oslc.pageSize=10" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" | jq .
+
+# Check CRON task status via API
+curl -s "https://manage.mas-{instance}.{domain}/maximo/oslc/os/mxcrontask?\
+oslc.where=crontaskname=%22PMWOGEN%22\
+&oslc.select=crontaskname,description,active" \
+  -H "Authorization: Bearer ${TOKEN}" | jq .
+```
+
+### Synthetic Monitoring
+
+In our experience, the most proactive MAS admins set up synthetic monitoring — automated tests that periodically verify key workflows are functional:
+
+```bash
+# Example: synthetic health check script (runs every 5 minutes)
+#!/bin/bash
+# synthetic-check.sh
+
+MAS_URL="https://manage.mas-{instance}.{domain}"
+TOKEN="${MAS_API_TOKEN}"
+
+# Check 1: API responds
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+  "${MAS_URL}/maximo/oslc/os/mxwo?oslc.pageSize=1" \
+  -H "Authorization: Bearer ${TOKEN}")
+
+if [ "$HTTP_CODE" != "200" ]; then
+  echo "ALERT: Manage API returned ${HTTP_CODE}" | \
+    mail -s "MAS Health Alert" admin-team@company.com
+fi
+
+# Check 2: Can create and retrieve a test record
+# (More sophisticated checks follow similar patterns)
+```
+
+> **Key insight:** API-first troubleshooting is not slower than SSH-and-grep. It's different. In our experience, admins who invest in building API-based monitoring scripts end up detecting issues faster than those who relied on manual log review. The key is building the toolkit incrementally, starting with the checks that matter most to your environment.
+
+---
+
+## 5. Zero Trust Security: OIDC, OAuth2, and Modern IAM
+
+### From LDAP to Identity Providers
+
+The legacy security model was straightforward: WebSphere authenticated users against LDAP, and Maximo authorized them through security groups. In MAS, the security architecture follows Zero Trust principles:
+
+```
+User/Service → Identity Provider (Keycloak/External IdP)
+            → OIDC Authentication
+            → OAuth2 Token Issuance
+            → MAS API Gateway (token validation)
+            → Application-level authorization (security groups)
+```
+
+### Key Concepts for MAS Admins
+
+**OIDC (OpenID Connect)** — The authentication protocol. When a user logs in to MAS, they are redirected to the identity provider (IdP), which authenticates them and returns an identity token. MAS never sees the user's password.
+
+**OAuth2** — The authorization framework. After authentication, the user receives an access token that grants permission to access specific resources. Tokens have expiration times and scopes.
+
+**Keycloak** — The default identity provider included with MAS. It manages user identities, authentication flows, and token issuance. In organizations with existing enterprise IdPs (Azure AD, Okta, Ping), Keycloak can federate to those systems.
+
+### Common Admin Tasks in the New Security Model
+
+| Task | Legacy Approach | MAS Approach |
+|------|----------------|--------------|
+| Add a new user | Create in LDAP, sync to Maximo | Create in IdP, assign to MAS application entitlement |
+| Reset password | LDAP admin tools | Identity provider self-service or admin portal |
+| Configure SSO | WebSphere TAI or TAM | OIDC federation between MAS and enterprise IdP |
+| Service-to-service auth | Shared credentials in properties files | OAuth2 client credentials flow |
+| API authentication | Basic auth or LTPA token | Bearer token via OAuth2 |
+| Audit login activity | WebSphere security logs + LDAP audit | IdP audit logs + MAS access logs |
+
+### Practical: Obtaining an API Token
+
+```bash
+# Obtain an OAuth2 access token for API access
+# Client credentials flow (for service accounts and automation)
+curl -s -X POST \
+  "https://auth.mas-{instance}.{domain}/realms/mas/protocol/openid-connect/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials" \
+  -d "client_id=mas-api-client" \
+  -d "client_secret=${CLIENT_SECRET}" \
+  | jq -r '.access_token'
+
+# The returned token is a JWT — you can decode it to inspect claims
+# (Never do this with production tokens in insecure environments)
+echo "${TOKEN}" | cut -d'.' -f2 | base64 -d 2>/dev/null | jq .
+```
+
+### SSO Integration Patterns
+
+For organizations connecting MAS to an enterprise identity provider:
+
+```yaml
+# Simplified representation of MAS OIDC configuration
+# (Actual configuration is through MAS Suite Administration UI)
+oidc:
+  provider: "azure-ad"
+  discoveryEndpoint: "https://login.microsoftonline.com/{tenant}/.well-known/openid-configuration"
+  clientId: "mas-application-client-id"
+  clientSecret: "stored-in-kubernetes-secret"
+  scopes: ["openid", "profile", "email"]
+  userClaim: "preferred_username"
+  groupClaim: "groups"
+  groupMapping:
+    "AD-MAS-Admins": "MAXADMIN"
+    "AD-MAS-Users": "MAXUSER"
+    "AD-MAS-ReadOnly": "MAXRONLY"
+```
+
+> **Key insight:** The move to OIDC/OAuth2 isn't just a technology change — it fundamentally improves security posture. Tokens expire automatically (unlike LDAP sessions that could persist indefinitely). Service-to-service communication uses scoped credentials instead of shared passwords. And the identity provider provides a centralized audit trail that LDAP never could.
+
+---
+
+## 6. AppPoints Licensing: Monitoring What You Consume
+
+### The Licensing Model Shift
+
+In Maximo 7.x, licensing was typically based on named users — you purchased X authorized user licenses and Y concurrent user licenses. Tracking compliance meant counting active user records.
+
+MAS introduces **AppPoints** — a token-based licensing model where:
+
+- Each MAS application consumes a defined number of AppPoints per user type
+- Different user types (Premium, Limited, Base) consume different amounts
+- AppPoints are shared across the entire MAS suite
+- Consumption is dynamic and needs active monitoring
+
+### AppPoints Allocation Example
+
+| Application | Premium User | Limited User | Base User |
+|------------|-------------|-------------|-----------|
+| Manage | 15 points | 10 points | 5 points |
+| Monitor | 5 points | 3 points | N/A |
+| Health | 5 points | 3 points | N/A |
+| Predict | 10 points | 5 points | N/A |
+| Assist | 15 points | N/A | N/A |
+
+*Note: Actual AppPoints values may vary by contract. Verify with your IBM agreement.*
+
+### Monitoring AppPoints Consumption
+
+```bash
+# Check IBM License Service status (on-prem)
+oc get pods -n ibm-common-services | grep license
+
+# Access the License Service Reporter
+# The URL is typically:
+# https://license-service-reporter.{cluster-domain}/
+
+# Query license consumption via API
+curl -s "https://license-service.{cluster-domain}/api/v1/report" \
+  -H "Authorization: Bearer ${TOKEN}" | jq '.products[] | select(.name | contains("Maximo"))'
+```
+
+### Practical Optimization Strategies
+
+In our experience, organizations often over-provision AppPoints initially and then optimize over time:
+
+1. **Audit user types regularly** — Are "Premium" users actually using premium features, or could they be downgraded to "Limited"?
+2. **Deactivate inactive users** — Users who haven't logged in for 90+ days are consuming AppPoints unnecessarily
+3. **Monitor application adoption** — If you're licensed for Predict but nobody is using it, those AppPoints could be reallocated
+4. **Plan for growth** — AppPoints consumption increases as you onboard new users and activate new applications
+
+```bash
+# Example: Script to identify inactive users for AppPoints optimization
+# (Run this against the Manage API)
+curl -s "https://manage.mas-{instance}.{domain}/maximo/oslc/os/mxperson?\
+oslc.where=status=%22ACTIVE%22\
+&oslc.select=personid,displayname,loginid,lastlogindate\
+&oslc.orderBy=-lastlogindate\
+&oslc.pageSize=100" \
+  -H "Authorization: Bearer ${TOKEN}" | \
+  jq '.member[] | select(.lastlogindate != null) |
+      select((.lastlogindate | split("T")[0] | strptime("%Y-%m-%d") | mktime) <
+             (now - (90 * 86400))) |
+      {personid, displayname, lastlogindate}'
+```
+
+---
+
+## The Shared Responsibility Model: Who Owns What
+
+This is the most important conceptual shift for MAS administrators. In the legacy world, you owned everything from the OS up. In MAS, responsibilities are shared between you, IBM, and (in on-prem deployments) your platform team.
+
+### MAS SaaS Responsibility Matrix
+
+| Layer | Who Manages | Examples |
+|-------|------------|---------|
+| **Infrastructure** | IBM | Compute, storage, network, data centers |
+| **Platform** | IBM | OpenShift, Kubernetes, operators |
+| **Application Runtime** | IBM | MAS containers, databases, middleware |
+| **Application Configuration** | You | Security groups, org/site settings, CRON tasks |
+| **Users and Access** | You + IBM | You manage users and roles; IBM manages the IdP platform |
+| **Integrations** | You | Integration configuration, API credentials, data mapping |
+| **Data** | You | Data quality, migration, governance |
+| **Testing** | You | Functional testing, UAT, upgrade validation |
+| **Governance** | You | Compliance, audit, change management |
+
+### MAS On-Premises Responsibility Matrix
+
+| Layer | Who Manages | Examples |
+|-------|------------|---------|
+| **Infrastructure** | You / Cloud Provider | VMs, bare metal, storage, network |
+| **Platform** | You | OpenShift installation, upgrades, capacity |
+| **Operators** | IBM (delivery) / You (operations) | IBM delivers operators; you manage their lifecycle |
+| **Application Runtime** | Operators (automated) | Pod deployment, scaling, updates |
+| **Application Configuration** | You | Same as SaaS |
+| **Users and Access** | You | Full control of IdP and MAS user management |
+| **Integrations** | You | Same as SaaS |
+| **Data** | You | Full database access and management |
+| **Backups** | You | Database and persistent volume backups |
+
+### Real Scenario: Incident Escalation
+
+When something breaks, the shared responsibility model determines your escalation path:
+
+**Scenario:** Users report that Manage is returning 500 errors intermittently.
+
+**SaaS Admin Response:**
+1. Check MAS Suite Administration dashboard for reported issues
+2. Verify the issue isn't configuration-related (recent changes?)
+3. Check IBM Cloud status page for platform incidents
+4. Open IBM Support case with timestamps, error details, and user impact
+5. IBM investigates pod health, platform issues, and application errors
+6. You coordinate user communication and workarounds
+
+**On-Prem Admin Response:**
+1. Check pod health: `oc get pods -n mas-{instance}-manage`
+2. Review pod logs: `oc logs -f pod/{manage-pod} -n mas-{instance}-manage`
+3. Check node resources: `oc adm top nodes`
+4. Review recent events: `oc get events -n mas-{instance}-manage`
+5. If the issue is in operator-managed components, open IBM Support case
+6. If the issue is in your platform layer (node resources, storage, networking), resolve internally
+
+---
+
+## Mapping Old to New: The Responsibility Translation Table
+
+For admins coming from the legacy world, here is how each old responsibility maps to its new equivalent:
+
+| Legacy Responsibility | New Equivalent (On-Prem) | New Equivalent (SaaS) |
+|----------------------|--------------------------|----------------------|
+| WebSphere JVM tuning | Pod resource limits in operator CR | N/A (IBM manages) |
+| EAR deployment | Operator-managed container deployment | N/A (IBM manages) |
+| SystemOut.log analysis | `oc logs` and centralized logging | Request logs from IBM Support |
+| Database connection pools | Operator-managed DB configuration | N/A (IBM manages) |
+| LDAP configuration | OIDC/Keycloak configuration | SSO/IdP federation setup |
+| SSL certificate renewal | Cert-manager automatic rotation | N/A (IBM manages) |
+| Fix pack application | Operator catalog updates | IBM-managed continuous updates |
+| CRON task management | Same UI, different monitoring tools | Same UI, same management |
+| MIF queue monitoring | API + centralized logs | API + IBM dashboards |
+| Backup and recovery | Platform-level backup tools | IBM-managed (SLA-backed) |
+| User provisioning | IdP + MAS Suite Admin | IdP + MAS Suite Admin |
+| Security groups | Same application-level UI | Same application-level UI |
+| Performance monitoring | Prometheus/Grafana dashboards | MAS dashboards + IBM monitoring |
+| Capacity planning | OpenShift resource monitoring | AppPoints monitoring + IBM guidance |
+
+---
+
+## The MAS Microservices Architecture: A Visual Guide
+
+Understanding how MAS components relate to each other helps with troubleshooting and capacity planning. Here is the high-level architecture:
+
+```
+                    ┌─────────────────────────┐
+                    │    External Users        │
+                    │  (Browser, Mobile, API)  │
+                    └─────────┬───────────────┘
+                              │
+                    ┌─────────▼───────────────┐
+                    │    MAS API Gateway       │
+                    │  (Route/Ingress)         │
+                    └─────────┬───────────────┘
+                              │
+            ┌─────────────────┼──────────────────┐
+            │                 │                  │
+   ┌────────▼──────┐  ┌──────▼───────┐  ┌──────▼───────┐
+   │   Manage      │  │   Monitor    │  │   Health     │
+   │  (Core EAM)   │  │   (IoT)     │  │  (Scoring)   │
+   └───────┬───────┘  └──────┬───────┘  └──────┬───────┘
+           │                 │                  │
+   ┌───────▼─────────────────▼──────────────────▼───────┐
+   │              Shared Services Layer                  │
+   │  ┌──────────┐  ┌───────────┐  ┌──────────────┐    │
+   │  │ MongoDB  │  │  Kafka    │  │  Keycloak    │    │
+   │  │ (Core)   │  │ (Events)  │  │  (Identity)  │    │
+   │  └──────────┘  └───────────┘  └──────────────┘    │
+   │  ┌──────────┐  ┌───────────┐  ┌──────────────┐    │
+   │  │ Postgres │  │  Redis    │  │  Cert-Manager│    │
+   │  │ (Apps)   │  │ (Cache)   │  │  (TLS)       │    │
+   │  └──────────┘  └───────────┘  └──────────────┘    │
+   └────────────────────────────────────────────────────┘
+                              │
+   ┌──────────────────────────▼─────────────────────────┐
+   │              OpenShift / Kubernetes Platform        │
+   │         (Compute, Storage, Networking)              │
+   └────────────────────────────────────────────────────┘
+```
+
+Each box in this diagram represents a set of pods that the admin may need to troubleshoot. The shared services layer is managed by operators but still requires awareness — if MongoDB is unhealthy, MAS core functions will be affected even if the Manage pods are running fine.
+
+---
+
+## Building Your New Toolkit: A Practical Starting Point
+
+### Essential Tools for MAS Admins
+
+| Tool | Purpose | Legacy Equivalent |
+|------|---------|-------------------|
+| `oc` CLI | Cluster and pod management | WAS admin console |
+| Postman / `curl` | API testing and troubleshooting | Direct SQL queries |
+| Grafana | Performance dashboards | Tivoli Performance Viewer |
+| Prometheus | Metrics collection and alerting | Custom monitoring scripts |
+| EFK/ELK Stack | Centralized log analysis | `tail -f SystemOut.log` |
+| `jq` | JSON processing on the command line | N/A (new tool) |
+| MAS Suite Admin UI | Application and user management | Maximo admin mode |
+
+### Your First Week Checklist
+
+If you are transitioning to MAS admin responsibilities, here is a practical starting plan:
+
+- [ ] Install `oc` CLI and authenticate to your cluster (or request access)
+- [ ] Run `oc get pods` across all MAS namespaces — understand what's deployed
+- [ ] Read the logs of one healthy pod and one recently restarted pod
+- [ ] Access the MAS Suite Administration dashboard and explore
+- [ ] Obtain an API token and run a basic REST API query against Manage
+- [ ] Review the MAS operator custom resources (`oc get suite`, `oc get manageapp`)
+- [ ] Set up Postman with MAS API endpoints and your authentication token
+- [ ] Identify who on your team manages the OpenShift platform (your escalation contact)
+- [ ] Review your AppPoints allocation and current consumption
+- [ ] Document the shared responsibility boundaries for your specific deployment
+
+---
+
+## Common Misconceptions We Hear
+
+We've worked with dozens of admin teams transitioning to MAS. These misconceptions come up repeatedly:
+
+**"MAS admins don't need technical skills anymore."**
+False. The skills are different, not simpler. Understanding distributed systems, API behavior, and container orchestration requires significant technical depth.
+
+**"Everything is automated by operators, so there's nothing for admins to do."**
+False. Operators automate the mechanical tasks. Admins still make decisions about configuration, monitor for anomalies, troubleshoot complex issues, manage users and security, and coordinate upgrades.
+
+**"SaaS admins have no technical responsibilities."**
+False. SaaS admins manage integrations, security configurations, user access, data governance, and upgrade validation. The technical scope is different, but it's still technical. We'll cover this in detail in Part 3.
+
+**"I need to become a Kubernetes expert before I can work with MAS."**
+False. You need Kubernetes literacy — understanding the concepts and basic commands. Deep expertise helps but isn't required for the admin role. You can learn incrementally.
+
+---
+
+## Key Takeaways
+
+- **Six core areas define the new MAS admin role:** microservices awareness, Kubernetes literacy, operator supervision, API-first troubleshooting, Zero Trust security management, and AppPoints licensing
+- **Kubernetes literacy is practical, not theoretical** — learn the `oc` commands you'll use daily, not the full Kubernetes certification curriculum
+- **Operators are your most important new partner** — they handle the mechanical work that used to consume most of your day, freeing you to focus on higher-value activities
+- **The shared responsibility model is the foundation** — knowing who owns what determines how you troubleshoot, escalate, and plan
+- **API-first troubleshooting replaces SSH-and-grep** — build a toolkit of health checks, monitoring scripts, and Postman collections
+- **AppPoints require active management** — this is a new ongoing responsibility that has no legacy equivalent
+
+---
+
+## References
+
+- [IBM MAS Administration Guide](https://www.ibm.com/docs/en/mas)
+- [Red Hat OpenShift CLI Reference](https://docs.openshift.com/container-platform/latest/cli_reference/openshift_cli/getting-started-cli.html)
+- [Kubernetes Concepts — Pods](https://kubernetes.io/docs/concepts/workloads/pods/)
+- [Kubernetes Operators Pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/)
+- [OpenID Connect Specification](https://openid.net/connect/)
+- [IBM License Service Documentation](https://www.ibm.com/docs/en/cpfs)
+- [MAS AppPoints Licensing Guide](https://www.ibm.com/docs/en/mas/latest?topic=suite-apppoints)
+
+---
+
+**Series Navigation:**
+
+**Previous:** [Part 1 — The Legacy Maximo Administrator Role: A Love Letter to the 7.x Era](/blog/legacy-maximo-admin-role)
+**Next:** [Part 3 — How the SysAdmin Role Changes in MAS SaaS: From Server Room to Strategy Room](/blog/sysadmin-role-mas-saas)
+
+[View the full MAS ADMIN series index →](/blog/mas-admin-series-index)
+
+---
+
+*Part 2 of the "MAS ADMIN" series | Published by TheMaximoGuys*
+
+*The new MAS admin role isn't smaller — it's different. In Part 3, we'll focus specifically on the SaaS admin experience: what you lose, what you gain, and why this isn't a downgrade but a career evolution.*
