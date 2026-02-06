@@ -1,0 +1,934 @@
+---
+title: "Troubleshooting in MAS vs Maximo 7.6: The Complete Comparison Guide"
+description: "A side-by-side troubleshooting guide comparing Maximo 7.6 and MAS workflows across integration failures, performance degradation, SSO issues, and cron task failures -- with actual log examples, oc commands, and decision trees for the modern MAS admin."
+date: "2026-02-06"
+slug: "troubleshooting-mas-vs-legacy"
+tags: ["MAS 9", "Maximo 7.6", "Troubleshooting", "OpenShift", "Operations", "Logs", "Integration", "Performance", "SSO", "Cron Tasks"]
+draft: false
+tier: "admin"
+author: "The Maximo Guys"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "/images/mas-admin/mas-admin-part-7.png"
+
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+
+faqs:
+  - question: "What is the biggest difference between troubleshooting Maximo 7.6 and MAS?"
+    answer: "In 7.6, your power came from direct control -- SSH access, database queries, filesystem logs, JVM restarts. In MAS, your power comes from analysis, visibility, and coordination -- reading pod logs via oc commands, interpreting API response codes, checking operator health, and escalating with precise evidence to IBM Support. The mental model shifts from 'I will fix this server' to 'I will observe, diagnose, and coordinate the resolution.'"
+  - question: "How do I view Maximo logs in MAS on OpenShift?"
+    answer: "Use 'oc logs' to stream pod logs. First find the pod with 'oc get pods -n mas-{instanceId}-manage'. Then stream logs with 'oc logs -f {pod-name} -n mas-{instanceId}-manage'. For previous crashed containers, add '--previous'. You can also use 'oc adm must-gather' to collect comprehensive diagnostic data for IBM Support."
+  - question: "When should I escalate a MAS issue to IBM Support?"
+    answer: "Escalate when: the issue involves infrastructure you cannot access (operator internals, cluster-level resources), when pod restarts are occurring without clear application-level cause, when authentication tokens or certificates managed by IBM are expiring, or when you have collected logs and evidence but the root cause points to platform-level components outside your namespace control."
+
+keyTakeaways:
+  - "In Maximo 7.6, troubleshooting power came from control over servers and databases -- in MAS, it comes from analysis, visibility, and coordination"
+  - "Every 7.6 troubleshooting workflow has a MAS equivalent, but the tools and mental model are fundamentally different"
+  - "The 'oc' CLI is your new best friend -- learn 'oc logs', 'oc get pods', 'oc describe', and 'oc adm must-gather' before you need them"
+  - "Structured evidence collection is the single most important skill for MAS troubleshooting -- quality evidence drives faster IBM Support resolution"
+  - "Common mistakes include restarting pods as a first response, ignoring operator logs, and filing vague support cases without reproduction steps"
+
+series:
+  name: "MAS ADMIN"
+  part: 7
+  total: 8
+---
+
+# Troubleshooting in MAS vs Maximo 7.6: The Complete Comparison Guide
+
+**Series:** MAS ADMIN | **Part 7 of 8**
+
+**Read Time:** 22-28 minutes
+
+---
+
+> **Who this is for:** Maximo administrators transitioning from 7.6 to MAS who need a practical translation of their troubleshooting instincts into MAS-native workflows. Also valuable for new MAS admins who want to understand what veteran admins already know about diagnosing Maximo issues -- and how that knowledge maps to the new platform.
+
+---
+
+## Introduction: Two Admins, Same Problem, Different Worlds
+
+Picture this. It is a Tuesday at 2:15 PM. The integration between Maximo and the ERP system has stopped processing purchase requisitions. Procurement is on the phone. Accounts payable is escalating. The plant manager wants answers.
+
+In 2019, the Maximo 7.6 admin would have been SSH'd into the server within 90 seconds, tailing logs, querying the database, and restarting the integration framework -- all before the second phone call came in.
+
+In 2026, the MAS admin faces the same urgency but reaches for entirely different tools. There is no SSH. There is no direct database. The application runs across a cluster of containers orchestrated by Kubernetes. The integration is managed by an API-first service layer.
+
+We have guided hundreds of administrators through this transition. The good news is that every troubleshooting instinct you developed over years of 7.6 administration remains valuable. The workflows change, but the diagnostic thinking does not. This guide is your Rosetta Stone.
+
+---
+
+## The Mental Model Shift
+
+Before we dive into specific scenarios, we need to name the fundamental shift.
+
+**Maximo 7.6 Power Model: CONTROL**
+
+You had root access. You could restart any service, query any table, modify any configuration file, and watch any log in real time. Your troubleshooting speed was limited only by your knowledge of the system internals.
+
+**MAS Power Model: OBSERVE and COORDINATE**
+
+You have namespace-scoped access. You can read logs, inspect pod states, review API responses, and analyze metrics. For issues outside your control boundary, you collect evidence and coordinate with IBM Support or your platform team.
+
+> **Key insight:** The shift is not a loss of capability -- it is a change in leverage. A 7.6 admin who could restart a JVM in 30 seconds now needs to understand why the pod restarted itself. That understanding, once acquired, is far more powerful than a manual restart ever was.
+
+This does not mean MAS admins are less capable. It means the skill profile has changed. The best MAS admins we have worked with combine deep Maximo domain knowledge (what the application *should* be doing) with cloud-native observability skills (how to *see* what it is actually doing).
+
+---
+
+## Scenario 1: Integration Failure
+
+### The Situation
+
+Outbound purchase requisitions from Maximo to the ERP system have stopped flowing. The integration queue is backing up. Users are reporting that approved PRs are "stuck."
+
+### The 7.6 Workflow
+
+**Step 1: Check the MIF Outbound Queue**
+
+```sql
+-- Direct database query to check queue status
+SELECT
+    IFACENAME, STATUS, COUNT(*) as MSG_COUNT
+FROM
+    MAXINTMSGTRK
+WHERE
+    IFACENAME = 'MXPRInterface'
+    AND STATUS IN ('ERROR', 'RETRY')
+GROUP BY
+    IFACENAME, STATUS
+ORDER BY
+    MSG_COUNT DESC;
+```
+
+**Step 2: Review systemout.log on WebSphere**
+
+```bash
+# SSH to the application server
+ssh maxadmin@maximo-app-01
+
+# Tail the WebSphere system log
+tail -500f /opt/IBM/WebSphere/AppServer/profiles/ctgAppSrv01/logs/server1/systemout.log \
+  | grep -i "MXPRInterface\|integration\|ERROR"
+```
+
+You would see something like:
+
+```
+[2/6/26 14:15:02:341 CST] 0000024a IntegrationSe E   BMXAA7634E -
+  Integration error for MXPRInterface: Connection refused to endpoint
+  https://erp-system.company.com:8443/api/purchase-req
+[2/6/26 14:15:02:342 CST] 0000024a IntegrationSe E   BMXAA7635E -
+  Message placed in error queue. Transaction ID: PR-2026-00847
+  Root cause: java.net.ConnectException: Connection refused
+```
+
+**Step 3: Test Connectivity**
+
+```bash
+# From the Maximo server, test the endpoint directly
+curl -v https://erp-system.company.com:8443/api/purchase-req
+
+# Check if the ERP endpoint is reachable
+telnet erp-system.company.com 8443
+```
+
+**Step 4: Check and Restart the Integration Framework**
+
+```bash
+# In WebSphere admin console, or via wsadmin scripting
+# Restart the MIF JMS resources
+# Or restart the entire JVM if needed
+/opt/IBM/WebSphere/AppServer/profiles/ctgAppSrv01/bin/stopServer.sh server1
+/opt/IBM/WebSphere/AppServer/profiles/ctgAppSrv01/bin/startServer.sh server1
+```
+
+**Step 5: Reprocess Failed Messages**
+
+Navigate to **Integration > Message Reprocessing** in the Maximo UI, select the failed messages, and click Reprocess.
+
+**Total time for experienced 7.6 admin: 15-25 minutes.**
+
+---
+
+### The MAS Workflow
+
+**Step 1: Check Integration Service Pod Health**
+
+```bash
+# List pods in the Manage namespace
+oc get pods -n mas-inst1-manage -l app=manage \
+  --sort-by='.status.startTime'
+
+# Check for recently restarted or failing pods
+oc get pods -n mas-inst1-manage | grep -E "Error|CrashLoop|0/"
+```
+
+**Step 2: Stream Application Logs**
+
+```bash
+# Find the specific Manage pod
+oc get pods -n mas-inst1-manage -l app.kubernetes.io/component=manage-server
+
+# Stream logs and filter for integration errors
+oc logs -f manage-server-pod-abc123 -n mas-inst1-manage \
+  | grep -i "integration\|MXPRInterface\|ERROR\|BMXAA"
+```
+
+You would see output similar to:
+
+```
+2026-02-06T14:15:02.341Z ERROR [IntegrationService] BMXAA7634E -
+  Integration error for MXPRInterface: Connection refused to endpoint
+  https://erp-system.company.com:8443/api/purchase-req
+2026-02-06T14:15:02.342Z ERROR [IntegrationService] BMXAA7635E -
+  Outbound message failed. Interface: MXPRInterface,
+  Transaction: PR-2026-00847,
+  HTTP Status: N/A (connection refused)
+```
+
+**Step 3: Review API Response Codes and Tokens**
+
+```bash
+# Check if the integration endpoint external service is configured correctly
+# In Maximo UI: Integration > End Points
+
+# If using API keys or OAuth tokens, verify they have not expired
+# Check Keycloak or the identity provider for token validity
+
+# For on-prem MAS, check the Suite API key
+oc get secret inst1-credentials-superuser -n mas-inst1-core \
+  -o jsonpath='{.data.api_key}' | base64 -d
+```
+
+**Step 4: Verify Network Policies and Egress**
+
+```bash
+# Check if network policies are blocking outbound traffic
+oc get networkpolicy -n mas-inst1-manage
+
+# Test outbound connectivity from within the pod
+oc exec manage-server-pod-abc123 -n mas-inst1-manage -- \
+  curl -v https://erp-system.company.com:8443/api/purchase-req
+```
+
+**Step 5: Reprocess Failed Messages**
+
+Navigate to **Integration > Message Reprocessing** in the MAS Manage UI (this part has not changed from 7.6), select failed messages, and reprocess.
+
+**Total time for experienced MAS admin: 20-35 minutes.**
+
+---
+
+### Side-by-Side Comparison: Integration Failure
+
+| Aspect | Maximo 7.6 | MAS |
+|--------|-----------|-----|
+| **Log access** | SSH + tail systemout.log | oc logs -f pod-name |
+| **Database query** | Direct SQL via DB client | Admin UI or API queries |
+| **Connectivity test** | curl/telnet from server | oc exec into pod, then curl |
+| **Restart** | Stop/start WebSphere JVM | Delete pod (operator recreates) or restart deployment |
+| **Credential check** | Properties files on disk | Kubernetes secrets, Keycloak tokens |
+| **Network diagnosis** | traceroute, netstat | oc get networkpolicy, oc exec |
+| **Message reprocessing** | Maximo UI (unchanged) | MAS Manage UI (unchanged) |
+
+---
+
+## Scenario 2: Performance Degradation
+
+### The Situation
+
+Users are reporting that the Work Order Tracking application takes 12-15 seconds to load, compared to the usual 2-3 seconds. The system feels "sluggish" across all modules.
+
+### The 7.6 Workflow
+
+**Step 1: Check JVM Heap and Garbage Collection**
+
+```bash
+# SSH to the server
+ssh maxadmin@maximo-app-01
+
+# Check JVM memory usage via WebSphere
+# Navigate to WAS Admin Console > Servers > Server1 > Runtime tab
+# Or use command line:
+/opt/IBM/WebSphere/AppServer/bin/wsadmin.sh -lang jython -c \
+  "AdminControl.invoke(AdminControl.queryNames('type=JVM,process=server1,*'), 'getHeapInfo')"
+
+# Check GC logs
+tail -100 /opt/IBM/WebSphere/AppServer/profiles/ctgAppSrv01/logs/server1/native_stderr.log \
+  | grep -i "GC\|heap\|pause"
+```
+
+**Step 2: Check Database Performance**
+
+```sql
+-- Check for long-running queries (Oracle example)
+SELECT
+    sql_id, elapsed_time/1000000 as elapsed_sec,
+    sql_text
+FROM
+    v$sql
+WHERE
+    parsing_schema_name = 'MAXIMO'
+    AND elapsed_time/1000000 > 5
+ORDER BY
+    elapsed_time DESC
+FETCH FIRST 20 ROWS ONLY;
+
+-- Check for table locks
+SELECT
+    s.sid, s.serial#, s.username, o.object_name,
+    l.locked_mode
+FROM
+    v$locked_object l
+    JOIN dba_objects o ON l.object_id = o.object_id
+    JOIN v$session s ON l.session_id = s.sid
+WHERE
+    s.username = 'MAXIMO';
+```
+
+**Step 3: Check Thread Pool Utilization**
+
+```bash
+# WebSphere thread pool monitoring
+# WAS Console > Servers > server1 > Thread Pools > WebContainer
+# Look for MaxSize vs CurrentSize
+
+# Or via wsadmin
+/opt/IBM/WebSphere/AppServer/bin/wsadmin.sh -lang jython -c \
+  "print AdminControl.getAttribute(AdminControl.queryNames('type=ThreadPool,name=WebContainer,*'), 'stats')"
+```
+
+**Step 4: Review Escalation and Workflow Processing**
+
+```sql
+-- Check if escalations are overwhelming the system
+SELECT
+    ESCALATION, STATUS, COUNT(*) as ACTIVE_COUNT
+FROM
+    ESCALATION
+WHERE
+    STATUS = 'ACTIVE'
+GROUP BY
+    ESCALATION, STATUS
+ORDER BY
+    ACTIVE_COUNT DESC;
+```
+
+**Step 5: Restart and Tune**
+
+If garbage collection pauses were the culprit, increase heap size in WebSphere JVM settings. If slow queries were the issue, update database statistics or add indexes. Restart the JVM to clear thread pool exhaustion.
+
+---
+
+### The MAS Workflow
+
+**Step 1: Check Pod Resource Utilization**
+
+```bash
+# Check CPU and memory across all Manage pods
+oc adm top pods -n mas-inst1-manage
+
+# Example output:
+# NAME                          CPU(cores)   MEMORY(bytes)
+# manage-server-pod-abc123      1850m        3841Mi
+# manage-server-pod-def456      920m         2100Mi
+# manage-server-pod-ghi789      1780m        3790Mi
+
+# Check if pods are hitting resource limits
+oc describe pod manage-server-pod-abc123 -n mas-inst1-manage \
+  | grep -A 5 "Limits\|Requests\|Last State\|OOMKilled"
+```
+
+**Step 2: Review Pod Events and Restarts**
+
+```bash
+# Check for OOMKilled events or throttling
+oc get events -n mas-inst1-manage --sort-by='.lastTimestamp' \
+  | grep -i "oom\|kill\|evict\|unhealthy\|backoff"
+
+# Check restart counts (high restarts suggest memory leaks or crashes)
+oc get pods -n mas-inst1-manage -o wide \
+  | awk '{print $1, $4}' | sort -k2 -n -r | head -10
+```
+
+**Step 3: Check Database Connection Pools via Logs**
+
+```bash
+# Look for connection pool exhaustion in application logs
+oc logs manage-server-pod-abc123 -n mas-inst1-manage \
+  | grep -i "connection pool\|DSRA\|datasource\|timeout\|pool size"
+
+# Typical pool exhaustion log:
+# DSRA9400W: Connection pool {pool-name} reached maximum size of 40
+# DSRA9110E: Connection not available, request timed out
+```
+
+**Step 4: Check Horizontal Pod Autoscaler (if configured)**
+
+```bash
+# See if autoscaling is active and if more replicas are needed
+oc get hpa -n mas-inst1-manage
+
+# Example output:
+# NAME             REFERENCE           TARGETS     MINPODS   MAXPODS   REPLICAS
+# manage-server    Deployment/manage   82%/70%     2         6         4
+```
+
+**Step 5: Collect Diagnostics for IBM Support**
+
+```bash
+# If the issue is beyond your tuning scope, collect comprehensive data
+oc adm must-gather --dest-dir=/tmp/mas-perf-issue \
+  -- /usr/bin/gather_audit_logs
+
+# Also gather Maximo-specific diagnostics
+oc exec manage-server-pod-abc123 -n mas-inst1-manage -- \
+  /opt/IBM/SMP/maximo/tools/maximo/log/collectlogs.sh
+```
+
+---
+
+### Side-by-Side Comparison: Performance Degradation
+
+| Aspect | Maximo 7.6 | MAS |
+|--------|-----------|-----|
+| **Memory monitoring** | WAS Admin Console, JVM heap dumps | oc adm top pods, oc describe pod |
+| **Database performance** | Direct SQL against v$sql, AWR reports | Application logs for pool errors, DBA coordination |
+| **Thread analysis** | WAS thread pool stats, thread dumps | Pod CPU metrics, replica scaling |
+| **Tuning** | JVM args, WAS thread pools, DB indexes | Resource limits in CRs, HPA config, pod replicas |
+| **Root cause access** | Full stack visibility | Application-layer visibility, platform via IBM |
+
+---
+
+## Scenario 3: Authentication and SSO Issues
+
+### The Situation
+
+Users are receiving "401 Unauthorized" errors when trying to log into Maximo. Some users can log in; others cannot. The SSO configuration appears to have broken after a recent change.
+
+### The 7.6 Workflow
+
+**Step 1: Check WebSphere Security Configuration**
+
+```bash
+# SSH to the server
+ssh maxadmin@maximo-app-01
+
+# Check WAS security settings
+/opt/IBM/WebSphere/AppServer/bin/wsadmin.sh -lang jython -c \
+  "sec = AdminConfig.list('Security'); print AdminConfig.show(sec)"
+
+# Check TAI (Trust Association Interceptor) configuration
+cat /opt/IBM/WebSphere/AppServer/profiles/ctgAppSrv01/config/cells/*/security.xml \
+  | grep -i "TAI\|interceptor\|SAML"
+```
+
+**Step 2: Review LDAP Connectivity**
+
+```bash
+# Test LDAP connection
+ldapsearch -H ldap://ldap-server.company.com:389 \
+  -D "cn=maxadmin,ou=serviceaccounts,dc=company,dc=com" \
+  -w $LDAP_PASSWORD \
+  -b "ou=users,dc=company,dc=com" \
+  "(uid=failing-user)"
+
+# Check WAS LDAP registry configuration
+grep -r "LDAP\|ldap" /opt/IBM/WebSphere/AppServer/profiles/ctgAppSrv01/config/cells/*/security.xml
+```
+
+**Step 3: Check User Sync Status**
+
+```sql
+-- Verify the user exists and is active in Maximo
+SELECT
+    USERID, STATUS, LOGINID, PERSONID,
+    LASTLOGINTIME, FAILEDLOGINS
+FROM
+    MAXUSER
+WHERE
+    USERID = 'FAILING_USER';
+
+-- Check user group membership
+SELECT
+    g.GROUPNAME, g.DESCRIPTION
+FROM
+    GROUPUSER gu
+    JOIN MAXGROUP g ON gu.GROUPNAME = g.GROUPNAME
+WHERE
+    gu.USERID = 'FAILING_USER';
+```
+
+**Step 4: Review Login Traces**
+
+```bash
+# Enable trace for security components
+# WAS Console > Troubleshooting > Logs and Trace > server1
+# Set trace: com.ibm.ws.security.*=all
+
+# Then watch the trace
+tail -f /opt/IBM/WebSphere/AppServer/profiles/ctgAppSrv01/logs/server1/trace.log \
+  | grep -i "authenticate\|FAILING_USER\|denied\|401"
+```
+
+**Step 5: Fix and Test**
+
+Reset user password, clear failed login counts, repair LDAP sync, or reconfigure the TAI interceptor. Restart WebSphere to pick up security configuration changes.
+
+---
+
+### The MAS Workflow
+
+**Step 1: Check Keycloak (or AppConnect) Status**
+
+```bash
+# Check if the Keycloak pods are healthy
+oc get pods -n ibm-common-services | grep keycloak
+
+# Review Keycloak logs for authentication failures
+oc logs keycloak-0 -n ibm-common-services \
+  | grep -i "auth\|failed\|invalid\|401\|FAILING_USER"
+
+# Typical Keycloak error:
+# WARN [org.keycloak.events] type=LOGIN_ERROR, realmId=mas,
+#   clientId=manage, userId=null, error=invalid_user_credentials,
+#   username=FAILING_USER
+```
+
+**Step 2: Verify Identity Provider Configuration**
+
+```bash
+# Check the identity provider (LDAP/SAML) configuration in Keycloak
+# Access Keycloak Admin Console at:
+# https://keycloak-ibm-common-services.apps.cluster.company.com/auth/admin
+
+# Or check via API
+oc exec keycloak-0 -n ibm-common-services -- \
+  /opt/jboss/keycloak/bin/kcadm.sh get identity-provider/instances \
+  -r mas --server http://localhost:8080/auth \
+  --realm master --user admin --password $(oc get secret credential-keycloak-initial-admin \
+  -n ibm-common-services -o jsonpath='{.data.password}' | base64 -d)
+```
+
+**Step 3: Check User Synchronization**
+
+```bash
+# Check if the user sync job ran successfully
+oc logs -l app=usersync -n mas-inst1-core --tail=200 \
+  | grep -i "sync\|complete\|error\|FAILING_USER"
+
+# Verify the user exists in the MAS user registry
+# Navigate to MAS Suite Administration > Users
+# Or via API:
+curl -s -H "Authorization: Bearer $API_KEY" \
+  "https://admin.mas.company.com/api/v1/users/FAILING_USER" | jq .
+```
+
+**Step 4: Review Suite-Level Authentication Logs**
+
+```bash
+# Check the core namespace for authentication-related errors
+oc logs -l app.kubernetes.io/component=api -n mas-inst1-core \
+  | grep -i "auth\|token\|jwt\|401\|403"
+
+# Check if the OAuth token exchange is working
+oc get route -n ibm-common-services | grep keycloak
+```
+
+**Step 5: Verify Certificate Chain**
+
+```bash
+# SSO issues frequently trace back to certificate problems
+oc get secret router-certs-default -n openshift-ingress \
+  -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -noout -dates
+
+# Check for certificate expiration in the MAS namespace
+oc get certificates -n mas-inst1-core
+oc get certificates -n ibm-common-services
+```
+
+---
+
+### Side-by-Side Comparison: Authentication and SSO
+
+| Aspect | Maximo 7.6 | MAS |
+|--------|-----------|-----|
+| **Identity system** | WebSphere security + LDAP registry | Keycloak (or SAML IdP) + LDAP federation |
+| **User lookup** | Direct SQL against MAXUSER | Keycloak Admin Console, MAS Admin API |
+| **Login trace** | WAS security trace logs | Keycloak pod logs, Core API logs |
+| **Credential reset** | Direct DB update or WAS console | Keycloak user management, MAS Admin UI |
+| **Certificate check** | Keystore files on filesystem | oc get certificates, OpenShift secret inspection |
+| **SSO configuration** | TAI/SAML in WAS | Keycloak realm and client configuration |
+
+---
+
+## Scenario 4: Cron Task and Scheduled Job Failures
+
+### The Situation
+
+Preventive Maintenance (PM) work orders are not being generated. The PMWoGenCronTask that runs every night at 11 PM has stopped producing results. Maintenance planners are raising alarms.
+
+### The 7.6 Workflow
+
+**Step 1: Check Cron Task Manager Status**
+
+```sql
+-- Check the cron task instance configuration
+SELECT
+    INSTANCENAME, CRONNAME, SCHEDULE,
+    ACTIVE, RUNASUSERID, LASTRUNDATE,
+    HASLD
+FROM
+    CRONTASKINSTANCE
+WHERE
+    CRONNAME = 'PMWOGENCRONTASK';
+```
+
+Navigate to **System Configuration > Platform Configuration > Cron Task Setup** in the Maximo UI. Verify the cron task instance is Active and the schedule is correct.
+
+**Step 2: Check the Cron Task Log**
+
+```bash
+# The cron task log is written to the Maximo log directory
+tail -200 /opt/IBM/SMP/maximo/logs/maximo.log \
+  | grep -i "PMWoGen\|crontask\|PMWOGENCRONTASK"
+
+# Typical failure log:
+# [2/6/26 23:00:01:102] BMXAA6780I - Cron Task PMWOGENCRONTASK:PMWOGEN01
+#   started on server MXServer
+# [2/6/26 23:00:15:445] BMXAA4187E - Error executing cron task PMWOGENCRONTASK:
+#   BMXAA4188E - PM 1047: Next date calculation failed.
+#   java.lang.NullPointerException at psdi.app.pm.PMService.generateWorkOrders
+```
+
+**Step 3: Investigate the Specific PM**
+
+```sql
+-- Find the PM that is causing the failure
+SELECT
+    PMNUM, DESCRIPTION, SITEID,
+    NEXTDATE, FREQUENCY, FREQUNIT,
+    STATUS
+FROM
+    PM
+WHERE
+    PMNUM = '1047'
+    AND SITEID = 'BEDFORD';
+
+-- Check for data quality issues
+SELECT
+    PMNUM, SITEID, NEXTDATE
+FROM
+    PM
+WHERE
+    NEXTDATE IS NULL
+    AND STATUS = 'ACTIVE'
+    AND SITEID = 'BEDFORD';
+```
+
+**Step 4: Fix and Rerun**
+
+Correct the data issue on PM 1047 (perhaps a null next date or invalid frequency), then manually trigger the cron task from the Cron Task Setup application by clicking "Reload Request."
+
+---
+
+### The MAS Workflow
+
+**Step 1: Check Cron Task Status in the Manage UI**
+
+Navigate to **System Configuration > Platform Configuration > Cron Task Setup** in the MAS Manage application. This interface is largely unchanged from 7.6 -- one of the familiar touchpoints.
+
+**Step 2: Check Manage Pod Logs for Cron Execution**
+
+```bash
+# Find the Manage server pods (cron tasks run inside the Manage JVM)
+oc get pods -n mas-inst1-manage -l app.kubernetes.io/component=manage-server
+
+# Stream logs filtering for cron task activity
+oc logs manage-server-pod-abc123 -n mas-inst1-manage --tail=500 \
+  | grep -i "PMWoGen\|crontask\|BMXAA6780\|BMXAA4187"
+
+# If cron tasks run on a dedicated pod (ServerBundle configuration),
+# check the cron-specific pod
+oc get pods -n mas-inst1-manage -l app.kubernetes.io/component=manage-cron
+
+oc logs manage-cron-pod-xyz789 -n mas-inst1-manage --tail=500 \
+  | grep -i "PMWoGen\|crontask"
+```
+
+**Step 3: Check if the Cron Pod is Even Running**
+
+```bash
+# In MAS, cron tasks may run in a separate ServerBundle
+# If that pod is down, no cron tasks execute at all
+
+oc get pods -n mas-inst1-manage | grep cron
+# If no cron pods exist, check the ManageWorkspace CR
+
+oc get ManageWorkspace -n mas-inst1-manage -o yaml \
+  | grep -A 20 "serverBundles"
+```
+
+**Step 4: Review Cron Task History via API**
+
+```bash
+# Use the Maximo REST API to query cron task history
+curl -s -H "Authorization: Bearer $API_KEY" \
+  "https://manage.mas.company.com/maximo/oslc/os/mxapicrontask?\
+oslc.where=crontaskname=%22PMWOGENCRONTASK%22&\
+oslc.select=instancename,schedule,active,lastrundate" | jq .
+```
+
+**Step 5: Check for Resource Constraints Affecting Cron**
+
+```bash
+# Cron task failures in MAS often trace to pod resource limits
+oc describe pod manage-cron-pod-xyz789 -n mas-inst1-manage \
+  | grep -A 10 "Resources\|Limits\|OOMKilled"
+
+# Check if the pod was evicted or restarted during cron execution
+oc get events -n mas-inst1-manage --sort-by='.lastTimestamp' \
+  | grep "cron\|evict\|oom\|kill"
+```
+
+---
+
+### Side-by-Side Comparison: Cron Task Failures
+
+| Aspect | Maximo 7.6 | MAS |
+|--------|-----------|-----|
+| **Cron task UI** | Cron Task Setup (unchanged) | Cron Task Setup (same UI in Manage) |
+| **Log location** | maximo.log on filesystem | oc logs from Manage or Cron pod |
+| **Database investigation** | Direct SQL against PM, CRONTASKINSTANCE | REST API queries or Manage UI |
+| **Cron execution host** | MXServer JVM on known host | Manage pod (or dedicated cron ServerBundle pod) |
+| **Resource issues** | JVM heap, server memory | Pod resource limits, OOMKilled events |
+| **Manual trigger** | Reload Request in Cron Task Setup | Reload Request in Cron Task Setup (unchanged) |
+
+---
+
+## The MAS Troubleshooting Decision Tree
+
+When an issue occurs in MAS, follow this structured approach before reaching for any tool.
+
+**Step 1: Classify the Symptom (First 2 Minutes)**
+
+- **Who is affected?** One user, one site, all users, or all sites?
+- **What is the symptom?** Error message, slow response, no response, wrong data?
+- **When did it start?** After a deployment, after a configuration change, or seemingly random?
+- **Where does it occur?** One application, one module, all applications, or the login page?
+
+**Step 2: Determine the Layer (Next 3 Minutes)**
+
+```
+Is the issue in Maximo application logic?
+  (Automation scripts, workflows, business rules, data)
+  YES --> Troubleshoot in the Manage application UI and pod logs
+  NO  --> Continue
+
+Is the issue in the MAS platform layer?
+  (Authentication, API gateway, Suite administration)
+  YES --> Check core namespace pods and Keycloak
+  NO  --> Continue
+
+Is the issue in the infrastructure layer?
+  (OpenShift, networking, storage, databases)
+  YES --> Check cluster health, coordinate with platform team or IBM
+  NO  --> Continue
+
+Is the issue external?
+  (Third-party integrations, network, DNS, certificates)
+  YES --> Test connectivity from inside the pod, check certificates
+```
+
+**Step 3: Collect Evidence (Next 10 Minutes)**
+
+```bash
+# Standard evidence collection script for any MAS issue
+
+# 1. Pod status snapshot
+oc get pods -n mas-inst1-manage -o wide > /tmp/evidence/pods.txt
+oc get pods -n mas-inst1-core -o wide >> /tmp/evidence/pods.txt
+
+# 2. Recent events
+oc get events -n mas-inst1-manage --sort-by='.lastTimestamp' \
+  > /tmp/evidence/events.txt
+
+# 3. Application logs (last 30 minutes)
+oc logs manage-server-pod-abc123 -n mas-inst1-manage \
+  --since=30m > /tmp/evidence/manage-logs.txt
+
+# 4. Pod descriptions for resource info
+oc describe pod manage-server-pod-abc123 -n mas-inst1-manage \
+  > /tmp/evidence/pod-describe.txt
+
+# 5. Operator logs (if relevant)
+oc logs -l app.kubernetes.io/name=ibm-mas-operator -n mas-inst1-core \
+  --tail=500 > /tmp/evidence/operator-logs.txt
+```
+
+**Step 4: Act or Escalate (Based on Findings)**
+
+- **Application-layer issue you can fix:** Fix it in the Manage UI or via API.
+- **Platform-layer issue requiring operator action:** File IBM Support case with collected evidence.
+- **Infrastructure-layer issue:** Coordinate with your OpenShift platform team.
+
+> **Key insight:** The decision tree is not about finding the answer -- it is about finding the right *layer* to investigate. In 7.6, all layers lived on the same server. In MAS, each layer is a separate concern with separate tools and separate teams.
+
+---
+
+## Common Mistakes New MAS Admins Make
+
+We have seen these patterns repeatedly across organizations transitioning to MAS. Every one of them is avoidable.
+
+### Mistake 1: Deleting Pods as a First Response
+
+In 7.6, restarting the JVM was a legitimate first step. In MAS, deleting a pod triggers the operator to recreate it -- but if the root cause is a configuration issue, the new pod will fail the same way. Worse, you lose the logs from the original pod.
+
+**Instead:** Always collect logs *before* restarting. Use `oc logs --previous` if a pod has already crashed.
+
+### Mistake 2: Ignoring Operator Logs
+
+The MAS operators (ibm-mas, ibm-sls, ibm-mas-manage) are responsible for reconciling the desired state with the actual state. When something goes wrong at the platform level, the operator logs contain the explanation. Many admins only look at the application pod logs and miss the real story.
+
+```bash
+# Always check operator logs when platform-level issues occur
+oc logs -l control-plane=ibm-mas-operator -n mas-inst1-core --tail=200
+```
+
+### Mistake 3: Filing Vague IBM Support Cases
+
+A case that says "Maximo is slow" will sit in the queue. A case that says "Manage pod manage-server-pod-abc123 in namespace mas-inst1-manage is experiencing 12-second response times for the WOTRACK application since 2026-02-06 14:00 UTC, with pod CPU at 1850m/2000m and attached logs showing DSRA9400W connection pool exhaustion" will get immediate attention.
+
+**The evidence checklist for IBM Support:**
+- Exact timestamps (UTC)
+- Affected namespace and pod names
+- Specific error codes (BMXAA, DSRA, etc.)
+- Pod logs covering the time window
+- Events from the namespace
+- What changed recently (deployments, config changes)
+- Business impact statement
+
+### Mistake 4: Not Understanding ServerBundle Architecture
+
+In MAS Manage, different ServerBundles handle different workloads: UI requests, cron tasks, integration processing, and reporting. If you are troubleshooting a cron task failure but only looking at the UI pod logs, you are looking in the wrong place.
+
+```bash
+# Understand your ServerBundle layout
+oc get pods -n mas-inst1-manage -l app.kubernetes.io/component \
+  --show-labels | grep "component="
+```
+
+### Mistake 5: Treating MAS Like a Single Server
+
+In 7.6, "the Maximo server" was one (or a few) JVMs on known hosts. In MAS, the application is distributed across multiple pods, namespaces, and services. An issue in the `ibm-common-services` namespace (Keycloak) can look like a Maximo problem in the `mas-inst1-manage` namespace. Always check adjacent namespaces.
+
+```bash
+# Quick health check across all MAS-related namespaces
+for ns in mas-inst1-core mas-inst1-manage ibm-common-services ibm-sls; do
+  echo "=== $ns ==="
+  oc get pods -n $ns | grep -v "Running\|Completed"
+done
+```
+
+---
+
+## When to Escalate to IBM Support
+
+Not every issue requires a support case. But when you do escalate, timing matters. Here is our experience-based guidance.
+
+**Escalate Immediately (Severity 1):**
+- All users unable to log in and you have verified Keycloak/IdP pods are unhealthy
+- Data loss or data corruption suspected
+- Operator is in a crash loop and reconciliation has failed for more than 15 minutes
+- Suite administration console is unreachable
+
+**Escalate After 30 Minutes of Investigation (Severity 2):**
+- Performance degradation affecting business operations with no application-level cause found
+- Integration failures where connectivity is confirmed but messages are not processing
+- Certificate-related errors in namespaces you do not manage
+- Pod restarts occurring without application-level errors in the logs
+
+**Investigate Fully Before Escalating (Severity 3-4):**
+- Single-user issues (likely permission or data issues you can fix)
+- Cron task failures caused by data quality problems
+- Slow queries that can be addressed with application-level tuning
+- Configuration questions about MAS deployment options
+
+> **Key insight:** IBM Support resolution time correlates directly with the quality of your initial evidence. We have seen identical issues resolved in 2 hours (with excellent evidence) and 5 days (with vague descriptions). The 30 minutes you spend collecting evidence before filing the case will save you days of back-and-forth.
+
+---
+
+## The Essential oc Commands Every MAS Admin Must Know
+
+We recommend memorizing these ten commands. They cover 90% of MAS troubleshooting scenarios.
+
+```bash
+# 1. List pods with status in a namespace
+oc get pods -n {namespace}
+
+# 2. Stream live logs from a pod
+oc logs -f {pod-name} -n {namespace}
+
+# 3. Get logs from a crashed container's previous instance
+oc logs --previous {pod-name} -n {namespace}
+
+# 4. Describe a pod (events, resource limits, conditions)
+oc describe pod {pod-name} -n {namespace}
+
+# 5. Check resource utilization
+oc adm top pods -n {namespace}
+
+# 6. Get recent events sorted by time
+oc get events -n {namespace} --sort-by='.lastTimestamp'
+
+# 7. Execute a command inside a running pod
+oc exec {pod-name} -n {namespace} -- {command}
+
+# 8. Get secrets (e.g., API keys, credentials)
+oc get secret {secret-name} -n {namespace} -o jsonpath='{.data.{key}}' | base64 -d
+
+# 9. Check network policies
+oc get networkpolicy -n {namespace}
+
+# 10. Collect comprehensive diagnostics
+oc adm must-gather --dest-dir=/tmp/diag
+```
+
+---
+
+## Key Takeaways
+
+1. **The troubleshooting fundamentals have not changed.** Integration failures, performance issues, authentication problems, and cron task failures are the same categories you have always dealt with. The diagnostic thinking is the same. Only the tools are different.
+
+2. **Your 7.6 experience is an asset, not a liability.** Knowing *what* Maximo should be doing (the application behavior) is more valuable in MAS than knowing *how* the server works. Operators handle the server. You handle the application intelligence.
+
+3. **Learn the `oc` CLI before you need it.** Practice the ten essential commands in a non-production environment. When production is down at 2 AM, you do not want to be reading documentation.
+
+4. **Evidence quality is your superpower.** In the 7.6 world, you could brute-force a fix by restarting services and tweaking configs. In MAS, structured evidence collection and precise communication (with IBM Support or your platform team) is what drives fast resolution.
+
+5. **The mental model shift is real but manageable.** From "I control the server" to "I observe and coordinate." Once you internalize this shift, MAS troubleshooting becomes natural -- and in many ways, more systematic than the ad-hoc approaches many of us used in 7.6.
+
+---
+
+## References
+
+- [IBM MAS 9 Documentation: Troubleshooting](https://www.ibm.com/docs/en/mas-cd/maximo-manage/continuous-delivery?topic=troubleshooting)
+- [Red Hat OpenShift CLI Reference: oc commands](https://docs.openshift.com/container-platform/latest/cli_reference/openshift_cli/getting-started-cli.html)
+- [IBM MAS Must-Gather Procedures](https://www.ibm.com/docs/en/mas-cd/maximo-manage/continuous-delivery?topic=support-must-gather)
+- [IBM Support: How to Open an Effective Case](https://www.ibm.com/support/pages/how-open-case-ibm-support)
+- [Kubernetes Troubleshooting Guide](https://kubernetes.io/docs/tasks/debug/)
+
+---
+
+**Series Navigation:**
+
+**Previous:** [Part 6 — The Daily Toolset of MAS Admins](/blog/daily-toolset-mas-admins)
+**Next:** [Part 8 — The Future MAS SysAdmin: AI, Automation, and Autonomous Monitoring](/blog/future-mas-sysadmin)
+
+[View the full MAS ADMIN series index →](/blog/mas-admin-series-index)
+
+---
+
+*Part 7 of the "MAS ADMIN" series | Published by TheMaximoGuys*

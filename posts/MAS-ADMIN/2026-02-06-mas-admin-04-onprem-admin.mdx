@@ -1,0 +1,637 @@
+---
+title: "How the SysAdmin Role Changes in MAS On-Prem"
+description: "The MAS on-prem sysadmin role retains more technical depth than SaaS, but the daily reality is dramatically different. From WebSphere and DB triggers to OpenShift operators, pod health, and certificate management -- here's what the new job actually looks like."
+date: "2026-02-06"
+slug: "sysadmin-role-mas-onprem"
+tags: ["MAS Admin", "On-Prem", "OpenShift", "Kubernetes", "SysAdmin", "Operators", "Certificate Management", "Platform Engineering"]
+draft: false
+tier: "admin"
+author: "The Maximo Guys"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "/images/mas-admin/mas-admin-part-4.png"
+
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+
+faqs:
+  - question: "Do I still need to know the database in MAS on-prem?"
+    answer: "Yes, but your relationship with the database changes. You no longer write DB triggers or stored procedures for business logic. Instead, you manage database health through operators and monitor connection pools via pod metrics. The DBA team typically handles schema-level concerns while you focus on application-layer configuration."
+  - question: "Is MAS on-prem harder to administer than legacy Maximo 7.6?"
+    answer: "It is different, not necessarily harder. Some tasks that were manual (patching, scaling) are now automated by operators. But you trade that simplicity for new complexity in container orchestration, certificate lifecycle, and distributed system observability. The learning curve is real but manageable with structured ramp-up."
+  - question: "Can I run MAS on-prem without a dedicated OpenShift team?"
+    answer: "We strongly advise against it. MAS on-prem requires ongoing OpenShift cluster management -- node health, etcd backups, ingress configuration, and platform upgrades. Most successful deployments have a shared platform team that handles the cluster while MAS admins focus on the application layer."
+
+keyTakeaways:
+  - "MAS on-prem replaces WebSphere administration with OpenShift and operator-driven management"
+  - "Certificate management, storage classes, and ingress configuration become core daily responsibilities"
+  - "The shared responsibility model means MAS admins must collaborate with DBA, security, network, and platform teams"
+  - "Legacy skills like custom MBOs, EAR deployments, and DB triggers are no longer part of the admin workflow"
+  - "The modern MAS on-prem admin role resembles an SRE or platform engineer more than a traditional sysadmin"
+
+series:
+  name: "MAS ADMIN"
+  part: 4
+  total: 8
+---
+
+# How the SysAdmin Role Changes in MAS On-Prem
+
+> **Who this is for:** Maximo sysadmins, infrastructure engineers, and IT managers responsible for on-premises MAS deployments. If you are running -- or planning to run -- MAS on your own OpenShift cluster, this post maps the new terrain.
+
+**Read time:** 18 minutes
+
+---
+
+If you have been administering Maximo 7.6 on-prem for years, you know the drill. WebSphere Application Server. DB2 or Oracle tuning. Custom MBO deployments via EAR files. Log files in predictable locations. A world you could map in your head.
+
+MAS on-prem keeps you in the driver's seat -- you still own the infrastructure, still manage the hardware (or VMs), still have root-level control. But the vehicle itself is completely different. You are no longer managing a Java EE monolith on WebSphere. You are managing a cloud-native platform on OpenShift, with operators handling lifecycle management, pods replacing application servers, and YAML replacing admin console clicks.
+
+In our experience, the admins who thrive in this transition are the ones who accept that the role has changed -- not shrunk, not simplified, but transformed. Let us walk through exactly what that transformation looks like.
+
+---
+
+## What Goes Away: The Legacy Admin Toolkit
+
+Before we talk about what is new, let us acknowledge what you can set down. These were core competencies for years, and it can feel strange to hear they are no longer part of your daily work.
+
+### Skills and Tasks You No Longer Need
+
+- **WebSphere Application Server administration** -- No more WAS console, no more thread pool tuning, no more JVM heap configuration through WAS admin
+- **Custom MBO deployment via EAR files** -- The entire build-and-deploy cycle for custom Java classes packaged as EARs is gone
+- **Database triggers for business logic** -- DB triggers that enforced business rules or fired integration events are replaced by application-layer automation scripts and event-driven patterns
+- **WAS log analysis** -- SystemOut.log, SystemErr.log, and the ffdc directory are no longer your debugging starting points
+- **Manual patching and fix pack installation** -- IBM fix packs that required careful WAS restarts and deployment ordering are replaced by operator-managed upgrades
+- **Custom Java extending MboSet** -- Direct Java customization of Maximo business objects through the MBO framework is no longer the extension model
+
+> **Key insight:** Nothing on this list means your knowledge was wasted. Understanding business object behavior, integration patterns, and system architecture transfers directly. What changes is the mechanism, not the intent.
+
+---
+
+## What Arrives: The New On-Prem Responsibility Map
+
+MAS on-prem retains more technical depth than MAS SaaS. You own the cluster, the storage, the network, and the certificates. That ownership comes with a new set of responsibilities that did not exist in legacy Maximo.
+
+### OpenShift Cluster Administration
+
+Your application server is now a Kubernetes cluster running OpenShift. Instead of managing a single WAS instance (or a small cluster), you manage a distributed system of nodes, pods, and services.
+
+**Daily health check commands:**
+
+```bash
+# Check the status of all pods in the MAS namespace
+oc get pods -n mas-inst1-core --sort-by='.status.startTime'
+
+# Get a high-level view of node health
+oc get nodes -o wide
+
+# Check for pods that are not in Running state
+oc get pods -n mas-inst1-core --field-selector=status.phase!=Running
+
+# View resource utilization across nodes
+oc adm top nodes
+
+# Check pod resource consumption in the MAS namespace
+oc adm top pods -n mas-inst1-core --sort-by=memory
+```
+
+**Investigating a troubled pod:**
+
+```bash
+# Describe a pod to see events, conditions, and resource limits
+oc describe pod maxinst-masdev-all-0 -n mas-inst1-core
+
+# Stream logs from a specific container
+oc logs -f maxinst-masdev-all-0 -n mas-inst1-core -c maximo-all
+
+# Check previous container logs if a pod restarted
+oc logs maxinst-masdev-all-0 -n mas-inst1-core -c maximo-all --previous
+
+# Execute into a pod for live debugging
+oc exec -it maxinst-masdev-all-0 -n mas-inst1-core -c maximo-all -- /bin/bash
+```
+
+In a legacy world, this is the equivalent of checking WAS process status and tailing SystemOut.log. The information is the same -- is the application running, is it healthy, what errors occurred -- but the mechanism is entirely different.
+
+### Operator-Driven Deployments
+
+MAS uses the Operator Lifecycle Manager (OLM) to manage application deployment and upgrades. Instead of manually deploying EAR files or running installation scripts, you define desired state in Custom Resources (CRs) and the operator reconciles reality to match.
+
+**Example: MAS Core Custom Resource**
+
+```yaml
+apiVersion: core.mas.ibm.com/v1
+kind: Suite
+metadata:
+  name: inst1
+  namespace: mas-inst1-core
+  labels:
+    mas.ibm.com/instanceId: inst1
+spec:
+  domain: mas.example.com
+  license:
+    accept: true
+    license: AppPoints
+  settings:
+    icr:
+      cp: cp.icr.io/cp
+      cpopen: icr.io/cpopen
+  cert:
+    duration: 8760h
+    renewBefore: 720h
+```
+
+**Checking operator status:**
+
+```bash
+# List all installed operators
+oc get csv -n mas-inst1-core
+
+# Check the MAS operator subscription
+oc get subscription -n mas-inst1-core
+
+# View operator logs
+oc logs deployment/ibm-mas-operator -n mas-inst1-core --tail=100
+
+# Check install plans (pending approvals for upgrades)
+oc get installplan -n mas-inst1-core
+```
+
+> **Key insight:** The operator model means you declare what you want, not how to get there. This is a fundamental shift from imperative administration (run this script, click this button) to declarative administration (define this state, let the system converge).
+
+### Container-Based Scaling
+
+Scaling in legacy Maximo meant adding WAS cluster members -- a manual process involving configuration, synchronization, and testing. In MAS on-prem, scaling is a property of the deployment.
+
+```bash
+# Check current replica count
+oc get deployment maxinst-masdev-all -n mas-inst1-core -o jsonpath='{.spec.replicas}'
+
+# View horizontal pod autoscaler configuration (if configured)
+oc get hpa -n mas-inst1-core
+
+# Monitor pod distribution across nodes
+oc get pods -n mas-inst1-core -o wide
+```
+
+Scaling decisions are still yours -- do we need more replicas during a maintenance window when 500 technicians are submitting work orders? -- but the execution is a configuration change rather than an infrastructure project.
+
+---
+
+## Certificate Management: Your New Best Friend
+
+Certificate management in legacy Maximo was straightforward. You had a few SSL certificates for the web server, maybe an LDAP cert, and they renewed annually. In MAS on-prem, certificates are everywhere. Every service communicates over TLS. Internal certificates, external certificates, CA bundles -- all need lifecycle management.
+
+### Certificate Landscape in MAS
+
+| Certificate Type | Purpose | Typical Lifetime | Managed By |
+|---|---|---|---|
+| Cluster CA | Signs internal service certificates | 10 years | OpenShift platform |
+| Ingress/Router | External HTTPS access | 1 year | Admin or cert-manager |
+| MAS Internal | Inter-service TLS | 90 days - 1 year | MAS operator |
+| MongoDB TLS | Database connection encryption | 1 year | MongoDB operator |
+| Kafka TLS | Event streaming encryption | 1 year | Strimzi/AMQ operator |
+| LDAP/SSO | Identity provider trust | 1-2 years | Security team |
+
+### Checking Certificate Expiration
+
+```bash
+# Check route certificates
+oc get route -n mas-inst1-core -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.tls.certificate}{"\n"}{end}'
+
+# Check secrets containing TLS certificates
+oc get secrets -n mas-inst1-core --field-selector type=kubernetes.io/tls
+
+# Inspect a specific certificate's expiration
+oc get secret inst1-cert-public -n mas-inst1-core -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -noout -dates
+
+# Check all certificates managed by cert-manager (if installed)
+oc get certificates -n mas-inst1-core
+```
+
+### Automating Certificate Renewal with cert-manager
+
+Many MAS on-prem deployments use cert-manager for automated certificate lifecycle. Here is a typical Issuer and Certificate resource:
+
+```yaml
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: maximo-admin@example.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-key
+    solvers:
+      - http01:
+          ingress:
+            class: openshift-default
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: mas-external-cert
+  namespace: mas-inst1-core
+spec:
+  secretName: mas-external-tls
+  duration: 2160h    # 90 days
+  renewBefore: 360h  # Renew 15 days before expiry
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - mas.example.com
+    - "*.mas.example.com"
+```
+
+> **Key insight:** Certificate expiration is the number one cause of unexpected MAS outages we have seen in on-prem deployments. Automate renewal and set up alerts for expiration. Do not rely on calendar reminders.
+
+---
+
+## Storage Management: Persistent Volumes and Storage Classes
+
+Legacy Maximo had simple storage needs -- a filesystem for attachments, a database for everything else. MAS on-prem introduces Kubernetes persistent storage, which requires understanding storage classes, persistent volume claims (PVCs), and access modes.
+
+### Storage Class Configuration
+
+Your OpenShift cluster needs storage classes that match MAS requirements. Here is an example using NFS and block storage:
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: mas-file-storage
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: kubernetes.io/nfs
+parameters:
+  server: nfs.example.com
+  path: /exports/mas
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+mountOptions:
+  - hard
+  - nfsvers=4.1
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: mas-block-storage
+provisioner: kubernetes.io/vsphere-volume
+parameters:
+  diskformat: thin
+  datastore: MAS-Datastore
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+```
+
+### Monitoring Storage Usage
+
+```bash
+# Check persistent volume claims and their status
+oc get pvc -n mas-inst1-core
+
+# Check persistent volume capacity and usage
+oc get pv --sort-by='.spec.capacity.storage'
+
+# Describe a specific PVC to see binding details
+oc describe pvc data-mongo-ce-0 -n mongoce
+
+# Check storage class availability
+oc get storageclass
+```
+
+### Common Storage Issues We Have Seen
+
+| Symptom | Likely Cause | Resolution |
+|---|---|---|
+| Pod stuck in Pending | PVC not bound, no matching PV | Check storage class provisioner, verify capacity |
+| Pod CrashLoopBackOff with I/O errors | Storage backend unreachable | Check NFS server health, network connectivity |
+| Slow database queries | Storage IOPS insufficient | Migrate to higher-performance storage class |
+| Attachment upload failures | PVC at capacity | Expand PVC or clean up old attachments |
+
+---
+
+## Backup and Restore: New Procedures for a New World
+
+In legacy Maximo, backup meant database export and filesystem copy. In MAS on-prem, backup is multi-layered because state lives in multiple places.
+
+### What Needs to Be Backed Up
+
+1. **etcd cluster data** -- The OpenShift cluster state itself
+2. **MAS Custom Resources** -- Your configuration-as-code
+3. **MongoDB data** -- MAS configuration and IoT data
+4. **Database (DB2/Oracle)** -- Maximo Manage application data
+5. **Persistent volumes** -- Attachments, documents, logs
+6. **Secrets and certificates** -- Encryption keys, TLS certificates
+7. **Operator configurations** -- Subscriptions, catalog sources
+
+### Backup Procedures
+
+**Exporting MAS Custom Resources:**
+
+```bash
+# Export all MAS-related custom resources
+oc get suite inst1 -n mas-inst1-core -o yaml > backup/suite-inst1.yaml
+oc get workspace masdev -n mas-inst1-core -o yaml > backup/workspace-masdev.yaml
+oc get manageapp inst1-masdev -n mas-inst1-manage -o yaml > backup/manage-app.yaml
+
+# Export all secrets (encrypt this backup)
+oc get secrets -n mas-inst1-core -o yaml > backup/secrets-core.yaml
+
+# Export operator subscriptions
+oc get subscriptions -n mas-inst1-core -o yaml > backup/subscriptions.yaml
+```
+
+**MongoDB Backup:**
+
+```bash
+# Identify the MongoDB pod
+oc get pods -n mongoce -l app=mongo-ce
+
+# Run mongodump inside the pod
+oc exec mongo-ce-0 -n mongoce -- mongodump \
+  --uri="mongodb://localhost:27017" \
+  --out=/tmp/mongodump-$(date +%Y%m%d)
+
+# Copy the dump to local storage
+oc cp mongoce/mongo-ce-0:/tmp/mongodump-$(date +%Y%m%d) ./backup/mongodump/
+```
+
+**etcd Backup (cluster-level):**
+
+```bash
+# SSH to a control plane node
+# Run the etcd backup script
+/usr/local/bin/cluster-backup.sh /home/core/backup
+
+# Verify backup files were created
+ls -la /home/core/backup/
+```
+
+### Restore Testing
+
+We cannot emphasize this enough: **test your restores regularly.** A backup that has never been restored is a hope, not a strategy. Schedule quarterly restore drills to a non-production cluster.
+
+---
+
+## Comparison: Legacy On-Prem vs MAS On-Prem
+
+This table captures the shift in responsibilities at a glance. The left column is what you did. The right column is what you do now.
+
+| Responsibility Area | Legacy Maximo 7.6 On-Prem | MAS On-Prem |
+|---|---|---|
+| **Application Server** | WebSphere admin console, JVM tuning, thread pools | OpenShift, pod resource limits, operator CRs |
+| **Deployment** | EAR file builds, WAS deployment manager | Operator-managed, CR updates trigger rollouts |
+| **Scaling** | WAS cluster members, manual horizontal scaling | Replica count changes, HPA, pod autoscaling |
+| **Patching** | IBM fix packs, manual WAS restarts | Operator channel upgrades, rolling updates |
+| **Logging** | SystemOut.log, ffdc, WAS trace strings | Pod logs (`oc logs`), centralized logging (EFK/Loki) |
+| **Monitoring** | WAS PMI, custom scripts, Tivoli | Prometheus, Grafana, OpenShift monitoring |
+| **Database** | Direct SQL, DB triggers, stored procedures | Operator-managed DB, connection pool config via CR |
+| **Security** | WAS security domains, LDAP config | OAuth2/OIDC, Keycloak, cert-manager, secrets |
+| **Storage** | Filesystem mounts, SAN/NAS | PVCs, storage classes, CSI drivers |
+| **Networking** | HTTP Server, WAS virtual hosts | Routes, ingress controllers, network policies |
+| **Backup** | DB export + filesystem copy | etcd + CR export + MongoDB dump + PV snapshots |
+| **Certificates** | Web server SSL, LDAP cert | cert-manager, internal TLS, CA bundles, rotation |
+| **Customization** | Custom MBOs, EAR deployments, JSP | Automation scripts, APIs, supported extension points |
+| **Integration** | MIF, custom Java via enterprise services | App Connect, Kafka, REST APIs, event-driven |
+
+---
+
+## The Shared Responsibility Model
+
+In legacy Maximo, the sysadmin often operated as a one-person army -- or at most, worked closely with a DBA. You owned the application server, the database connection, the integration endpoints, and the infrastructure.
+
+MAS on-prem introduces a shared responsibility model where multiple teams own different layers of the stack. The MAS admin becomes a **collaborator and coordinator**, not a solo operator.
+
+### Team Responsibility Boundaries
+
+**OpenShift Platform Team**
+- Cluster installation, upgrades, and node management
+- etcd health and backup
+- Control plane availability
+- Network infrastructure (SDN, load balancers)
+- Cluster-level monitoring and alerting
+
+**MAS Admin Team (You)**
+- MAS operator management and upgrades
+- Application configuration via Custom Resources
+- Workspace and instance management
+- Application health monitoring (pod level)
+- User-facing troubleshooting and escalation
+- Backup of MAS-specific resources
+- Capacity planning for MAS workloads
+
+**DBA Team**
+- Database provisioning and performance tuning
+- Database backup, restore, and disaster recovery
+- Schema management for Maximo Manage
+- Connection pool optimization
+- Database security and access control
+
+**Security and IAM Team**
+- Identity provider configuration (KEYCLOAK, Azure AD, LDAP)
+- SSO and OAuth2/OIDC setup
+- Certificate authority management
+- Security policy enforcement
+- Vulnerability scanning and remediation
+
+**Network Team**
+- DNS configuration for MAS routes
+- Load balancer configuration
+- Firewall rules for inter-service communication
+- VPN and private network connectivity
+- API gateway configuration
+
+**Integration and Middleware Team**
+- App Connect or Kafka cluster management
+- Integration flow development and monitoring
+- Message queue health
+- API lifecycle management
+
+**DevOps and CI/CD Team**
+- GitOps repository management
+- Deployment pipeline configuration
+- Infrastructure-as-code (Terraform, Ansible)
+- Environment promotion workflows
+
+> **Key insight:** The MAS admin's most important skill might not be technical at all. It is the ability to communicate across teams, understand boundary responsibilities, and coordinate incident response when a problem spans multiple layers.
+
+---
+
+## A Day in the Life: On-Prem MAS Admin
+
+To make this concrete, here is what a typical day looks like for an on-prem MAS admin we have worked with. This is a composite based on several real deployments.
+
+### 7:30 AM -- Morning Health Check
+
+```bash
+# Quick cluster overview
+oc get nodes
+oc get pods -n mas-inst1-core --field-selector=status.phase!=Running
+oc get pods -n mas-inst1-manage --field-selector=status.phase!=Running
+
+# Check certificate expiration (anything expiring in 30 days?)
+oc get certificates -n mas-inst1-core -o custom-columns=NAME:.metadata.name,EXPIRY:.status.notAfter,READY:.status.conditions[0].status
+
+# Check recent events for warnings
+oc get events -n mas-inst1-core --sort-by='.lastTimestamp' --field-selector type=Warning | tail -20
+```
+
+Open Grafana dashboards to review overnight metrics: CPU utilization, memory pressure, pod restart counts, API response latency. Flag anything anomalous for investigation.
+
+### 8:30 AM -- Standup with Platform Team
+
+Brief sync with the OpenShift platform team. Discuss upcoming cluster maintenance window, review any node issues from overnight, coordinate on a storage expansion request from the DBA team.
+
+### 9:00 AM -- Investigate User-Reported Slowness
+
+A facilities manager reports that work order searches are slow. Start the investigation:
+
+```bash
+# Check Manage pod resource utilization
+oc adm top pods -n mas-inst1-manage --sort-by=cpu
+
+# Look at recent pod logs for slow query warnings
+oc logs deployment/inst1-masdev-manage -n mas-inst1-manage --since=1h | grep -i "slow\|timeout\|error"
+
+# Check if any pods restarted recently
+oc get pods -n mas-inst1-manage -o custom-columns=NAME:.metadata.name,RESTARTS:.status.containerStatuses[0].restartCount,LAST_STATE:.status.containerStatuses[0].lastState
+```
+
+Discover that memory pressure is causing garbage collection pauses. Coordinate with the platform team to increase the pod memory limit in the Manage CR, and with the DBA team to review query execution plans.
+
+### 11:00 AM -- Operator Upgrade Planning
+
+A new MAS operator version is available. Review the release notes, check the install plan:
+
+```bash
+# Check available install plans
+oc get installplan -n mas-inst1-core
+
+# Review what the upgrade includes
+oc get installplan install-abc123 -n mas-inst1-core -o jsonpath='{.spec.clusterServiceVersionNames}'
+```
+
+Schedule the upgrade for the next maintenance window. Document the rollback procedure. Notify the integration team in case API changes affect their flows.
+
+### 1:00 PM -- Certificate Renewal
+
+cert-manager alert: an external certificate is renewing. Verify the renewal completed successfully:
+
+```bash
+# Check certificate status
+oc get certificate mas-external-cert -n mas-inst1-core -o jsonpath='{.status.conditions[*].message}'
+
+# Verify the new certificate is valid
+oc get secret mas-external-tls -n mas-inst1-core -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -noout -dates -subject
+```
+
+Renewal succeeded. No action needed. Log the event.
+
+### 2:30 PM -- Capacity Planning Review
+
+Monthly review of resource trends. Pull metrics from Prometheus:
+
+- Pod count growth over last 90 days
+- Storage utilization trend
+- Peak concurrent user sessions
+- API call volume trends
+
+Prepare a recommendation for the platform team: two additional worker nodes needed before Q3 based on projected growth. Draft the infrastructure request with supporting data.
+
+### 4:00 PM -- Knowledge Sharing
+
+Update the internal runbook with the slow query troubleshooting steps from this morning. Add the resolution to the team wiki. Share the capacity planning report with IT leadership.
+
+### 4:30 PM -- End-of-Day Checks
+
+```bash
+# Final health sweep
+oc get pods -n mas-inst1-core --field-selector=status.phase!=Running
+oc get pods -n mas-inst1-manage --field-selector=status.phase!=Running
+
+# Verify backup jobs completed
+oc get jobs -n mas-backup --sort-by='.status.startTime' | tail -5
+```
+
+Set up after-hours monitoring alerts. The on-call rotation picks up from here.
+
+---
+
+## The Identity Shift: From SysAdmin to Platform Engineer
+
+If you read through that day-in-the-life and thought "this sounds more like an SRE than a sysadmin," you are right. The MAS on-prem admin role has evolved toward what the industry calls **Site Reliability Engineering** or **Platform Engineering**.
+
+The differences are meaningful:
+
+| Traditional SysAdmin | Modern MAS Admin / SRE |
+|---|---|
+| Manages individual servers | Manages platform health |
+| Reactive troubleshooting | Proactive monitoring and alerting |
+| Manual deployment processes | Operator-driven declarative management |
+| Single-team ownership | Cross-team collaboration |
+| Infrastructure-focused | Service-level objectives focused |
+| Ticket-driven work | Data-driven capacity planning |
+| Knowledge in heads | Knowledge in runbooks and automation |
+
+This is not a demotion. It is an evolution. The modern MAS admin needs broader skills but also has more powerful tools. Operators handle the toil. Monitoring catches issues before users do. Declarative configuration makes environments reproducible.
+
+---
+
+## Checklist: Are You Ready for MAS On-Prem Administration?
+
+Use this self-assessment to gauge your readiness:
+
+- [ ] I can navigate the OpenShift web console and use the `oc` CLI
+- [ ] I understand pods, deployments, services, and routes
+- [ ] I can read and write basic YAML for Kubernetes resources
+- [ ] I understand how operators and Custom Resources work
+- [ ] I can check certificate expiration and understand TLS trust chains
+- [ ] I know what storage classes, PVCs, and PVs are
+- [ ] I can read pod logs and events to troubleshoot issues
+- [ ] I understand the difference between stateful and stateless workloads
+- [ ] I know how to back up and restore etcd, MongoDB, and application CRs
+- [ ] I can communicate effectively with platform, DBA, security, and network teams
+
+If you checked fewer than 5, start with the learning path in Part 5 of this series. If you checked 5 to 8, you are in good shape but need targeted skill-building. If you checked all 10, you are ready to operate.
+
+---
+
+## Key Takeaways
+
+1. **The role transforms, not disappears.** MAS on-prem admin is a substantial technical role with deep responsibilities -- just different ones than legacy Maximo.
+
+2. **Operators replace manual processes.** Declarative management through Custom Resources replaces imperative scripts and console clicks.
+
+3. **Certificates are critical infrastructure.** Automated certificate lifecycle management is not optional; it prevents the most common class of MAS outages.
+
+4. **Backup is multi-layered.** You must back up etcd, MongoDB, CRs, secrets, and persistent volumes -- and test restores regularly.
+
+5. **Collaboration is the new superpower.** The shared responsibility model requires clear communication across platform, DBA, security, network, and integration teams.
+
+---
+
+## References
+
+- [IBM MAS 9 Documentation: Installation](https://www.ibm.com/docs/en/mas-cd/maximo-manage/continuous-delivery)
+- [Red Hat OpenShift Documentation](https://docs.openshift.com/)
+- [Kubernetes Persistent Volumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes/)
+- [cert-manager Documentation](https://cert-manager.io/docs/)
+- [Operator Lifecycle Manager](https://olm.operatorframework.io/)
+- [IBM MAS Operator Catalog](https://www.ibm.com/docs/en/mas-cd)
+
+---
+
+**Series Navigation:**
+
+**Previous:** [Part 3 — How the SysAdmin Role Changes in MAS SaaS: From Server Room to Strategy Room](/blog/sysadmin-role-mas-saas)
+**Next:** [Part 5 — Skills MAS SysAdmins Must Learn](/blog/skills-mas-admins-need)
+
+[View the full MAS ADMIN series index →](/blog/mas-admin-series-index)
+
+---
+
+*Part 4 of the "MAS ADMIN" series | Published by TheMaximoGuys*
