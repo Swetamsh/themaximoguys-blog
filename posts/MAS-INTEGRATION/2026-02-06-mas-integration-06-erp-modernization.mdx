@@ -1,0 +1,836 @@
+---
+title: "ERP Integration Modernization: SAP, Oracle, and the New Playbook"
+description: "Migrating legacy Maximo-to-ERP integrations from MEA, direct database links, and MIF enterprise services to modern API-mediated patterns. Specific guidance for SAP S/4HANA, Oracle EBS, and Oracle Cloud integrations with MAS."
+date: "2026-02-06"
+slug: "mas-erp-integration-modernization"
+tags: ["Maximo", "MAS Integration", "SAP", "Oracle", "ERP", "MEA", "Migration", "API Integration"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-integration-part-6.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+faqs:
+  - question: "Does IBM still support the Maximo Enterprise Adapter (MEA) in MAS?"
+    answer: "MEA was a pre-MIF integration framework and is not supported in MAS. Organizations still running MEA-based ERP integrations must migrate to either MIF-based patterns or, preferably, modern REST API-mediated integrations as part of their MAS migration."
+  - question: "Can MAS integrate directly with SAP S/4HANA APIs?"
+    answer: "Yes. SAP S/4HANA exposes OData APIs that MAS can consume via REST. You can build direct API-to-API integrations or use middleware like App Connect or SAP Integration Suite for transformation and orchestration. The approach depends on complexity and volume requirements."
+  - question: "What about organizations running both Oracle EBS and MAS?"
+    answer: "Oracle EBS integrations typically used MIF with interface tables or direct database links. In MAS, these should migrate to API-mediated patterns using Oracle REST Data Services (ORDS) for EBS, or Oracle Integration Cloud for Oracle Cloud ERP. The interface table pattern is deprecated."
+keyTakeaways:
+  - "Legacy ERP integrations (MEA, direct DB links, MIF interface tables) must be modernized as part of MAS migration"
+  - "SAP integrations should leverage S/4HANA OData APIs or SAP Integration Suite for modern API-mediated patterns"
+  - "Oracle integrations should use ORDS for EBS or Oracle Integration Cloud for Oracle Cloud ERP"
+  - "The migration from batch-oriented ERP sync to event-driven, near-real-time patterns is the biggest architectural shift"
+  - "A phased migration approach — starting with low-risk, high-value integrations — reduces risk and builds team confidence"
+series:
+  name: "MAS INTEGRATION"
+  part: 6
+  total: 8
+---
+
+# ERP Integration Modernization: SAP, Oracle, and the New Playbook
+
+**Series:** MAS INTEGRATION -- From Legacy MIF to Cloud-Native Integration | **Part 6 of 8**
+
+**Read Time:** 20 minutes
+
+---
+
+> **Who this is for:** Integration architects, ERP consultants, and migration teams responsible for the bi-directional data flows between Maximo and SAP, Oracle, or other ERP systems. If you have ever been on a bridge call at 2 AM because purchase requisitions stopped flowing, this post is for you.
+
+> **The reality:** The ERP integration is the one integration that can stop an entire organization. When it breaks, finance cannot close the books, procurement cannot buy parts, and maintenance cannot get materials. The stakes are higher here than anywhere else in your integration landscape.
+
+---
+
+## The Night Everything Stopped
+
+It was a Tuesday. The migration team had been running parallel systems for three weeks. Maximo 7.6.1.3 was still live, MAS was in validation, and the SAP integration -- a 12-year-old MIF-to-XI/PI pipeline that pushed purchase requisitions, received purchase orders, and synchronized inventory counts -- was supposed to be the last thing they migrated.
+
+They moved it on a Friday. By Tuesday, the damage was clear:
+
+- **247 purchase requisitions** created in MAS over the weekend had never reached SAP. The procurement team had no idea.
+- **Inventory counts** between MAS and SAP diverged by over 1,400 line items. Warehouse staff were picking parts that SAP said did not exist.
+- **Three goods receipts** posted in MAS triggered duplicate entries in SAP because the old MIF pipeline was still partially active. Finance flagged $340,000 in phantom inventory.
+- The **GL account sync** from SAP had not run since Thursday. Every work order created in MAS was posting to a default cost center because the chart of accounts was stale.
+
+The executive sponsor pulled the migration team into a war room. The SAP team blamed Maximo. The Maximo team blamed the middleware. The middleware team blamed the network. It took nine days to untangle everything, and the organization reverted to the old system for another four months while they rebuilt the integration from scratch.
+
+**This is not a hypothetical.** Variations of this story play out in every industry, at every scale. The ERP integration is the most complex, most critical, and most feared integration in any Maximo environment. And if you are migrating to MAS without a deliberate modernization plan for your ERP data flows, you are walking into the same trap.
+
+This post is the playbook for avoiding it.
+
+---
+
+## The Legacy ERP Integration Landscape
+
+Before we talk about where you are going, you need to understand where you have been. ERP integrations with Maximo have evolved through at least five distinct generations, each carrying its own patterns, assumptions, and technical debt.
+
+### The Evolution of Maximo-ERP Integration
+
+| Era | Technology | Pattern | Typical ERP Targets | Status in MAS |
+|-----|-----------|---------|--------------------|----|
+| **Pre-2004** | Maximo Enterprise Adapter (MEA) | Custom Java adapters, proprietary XML schemas | SAP R/3, Oracle 11i | **Not supported** |
+| **2004-2010** | MIF Enterprise Services (v1) | XML-based enterprise services, JMS queues, flat files | SAP ECC, Oracle EBS 12 | **Deprecated, still functional** |
+| **2010-2016** | MIF with middleware | MIF + IBM WebSphere ESB / SAP XI/PI / Oracle SOA Suite | SAP ECC 6.0, Oracle EBS R12 | **Functional but not recommended** |
+| **2016-2022** | MIF with modern middleware | MIF + App Connect / SAP PO / Oracle IC | SAP S/4HANA, Oracle Cloud | **Transitional** |
+| **2022+** | REST API-mediated | MAS REST APIs + middleware + ERP APIs | SAP S/4HANA, Oracle Cloud ERP | **Recommended** |
+
+Let us walk through each legacy pattern and understand what it did, why it worked at the time, and why it cannot survive the move to MAS.
+
+### MEA: The Maximo Enterprise Adapter
+
+MEA was the original Maximo integration framework, predating MIF entirely. If your organization has been running Maximo since before version 7.0, there is a chance -- however small -- that MEA artifacts still exist somewhere in your codebase.
+
+MEA used custom Java adapter classes to transform Maximo data into ERP-specific formats. Each adapter was essentially a hand-coded translator. A SAP adapter would convert a Maximo purchase requisition into an SAP BAPI call. An Oracle adapter would write rows into Oracle interface tables.
+
+**Why it worked then:** In the early 2000s, there were no standardized integration frameworks. MEA was purpose-built and, once configured, reliable.
+
+**Why it fails now:** MEA is not supported in MAS. The Java adapter classes depend on server-side Maximo internals that do not exist in the containerized MAS architecture. If you are still running MEA adapters -- and we have seen organizations where they lingered for 15+ years -- they must be completely replaced.
+
+### MIF Enterprise Services with Interface Tables
+
+The most common legacy pattern. MIF enterprise services would push XML messages to a JMS queue, which a middleware layer (or a scheduled job) would pick up, transform, and write into ERP interface tables. The ERP system's own import process would then read from the interface tables and create the corresponding records.
+
+For SAP, this often meant writing IDocs to an IDoc interface table or triggering BAPIs through XI/PI. For Oracle EBS, it meant inserting rows into Oracle's standard interface tables (like `PO_REQUISITIONS_INTERFACE_ALL`) and running the Oracle concurrent programs to process them.
+
+**Why it worked then:** Interface tables were Oracle and SAP's recommended integration pattern for decades. MIF's XML-based enterprise services mapped naturally to this approach.
+
+**Why it fails now:** MAS's sealed container architecture does not support direct database access to ERP interface tables. The interface table pattern requires network-level database connectivity that violates MAS's security model. More importantly, both SAP and Oracle have deprecated interface tables in favor of REST/OData APIs in their modern ERP versions.
+
+### Direct Database Links
+
+The pattern everyone used and nobody admitted to. A database link from the Maximo database directly to the ERP database, with stored procedures or scheduled SQL jobs pushing and pulling data.
+
+**Why it worked then:** It was fast. It was simple. It bypassed every middleware layer and delivered data with minimal latency.
+
+**Why it fails now:** It was always a bad idea, and MAS makes it impossible. Direct database links bypass all business logic, validation rules, and audit controls in both systems. In MAS, the database is sealed -- you cannot create outbound database links from the MAS-managed PostgreSQL or Db2 instances. Even if you could, SAP S/4HANA and Oracle Cloud ERP do not expose their databases for direct access.
+
+### Custom Java Exit Classes
+
+Some organizations wrote custom Java classes that hooked into MIF's processing pipeline to perform ERP-specific transformations. These classes ran inside the Maximo JVM, had access to MIF's internal APIs, and could manipulate data in transit between Maximo and the ERP system.
+
+**Why it worked then:** Maximum flexibility. You could do anything Java allowed.
+
+**Why it fails now:** Custom server-side Java code in MAS requires careful packaging as part of the Manage application customization. Many legacy exit classes depend on libraries, classpath configurations, or server-side resources that do not translate cleanly to the containerized environment. The maintenance burden alone makes this pattern unsustainable.
+
+### Flat File Exchanges
+
+CSV or fixed-width files, dropped into shared directories, picked up by scheduled jobs on the ERP side. The oldest integration pattern in enterprise IT, and still shockingly common in Maximo environments.
+
+**Why it worked then:** Universal compatibility. Every system can read a CSV file.
+
+**Why it fails now:** MAS runs in containers. There are no shared file systems. The flat file pattern requires either a persistent volume mount (possible but operationally complex in OpenShift) or an intermediary file transfer service. Either way, you are bolting a 1990s pattern onto a 2020s architecture. It is time to let it go.
+
+---
+
+## Common ERP Integration Flows
+
+Regardless of which legacy pattern you used, the actual data flows between Maximo and ERP tend to be remarkably consistent across industries. Here are the standard flows you need to modernize:
+
+| Flow | Direction | Maximo Object | ERP Object | Frequency |
+|------|-----------|---------------|------------|-----------|
+| Purchase Requisitions | Maximo &rarr; ERP | PR/PO | Purchase Requisition | Real-time |
+| Purchase Orders | ERP &rarr; Maximo | PO | Purchase Order | Real-time |
+| Goods Receipt | Maximo &rarr; ERP | MATRECTRANS | Goods Receipt | Real-time |
+| Invoice | ERP &rarr; Maximo | INVOICE | AP Invoice | Batch |
+| GL Account Sync | ERP &rarr; Maximo | GLACCOUNT | Chart of Accounts | Batch |
+| Cost Center Sync | ERP &rarr; Maximo | n/a | Cost Centers | Batch |
+| Vendor/Company Sync | ERP &rarr; Maximo | COMPANIES | Vendor Master | Batch |
+| Asset Capitalization | Maximo &rarr; ERP | ASSET | Fixed Asset | Batch |
+
+**Notice the pattern.** Transactional flows (PRs, POs, goods receipts) need real-time or near-real-time processing. Master data flows (GL accounts, cost centers, vendors) can run in batch. Financial flows (invoices, asset capitalization) typically run in batch but with strict reconciliation requirements.
+
+This distinction matters because your modernization approach will differ based on whether a flow is real-time or batch. We will come back to this in the "From Batch to Real-Time" section.
+
+### Data Volume Context
+
+Before you design your modern integration, quantify your data volumes. Here is a rough benchmark from a mid-size manufacturing environment:
+
+| Flow | Daily Volume | Peak Hour Volume | Message Size |
+|------|-------------|-----------------|--------------|
+| Purchase Requisitions | 200-500 | 80-120 | 2-5 KB |
+| Purchase Orders | 150-400 | 60-100 | 5-15 KB |
+| Goods Receipts | 300-800 | 150-250 | 3-8 KB |
+| Invoices | 100-300 | N/A (batch) | 5-20 KB |
+| GL Account Sync | 5,000-50,000 (full sync) | N/A (batch) | 0.5-1 KB |
+| Vendor Sync | 500-2,000 (delta) | N/A (batch) | 1-3 KB |
+
+These volumes are well within the capacity of any modern API-based integration. The performance concerns that drove organizations toward direct database links and flat files are no longer relevant when you are dealing with hundreds or low thousands of transactions per day, not millions.
+
+---
+
+## SAP Integration Modernization
+
+SAP is the most common ERP target for Maximo integrations in manufacturing, oil and gas, and utilities. If you are reading this, there is a good chance your SAP integration is the one keeping you up at night.
+
+### The Legacy SAP Pattern
+
+The typical legacy Maximo-to-SAP integration looked like this:
+
+```
+Maximo MIF → JMS Queue → SAP XI/PI (or PO) → RFC/BAPI → SAP ECC
+SAP ECC → IDoc → SAP XI/PI → JMS Queue → MIF → Maximo
+```
+
+Each layer added complexity, latency, and failure points. XI/PI (later SAP PO) served as the middleware, transforming MIF's XML enterprise service messages into SAP-native formats: BAPIs for synchronous calls, IDocs for asynchronous messages, and RFC function modules for direct procedure invocations.
+
+The mapping was often done in XI/PI's graphical mapper, which produced XSLT stylesheets that were nearly impossible to debug when something went wrong. If you have ever tried to trace a failed purchase requisition through six layers of XML transformation at 2 AM, you know exactly what we are talking about.
+
+### The Modern SAP Pattern
+
+The modern equivalent is cleaner, more observable, and significantly easier to maintain:
+
+```
+MAS REST API → Middleware (App Connect / SAP Integration Suite) → S/4HANA OData API
+S/4HANA OData API → Middleware → MAS REST API (or Kafka → MAS)
+```
+
+SAP S/4HANA exposes a comprehensive set of OData v2 and v4 APIs through the SAP API Business Hub. These APIs cover every major business process: procurement, inventory, plant maintenance, finance, and asset management.
+
+**Example: Querying SAP Maintenance Orders via OData**
+
+```bash
+# Query SAP Maintenance Orders via OData
+curl -X GET "https://sap-host/sap/opu/odata/sap/API_MAINTENANCEORDER/MaintenanceOrder?$filter=OrderType eq 'PM01'" \
+  -H "Authorization: Basic BASE64_ENCODED" \
+  -H "Accept: application/json"
+```
+
+**Example Response:**
+
+```json
+{
+  "d": {
+    "results": [
+      {
+        "MaintenanceOrder": "000004000001",
+        "OrderType": "PM01",
+        "MaintenanceOrderDesc": "Pump Bearing Replacement",
+        "FunctionalLocation": "1000-100-AA",
+        "Equipment": "10000001",
+        "MainWorkCenterPlant": "1000",
+        "MaintPriority": "2",
+        "OrderIsCreated": true
+      }
+    ]
+  }
+}
+```
+
+**Example: Creating a Purchase Requisition in S/4HANA**
+
+```bash
+# Create a Purchase Requisition via SAP OData API
+curl -X POST "https://sap-host/sap/opu/odata/sap/API_PURCHASEREQ_PROCESS_SRV/A_PurchaseRequisitionHeader" \
+  -H "Authorization: Basic BASE64_ENCODED" \
+  -H "Content-Type: application/json" \
+  -H "X-CSRF-Token: FETCHED_TOKEN" \
+  -d '{
+    "PurchaseRequisitionType": "NB",
+    "PurReqnDescription": "MAS WO 1001 - Pump Seal Kit",
+    "to_PurchaseReqnItem": [
+      {
+        "PurchaseRequisitionItemText": "Pump Seal Kit P/N 44821",
+        "Material": "000000000000044821",
+        "Plant": "1000",
+        "RequestedQuantity": "2",
+        "PurchaseRequisitionPrice": "450.00",
+        "PurReqnItemCurrency": "USD",
+        "DeliveryDate": "2026-02-20T00:00:00"
+      }
+    ]
+  }'
+```
+
+### Mapping Maximo to SAP Concepts
+
+One of the biggest challenges in SAP integration is not the API technology -- it is the conceptual mapping between Maximo and SAP data models. These two systems were designed with fundamentally different assumptions about how organizations structure their assets, locations, and financial hierarchies.
+
+| Maximo Concept | SAP S/4HANA Concept | Mapping Notes |
+|----------------|---------------------|---------------|
+| Site | Plant (Werk) | Usually 1:1, but some orgs map multiple Maximo sites to one SAP plant |
+| Organization | Company Code (Bukrs) | Typically 1:1 at the top level |
+| Location | Functional Location (TPLNR) | Hierarchical in both systems but different depth conventions |
+| Asset | Equipment (EQUNR) | Core mapping -- equipment numbers must stay synchronized |
+| Item Number | Material Number (MATNR) | SAP uses 18-char numeric; Maximo uses alphanumeric. Crosswalk table required |
+| GL Account | GL Account (SAKNR) | Usually direct mapping, but chart of accounts structure may differ |
+| Cost Center | Cost Center (KOSTL) | Typically direct mapping within controlling area |
+| Work Order | Maintenance Order (AUFNR) | Type mapping required (PM01, PM02, PM03 vs. Maximo WO types) |
+| PR Line | Purchase Requisition Item | Line-level mapping with UOM and currency conversion |
+
+**The crosswalk table problem.** In legacy integrations, organizations often maintained crosswalk tables -- mapping tables that translated Maximo item numbers to SAP material numbers, Maximo sites to SAP plants, and so on. These tables were stored in custom Maximo tables, in the middleware, or (worst case) in spreadsheets that someone updated manually.
+
+In the modern approach, crosswalk logic belongs in the middleware layer. App Connect or SAP Integration Suite should maintain the mapping rules, with a master data synchronization flow that keeps both systems aligned. Do not store crosswalk tables in Maximo -- it couples your EAM system to your ERP's data model.
+
+### SAP Integration Migration Checklist
+
+Use this checklist to plan your SAP integration modernization:
+
+- [ ] **Inventory all existing MIF-to-SAP flows.** Document every enterprise service, publish channel, and invocation channel that touches SAP. Include the direction, frequency, volume, and business criticality of each flow.
+- [ ] **Identify SAP OData API equivalents.** For each legacy flow, find the corresponding S/4HANA OData API on the SAP API Business Hub. Not every BAPI or RFC has a direct OData equivalent -- document gaps early.
+- [ ] **Assess middleware readiness.** If you are using SAP XI/PI or PO, determine whether you are migrating to SAP Integration Suite or IBM App Connect. This decision drives your transformation logic approach.
+- [ ] **Map Maximo-to-SAP data model differences.** Create a complete mapping document covering sites/plants, items/materials, locations/functional locations, and financial hierarchies. Identify where crosswalk tables are needed.
+- [ ] **Design error handling for each flow.** SAP OData APIs return structured error messages. Design retry logic, dead letter queues, and alerting for each integration flow.
+- [ ] **Plan CSRF token management.** SAP OData APIs require CSRF tokens for write operations. Your middleware must fetch and cache tokens, handling expiration gracefully.
+- [ ] **Test with SAP sandbox environment.** Never test ERP integrations against production. SAP provides sandbox systems -- use them. Run volume tests at 2x your expected peak load.
+- [ ] **Define reconciliation reports.** Build reports that compare record counts and key values between MAS and SAP on a daily basis. Discrepancies must trigger alerts, not wait for month-end close.
+- [ ] **Plan the parallel run.** Run old and new integrations simultaneously for a minimum of two weeks, ideally four. Compare outputs daily.
+- [ ] **Document rollback procedures.** If the modern integration fails, you need to revert to the legacy pattern within hours, not days.
+
+---
+
+## Oracle Integration Modernization
+
+Oracle ERP integrations with Maximo come in two flavors: Oracle E-Business Suite (EBS) and Oracle Cloud ERP (formerly Oracle Fusion Applications). The modernization path differs significantly between the two.
+
+### Oracle EBS: The Legacy Pattern
+
+Oracle EBS integrations typically followed one of two patterns:
+
+**Pattern 1: MIF with Interface Tables**
+
+```
+Maximo MIF → XML → Middleware → INSERT INTO Oracle Interface Table → Oracle Concurrent Program → Oracle EBS
+Oracle EBS → Database View/Table → Middleware → MIF → Maximo
+```
+
+This was the Oracle-recommended pattern for decades. Maximo data was transformed into rows in Oracle's standard interface tables (like `PO_REQUISITIONS_INTERFACE_ALL`, `AP_INVOICES_INTERFACE`, `FA_MASS_ADDITIONS`), and Oracle concurrent programs processed those rows into real EBS records.
+
+**Pattern 2: Direct Database Links**
+
+```
+Maximo Database → DB Link → Oracle EBS Database (Interface Tables)
+Oracle EBS Database → DB Link → Maximo Database (Custom Staging Tables)
+```
+
+Simpler but more dangerous. Organizations that chose this pattern skipped the middleware layer entirely and used database links to move data between Maximo and Oracle databases. It worked until it did not -- typically failing during database upgrades, security audits, or (now) MAS migration.
+
+### Oracle EBS: The Modern Pattern with ORDS
+
+If your organization is staying on Oracle EBS (not migrating to Oracle Cloud), the modernization path uses Oracle REST Data Services (ORDS) to expose EBS data and operations as REST APIs.
+
+ORDS sits on top of the Oracle database and exposes PL/SQL procedures, SQL queries, and table operations as RESTful endpoints. You can create custom ORDS modules that wrap Oracle's standard APIs (like the PO, AP, and GL API packages) in REST interfaces.
+
+**Example: Querying Oracle EBS Purchase Orders via ORDS**
+
+```bash
+# Query Oracle EBS Purchase Orders via ORDS
+curl -X GET "https://oracle-host/ords/maximo/po/v1/purchase_orders?status=APPROVED" \
+  -H "Authorization: Bearer TOKEN" \
+  -H "Accept: application/json"
+```
+
+**Example Response:**
+
+```json
+{
+  "items": [
+    {
+      "po_header_id": 445012,
+      "po_number": "PO-2026-00412",
+      "vendor_name": "Industrial Supply Co",
+      "status": "APPROVED",
+      "total_amount": 12450.00,
+      "currency_code": "USD",
+      "creation_date": "2026-02-04T14:30:00Z",
+      "lines": [
+        {
+          "line_num": 1,
+          "item_description": "Pump Seal Kit",
+          "quantity": 10,
+          "unit_price": 245.00,
+          "uom": "EA",
+          "need_by_date": "2026-02-18T00:00:00Z"
+        }
+      ]
+    }
+  ],
+  "hasMore": true,
+  "offset": 0,
+  "limit": 25
+}
+```
+
+**Example: Creating a Goods Receipt via ORDS**
+
+```bash
+# Post a Goods Receipt to Oracle EBS via ORDS
+curl -X POST "https://oracle-host/ords/maximo/receipts/v1/goods_receipt" \
+  -H "Authorization: Bearer TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "po_number": "PO-2026-00412",
+    "receipt_date": "2026-02-06",
+    "lines": [
+      {
+        "po_line_num": 1,
+        "quantity_received": 10,
+        "uom": "EA",
+        "location_code": "MAIN-RECV",
+        "subinventory": "STORES"
+      }
+    ]
+  }'
+```
+
+### Oracle Cloud ERP: The Modern Pattern with OIC
+
+If your organization has migrated (or is migrating) to Oracle Cloud ERP, the integration architecture uses Oracle Integration Cloud (OIC) as the middleware layer. OIC provides pre-built adapters for both Oracle Cloud ERP and REST endpoints, making it the natural middleware choice for organizations in the Oracle ecosystem.
+
+```
+MAS REST API → Oracle Integration Cloud (OIC) → Oracle Cloud ERP REST API
+Oracle Cloud ERP → OIC (Event Subscription) → MAS REST API
+```
+
+Oracle Cloud ERP exposes comprehensive REST APIs for procurement, financials, projects, and supply chain. Unlike EBS, there are no interface tables -- everything goes through APIs.
+
+**Example: Creating a Purchase Requisition in Oracle Cloud ERP**
+
+```bash
+# Create a Purchase Requisition in Oracle Cloud ERP
+curl -X POST "https://oracle-cloud-host/fscmRestApi/resources/11.13.18.05/purchaseRequisitions" \
+  -H "Authorization: Bearer TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "RequisitioningBUName": "US Operations",
+    "PreparerEmail": "maximo-integration@company.com",
+    "Description": "MAS WO 2001 - Motor Replacement Parts",
+    "lines": [
+      {
+        "LineNumber": 1,
+        "LineType": "Goods",
+        "ItemDescription": "Motor Bearing Assembly",
+        "Quantity": 4,
+        "UOM": "Ea",
+        "Price": 875.00,
+        "CurrencyCode": "USD",
+        "RequestedDeliveryDate": "2026-02-20"
+      }
+    ]
+  }'
+```
+
+### Mapping Maximo to Oracle Concepts
+
+| Maximo Concept | Oracle EBS Concept | Oracle Cloud ERP Concept | Mapping Notes |
+|----------------|-------------------|--------------------------|---------------|
+| Site | Inventory Organization | Inventory Organization | Typically 1:1 |
+| Organization | Operating Unit / Set of Books | Business Unit | May require multi-org mapping |
+| Location | Location (HR/Inventory) | Location | Different contexts in Oracle |
+| Item Number | Item Number (Inventory) | Item Number | Oracle uses org-specific items; crosswalk may be needed |
+| GL Account | Code Combination (GL) | GL Account | Segment-based in Oracle; mapping segments to Maximo GL components |
+| Vendor | Supplier (AP) | Supplier | Supplier number mapping required |
+| Cost Center | Cost Center (GL Segment) | Cost Center | Usually a GL segment value |
+| Storeroom | Subinventory | Subinventory | Maximo storerooms map to Oracle subinventories |
+
+### Oracle Integration Migration Checklist
+
+- [ ] **Determine your Oracle target.** Are you staying on EBS, migrating to Oracle Cloud ERP, or running both during a transition? The answer drives your entire integration architecture.
+- [ ] **For EBS: Deploy and configure ORDS.** ORDS must be installed, configured, and secured on your EBS database tier. Create ORDS modules for each integration flow, wrapping Oracle's standard API packages.
+- [ ] **For Oracle Cloud: Provision OIC.** Oracle Integration Cloud requires its own provisioning, configuration, and security setup. Ensure your OIC instance can reach both MAS and Oracle Cloud ERP networks.
+- [ ] **Map Oracle multi-org structures.** Oracle's multi-org architecture (operating units, inventory organizations, sets of books) is more granular than Maximo's site/org model. Document every mapping explicitly.
+- [ ] **Handle Oracle's segment-based GL accounts.** Oracle uses multi-segment code combinations for GL accounts (e.g., 01-100-5000-0000). Maximo uses a flat GL account string. Your middleware must handle the segment-to-string conversion.
+- [ ] **Plan for Oracle concurrent program replacements.** If your legacy integration relied on Oracle concurrent programs to process interface table data, those programs may not exist in Oracle Cloud ERP. Identify API-based alternatives.
+- [ ] **Test UOM conversions.** Oracle and Maximo handle units of measure differently. "EA" in Maximo might be "Ea" or "Each" in Oracle. Build a UOM crosswalk and test every conversion.
+- [ ] **Design for Oracle's pagination.** Oracle Cloud ERP REST APIs paginate results. Your integration must handle pagination correctly, especially for large master data syncs.
+- [ ] **Plan the parallel run.** Same as SAP -- run old and new integrations simultaneously for at least two weeks.
+- [ ] **Build reconciliation reports.** Compare record counts and financial totals between MAS and Oracle daily during the transition.
+
+---
+
+## The Middleware Layer: Why It Is Non-Negotiable
+
+If there is one lesson from two decades of ERP integration, it is this: **never connect Maximo directly to your ERP without a middleware layer.** Not even with modern REST APIs. Not even when both systems speak JSON. The middleware is not overhead -- it is insurance.
+
+### Why Middleware Is Essential for ERP Integration
+
+**Data Transformation.** Maximo's data model is not your ERP's data model. A Maximo purchase requisition contains fields, structures, and conventions that do not map directly to an SAP or Oracle purchase requisition. Someone has to translate. That translation logic belongs in middleware, not in custom code on either end.
+
+**Orchestration.** Many ERP flows require multi-step orchestration. Creating a purchase requisition in SAP might require: (1) validate the vendor exists, (2) validate the material number, (3) check the plant assignment, (4) fetch the CSRF token, (5) create the PR, (6) confirm creation, (7) update Maximo with the SAP PR number. A single API call is not enough. Middleware orchestrates the sequence.
+
+**Error Handling.** When an ERP API call fails, what happens? Retry? Dead letter? Alert? Compensate? The answer depends on the flow, the error type, and the business context. Middleware provides the error handling framework that makes ERP integrations resilient instead of fragile.
+
+**Protocol Bridging.** MAS speaks REST. SAP S/4HANA speaks OData. Oracle EBS speaks ORDS (or SOAP, or PL/SQL). Oracle Cloud speaks REST with Oracle-specific conventions. Middleware bridges these protocol differences transparently.
+
+**Audit and Compliance.** Financial integrations (procurement, invoicing, GL sync) are subject to audit requirements. Every transaction must be traceable from source to destination. Middleware provides centralized logging, message archival, and audit trail capabilities that satisfy SOX, IFRS, and internal audit requirements.
+
+### Middleware Comparison for ERP Integration
+
+| Capability | IBM App Connect | SAP Integration Suite | Oracle Integration Cloud |
+|-----------|----------------|----------------------|--------------------------|
+| **MAS Connector** | Native (IBM product) | Custom REST | Custom REST |
+| **SAP Connector** | Pre-built adapter | Native (SAP product) | Pre-built adapter |
+| **Oracle Connector** | Pre-built adapter | Pre-built adapter | Native (Oracle product) |
+| **Best For** | MAS-centric environments | SAP-centric environments | Oracle-centric environments |
+| **Transformation** | Graphical mapper + JSONata | Graphical mapper + Groovy | Graphical mapper + XSLT/JavaScript |
+| **Error Handling** | Built-in retry, DLQ | Built-in retry, alerting | Built-in retry, error hospital |
+| **Monitoring** | App Connect Dashboard | SAP CPI Monitor | OIC Monitoring |
+| **Cost Model** | Included with MAS (limited), or licensed | SAP BTP subscription | Oracle Cloud subscription |
+| **Learning Curve** | Moderate | Moderate-High (SAP ecosystem) | Moderate (Oracle ecosystem) |
+| **Ideal When** | You want one middleware for all ERP targets | SAP is your primary ERP | Oracle Cloud ERP is your target |
+
+**The practical guidance:** If your organization runs SAP as its primary ERP, SAP Integration Suite (part of SAP Business Technology Platform) is the path of least resistance for the SAP side -- but you will still need App Connect or another tool for the MAS side unless you build custom REST integrations. If your organization runs Oracle Cloud ERP, OIC is the natural choice. If you run a mixed environment (SAP for finance, Oracle for procurement, or multiple ERPs across business units), App Connect is likely your best option because it provides pre-built connectors for all parties.
+
+---
+
+## From Batch to Real-Time: The Biggest Architectural Shift
+
+The legacy ERP integration world was fundamentally batch-oriented. MIF enterprise services ran on schedules -- every 15 minutes, every hour, every night. Flat files were generated at midnight and processed by 6 AM. Interface tables were loaded in bulk and processed by concurrent programs.
+
+The modern world is event-driven. When a maintenance technician creates a purchase requisition in MAS at 10:14 AM, that PR should arrive in SAP within seconds, not hours. When SAP approves a purchase order at 2:30 PM, Maximo should know about it before the buyer's screen refreshes.
+
+This is not just a technology change. It changes how your business processes work.
+
+### When Real-Time Matters
+
+**Purchase Requisitions.** When a technician needs parts for a breakdown repair, waiting until the next batch run to send the PR to SAP can delay procurement by hours. Real-time PR creation in the ERP means the buyer sees it immediately and can expedite if needed.
+
+**Goods Receipts.** When parts arrive at the warehouse and are received in MAS, the ERP needs to know immediately so that inventory counts stay synchronized and the AP team can match receipts to invoices.
+
+**Inventory Adjustments.** Physical count discrepancies, cycle count results, and inventory transfers should flow in near-real-time to prevent ordering parts that are already in stock (or failing to order parts that are not).
+
+**Work Order Status Changes.** When a work order is completed in MAS, the associated costs should post to the ERP's cost accounting module promptly -- not wait for a nightly batch.
+
+### When Batch Is Still Appropriate
+
+**GL Account Sync.** The chart of accounts does not change hourly. A daily or weekly sync from ERP to MAS is sufficient for most organizations. The key is ensuring the sync runs successfully and that MAS has a complete, current chart of accounts at all times.
+
+**Vendor/Supplier Master Data.** New vendors are not added every minute. A daily delta sync (only new or changed vendors) from ERP to MAS keeps the systems aligned without the complexity of real-time event processing.
+
+**Cost Center Sync.** Similar to GL accounts -- organizational structure data changes infrequently and can be synced in batch.
+
+**Asset Capitalization.** The process of capitalizing an asset in the ERP's fixed asset module is typically a monthly or quarterly financial process, not a real-time event. Batch processing with reconciliation is appropriate.
+
+### The Hybrid Pattern
+
+Most mature ERP integrations end up with a hybrid pattern:
+
+```
+Real-Time Flows (Event-Driven):
+  - Purchase Requisitions (Maximo → ERP)
+  - Purchase Orders (ERP → Maximo)
+  - Goods Receipts (Maximo → ERP)
+  - Inventory Adjustments (bidirectional)
+  - Work Order Cost Postings (Maximo → ERP)
+
+Batch Flows (Scheduled):
+  - GL Account Sync (ERP → Maximo) — daily
+  - Cost Center Sync (ERP → Maximo) — daily
+  - Vendor Master Sync (ERP → Maximo) — daily delta
+  - Asset Capitalization (Maximo → ERP) — monthly
+  - Invoice Reconciliation (ERP → Maximo) — daily
+```
+
+**The implementation approach for real-time flows:**
+
+```
+MAS Event (webhook/Kafka) → Middleware → Validate → Transform → ERP API Call → Confirm → Update MAS
+```
+
+**The implementation approach for batch flows:**
+
+```
+Scheduled Trigger → Middleware queries ERP API (with delta filter) → Transform → MAS REST API (bulk) → Reconcile
+```
+
+For batch flows, use delta queries wherever possible. Instead of syncing all 50,000 GL accounts every night, query only accounts modified since the last sync. Both SAP and Oracle support "last changed" filters on their APIs.
+
+---
+
+## Migration Strategy: The Phased Approach
+
+You do not modernize your ERP integration in a single big-bang cutover. You do it in phases, starting with the lowest-risk flows and building toward the most complex. Here is the recommended approach:
+
+### Phase 1: Master Data Sync (Weeks 1-4)
+
+**What:** GL accounts, cost centers, vendor/supplier master, UOM tables
+
+**Why first:** Master data is foundational. Every other integration flow depends on having accurate master data in both systems. It is also the lowest-risk starting point -- master data flows are typically one-directional (ERP to Maximo), batch-oriented, and well-understood.
+
+**Approach:**
+1. Build the middleware flows for each master data type
+2. Run the modern flows in parallel with the legacy flows
+3. Compare outputs daily using reconciliation reports
+4. When outputs match for five consecutive days, decommission the legacy flow
+
+**Success criteria:** MAS has a complete, accurate copy of all ERP master data, refreshed daily via modern API-mediated flows.
+
+### Phase 2: Procurement Flows (Weeks 5-10)
+
+**What:** Purchase requisitions, purchase orders, goods receipts
+
+**Why second:** Procurement is the highest-volume, highest-business-value ERP integration. Getting it right is critical. But it depends on master data being accurate (vendor numbers, item numbers, GL accounts), which is why Phase 1 comes first.
+
+**Approach:**
+1. Build the real-time event-driven flows for PR creation and PO receipt
+2. Implement the goods receipt flow
+3. Run in parallel with legacy flows, comparing every transaction
+4. Reconcile daily: every PR in MAS should have a corresponding PR in the ERP, and vice versa
+
+**Success criteria:** All procurement transactions flow in near-real-time with zero data loss and full traceability.
+
+### Phase 3: Financial Integration (Weeks 11-16)
+
+**What:** Invoice processing, GL postings, cost allocations
+
+**Why third:** Financial integration has the strictest accuracy requirements and the most complex error handling. AP invoices, GL journal entries, and cost allocations must balance to the penny. This phase requires close collaboration with the finance team and internal audit.
+
+**Approach:**
+1. Build invoice receipt flows (ERP to MAS)
+2. Build work order cost posting flows (MAS to ERP)
+3. Implement reconciliation at the financial level -- totals must match
+4. Run parallel for a minimum of one full accounting period (typically one month)
+
+**Success criteria:** Financial totals reconcile between MAS and ERP with zero unexplained variances.
+
+### Phase 4: Asset Lifecycle Events (Weeks 17-20)
+
+**What:** Asset capitalization, asset transfers, asset retirements
+
+**Why last:** Asset lifecycle events are the least frequent and the most organization-specific. They often involve custom business rules, approval workflows, and integration with fixed asset subledgers that vary significantly between organizations.
+
+**Approach:**
+1. Build asset capitalization flows (MAS to ERP fixed asset module)
+2. Build asset transfer and retirement flows if applicable
+3. Test with a small batch of real assets
+4. Run parallel for one capitalization cycle (typically monthly or quarterly)
+
+**Success criteria:** Assets capitalized in MAS are correctly reflected in the ERP's fixed asset register.
+
+### Migration Timeline Visualization
+
+```
+Week:  1  2  3  4  5  6  7  8  9  10  11  12  13  14  15  16  17  18  19  20
+       |--Phase 1--|  |------Phase 2------|  |-------Phase 3--------|  |-Ph 4--|
+       Master Data    Procurement Flows       Financial Integration    Asset
+
+Phase 1: [BUILD][PARALLEL][VALIDATE][CUT]
+Phase 2:             [BUILD   ][PARALLEL    ][VALIDATE ][CUT]
+Phase 3:                                  [BUILD     ][PARALLEL        ][V][CUT]
+Phase 4:                                                            [BUILD ][P][V][C]
+
+Legend: BUILD = develop and unit test
+        PARALLEL = run old and new simultaneously
+        VALIDATE = reconcile and confirm parity
+        CUT = decommission legacy flow
+```
+
+**The critical rule:** Never decommission a legacy flow until you have validated the modern flow in parallel for a minimum of two weeks. For financial flows, run parallel for a full accounting period.
+
+---
+
+## Data Mapping Challenges: Where the Devils Live
+
+The API technology works. The middleware works. What breaks ERP integrations is the data mapping. Here are the challenges that consume 60% of your migration effort.
+
+### Maximo Sites/Orgs to ERP Company Codes and Plants
+
+| Challenge | Description | Mitigation |
+|-----------|-------------|------------|
+| Many-to-one mapping | Multiple Maximo sites may map to a single SAP plant or Oracle inventory organization | Build a mapping table in middleware; validate with business stakeholders |
+| Organizational restructuring | The Maximo org structure may not match the current ERP structure (due to mergers, divestitures, reorganizations) | Align structures before migration, not during |
+| Default values | Some ERP fields require values that Maximo does not carry (e.g., SAP purchasing organization, Oracle operating unit) | Define defaults per site/org combination in middleware configuration |
+
+### Item Number Crosswalks
+
+| Challenge | Description | Mitigation |
+|-----------|-------------|------------|
+| Different numbering schemes | Maximo uses alphanumeric item numbers; SAP uses 18-digit numeric material numbers | Maintain a crosswalk table in middleware; sync as part of master data phase |
+| Missing items | Items exist in Maximo but not in the ERP (or vice versa) | Build a validation step that catches missing items before the transaction fails |
+| Descriptions do not match | Same item, different descriptions in each system | Use the ERP as the master for item descriptions; sync to Maximo |
+
+### UOM Conversions
+
+| Maximo UOM | SAP UOM | Oracle UOM | Notes |
+|-----------|---------|------------|-------|
+| EA | ST (Stuck) or EA | Ea or Each | SAP uses German abbreviations internally |
+| FT | FT or FOT | Ft | Check decimal precision |
+| GAL | GAL | Gal | Ensure imperial vs. metric consistency |
+| LB | KG (if metric) or LB | Lb | Some SAP instances are metric-only |
+| M | M | M | Usually consistent |
+| BOX | KAR or BOX | Box | SAP may use carton (KAR) |
+
+**The rule:** Build a UOM conversion table in your middleware. Never assume UOM codes match between systems, even when they look identical. "EA" in Maximo and "EA" in SAP may have different decimal precision settings.
+
+### Currency Handling
+
+| Challenge | Description | Mitigation |
+|-----------|-------------|------------|
+| Multi-currency environments | Maximo stores amounts in transaction currency; ERP may require both transaction and local currency | Middleware must handle currency conversion or pass both values |
+| Exchange rate sources | Which system is the exchange rate master? | Define a single source of truth (typically the ERP) and sync rates to Maximo |
+| Decimal precision | SAP currencies have zero, two, or three decimal places depending on the currency code | Validate decimal precision per currency in your mapping logic |
+
+### Tax Code Mapping
+
+| Challenge | Description | Mitigation |
+|-----------|-------------|------------|
+| Different tax code schemes | Maximo tax codes do not match ERP tax codes | Crosswalk table in middleware |
+| Tax calculation location | Does Maximo calculate tax, or does the ERP? | Define a single tax calculation system; the other system accepts the calculated amount |
+| Multi-jurisdiction tax | Complex tax scenarios (US state tax, EU VAT, Canadian GST/HST) may be handled differently | Test tax scenarios exhaustively; involve tax team in validation |
+
+### A Mapping Strategy Framework
+
+For each integration flow, create a mapping document using this structure:
+
+| MAS Field | MAS Object | ERP Field | ERP Object | Mapping Type | Mapping Rule | Example |
+|-----------|-----------|-----------|-----------|-------------|-------------|---------|
+| SITEID | PR | Plant | BAPI_PR | Crosswalk | Site-to-Plant mapping table | BEDFORD &rarr; 1000 |
+| ITEMNUM | PRLINE | Material | BAPI_PR_ITEM | Crosswalk | Item crosswalk table | SEAL-KIT-44821 &rarr; 000000000000044821 |
+| ORDERUNIT | PRLINE | Unit | BAPI_PR_ITEM | Conversion | UOM conversion table | EA &rarr; ST |
+| LINECOST | PRLINE | Price | BAPI_PR_ITEM | Direct | Pass through | 450.00 &rarr; 450.00 |
+| GLACCOUNT | PRLINE | GL Account | BAPI_PR_ACCT | Transformation | Segment concatenation | 5000-100-4200 &rarr; 0000005000 |
+| VENDOR | PRLINE | Vendor No | BAPI_PR_ITEM | Crosswalk | Vendor mapping table | VENDOR-001 &rarr; 0000010042 |
+
+**Create this document for every flow before you write a single line of integration code.** The mapping document is your contract between the Maximo team, the ERP team, and the middleware team. Disagreements about mapping are dramatically cheaper to resolve in a document than in production.
+
+---
+
+## Testing ERP Integrations
+
+ERP integration testing is where projects succeed or fail. You cannot test ERP integrations on your laptop. You need dedicated environments, realistic data, and a disciplined testing strategy.
+
+### Test Environment Requirements
+
+| Environment | Purpose | Data | Connected To |
+|-------------|---------|------|-------------|
+| **DEV** | Unit testing individual flows | Synthetic test data | ERP sandbox/dev |
+| **SIT** | System integration testing -- all flows together | Subset of production data (anonymized) | ERP QA/test |
+| **UAT** | Business validation | Production-representative data | ERP pre-prod |
+| **Parallel Run** | Production validation | Real production data (dual-write) | ERP production |
+
+### Test Data Management
+
+Test data for ERP integrations is notoriously difficult to manage. Here is a practical approach:
+
+1. **Create a test data package.** Define a set of items, vendors, GL accounts, cost centers, and locations that exist in both MAS and ERP test environments. This is your "golden dataset."
+2. **Script the test data creation.** Do not create test data manually. Write scripts that use MAS REST APIs and ERP APIs to create the test data programmatically. This ensures you can recreate the test environment from scratch.
+3. **Reset between test cycles.** ERP test environments accumulate state. If your test creates a purchase requisition in SAP, that PR is now part of the SAP test environment's state. Plan for regular test environment resets.
+4. **Use realistic volumes.** Do not test with five purchase requisitions when production generates 500 per day. Volume-related issues (timeout, throttling, pagination) only surface at realistic volumes.
+
+### Integration Test Scenarios
+
+For each ERP flow, define test scenarios that cover:
+
+| Scenario Type | Description | Example |
+|---------------|-------------|---------|
+| **Happy Path** | Normal operation, all data valid | Create PR with valid item, vendor, GL account |
+| **Validation Failure** | Data rejected by ERP | PR with invalid material number |
+| **Timeout** | ERP does not respond within SLA | Simulate 30-second timeout |
+| **Duplicate Detection** | Same transaction sent twice | Retry scenario after middleware failure |
+| **Partial Failure** | Multi-line transaction where some lines succeed, some fail | 5-line PR where line 3 has invalid UOM |
+| **Volume** | Peak load testing | 200 PRs in one hour |
+| **Sequence** | Dependent transactions in order | PR &rarr; PO &rarr; Receipt &rarr; Invoice |
+| **Rollback** | Transaction fails after partial commit | Receipt posted in MAS but rejected by ERP |
+
+### Parallel Running
+
+The parallel run is the most important testing phase. During the parallel run, both old and new integrations are active. Every transaction processed by the legacy integration is also processed by the modern integration. You then compare the outputs.
+
+**How to set up a parallel run:**
+
+1. **Dual-write from MAS.** Configure MAS to send events to both the legacy integration endpoint and the modern middleware. Do not modify the legacy integration -- add the new path alongside it.
+2. **Compare at the ERP level.** For each transaction, verify that the record created by the modern integration matches the record created by the legacy integration in the ERP system.
+3. **Reconcile daily.** Build a reconciliation report that compares:
+   - Record counts (how many PRs were sent vs. how many were received)
+   - Key field values (amounts, quantities, dates)
+   - Status (did both paths succeed or fail for the same transactions?)
+4. **Investigate every discrepancy.** During the parallel run, every difference between old and new is a potential production issue. Investigate and resolve before cutover.
+5. **Run for at least two weeks.** One week is not enough -- you need to see at least two week-end cycles, month-end processing (if applicable), and a representative sample of edge cases.
+
+### Reconciliation Report Template
+
+Your daily reconciliation report should include:
+
+```
+ERP Integration Reconciliation Report
+Date: 2026-02-06
+Period: 08:00 - 17:00 UTC
+
+PURCHASE REQUISITIONS (Maximo → ERP)
+  Legacy path:  147 sent / 145 received / 2 errors
+  Modern path:  147 sent / 147 received / 0 errors
+  Discrepancies: 2 (legacy errors not present in modern path)
+  Status: MODERN PATH OUTPERFORMING ✓
+
+PURCHASE ORDERS (ERP → Maximo)
+  Legacy path:  89 sent / 89 received / 0 errors
+  Modern path:  89 sent / 89 received / 0 errors
+  Discrepancies: 0
+  Status: PARITY ✓
+
+GOODS RECEIPTS (Maximo → ERP)
+  Legacy path:  234 sent / 230 received / 4 errors
+  Modern path:  234 sent / 233 received / 1 error
+  Discrepancies: 3 (investigate)
+  Status: NEEDS INVESTIGATION ⚠
+
+FINANCIAL RECONCILIATION
+  Total PR value (legacy):  $1,247,892.45
+  Total PR value (modern):  $1,247,892.45
+  Variance: $0.00
+  Status: RECONCILED ✓
+```
+
+### Rollback Procedures
+
+Before you cut over from the legacy integration to the modern integration, document and test your rollback procedure:
+
+1. **Stop the modern integration flows.** Disable the modern middleware flows or disconnect the modern endpoints.
+2. **Verify the legacy integration is still operational.** If you decommissioned the legacy path, you need a plan to reactivate it. This is why we recommend keeping the legacy path dormant (but functional) for at least 30 days after cutover.
+3. **Reconcile any transactions in flight.** Transactions that were partially processed by the modern path may need manual intervention in the ERP system.
+4. **Communicate the rollback.** Notify the procurement, finance, and operations teams that the integration has reverted to the legacy pattern and what (if any) manual steps they need to take.
+
+**The rollback test:** During your parallel run, practice the rollback at least once. Turn off the modern path, verify the legacy path takes over, then turn the modern path back on. If you cannot do this cleanly, you are not ready for cutover.
+
+---
+
+## Key Takeaways
+
+1. **Legacy ERP integrations cannot survive the move to MAS unchanged.** MEA is dead. Direct database links are blocked. Interface tables are deprecated. Every ERP integration must be modernized as part of your MAS migration.
+
+2. **SAP modernization means OData APIs.** The legacy MIF-to-XI/PI-to-BAPI pipeline gives way to REST-to-middleware-to-OData. SAP S/4HANA's API surface is mature and well-documented. The technology is ready -- your team needs to be ready too.
+
+3. **Oracle modernization depends on your Oracle version.** EBS organizations should adopt ORDS to expose REST APIs. Oracle Cloud ERP organizations should use Oracle Integration Cloud. The two paths are architecturally different.
+
+4. **Middleware is not optional for ERP integration.** Transformation, orchestration, error handling, and audit requirements make a middleware layer essential. Choose based on your ERP ecosystem: App Connect for MAS-centric, SAP Integration Suite for SAP-centric, OIC for Oracle-centric.
+
+5. **The batch-to-real-time shift is the biggest change.** Transactional flows (PRs, POs, receipts) should move to near-real-time. Master data flows can stay batch. The hybrid pattern is the pragmatic answer.
+
+6. **Phased migration reduces risk.** Master data first, then procurement, then financials, then asset lifecycle. Each phase builds on the previous one. Never skip the parallel run.
+
+7. **Data mapping consumes 60% of the effort.** Sites-to-plants, items-to-materials, UOM conversions, currency handling, tax codes -- this is where the real work lives. Map everything in documents before you write code.
+
+8. **Test like your production depends on it -- because it does.** Dedicated environments, realistic data volumes, parallel runs, daily reconciliation, and practiced rollback procedures. There are no shortcuts for ERP integration testing.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas)
+- [IBM Maximo REST API Reference](https://www.ibm.com/docs/en/mam/7.6.1?topic=integration-maximo-rest-api)
+- [IBM App Connect Enterprise Documentation](https://www.ibm.com/docs/en/app-connect/12.0)
+- [SAP API Business Hub](https://api.sap.com/)
+- [SAP S/4HANA OData API Documentation](https://api.sap.com/products/SAPS4HANACloud/apis/ODATA)
+- [SAP Integration Suite Documentation](https://help.sap.com/docs/integration-suite)
+- [Oracle REST Data Services (ORDS) Documentation](https://docs.oracle.com/en/database/oracle/oracle-rest-data-services/)
+- [Oracle Integration Cloud Documentation](https://docs.oracle.com/en/cloud/paas/integration-cloud/)
+- [Oracle Cloud ERP REST API Documentation](https://docs.oracle.com/en/cloud/saas/procurement/23d/oaprc/)
+- [IBM Maximo Integration Framework Guide](https://www.ibm.com/docs/en/mam/7.6.1?topic=integrating-integration-framework)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 5 -- Enterprise Integration Patterns: App Connect, Kafka, and Beyond](/blog/mas-enterprise-integration-patterns) |
+| **Next:** | [Part 7 -- IoT and Real-Time Integration: Connecting the Physical World](/blog/mas-iot-realtime-integration) |
+
+[View the full MAS INTEGRATION series index](/blog/mas-integration-series-index)
+
+---
+
+*Part 6 of the "MAS INTEGRATION" series | Published by TheMaximoGuys*
