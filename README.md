@@ -1,135 +1,102 @@
-# Test Blog Repository
+# The Maximo Guys Blog
 
-This is a test repository for themaximoguys blog posts. It contains sample MDX files that demonstrate the blog post structure.
+Source content and Sanity CMS management tools for The Maximo Guys blog.
 
 ## Structure
 
 ```
-posts/
-├── 2026-02-03-getting-started-maximo-ai.mdx (Free tier)
-└── 2026-02-02-mas9-whats-new.mdx (Developer tier - gated)
+themaximoguys-blog/
+├── posts/                  # MDX blog post source files (source of truth)
+├── scripts/
+│   └── sync-blog-to-sanity.ts  # One-way sync: MDX posts -> Sanity CMS
+├── sanity-studio/          # Sanity Studio v5 (content management UI)
+├── plans/                  # Planning documents
+└── package.json            # Sync script dependencies
 ```
 
-## Using This Repository
+## Setup
 
-### Option 1: Push to GitHub
-
-1. Create a new GitHub repository (e.g., `themaximoguys-blog`)
-2. Push this content to GitHub:
+### 1. Install dependencies
 
 ```bash
-cd test-blog-repo
-git init
-git add .
-git commit -m "Initial blog posts"
-git branch -M main
-git remote add origin https://github.com/YOUR_USERNAME/themaximoguys-blog.git
-git push -u origin main
+npm install
 ```
 
-3. Update your `.env.local`:
+### 2. Configure environment variables
 
-```env
-GITHUB_REPO_OWNER=YOUR_USERNAME
-GITHUB_REPO_NAME=themaximoguys-blog
-GITHUB_REPO_PATH=posts
-GITHUB_REPO_BRANCH=main
+Copy `.env.example` to `.env` and fill in your Sanity credentials:
+
+```bash
+cp .env.example .env
 ```
 
-### Option 2: Test Locally (Mock Mode)
+Required variables:
+- `NEXT_PUBLIC_SANITY_PROJECT_ID` — Sanity project ID
+- `NEXT_PUBLIC_SANITY_DATASET` — Sanity dataset (default: `production`)
+- `SANITY_API_TOKEN` — Sanity API token with write access
 
-The blog implementation handles missing GitHub configuration gracefully by returning an empty posts array. To test the blog UI without GitHub:
+### 3. Sanity Studio setup
 
-1. Start your dev server: `npm run dev`
-2. Visit `http://localhost:3051/blog`
-3. You'll see an empty state (which is expected without GitHub posts)
-
-### Option 3: Use GitHub API Locally
-
-If you want to test with real GitHub integration locally:
-
-1. Create a GitHub Personal Access Token:
-   - Go to GitHub Settings → Developer Settings → Personal Access Tokens
-   - Generate new token with `repo` scope
-
-2. Update `.env.local`:
-
-```env
-GITHUB_TOKEN=ghp_your_token_here
-GITHUB_REPO_OWNER=YOUR_USERNAME
-GITHUB_REPO_NAME=themaximoguys-blog
-GITHUB_REPO_PATH=posts
-GITHUB_REPO_BRANCH=main
+```bash
+cd sanity-studio
+npm install
 ```
 
-3. Restart your dev server
+## Usage
 
-## Post Frontmatter Fields
+### Sync blog posts to Sanity
 
-### Required Fields
-- `title`: Post title
-- `description`: SEO description (155 chars max recommended)
-- `date`: Publication date (YYYY-MM-DD)
-- `slug`: URL-friendly slug
-- `tags`: Array of tags
-- `draft`: Boolean (false to publish)
-- `tier`: "free" | "developer" | "enterprise"
+The sync script reads MDX files from `posts/` and creates/updates documents in Sanity CMS. It uses content hashing to only sync changed posts.
 
-### Optional Fields
-- `author`: Author name
-- `authorAvatar`: Author image URL
-- `coverImage`: Cover image URL
-- `canonicalUrl`: Canonical URL if cross-posted
-- `updatedAt`: Last updated date
-- `authorTitle`: Author job title
-- `authorBio`: Author bio
-- `authorCredentials`: Array of credentials
-- `authorLinkedin`: LinkedIn URL
-- `faqs`: Array of Q&A objects
-- `keyTakeaways`: Array of bullet points
-- `citations`: Array of source references
+```bash
+# Preview changes without writing
+npm run sync:dry-run
+
+# Sync all changed posts
+npm run sync
+
+# Force re-sync all posts (ignore content hashes)
+npm run sync:force
+
+# Validate posts without syncing (check for broken images, missing slugs, etc.)
+npm run sync:validate
+
+# Additional flags can be combined:
+npx tsx scripts/sync-blog-to-sanity.ts --force --skip-images
+```
+
+### Run Sanity Studio
+
+```bash
+cd sanity-studio
+npm run dev
+```
+
+Opens Sanity Studio at `http://localhost:3333` for managing blog content via a UI.
 
 ## Content Tiers
 
-### Free Posts
-- Visible to everyone
-- No gating
-- Focus: Thought leadership, news, general insights
+| Tier | Visibility | Focus |
+|------|-----------|-------|
+| Free | Everyone | Thought leadership, news, general insights |
+| Developer | Teaser public, full requires signup | Tutorials, technical guides, how-tos |
+| Enterprise | Teaser public, full requires contact | Architecture, sizing, ROI, benchmarks |
 
-### Developer Posts (Gated)
-- Teaser visible to all
-- Full content requires signup
-- Focus: Tutorials, technical guides, how-tos
+## Post Frontmatter Fields
 
-### Enterprise Posts (Gated)
-- Teaser visible to all
-- Full content requires contact/upgrade
-- Focus: Architecture, sizing, ROI calculators, benchmarks
+### Required
+- `title`, `description`, `date`, `slug`, `tags`, `draft`, `tier`
 
-## Writing Tips
+### Optional
+- `author`, `authorAvatar`, `coverImage`, `canonicalUrl`, `updatedAt`
+- `authorTitle`, `authorBio`, `authorCredentials`, `authorLinkedin`
+- `faqs`, `keyTakeaways`, `citations`
+- `seoTitle`, `seoDescription`, `noIndex`
+- `series` (name, part, total), `pillarSlug`, `clusterSlugs`, `relatedSlugs`
 
-1. **Use horizontal rules (`---`) to mark the teaser cutoff point** for gated posts
-2. **Include code blocks** with language hints for syntax highlighting
-3. **Add images from Unsplash** or your own hosting
-4. **Use the AnswerBox component** in MDX for featured answers:
-   ```mdx
-   <AnswerBox question="Should I upgrade?">
-     Your answer here
-   </AnswerBox>
-   ```
-5. **Front-load value** - Answer the key question in the first section
-6. **Include FAQs** in frontmatter for rich results in search engines
-7. **Use tables** for comparisons and data
+## Architecture
 
-## Next Steps
+- **This repo** = content authoring (MDX source files) + Sanity write operations (sync script, Studio)
+- **Next.js website** ([THEMAXIMOGUYS-NEXTJS](../THEMAXIMOGUYS-NEXTJS)) = read-only from Sanity (display blog content)
 
-1. Create your GitHub repository
-2. Push these sample posts
-3. Update environment variables
-4. Enable GitHub Discussions for Giscus comments
-5. Configure Giscus at https://giscus.app
-6. Write your first real post!
-
-## Need Help?
-
-Visit the [blog implementation plan](../plans/BLOG_IMPLEMENTATION.md) for complete documentation.
+This separation keeps the production website lean and centralizes all content management tools alongside the source posts.
