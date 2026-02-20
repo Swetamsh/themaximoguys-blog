@@ -1,6 +1,6 @@
 ---
 title: "New Responsibilities in MAS: What SaaS and On-Prem Admins Actually Do Now"
-description: "A comprehensive guide to the new MAS administrator responsibilities — from Kubernetes fundamentals and operator management to API-first troubleshooting, Zero Trust security, and AppPoints licensing. Covers both SaaS and on-prem deployment models with real commands and examples."
+description: "A comprehensive guide to the new MAS administrator responsibilities — from Kubernetes fundamentals, operator management, and the complete pod-container-node deployment hierarchy to API-first troubleshooting, Zero Trust security, and AppPoints licensing. Includes a deep dive into MAS cluster topology, namespace organization, entity managers, ServerBundle architecture, and resource sizing."
 date: "2026-02-06"
 slug: "new-mas-admin-responsibilities"
 tags: ["MAS Admin", "Kubernetes", "OpenShift", "Operators", "API", "Zero Trust", "AppPoints", "SaaS", "On-Prem", "Cloud-Native"]
@@ -28,6 +28,8 @@ keyTakeaways:
   - "Operators are the new automation engine — they replace the manual install, upgrade, and configuration work that legacy admins performed"
   - "The shared responsibility model defines clear boundaries between what IBM manages and what you manage"
   - "AppPoints licensing requires active monitoring and optimization, replacing the static license model of 7.x"
+  - "MAS deploys across a hierarchy of clusters, nodes, namespaces, pods, and containers — understanding this hierarchy is essential for troubleshooting and capacity planning"
+  - "Entity managers, ServerBundles, and the operator catalog form the core deployment patterns that every MAS admin should understand"
 
 series:
   name: "MAS ADMIN"
@@ -225,24 +227,29 @@ In MAS, **operators do all of this automatically** based on a desired-state spec
 
 ### The MAS Operator Hierarchy
 
-MAS uses a layered operator model:
+MAS uses a layered operator model. The top-level IBM MAS Operator orchestrates application-specific operators, each of which manages its own lifecycle independently.
 
-```
-IBM MAS Operator (top level)
-├── Manage Operator
-├── Monitor Operator
-├── Health Operator
-├── Predict Operator
-├── Assist Operator
-├── IoT Operator
-├── Visual Inspection Operator
-└── Dependencies
-    ├── MongoDB Operator (for MAS core)
-    ├── Kafka/AMQ Streams Operator (for IoT/events)
-    ├── Cert-Manager (for TLS certificates)
-    ├── Service Binding Operator
-    └── IBM Suite License Service
-```
+**Application Operators** (managed by IBM MAS Operator):
+
+| Operator | Manages | Namespace |
+|----------|---------|-----------|
+| **Manage Operator** | Core EAM (work orders, assets, inventory) | `mas-{id}-manage` |
+| **Monitor Operator** | IoT dashboards and anomaly detection | `mas-{id}-monitor` |
+| **Health Operator** | Asset health scoring | `mas-{id}-health` |
+| **Predict Operator** | Predictive failure analytics | `mas-{id}-predict` |
+| **Assist Operator** | AI-powered technician guidance | `mas-{id}-assist` |
+| **IoT Operator** | Device connectivity and data ingestion | `mas-{id}-iot` |
+| **Visual Inspection Operator** | Image-based quality inspection | `mas-{id}-visualinspection` |
+
+**Dependency Operators** (required infrastructure):
+
+| Operator | Purpose | Typical Namespace |
+|----------|---------|-------------------|
+| **MongoDB Community Operator** | MAS core configuration database | `mongoce` |
+| **Strimzi / AMQ Streams Operator** | Kafka for IoT event streaming | `amq-streams` |
+| **cert-manager** | Automated TLS certificate lifecycle | `cert-manager` |
+| **Service Binding Operator** | Connects applications to backing services | `openshift-operators` |
+| **IBM Suite License Service (SLS)** | AppPoints license tracking | `ibm-sls` |
 
 Each operator watches its custom resources and reconciles the actual state to match the desired state. If a Manage pod crashes, the Manage operator detects this and creates a replacement. If you change a configuration value in the MAS custom resource, the operator rolls out the change across all affected pods.
 
@@ -586,47 +593,314 @@ For admins coming from the legacy world, here is how each old responsibility map
 
 ---
 
-## The MAS Microservices Architecture: A Visual Guide
+## The MAS Microservices Architecture: Layer by Layer
 
-Understanding how MAS components relate to each other helps with troubleshooting and capacity planning. Here is the high-level architecture:
+Understanding how MAS components relate to each other helps with troubleshooting and capacity planning. The architecture is organized into four distinct layers, from the user-facing edge down to the infrastructure.
 
+### Layer 1: User Access (External)
+
+All user traffic enters through the OpenShift Router (Ingress Controller), which terminates TLS and routes requests to the appropriate MAS application based on the URL hostname.
+
+- **Browser users** access MAS applications via HTTPS routes
+- **Mobile users** (Maximo Mobile) connect through the same API gateway
+- **Integration partners** call REST APIs through authenticated endpoints
+- **Identity Provider** (Keycloak) handles all authentication before requests reach the applications
+
+### Layer 2: MAS Application Services
+
+Each MAS application runs as an independent set of pods in its own namespace:
+
+| Application | Namespace | Database | Key Pods |
+|------------|-----------|----------|----------|
+| **Suite Core** | `mas-{id}-core` | MongoDB | API gateway, admin dashboard, core IdP |
+| **Manage** | `mas-{id}-manage` | DB2 or Oracle | ServerBundle pods (UI, cron, API, MEA, report) |
+| **Monitor** | `mas-{id}-monitor` | PostgreSQL | Dashboard, analytics, pipeline pods |
+| **Health** | `mas-{id}-health` | PostgreSQL | Scoring engine, data processor pods |
+| **Predict** | `mas-{id}-predict` | PostgreSQL | ML model service, training pods |
+| **Assist** | `mas-{id}-assist` | PostgreSQL | Content server, AI service pods |
+| **Visual Inspection** | `mas-{id}-visualinspection` | PostgreSQL | Inference server, model manager pods |
+
+> **Key insight:** A failure in one application namespace does not necessarily affect others. If Monitor pods crash, Manage continues to work. This isolation is a major improvement over the monolithic 7.6 architecture where a single JVM failure took down everything.
+
+### Layer 3: Shared Services (Infrastructure Dependencies)
+
+These components are shared across all MAS applications and are critical infrastructure:
+
+| Service | Purpose | Impact if Down |
+|---------|---------|----------------|
+| **MongoDB** | MAS core configuration, user sessions | All MAS applications affected |
+| **Kafka (AMQ Streams)** | Event streaming for IoT and integrations | Monitor, IoT data pipelines stop |
+| **Keycloak** | Authentication and SSO | Nobody can log in |
+| **cert-manager** | TLS certificate automation | Certificate expiration leads to service outages |
+| **IBM SLS** | License tracking | License compliance reporting fails |
+| **PostgreSQL** | Application databases for Monitor, Health, Predict | Affected applications stop |
+| **DB2 or Oracle** | Manage application database | Manage (core EAM) stops |
+
+### Layer 4: OpenShift Platform
+
+The foundation layer provides compute, storage, and networking:
+
+- **Control plane nodes** -- Run the Kubernetes API server, etcd, scheduler, and controller manager
+- **Worker nodes** -- Run all MAS application pods and shared services
+- **Infrastructure nodes** (optional) -- Run the router, monitoring stack, and logging
+- **Storage** -- Persistent volumes backed by NFS, block storage, or cloud-native CSI drivers
+- **Networking** -- Software-defined networking (OVN-Kubernetes or OpenShift SDN) with network policies
+
+Each layer in this architecture represents a set of pods that the admin may need to troubleshoot. The shared services layer is managed by operators but still requires awareness -- if MongoDB is unhealthy, MAS core functions will be affected even if the Manage pods are running fine.
+
+---
+
+## Deep Dive: The MAS Deployment Hierarchy — Clusters, Nodes, Pods, and Containers
+
+This section goes beneath the application layer to explain exactly how MAS maps onto OpenShift infrastructure. Understanding this hierarchy is essential for capacity planning, troubleshooting, and communicating with your platform team.
+
+### The Full Hierarchy: From Cluster to Container
+
+MAS follows the standard Kubernetes deployment model with MAS-specific patterns layered on top. Here is the complete hierarchy from the broadest scope down to the smallest unit:
+
+| Level | What It Is | MAS Example |
+|-------|-----------|-------------|
+| **Cluster** | A complete OpenShift installation with its own control plane, networking, and storage | Your production OpenShift cluster running MAS |
+| **Node** | A physical or virtual machine within the cluster | A 16 vCPU / 64 GB worker node running MAS pods |
+| **Namespace** | A logical boundary within a cluster that isolates resources | `mas-inst1-core`, `mas-inst1-manage`, `mongoce` |
+| **Deployment / StatefulSet** | A controller that manages pod replicas | `inst1-masdev-ui` (manages 3 UI pods) |
+| **Pod** | The smallest deployable unit — one or more containers sharing network and storage | `inst1-masdev-ui-abc12` (one UI replica) |
+| **Container** | A single running process inside a pod | `liberty-server` (the WebSphere Liberty JVM running Maximo code) |
+
+### Node Types in a MAS Cluster
+
+A production MAS cluster uses four distinct node roles, each with specific responsibilities:
+
+| Node Type | Typical Count | Sizing | What Runs Here |
+|-----------|--------------|--------|----------------|
+| **Control Plane (Masters)** | 3 | 8 vCPU / 32 GB each | etcd, Kubernetes API server, scheduler, controller manager. No MAS workloads. |
+| **Worker Nodes** | 6-10+ | 16 vCPU / 64 GB each | All MAS application pods, MongoDB, Kafka, SLS, operators |
+| **Infrastructure Nodes** | 3 | 8-16 vCPU / 32-64 GB each | OpenShift Router (HAProxy), internal registry, Prometheus, Grafana, logging |
+| **ODF Storage Nodes** | 3 | 16 vCPU / 64 GB each | OpenShift Data Foundation (Ceph), providing persistent storage for all pods |
+
+> **Key insight:** Each worker node reserves approximately 1 CPU core for internal OpenShift services (kubelet, kube-proxy, CRI-O runtime). A 16-core node has roughly 15 cores available for MAS workloads. Plan capacity accordingly.
+
+**A production deployment running Core + Manage + Monitor typically requires 15-19 nodes and runs 800+ pods across all namespaces.**
+
+### Namespace Organization: How MAS Isolates Components
+
+MAS uses a standardized namespace convention: `mas-{instanceId}-{component}`. Each MAS instance creates its own set of namespaces, completely isolated from other instances.
+
+**Per-instance namespaces** (created for each MAS installation):
+
+| Namespace | What Lives Here |
+|-----------|----------------|
+| `mas-{id}-core` | MAS core platform: API gateway, admin dashboard, CoreIDP, entity managers |
+| `mas-{id}-manage` | Maximo Manage: ServerBundle pods (UI, cron, MEA, report), build pods, maxinst admin |
+| `mas-{id}-pipelines` | Tekton pipeline runs for MAS CLI installation and configuration operations |
+| `mas-{id}-iot` | IoT application pods (if deployed) |
+| `mas-{id}-monitor` | Monitor dashboards and analytics pods (if deployed) |
+| `mas-{id}-health` | Health scoring engine pods (if deployed) |
+| `mas-{id}-predict` | Predict ML model serving pods (if deployed) |
+| `mas-{id}-visualinspection` | Visual Inspection inference and training pods (if deployed) |
+| `mas-{id}-optimizer` | Optimizer scheduling pods (if deployed) |
+| `mas-{id}-assist` | Assist AI service pods (if deployed) |
+
+**Shared cluster-wide namespaces** (used by all MAS instances):
+
+| Namespace | Purpose |
+|-----------|---------|
+| `openshift-marketplace` | IBM Maximo Operator Catalog (CatalogSource) |
+| `ibm-common-services` | IBM Common Services, IAM operator, namespace scope operator |
+| `ibm-sls` | Suite License Service — AppPoints tracking |
+| `mongoce` or `mas-mongo-ce` | MongoDB Community Edition — MAS configuration database |
+| `ibm-cpd` | Cloud Pak for Data (if using Predict or Health with Watson) |
+
+```bash
+# List all namespaces related to your MAS instance
+oc get namespaces | grep "mas-inst1\|mongoce\|ibm-sls\|ibm-common"
+
+# Count pods in a specific MAS namespace
+oc get pods -n mas-inst1-core --no-headers | wc -l
 ```
-                    ┌─────────────────────────┐
-                    │    External Users        │
-                    │  (Browser, Mobile, API)  │
-                    └─────────┬───────────────┘
-                              │
-                    ┌─────────▼───────────────┐
-                    │    MAS API Gateway       │
-                    │  (Route/Ingress)         │
-                    └─────────┬───────────────┘
-                              │
-            ┌─────────────────┼──────────────────┐
-            │                 │                  │
-   ┌────────▼──────┐  ┌──────▼───────┐  ┌──────▼───────┐
-   │   Manage      │  │   Monitor    │  │   Health     │
-   │  (Core EAM)   │  │   (IoT)     │  │  (Scoring)   │
-   └───────┬───────┘  └──────┬───────┘  └──────┬───────┘
-           │                 │                  │
-   ┌───────▼─────────────────▼──────────────────▼───────┐
-   │              Shared Services Layer                  │
-   │  ┌──────────┐  ┌───────────┐  ┌──────────────┐    │
-   │  │ MongoDB  │  │  Kafka    │  │  Keycloak    │    │
-   │  │ (Core)   │  │ (Events)  │  │  (Identity)  │    │
-   │  └──────────┘  └───────────┘  └──────────────┘    │
-   │  ┌──────────┐  ┌───────────┐  ┌──────────────┐    │
-   │  │ Postgres │  │  Redis    │  │  Cert-Manager│    │
-   │  │ (Apps)   │  │ (Cache)   │  │  (TLS)       │    │
-   │  └──────────┘  └───────────┘  └──────────────┘    │
-   └────────────────────────────────────────────────────┘
-                              │
-   ┌──────────────────────────▼─────────────────────────┐
-   │              OpenShift / Kubernetes Platform        │
-   │         (Compute, Storage, Networking)              │
-   └────────────────────────────────────────────────────┘
+
+### Inside the Core Namespace: Entity Manager Architecture
+
+The `mas-{id}-core` namespace contains a distinctive architectural pattern -- the **entity manager** model. Rather than one monolithic operator managing everything, MAS decomposes configuration management into approximately 15 small, focused controller pods, each responsible for a single integration concern.
+
+| Entity Manager Pod | What It Watches | What It Does |
+|--------------------|----------------|--------------|
+| `entitymgr-coreidp` | CoreIDPCfg CR | Manages core identity provider (coreidp, coreidp-login pods) |
+| `entitymgr-ws` | Workspace CR | Controls workspace creation and lifecycle |
+| `entitymgr-bascfg` | BASCfg (DRO) CR | Manages usage reporting (milestonesapi, adoptionusageapi, apppoints) |
+| `entitymgr-jdbccfg` | JDBCCfg CR | Validates database connections |
+| `entitymgr-kafkacfg` | KafkaCfg CR | Manages Kafka connections for IoT/Monitor |
+| `entitymgr-mongocfg` | MongoCfg CR | Manages MongoDB connections |
+| `entitymgr-slscfg` | SLSCfg CR | Manages Suite License Service connection |
+| `entitymgr-idpcfg` | IDPCfg CR | Handles SAML/LDAP identity provider integration |
+| `entitymgr-smtpcfg` | SMTPCfg CR | Manages email notification configuration |
+| `entitymgr-scimcfg` | SCIMCfg CR | Manages LDAP user sync via SCIM protocol |
+| `entitymgr-objectstorage` | ObjectStorageCfg CR | Manages S3/NFS attachment storage connections |
+| `entitymgr-pushnotificationcfg` | PushNotificationCfg CR | Manages push notification services |
+| `entitymgr-watsonstudiocfg` | WatsonStudioCfg CR | Manages Watson Studio / CP4D integration |
+
+Each entity manager follows the **Kubernetes controller pattern**: it watches a specific Custom Resource (CR), compares the desired state to the actual state, and reconciles any differences. When you configure a JDBC connection in the MAS admin UI, you are actually modifying a `JDBCCfg` custom resource. The `entitymgr-jdbccfg` pod detects the change, validates the database connection, and updates the CR status.
+
+```bash
+# See all entity manager pods in the core namespace
+oc get pods -n mas-inst1-core | grep entitymgr
+
+# Check the status of a specific configuration
+oc get jdbccfg -n mas-inst1-core -o yaml | grep -A5 "status:"
 ```
 
-Each box in this diagram represents a set of pods that the admin may need to troubleshoot. The shared services layer is managed by operators but still requires awareness — if MongoDB is unhealthy, MAS core functions will be affected even if the Manage pods are running fine.
+### Inside the Manage Namespace: ServerBundle Architecture
+
+The `mas-{id}-manage` namespace contains the workloads that run Maximo Manage — the core EAM application. MAS uses a concept called **ServerBundles** to organize Manage workloads into logical groups.
+
+**What is a ServerBundle?** A ServerBundle is a logical abstraction that maps to one or more Kubernetes pods. Each bundle type runs a specific aspect of the Maximo Manage application inside a WebSphere Liberty container.
+
+| Bundle Type | Purpose | What Runs Inside | When to Scale |
+|------------|---------|------------------|---------------|
+| **all** | Combined workload (default for dev/test) | Full Maximo EAR with UI, cron, MEA, and reports | Simple deployments with low user counts |
+| **ui** | User interface serving | Maximo UI code — what end users interact with | Scale based on concurrent user count (50-75 users per pod) |
+| **cron** | Scheduled background tasks | Escalations, scheduled reports, PM generation, data cleanup | Usually 1 replica; scale for heavy cron workloads |
+| **mea** | Maximo Enterprise Adapter | SOAP/REST integration endpoints for external systems | Scale based on integration message volume |
+| **report** | BIRT Report Only Server | Report execution engine, isolated from UI | Scale based on concurrent report execution needs |
+| **standalonejms** | JMS messaging | Liberty JMS server for Integration Framework queues | Usually 1 (StatefulSet); requires PVC for persistence |
+
+**Why split bundles?** In production, splitting bundles provides workload isolation:
+- A long-running report does not starve UI users of CPU
+- High-volume MEA integrations do not slow down the interactive UI
+- Cron tasks (escalations, PM generation) run independently
+- Each bundle type can be scaled independently based on its specific load pattern
+
+**ServerBundle to Pod mapping:**
+
+```bash
+# View all Manage pods and their bundle types
+oc get pods -n mas-inst1-manage -o wide
+
+# Example output for a split-bundle production deployment:
+# NAME                              READY   STATUS    NODE
+# inst1-masdev-ui-abc12             2/2     Running   worker-1
+# inst1-masdev-ui-def34             2/2     Running   worker-2
+# inst1-masdev-ui-ghi56             2/2     Running   worker-3
+# inst1-masdev-cron-xyz78           2/2     Running   worker-2
+# inst1-masdev-mea-jkl90            2/2     Running   worker-1
+# inst1-masdev-report-mno12         2/2     Running   worker-3
+```
+
+**Capacity planning:** IBM guidance is **50-75 concurrent users per UI ServerBundle pod**, equivalent to a JVM with 2 CPU cores. To handle 300 concurrent users, plan for 4-6 UI pods.
+
+### Container Architecture: What Runs Inside Each Pod
+
+Most MAS pods follow a consistent container model: one primary container performing the application function, with optional sidecar containers for supporting tasks.
+
+**Typical MAS Manage ServerBundle pod (2 containers):**
+
+| Container | Role | Image Base | Ports | Purpose |
+|-----------|------|-----------|-------|---------|
+| `liberty-server` | Primary | WebSphere Liberty + OpenJ9 JVM | 9080 (HTTP), 9443 (HTTPS) | Runs the Maximo application EAR |
+| `monitoring-sidecar` | Sidecar | Lightweight metrics exporter | `/metrics` endpoint | Scrapes Liberty MicroProfile Metrics, exposes Prometheus endpoint |
+
+**Resource defaults for Manage ServerBundle pods:**
+
+| Resource | Request (Guaranteed Minimum) | Limit (Maximum Allowed) |
+|----------|------------------------------|------------------------|
+| CPU | 200m (0.2 cores) | 6 cores |
+| Memory | 1 Gi | 10 Gi |
+
+**Typical MAS operator pod (2 containers):**
+
+| Container | Role | Purpose |
+|-----------|------|---------|
+| `manager` | Primary | The operator reconciliation loop — watches CRs and manages lifecycle |
+| `kube-rbac-proxy` | Sidecar | Standard OLM RBAC proxy for authenticated metrics |
+
+**Special-purpose pods in the Manage namespace:**
+
+| Pod | Type | Purpose |
+|-----|------|---------|
+| `manage-maxinst` | Administrative | Database configuration (updatedb, configdb, integrity checker). Not user-facing. |
+| `jmsserver-0` | StatefulSet | Liberty JMS messaging engine. One per workspace. Requires PVC for persistent message storage. |
+| `*-build-config-*-build` | Build | OpenShift BuildConfig pods that compile customization archives into container images. Appear during builds, then complete. |
+
+### The Manage Build Pipeline: From Code to Container
+
+Before ServerBundle pods can run Maximo Manage, the operator executes a multi-stage build pipeline using OpenShift BuildConfigs:
+
+| Build Stage | What Happens | Output |
+|------------|-------------|--------|
+| 1. ManageBuild CR created | Operator detects build request | Build pipeline starts |
+| 2. Pull base image | Downloads WebSphere Liberty from IBM Container Registry (`icr.io`) | Base image cached locally |
+| 3. Download customizations | Fetches customization archive from configured HTTP/FTP endpoint | Custom Java classes, XML, DB scripts |
+| 4. Layer customizations | Applies customizations onto the base image per bundle type | One image per bundle: ui, cron, mea, report |
+| 5. Push to internal registry | Built images stored in OpenShift internal registry | Images available for deployment |
+| 6. ManageDeployment CR | Operator triggers pod rollout using new images | ServerBundle pods start with updated code |
+
+```bash
+# Check build status
+oc get builds -n mas-inst1-manage
+
+# View build logs
+oc logs build/ui-build-config-1-build -n mas-inst1-manage
+```
+
+### The Operator Hierarchy: How the MAS Stack Is Managed
+
+All MAS operators are delivered through the **IBM Maximo Operator Catalog** and managed by the **Operator Lifecycle Manager (OLM)**. The catalog is a curated, tested snapshot of compatible operator versions.
+
+**Top-level operator catalog** (installed in `openshift-marketplace`):
+
+| Operator Category | Key Operators | What They Manage |
+|-------------------|--------------|------------------|
+| **MAS Application** | ibm-mas (Core), ibm-mas-manage, ibm-mas-iot, ibm-mas-monitor, ibm-mas-health, ibm-mas-predict, ibm-mas-visualinspection, ibm-mas-optimizer, ibm-mas-assist, ibm-mas-aibroker | MAS applications and their lifecycle |
+| **Data Services** | mongodb-operator-app, db2u-operator, cloud-native-postgresql, strimzi-kafka-operator | Databases and messaging infrastructure |
+| **Platform Services** | cert-manager-operator, ibm-sls, ibm-truststore-mgr, common-service-operator | Certificates, licensing, trust, and shared services |
+
+**The reconciliation pattern:**
+
+When you make a configuration change (for example, adding a new JDBC connection), here is how it flows through the operator hierarchy:
+
+1. Admin updates configuration via MAS Admin UI (or directly edits the CR)
+2. The Suite CR change is detected by the `ibm-mas-operator`
+3. The operator validates the configuration and creates/updates a child CR (e.g., `JDBCCfg`)
+4. The corresponding entity manager (`entitymgr-jdbccfg`) detects the child CR change
+5. The entity manager validates the JDBC connection to the database
+6. On success, the entity manager updates the CR status to `Ready`
+7. The Suite CR aggregates all child statuses — when all are `Ready`, the application activates
+
+```bash
+# Check operator subscription and approval mode
+oc get subscription -n mas-inst1-core -o custom-columns=NAME:.metadata.name,CHANNEL:.spec.channel,APPROVAL:.spec.installPlanApproval
+
+# Check Custom Resource Definitions installed by MAS
+oc get crd | grep mas.ibm.com
+```
+
+### Resource Sizing Reference: Planning Your Cluster
+
+Use this table when planning infrastructure or discussing capacity with your platform team:
+
+| MAS Application | CPU Request | CPU Limit | Memory Request | Memory Limit |
+|-----------------|-----------|---------|--------------|------------|
+| **Core** (platform) | 1.5 cores | 19 cores | 6.3 GB | 32.5 GB |
+| **Manage** (per workspace, base) | 2.9 cores | 11.1 cores | 4 GB | 17 GB |
+| **Monitor** | 5.4 cores | 32.4 cores | 12.8 GB | 55.5 GB |
+| **Health** | 2.9 cores | 15.6 cores | 7.1 GB | 30.8 GB |
+| **Predict** | 3.1 cores | 12.5 cores | 6.1 GB | 24.5 GB |
+| **IoT** | 19.7 cores | 214.7 cores | 57.1 GB | 269 GB |
+
+**Additional infrastructure overhead:**
+
+| Component | CPU | Memory | Notes |
+|-----------|-----|--------|-------|
+| ODF/OCS Storage (3 nodes) | 14 cores | 32 GB | 16 vCPU / 64 GB per node, SSD required |
+| CP4D + DB2 Warehouse | 31.6 cores | 235 GB | Required for Predict/Health with Watson |
+| Each additional Manage UI pod | 1 core (request) / 6 cores (limit) | 2 GB (request) / 10 GB (limit) | Scale out for more concurrent users |
+
+**Sizing rules of thumb:**
+- **4 GB memory per CPU core** for most MAS workloads
+- **15-25 GB disk per CPU core** to prevent pod evictions
+- **50-75 concurrent users per UI ServerBundle pod**
+- **Minimum 3 worker nodes** for high availability
+- **Add 30-50% over calculator minimums** for on-prem installations
 
 ---
 
