@@ -1,0 +1,467 @@
+---
+title: "Configuring Health Scores and Criticality: The Model That Makes or Breaks Your Program"
+description: "How to structure health components, map indicators, set weightings, define thresholds, and model criticality in Maximo Health. Includes safety-critical vs production-critical strategy patterns."
+date: "2026-02-19"
+slug: "mas-health-configuring-scores-criticality"
+tags: ["Maximo Health", "MAS", "Health Scoring", "Criticality", "Configuration", "Weightings", "Thresholds", "Risk Model"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Asset Performance Management Specialists"]
+coverImage: "./images/mas-health-04.png"
+
+faqs:
+  - question: "How do I set health score weightings in Maximo Health?"
+    answer: "Weightings are set at two levels: within each component (how much each indicator contributes) and across components (how much Condition, Reliability, Performance, and Environment contribute to the overall score). Start with industry-standard defaults and tune based on expert validation against known asset conditions."
+  - question: "Should I use the same health model for all asset classes?"
+    answer: "No. Different asset classes have different failure modes, data availability, and business impact profiles. Pumps, transformers, and HVAC units should each have tailored indicator sets and weightings. Reuse common indicators where possible but customize the model per class."
+  - question: "How often should I update criticality scores?"
+    answer: "Review criticality annually or when major changes occur -- new regulations, process changes, significant incidents, or shifts in production strategy. Criticality should not be set-and-forget, but it also should not change so frequently that stakeholders lose trust in the stability of risk rankings."
+
+keyTakeaways:
+  - "Health models should be configured per asset class with tailored indicators and weightings"
+  - "Start with 3-5 indicators per component -- complexity should be earned through validation"
+  - "Criticality must be scored separately from health using cross-functional input"
+  - "Thresholds should be tuned based on observed score distribution and expert feedback"
+  - "Governance and documentation are as important as the technical configuration itself"
+
+series:
+  name: "MAS HEALTH"
+  part: 4
+  total: 8
+
+tldr: "Configuring Maximo Health means choosing indicators per asset class, setting component weightings, defining threshold bands, and building criticality models that reflect real business impact. Get it right and scores drive decisions. Get it wrong and scores drive distrust."
+seoTitle: "Configuring Maximo Health Scores & Criticality Models | TheMaximoGuys"
+seoDescription: "How to configure health score components, weightings, thresholds, and criticality models in IBM Maximo Health. Practical patterns for safety and production assets."
+targetQuestions:
+  - "How do I configure health scores in Maximo Health?"
+  - "How do I set up criticality scoring in Maximo?"
+  - "What weightings should I use for health score components?"
+  - "How do I define health thresholds and bands?"
+  - "What is the difference between safety-critical and production-critical health models?"
+semanticKeywords:
+  - "Maximo Health configuration"
+  - "health score weightings"
+  - "criticality scoring Maximo"
+  - "health threshold bands"
+  - "condition indicators configuration"
+  - "asset class health model"
+  - "safety-critical asset scoring"
+  - "production-critical health model"
+  - "risk model configuration"
+  - "health governance"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 1: Introduction to IBM Maximo Health"
+  - "Part 2: Data Model and Health Scoring"
+  - "Part 3: Getting Started in MAS"
+  - "Understanding of your organization's asset classes and failure modes"
+speakableSections:
+  - "Introduction"
+  - "The Configuration Decision Framework"
+  - "Structuring Components and Indicators"
+  - "Safety-Critical vs Production-Critical Strategies"
+relatedSlugs:
+  - "mas-health-data-model-health-scoring"
+  - "mas-health-getting-started"
+  - "mas-health-integrating-monitor-predict"
+  - "mas-health-best-practices-governance"
+---
+
+# Configuring Health Scores and Criticality: The Model That Makes or Breaks Your Program
+
+> **Who this is for:** Reliability engineers, asset management leads, and Maximo configurators who are building or tuning health scoring models and need to make the configuration decisions that determine whether scores are trusted or ignored.
+
+**Estimated read time: 18 minutes**
+
+---
+
+## 🔥 The Weighting War
+
+A large manufacturing company was configuring Maximo Health for their pump fleet. The reliability engineer wanted vibration to be 60% of the Condition component. The maintenance manager wanted failure history to be 60% of the Reliability component. The operations manager wanted throughput deviation to dominate Performance.
+
+Everyone was right. For their perspective.
+
+They spent four weeks debating weightings. Four weeks during which no stakeholder saw a single health score. Four weeks of meetings where each participant defended their turf with increasingly detailed spreadsheets.
+
+When they finally shipped the model, the first round of scores showed exactly what everyone already knew: the same five pumps that the reliability engineer had flagged six months earlier were at the top of the risk list.
+
+> *"We could have started with equal weightings and gotten 90% of the same answer."*
+
+Configuration matters. But perfect configuration on day one does not exist. What matters is a reasonable starting point, rapid validation, and a governance process that allows iteration. This blog shows you how to make those decisions without losing months to committee paralysis.
+
+---
+
+## 🧠 The Configuration Decision Framework
+
+Before you open any configuration screen, answer four questions:
+
+### Question 1: What asset classes are in scope?
+
+Different asset classes need different models. A pump and a transformer fail in different ways, are monitored with different instruments, and have different business impact profiles. Do not try to build one model that covers everything.
+
+For your pilot, you should have one asset class. For expansion, plan one model per major asset class.
+
+### Question 2: What data is actually available?
+
+Your model can only use data you have. Map the available data for your asset class:
+
+```
+DATA AVAILABILITY ASSESSMENT (Example: Centrifugal Pumps)
+
+  DATA TYPE              AVAILABLE?   QUALITY    NOTES
+  ──────────────────────────────────────────────────────
+  Work order history     Yes          Good       12+ months, failure codes used
+  Failure codes          Yes          Moderate   70% populated, some generic codes
+  Vibration readings     Yes          Good       Monthly manual rounds
+  Bearing temperature    Partial      Fair       Only on critical pumps
+  Inspection ratings     Yes          Moderate   Consistent scale, quarterly
+  Runtime meters         Yes          Good       Updated weekly
+  IoT telemetry          No           N/A        Not connected yet
+  Predictive outputs     No           N/A        Predict not deployed
+```
+
+Design your model around what you have. Add indicators for new data sources as they come online.
+
+### Question 3: What failures matter most?
+
+Not all failures are equal. A seal leak is different from a catastrophic bearing failure. A slow performance degradation is different from a sudden trip. Your indicators should reflect the failure modes that matter for your asset class.
+
+Talk to your reliability engineers. Ask: "If you could only know three things about this pump to assess its health, what would they be?" The answers drive your indicator selection.
+
+### Question 4: What decisions will scores inform?
+
+Health scores that exist in a vacuum are useless. Define the specific decisions:
+
+- Will scores prioritize the corrective work backlog?
+- Will scores trigger additional inspections?
+- Will scores feed capital planning recommendations?
+- Will scores adjust PM frequencies?
+
+The decisions determine which indicators and thresholds matter most.
+
+---
+
+## 🛠️ Structuring Components and Indicators
+
+### Step 1: Define Components Per Asset Class
+
+Start with the standard four components and decide which are relevant:
+
+| Component | What It Captures | When to Include |
+|-----------|-----------------|-----------------|
+| **Condition** | Physical state from inspections, measurements, tests | Always -- this is the core |
+| **Reliability** | Failure patterns, repair frequency, MTBF | Always -- unless zero failure history |
+| **Performance** | Throughput, efficiency, quality metrics | When performance targets exist |
+| **Environment** | Operating stress, duty cycle, ambient conditions | When operating context varies significantly |
+
+Example configurations:
+
+```
+PUMPS:        Condition + Reliability + Performance + Environment
+TRANSFORMERS: Condition + Reliability + Environment + Compliance*
+HVAC UNITS:   Condition + Reliability + Performance + Energy*
+FLEET:        Condition + Reliability + Usage* + Safety*
+
+*Custom components added where standard four do not fit
+```
+
+> **Key insight:** You can add custom components. If regulatory compliance is a critical health dimension for certain assets (pressure vessels, emissions equipment), make it a component rather than burying it inside Condition.
+
+### Step 2: Map Indicators to Components
+
+For each component, select 3-5 indicators. Resist the urge to include everything:
+
+**Example: Centrifugal Pump Health Model**
+
+```
+CONDITION COMPONENT
+  1. Vibration severity       (source: meter/manual rounds)
+  2. Bearing temperature      (source: meter/manual rounds)
+  3. Inspection condition      (source: structured inspection rating)
+  4. Seal condition indicator  (source: inspection checklist item)
+
+RELIABILITY COMPONENT
+  1. Failure count (12 months) (source: corrective work orders)
+  2. Emergency work ratio      (source: corrective / total WOs)
+  3. MTBF trend               (source: calculated from WO dates)
+
+PERFORMANCE COMPONENT
+  1. Flow rate deviation       (source: meter vs. design spec)
+  2. Efficiency indicator      (source: calculated from I/O meters)
+
+ENVIRONMENT COMPONENT
+  1. Runtime vs. design life   (source: runtime meter / design hours)
+  2. Duty cycle severity       (source: start-stop count / period)
+```
+
+Three rules for indicator selection:
+1. **Each indicator must have a reliable data source.** If the data is sporadic or untrustworthy, the indicator adds noise, not signal.
+2. **Indicators within a component should be independent.** If vibration and bearing temperature always move together, you are double-counting the same failure mode.
+3. **Every indicator must be explainable.** If you cannot tell a maintenance planner in one sentence what an indicator means, remove it.
+
+### Step 3: Define Indicator Scoring Rules
+
+Each indicator needs a rule that converts raw data into a 0-100 score:
+
+| Indicator | Raw Data | Scoring Rule | Score |
+|-----------|---------|-------------|-------|
+| Vibration severity | 4.2 mm/s | <2.5 = 100, 2.5-5 = linear, >5 = 0 | 60 |
+| Failure count (12mo) | 5 failures | 0 = 100, 1-2 = 80, 3-5 = 50, >5 = 20 | 50 |
+| Inspection rating | "Fair" | Excellent=100, Good=80, Fair=50, Poor=20 | 50 |
+| Runtime vs design | 85% of design life | <50% = 100, 50-80% = linear, >80% = 20 | 30 |
+
+Scoring rules should be:
+- **Transparent** -- anyone can verify the calculation
+- **Defensible** -- based on engineering judgment or industry standards
+- **Configurable** -- adjustable as you learn more about the relationship between raw values and actual condition
+
+---
+
+## ⚖️ Setting Weightings: The Art and Science
+
+### Indicator Weightings (Within Components)
+
+Within each component, assign relative importance:
+
+```
+CONDITION COMPONENT (Centrifugal Pump)
+
+  Vibration severity ........... 35%    ← Best early warning signal
+  Bearing temperature .......... 25%    ← Confirms vibration findings
+  Inspection condition ......... 25%    ← Captures visual/external state
+  Seal condition ............... 15%    ← Important but less predictive
+
+  TOTAL: 100%
+```
+
+Guidelines:
+- Weight indicators by **predictive value**, not by data availability
+- If two indicators measure the same failure mode, reduce both weights
+- If an indicator has poor data quality, lower its weight until quality improves
+
+### Component Weightings (Overall Score)
+
+Components combine into the overall health score:
+
+```
+OVERALL HEALTH SCORE (Centrifugal Pump)
+
+  Condition .................... 40%    ← Most direct measure of state
+  Reliability .................. 30%    ← History predicts future
+  Performance .................. 20%    ← Functional effectiveness
+  Environment .................. 10%    ← Operating context
+
+  TOTAL: 100%
+```
+
+This is where organizational priorities matter:
+- **Safety-critical assets**: Increase Condition and Reliability weights
+- **Production-critical assets**: Increase Performance weight
+- **Assets in harsh environments**: Increase Environment weight
+
+> *"Just use equal weights."*
+>
+> Equal weights are a valid starting point. Seriously. If you have no basis for differentiation, 25/25/25/25 will produce reasonable scores. Tune based on validation feedback, not guesswork.
+
+---
+
+## 🎚️ Defining Thresholds and Health Bands
+
+Thresholds convert continuous scores into actionable categories.
+
+### Standard Health Bands
+
+```
+HEALTH BANDS
+
+  Score Range     Band        Color    Meaning
+  ─────────────────────────────────────────────────────
+  80 - 100        HEALTHY     Green    No immediate concerns
+  60 - 79         WATCH       Yellow   Early signs of deterioration
+  40 - 59         POOR        Orange   Needs attention in near term
+   0 - 39         CRITICAL    Red      High risk of failure, act now
+```
+
+These are starting points. Tune them based on:
+
+1. **Observed distribution** -- If 80% of your assets score above 80, your thresholds may be too generous. If 40% score below 40, they may be too aggressive.
+
+2. **Expert calibration** -- Show scores to experienced engineers. If assets they know are in trouble score "Watch" instead of "Poor," adjust thresholds down.
+
+3. **Action capacity** -- If your "Critical" band contains 200 assets and you can only intervene on 20, either your thresholds are too broad or you need more resources. Thresholds should match your capacity to respond.
+
+### Alert Thresholds
+
+Beyond display bands, define thresholds that trigger action:
+
+- **High-risk list inclusion**: Health < 40 AND Criticality >= High
+- **Planning review flag**: Health dropped >15 points in 30 days
+- **Capital planning candidate**: Health < 30 for 90+ consecutive days
+
+Keep initial alert thresholds conservative to avoid alert fatigue. Tighten them as teams build confidence.
+
+---
+
+## 🏭 Two Strategies: Safety-Critical vs. Production-Critical
+
+Different assets need different configuration philosophies. Here are two common patterns.
+
+### Strategy A: Safety-Critical Asset (Pressure Relief System)
+
+```
+PHILOSOPHY: Conservative scoring, early escalation
+
+CRITICALITY EMPHASIS:
+  Safety & Environment ......... 50%
+  Regulatory Compliance ........ 30%
+  Production Impact ............ 10%
+  Financial Impact ............. 10%
+
+HEALTH MODEL:
+  Condition (50%) -- dominated by inspection and test results
+  Reliability (30%) -- failure history with emphasis on safety-related failures
+  Performance (10%) -- functional test pass/fail
+  Environment (10%) -- duty cycle and operating stress
+
+THRESHOLDS: Conservative
+  HEALTHY:  85 - 100    (narrower band, high bar)
+  WATCH:    65 - 84
+  POOR:     45 - 64
+  CRITICAL: 0 - 44     (broader band, catches more)
+
+ACTIONS:
+  - Any drop below WATCH triggers mandatory inspection within 7 days
+  - CRITICAL triggers immediate isolation and engineering review
+  - Annual criticality review with safety and compliance stakeholders
+```
+
+### Strategy B: Production-Critical Asset (Bottleneck Conveyor)
+
+```
+PHILOSOPHY: Balanced scoring, production-aware escalation
+
+CRITICALITY EMPHASIS:
+  Production Impact ............ 50%
+  Financial Impact ............. 25%
+  Safety & Environment ......... 15%
+  Regulatory Compliance ........ 10%
+
+HEALTH MODEL:
+  Condition (35%) -- mechanical wear, belt condition, drive alignment
+  Reliability (30%) -- failure frequency and unplanned stops
+  Performance (25%) -- throughput vs. target, speed deviation
+  Environment (10%) -- load profile, operating hours
+
+THRESHOLDS: Balanced
+  HEALTHY:  80 - 100
+  WATCH:    60 - 79
+  POOR:     40 - 59
+  CRITICAL: 0 - 39
+
+ACTIONS:
+  - POOR triggers inclusion in next planned outage work list
+  - CRITICAL triggers production planning notification + expedited repair
+  - Quarterly review aligned with production planning cycle
+```
+
+The key difference: safety-critical assets use conservative thresholds with rapid escalation. Production-critical assets balance health with production impact and align actions with outage windows.
+
+---
+
+## 👥 Criticality Configuration
+
+Criticality is the other half of the risk equation. Configure it with the same rigor as health.
+
+### Choose Your Criticality Model
+
+Three options, from simple to detailed:
+
+**Option 1: Simple Categorical**
+- Low / Medium / High / Very High
+- Easy to assign, easy to understand
+- Best for: organizations starting out, assets with similar impact profiles
+
+**Option 2: Numeric Scale**
+- 1-10 scoring across a single dimension
+- More granular comparison
+- Best for: organizations that need to rank assets within a criticality tier
+
+**Option 3: Multi-Dimensional**
+- Separate scores for safety, production, regulatory, financial
+- Can be weighted and aggregated into an overall criticality score
+- Best for: organizations with diverse asset portfolios and complex impact profiles
+
+> **Key insight:** Start with Option 1 unless you have a strong reason for more complexity. You can upgrade the model later. You cannot un-confuse stakeholders who were overwhelmed by a multi-dimensional model on day one.
+
+### Run a Criticality Workshop
+
+Criticality scores require cross-functional input. You cannot assign them in a vacuum.
+
+**Workshop format:**
+1. Present the criticality model and scoring criteria
+2. For each pilot asset (or asset group), walk through each dimension
+3. Capture the consensus score and the rationale
+4. Document disagreements and how they were resolved
+
+**Participants:** Maintenance, operations, reliability, safety, finance. All need a voice. Safety gets a veto on safety-related assets.
+
+**Duration:** 2-4 hours for 30-50 assets. Do not try to score 500 assets in one session.
+
+### Maintain Criticality Over Time
+
+Criticality is not set-and-forget. Establish:
+
+- **Annual review cadence** -- or after major process, regulatory, or organizational changes
+- **Triggers for re-evaluation** -- significant incidents, new regulations, changes in production strategy
+- **Documentation** -- record the rationale for each criticality score, not just the number
+
+---
+
+## 🔧 Testing and Validation
+
+Your model is a hypothesis. Validate it before you operationalize it.
+
+### Before/After Check
+
+Run the model on your pilot assets. Then compare:
+
+| Asset | Model Score | Expert Assessment | Match? | Action |
+|-------|-----------|-------------------|--------|--------|
+| P-4407 | 38 (Critical) | Known problem asset | Yes | Confidence builder |
+| P-4412 | 82 (Healthy) | Known healthy asset | Yes | Confidence builder |
+| P-4419 | 75 (Watch) | Expert says "should be Poor" | No | Investigate: missing data? Wrong weighting? |
+| P-4425 | 45 (Poor) | Expert says "it is fine" | No | Investigate: over-weighted indicator? Stale data? |
+
+Mismatches are expected and valuable. Each mismatch reveals either a model issue or a data issue -- and both are worth fixing.
+
+### Sensitivity Analysis
+
+Adjust one weighting at a time and observe:
+- Does the rank order of assets change significantly?
+- Do assets jump between health bands?
+- Is the model too sensitive to one indicator?
+
+If changing one indicator's weight from 30% to 35% moves 20 assets between bands, the model is fragile. Simplify or add more independent indicators to stabilize it.
+
+---
+
+## 🎯 The 7 Commandments of Configuration
+
+1. **Thou shalt design per asset class.** One model does not fit all. Pumps are not transformers.
+2. **Thou shalt start with 3-5 indicators per component.** Earn complexity through validation. Do not start with it.
+3. **Thou shalt weight by importance, not availability.** The best data source is not always the most important signal.
+4. **Thou shalt validate against humans.** Show scores to experts. If they disagree, the model needs work.
+5. **Thou shalt separate health from criticality.** Different questions, different data, different processes.
+6. **Thou shalt document every decision.** Indicators, weightings, thresholds, rationale. All of it.
+7. **Thou shalt iterate.** Your first model will not be perfect. Plan for quarterly review and refinement.
+
+---
+
+**Next in the series:** [Part 5 -- Integrating with Monitor and Predict](/blog/mas-health-integrating-monitor-predict) shows how to enrich your health models with real-time IoT telemetry and predictive analytics.
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams build, configure, and optimize IBM Maximo Application Suite. Our content comes from real implementations, not marketing slides. If it is in our blog, we have done it in production.

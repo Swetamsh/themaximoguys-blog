@@ -1,0 +1,1169 @@
+---
+title: "MVI Troubleshooting & FAQ: Solving Every Problem from GPU Errors to Model Drift"
+description: "The definitive troubleshooting guide for IBM Maximo Visual Inspection. GPU configuration, training failures, deployment issues, mobile and edge problems, integration errors, and answers to every FAQ."
+date: "2026-02-19"
+slug: "mas-visual-inspection-troubleshooting-faq"
+tags: ["Maximo Visual Inspection", "MVI", "Troubleshooting", "FAQ", "GPU Configuration", "Model Training", "Edge Deployment", "IBM Maximo", "Debug Guide"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "AI & Visual Inspection Specialists"]
+coverImage: "./images/mas-visual-inspection-12.png"
+
+faqs:
+  - question: "Why is my MVI training running on CPU instead of GPU?"
+    answer: "Check three things: (1) NVIDIA GPU Operator is installed and healthy on OpenShift, (2) your GPU node has the nvidia.com/gpu label applied, (3) the training pod has GPU resource requests in its spec. Also verify CUDA version is 11.8+ for MAS 9.0 and your GPU has at least 16 GB VRAM. CPU-only training is 10-50x slower."
+  - question: "Why can I not find MVI Mobile for Android?"
+    answer: "MVI Mobile is iOS and iPadOS only. There is no Android version. IBM has not announced Android support. For Android-equipped field teams, use MVI Edge with network cameras instead of mobile device inspection."
+  - question: "My SSD model will not retrain after upgrading to MAS 9.1. What happened?"
+    answer: "SSD training was deprecated in MAS 9.1. Your existing SSD models still run inference, but you cannot train new ones or retrain existing ones. Migrate to YOLO v3 for real-time detection or Faster R-CNN for accuracy-optimized detection."
+
+keyTakeaways:
+  - "GPU issues are the #1 cause of MVI setup failures — verify NVIDIA hardware, CUDA version, and Operator before anything else"
+  - "MVI Mobile is iOS/iPadOS only with only 3 model types exportable to Core ML"
+  - "SSD training deprecated in 9.1 — migrate to YOLO v3 for real-time detection"
+  - "ReadWriteMany PVC access mode is required — ReadWriteOnce silently fails"
+  - "Most integration issues stem from incorrect X-Auth-Token configuration"
+
+series:
+  name: "MAS VISUAL INSPECTION"
+  part: 12
+  total: 12
+
+tldr: "This is the troubleshooting guide that IBM should have written. GPU configuration, training failures, deployment problems, mobile limitations, edge issues, and integration errors — every common MVI problem with diagnosis steps and fixes. Plus 20+ FAQs answered with verified IBM documentation references."
+seoTitle: "MVI Troubleshooting & FAQ: Complete Problem-Solving Guide | TheMaximoGuys"
+seoDescription: "Troubleshoot every IBM Maximo Visual Inspection issue. GPU errors, training failures, deployment problems, mobile limitations, edge issues, and integration errors."
+targetQuestions:
+  - "Why is my MVI training so slow?"
+  - "How do I fix MVI GPU errors?"
+  - "Is MVI available for Android?"
+  - "Why did my SSD model stop training?"
+semanticKeywords:
+  - "MVI troubleshooting"
+  - "MVI GPU errors"
+  - "MVI training failures"
+  - "MVI Mobile Android"
+  - "SSD deprecated MVI"
+  - "MVI Edge problems"
+  - "MVI FAQ"
+  - "Maximo Visual Inspection debug"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Basic familiarity with MVI concepts (Part 1)"
+  - "MVI environment access for troubleshooting"
+speakableSections:
+  - "Introduction"
+  - "GPU Troubleshooting"
+  - "The Top 20 FAQs"
+relatedSlugs:
+  - "mas-visual-inspection-installation-first-project"
+  - "mas-visual-inspection-mobile-ios"
+  - "mas-visual-inspection-edge-drones-field"
+  - "mas-visual-inspection-rest-api-reference"
+---
+
+> **Who this is for:** MVI administrators staring at a cryptic error log, developers whose training jobs have been pending for hours, and anyone who has searched IBM documentation for an answer and found architecture diagrams instead. If something is broken and you need it fixed, start here.
+
+**Read Time:** 30-35 minutes
+
+---
+
+## The Error Message That Says Nothing
+
+Your training job failed. The log says: `Error: Training could not be completed.`
+
+That is the entire error. No stack trace. No error code. No hint about whether the GPU is missing, the dataset is corrupt, or the storage ran out of space. You check the pod logs. You check the events. You check the documentation. The documentation shows you a screenshot of a successful training run.
+
+> *"We spent three days troubleshooting what turned out to be a PVC access mode set to ReadWriteOnce instead of ReadWriteMany. Three days. One wrong dropdown selection."*
+
+This blog exists because MVI error messages are often unhelpful and the official troubleshooting documentation assumes you already know what is wrong. We have compiled every failure mode we have encountered across dozens of MVI deployments into a single reference. Symptoms. Diagnosis. Fixes. No ambiguity.
+
+If you came here from a search engine at 2 AM with a broken training pipeline, we respect that. Let us fix it.
+
+---
+
+## GPU Troubleshooting
+
+GPU issues are the number one cause of MVI deployment failures. Not because GPUs are hard -- because the stack between "GPU exists" and "MVI can use GPU" has six layers, and any one of them can silently fail.
+
+### Problem: GPU Not Detected by MVI
+
+**Symptom:** Training jobs start but run on CPU. Training that should take 20 minutes takes 6+ hours. The MVI UI shows no GPU resources available.
+
+**Diagnosis flowchart:**
+
+```
+  GPU NOT DETECTED - DIAGNOSIS
+  ════════════════════════════
+
+  Step 1: Is a physical GPU present?
+  ┌─────────────────────────────────┐
+  │ oc describe node <gpu-node>     │
+  │ Look for: nvidia.com/gpu        │
+  └────────────┬────────────────────┘
+               │
+          ┌────┴────┐
+          │ Found?  │
+          └────┬────┘
+         Yes   │   No
+          │    │    │
+          v    │    v
+  Step 2  │  PROBLEM: GPU Operator not installed
+          │  or node not labeled. Go to Fix A.
+          │
+  Step 2: Is NVIDIA GPU Operator healthy?
+  ┌─────────────────────────────────┐
+  │ oc get pods -n gpu-operator-    │
+  │ resources                       │
+  │ All pods should be Running      │
+  └────────────┬────────────────────┘
+               │
+          ┌────┴────┐
+          │ All     │
+          │ Running?│
+          └────┬────┘
+         Yes   │   No
+          │    │    │
+          v    │    v
+  Step 3  │  PROBLEM: GPU Operator pods crashed.
+          │  Go to Fix B.
+          │
+  Step 3: Is CUDA version correct?
+  ┌─────────────────────────────────┐
+  │ oc exec <gpu-pod> -- nvidia-smi │
+  │ Check CUDA Version line         │
+  └────────────┬────────────────────┘
+               │
+          ┌────┴────┐
+          │ CUDA    │
+          │ 11.8+?  │
+          └────┬────┘
+         Yes   │   No
+          │    │    │
+          v    │    v
+  Step 4  │  PROBLEM: CUDA version too old.
+          │  Go to Fix C.
+          │
+  Step 4: Does GPU have 16+ GB VRAM?
+  ┌─────────────────────────────────┐
+  │ nvidia-smi output shows         │
+  │ total memory per GPU            │
+  └────────────┬────────────────────┘
+               │
+          ┌────┴────┐
+          │ 16 GB+? │
+          └────┬────┘
+         Yes   │   No
+          │    │    │
+          v    │    v
+  GPU is  │  PROBLEM: Insufficient VRAM.
+  healthy │  Go to Fix D.
+```
+
+**Fix A -- GPU Operator not installed:**
+
+```bash
+# Verify GPU Operator is installed
+oc get csv -n gpu-operator-resources | grep gpu
+
+# If missing, install via OperatorHub
+# OpenShift Console > Operators > OperatorHub > NVIDIA GPU Operator
+# Minimum OpenShift version: 4.8.22
+```
+
+**Fix B -- GPU Operator pods unhealthy:**
+
+```bash
+# Check operator pod logs
+oc logs -n gpu-operator-resources <crashed-pod-name>
+
+# Common cause: driver version mismatch
+# Reinstall with correct driver version for your GPU architecture
+```
+
+**Fix C -- CUDA version too old:**
+
+MAS 9.0 requires CUDA 11.8 or later. If your `nvidia-smi` output shows an older version, update the NVIDIA GPU Operator to a version that bundles CUDA 11.8+.
+
+**Fix D -- Insufficient VRAM:**
+
+MVI requires a minimum of 16 GB GPU memory per GPU. If your GPU has less, training will either fail or fall back to CPU. Supported GPUs with sufficient VRAM include A100 (40/80 GB), A40 (48 GB), A30 (24 GB), V100 (16/32 GB), and T4 (16 GB).
+
+> **Source:** [MVI Supported GPU Devices](https://www.ibm.com/docs/en/masv-and-l/maximo-vi/cd?topic=gpus-supported-gpu-devices)
+
+---
+
+### Problem: Kepler GPU (K80) No Longer Works After MAS 9.0 Upgrade
+
+**Symptom:** Training jobs that worked on MAS 8.x fail after upgrading to 9.0. GPU appears present but MVI cannot use it.
+
+**Diagnosis:** Check your GPU model. If it is a Tesla K80 or any Kepler-architecture GPU, that is the problem.
+
+**Fix:** Kepler GPUs are not supported from MAS 9.0 onward. You must replace the hardware. The minimum supported architecture is Pascal (P4, P40, P100).
+
+```
+  SUPPORTED GPU ARCHITECTURES
+  ═══════════════════════════
+
+  Architecture    Example GPUs          MAS Support
+  ────────────    ────────────          ───────────
+  Kepler          K80                   8.x only (REMOVED in 9.0)
+  Pascal          P4, P40, P100         8.8+
+  Volta           V100                  8.8+
+  Turing          T4                    8.8+
+  Ampere          A10, A16, A40,        8.8+
+                  A30, A100
+  Ada Lovelace    RTX 4000, L40         9.0+
+  Hopper          H100                  9.0+
+```
+
+If you are running K80s in a cloud environment, switch to T4 or A10 instances. If on-premises, budget for GPU replacement before upgrading to MAS 9.0.
+
+---
+
+### Problem: GPU Out of Memory (OOM) During Training
+
+**Symptom:** Training job starts, runs for a few minutes, then crashes with an out-of-memory error. Pod logs show `CUDA out of memory` or `RuntimeError: CUDA error: out of memory`.
+
+**Diagnosis:**
+
+```bash
+# Check current GPU memory usage
+oc exec <training-pod> -- nvidia-smi
+
+# Look for memory allocation vs. total
+# If used memory is near total, OOM is expected
+```
+
+**Fix:**
+
+1. **Reduce batch size.** This is the most effective single change. Halving the batch size roughly halves GPU memory usage.
+2. **Use a smaller model architecture.** Tiny YOLO v3 uses significantly less memory than Faster R-CNN or Detectron2.
+3. **Reduce input image resolution.** Smaller images consume less GPU memory during training.
+4. **Use MAS 9.0 GPU workload optimization.** MAS 9.0 added the ability to assign GPUs specifically to training versus inference workloads, preventing inference traffic from consuming memory during training.
+
+---
+
+### Problem: Multiple GPUs Present but Only One Used
+
+**Symptom:** You have a multi-GPU node but training only uses one GPU.
+
+**Diagnosis:** Check the training job's resource requests. If it requests `nvidia.com/gpu: 1`, it will only get one GPU regardless of how many are available.
+
+**Fix:** MVI training jobs use the GPU count specified in the configuration. For multi-GPU training, ensure your deployment configuration requests the correct number of GPUs. Note that not all model architectures benefit equally from multi-GPU training. Object detection models (Faster R-CNN, YOLO v3) typically scale better across GPUs than classification models (GoogLeNet).
+
+---
+
+## Training Troubleshooting
+
+### Problem: Training Is Extremely Slow
+
+**Symptom:** A training job that should complete in 20-40 minutes has been running for hours.
+
+**Diagnosis:**
+
+```
+  SLOW TRAINING - DIAGNOSIS
+  ═════════════════════════
+
+  Is it running on GPU or CPU?
+  ┌────────────────────────────────┐
+  │ Check training pod resources:  │
+  │ oc describe pod <training-pod> │
+  │ Look for nvidia.com/gpu in     │
+  │ the resource requests          │
+  └──────────────┬─────────────────┘
+                 │
+            ┌────┴────┐
+            │ GPU     │
+            │ request │
+            │ present?│
+            └────┬────┘
+           Yes   │   No
+            │    │    │
+            v    │    v
+  Check     │  CAUSE: Training on CPU.
+  storage   │  CPU is 10-50x slower.
+  IOPS      │  Fix GPU detection first.
+            │
+  ┌─────────────────────────────────┐
+  │ Is storage IOPS adequate?       │
+  │ Training needs 3000+ IOPS       │
+  │ for loading images to GPU       │
+  └──────────────┬──────────────────┘
+                 │
+            ┌────┴────┐
+            │ 3000+   │
+            │ IOPS?   │
+            └────┬────┘
+           Yes   │   No
+            │    │    │
+            v    │    v
+  Check     │  CAUSE: I/O bottleneck.
+  dataset   │  GPU idles waiting for
+  size      │  images. Upgrade storage.
+            │
+  ┌─────────────────────────────────┐
+  │ How many images?                │
+  │ < 100: Fast (minutes)           │
+  │ 100-1000: Moderate (10-60 min)  │
+  │ 1000-10000: Longer (1-4 hrs)    │
+  │ > 10000: Hours to days          │
+  └─────────────────────────────────┘
+```
+
+**Fixes:**
+
+- Verify GPU is being used (see GPU Troubleshooting above)
+- Ensure storage provides 3000+ IOPS. NFS shares commonly bottleneck here. Use block storage or high-performance NFS.
+- Reduce `max_iter` for initial experimentation. Default is 1500. Drop to 500 for quick validation runs, then increase for final training.
+- Use auto-labeling: train a preliminary model on 5-10 manually labeled images, then use that model to auto-label the rest of your dataset before full training.
+
+---
+
+### Problem: Model Will Not Converge (Accuracy Stays Low)
+
+**Symptom:** Training completes but accuracy, precision, or recall remain below acceptable thresholds. The loss curve plateaus early or oscillates without decreasing.
+
+**Diagnosis:**
+
+```
+  CONVERGENCE FAILURE - DIAGNOSIS
+  ════════════════════════════════
+
+  ┌───────────────────┐     ┌───────────────────┐
+  │ Loss curve flat   │     │ Loss curve         │
+  │ from the start    │     │ oscillates wildly  │
+  │                   │     │                    │
+  │ CAUSE: Learning   │     │ CAUSE: Learning    │
+  │ rate too low or   │     │ rate too high      │
+  │ dataset quality   │     │                    │
+  │ issue             │     │ FIX: Reduce        │
+  │                   │     │ learning_rate by    │
+  │ FIX: Check labels │     │ factor of 10       │
+  │ first, then       │     │ (0.001 -> 0.0001)  │
+  │ increase LR       │     │                    │
+  └───────────────────┘     └───────────────────┘
+
+  ┌───────────────────┐     ┌───────────────────┐
+  │ Loss decreases    │     │ Training accuracy  │
+  │ then plateaus at  │     │ high, validation   │
+  │ high value        │     │ accuracy low       │
+  │                   │     │                    │
+  │ CAUSE: Model      │     │ CAUSE: Overfitting │
+  │ capacity too low  │     │                    │
+  │ or not enough     │     │ FIX: More data,    │
+  │ data              │     │ augmentation, or   │
+  │                   │     │ reduce max_iter    │
+  │ FIX: More data,   │     │                    │
+  │ switch to larger  │     │                    │
+  │ architecture      │     │                    │
+  └───────────────────┘     └───────────────────┘
+```
+
+**Fixes:**
+
+1. **Check your labels first.** Bad labels are the most common cause. Open your dataset and visually verify 20+ random labels. Mislabeled images inject noise that prevents convergence.
+2. **Add augmentation.** MVI offers 8 augmentation options: blur, sharpen, crop, rotate, vertical flip, horizontal flip, color, and noise. Enable at least 3-4 to increase effective dataset diversity.
+3. **Adjust hyperparameters.** Default values (max_iter=1500, test_iter=100, test_interval=20, learning_rate=0.001) work for most cases. If loss oscillates, reduce learning_rate. If training is too slow to converge, increase max_iter.
+4. **Switch architecture.** GoogLeNet is the default for classification. Faster R-CNN is the default for object detection. If accuracy is insufficient, these defaults are usually correct -- the problem is data, not architecture.
+
+---
+
+### Problem: SSD Model Will Not Train After MAS 9.1 Upgrade
+
+**Symptom:** You have SSD (Single Shot Detector) models that trained successfully on MAS 9.0 or earlier. After upgrading to MAS 9.1, attempting to train or retrain SSD models fails. The training option may not appear in the UI.
+
+**Diagnosis:** This is not a bug. SSD training was deprecated in MAS 9.1.
+
+**Fix:**
+
+```
+  SSD DEPRECATION MIGRATION PATH
+  ═══════════════════════════════
+
+  Your SSD Model
+       │
+       ├── Inference only?
+       │   └── YES: Existing SSD models continue
+       │         to run inference. No action needed
+       │         until you need to retrain.
+       │
+       └── Need to retrain?
+           └── Migrate to:
+               ├── YOLO v3 (real-time detection,
+               │   similar speed to SSD)
+               └── Faster R-CNN (higher accuracy,
+                   slower inference)
+
+  YOLO v3 is the recommended replacement for most
+  SSD use cases. It matches or exceeds SSD speed
+  with better accuracy.
+```
+
+Your existing SSD models continue to run inference after the upgrade. You just cannot train new SSD models or retrain existing ones. Migrate to YOLO v3 for similar real-time performance or Faster R-CNN when accuracy is the priority.
+
+> **Source:** [What's New in MVI 9.0](https://www.ibm.com/docs/en/masv-and-l/maximo-vi/cd?topic=new-in-90)
+
+---
+
+### Problem: Overfitting Detected (Training Accuracy High, Validation Low)
+
+**Symptom:** MVI's real-time training visualization shows training accuracy climbing above 95% while validation accuracy stagnates below 80%. The gap widens as training continues.
+
+**Diagnosis:** Classic overfitting. Your model is memorizing the training images instead of learning generalizable patterns.
+
+**Fix:**
+
+1. **More data.** The simplest fix. Add more diverse images. Different angles, lighting, times of day, camera positions.
+2. **Enable augmentation.** All 8 options if possible: blur, sharpen, crop, rotate, vertical flip, horizontal flip, color, noise. Augmentation artificially increases dataset diversity.
+3. **Reduce max_iter.** If the gap between training and validation accuracy starts widening at iteration 800, set max_iter to 800. Longer training makes overfitting worse, not better.
+4. **Increase test_interval.** Default is 20. Check validation more frequently to catch the divergence point earlier.
+
+---
+
+### Problem: Choosing the Wrong Model Architecture
+
+**Symptom:** You are not sure which architecture to use, or you picked one and results are poor.
+
+**Reference:**
+
+```
+  MODEL ARCHITECTURE SELECTION
+  ════════════════════════════
+
+  Task: Image Classification (Is this a defect? Yes/No)
+  ┌─────────────────────────────────────────────────┐
+  │ Default: GoogLeNet                              │
+  │ Use for: Pass/fail grading, condition ranking   │
+  │ Input: Entire image → single label              │
+  │ Export: Core ML (mobile), TensorRT, Edge        │
+  └─────────────────────────────────────────────────┘
+
+  Task: Object Detection (Where are the defects?)
+  ┌─────────────────────────────────────────────────┐
+  │ Speed priority: YOLO v3 or Tiny YOLO v3         │
+  │   → Real-time use, edge, mobile                 │
+  │   → Export: Core ML, TensorRT, Edge             │
+  │                                                 │
+  │ Accuracy priority: Faster R-CNN                 │
+  │   → Highest accuracy, slower inference          │
+  │   → Export: TensorRT, Edge (NO Core ML)         │
+  │                                                 │
+  │ DEPRECATED: SSD (removed in 9.1)                │
+  └─────────────────────────────────────────────────┘
+
+  Task: Instance Segmentation (Pixel-level defect maps)
+  ┌─────────────────────────────────────────────────┐
+  │ Use: Detectron2                                 │
+  │   → Precise defect boundaries                   │
+  │   → Export: TensorRT, Edge (NO Core ML)         │
+  └─────────────────────────────────────────────────┘
+
+  MOBILE COMPATIBILITY (Core ML export):
+  ═══════════════════════════════════════
+  YES: GoogLeNet, YOLO v3, Tiny YOLO v3
+  NO:  Faster R-CNN, Detectron2, High Resolution,
+       SSD, Anomaly, SSN
+```
+
+> **Source:** [MVI Models and Supported Functions](https://www.ibm.com/docs/en/masv-and-l/maximo-vi/cd?topic=overview-models-supported-functions)
+
+---
+
+## Deployment Troubleshooting
+
+### Problem: Model Deployed but Inference Returns Errors
+
+**Symptom:** You deployed a trained model. The API endpoint exists. But inference calls return errors or empty results.
+
+**Diagnosis:**
+
+```bash
+# Check the deployed model pod status
+oc get pods | grep infer
+
+# Check pod logs for errors
+oc logs <inference-pod-name>
+
+# Test inference endpoint directly
+curl -X POST https://<mvi-host>/api/v1/infer \
+  -H "X-Auth-Token: <your-api-key>" \
+  -F "files=@test_image.jpg" \
+  -F "model_id=<your-model-id>"
+```
+
+**Common causes and fixes:**
+
+1. **Model not fully deployed.** The model status shows "deployed" in the UI but the inference pod is still initializing. Check pod status with `oc get pods`. Wait for Running state.
+2. **Incorrect API authentication.** MVI uses the `X-Auth-Token` header for REST API authentication. Not `Authorization: Bearer`. Not `api-key`. The header is `X-Auth-Token`.
+3. **Model format mismatch.** If you deployed to TensorRT and the inference runtime does not have the matching GPU, inference fails silently. Verify GPU availability on the inference node.
+4. **Image format issues.** MVI expects standard image formats (JPEG, PNG). Verify your test image is not corrupt and the file size is reasonable.
+
+---
+
+### Problem: Inference Pod Crashes or Restarts
+
+**Symptom:** The inference pod starts, runs for a short time, then enters CrashLoopBackOff.
+
+**Diagnosis:**
+
+```bash
+# Get pod events
+oc describe pod <inference-pod-name>
+
+# Check for OOMKilled
+# If the pod was killed by Kubernetes for exceeding memory limits,
+# the "Last State" will show "OOMKilled"
+
+# Check resource limits
+oc get pod <inference-pod-name> -o yaml | grep -A 5 resources
+```
+
+**Fixes:**
+
+1. **OOMKilled:** Increase the pod memory limits. Large models (Faster R-CNN, Detectron2) require more memory than lightweight models (Tiny YOLO v3).
+2. **GPU not available on inference node:** If the model was trained with GPU and deployed for GPU inference, but the inference node has no GPU, the pod crashes. Verify GPU availability with `oc describe node`.
+3. **Persistent volume not accessible:** If the model artifact storage is unreachable, the pod cannot load the model and crashes. Verify PVC status.
+
+---
+
+### Problem: PVC Storage Failures
+
+**Symptom:** Training or inference pods fail to start. Events show `FailedMount` or `FailedAttachVolume`. Or pods start but cannot write training artifacts.
+
+**Diagnosis:**
+
+```bash
+# Check PVC status
+oc get pvc -n <mvi-namespace>
+
+# Check PVC access mode
+oc get pvc <pvc-name> -o yaml | grep accessModes
+```
+
+**Fix:**
+
+This is one of the most common and most frustrating MVI issues. The fix depends on the root cause:
+
+1. **Access mode is ReadWriteOnce (RWO) instead of ReadWriteMany (RWX).** MVI requires ReadWriteMany because multiple pods (training, inference, API) need simultaneous access to the same storage. ReadWriteOnce only allows one pod at a time. This is the silent killer -- the PVC binds successfully, but multi-pod workloads fail intermittently.
+
+```
+  PVC ACCESS MODE FIX
+  ════════════════════
+
+  WRONG: ReadWriteOnce (RWO)
+  - One pod can mount at a time
+  - Training works, then inference fails
+  - Or inference works, then training fails
+  - No clear error message
+
+  RIGHT: ReadWriteMany (RWX)
+  - Multiple pods mount simultaneously
+  - Training and inference coexist
+  - Required for MVI
+```
+
+2. **Storage capacity insufficient.** MVI requires minimum 40 GB PVC storage. Training datasets, model artifacts, and intermediate files consume space quickly. Monitor usage with `oc exec <pod> -- df -h`.
+
+3. **Docker image storage full.** Minimum 75 GB in `/var` for Docker images on each node. If the node runs out of Docker image space, new pods cannot start.
+
+---
+
+### Problem: Model Export Fails
+
+**Symptom:** You trained a model successfully but the export to TensorRT, Core ML, or Edge format fails.
+
+**Diagnosis:** Check the model architecture against the supported export formats.
+
+**Fix:**
+
+```
+  MODEL EXPORT COMPATIBILITY
+  ══════════════════════════
+
+  Architecture      TensorRT    Core ML     Edge
+  ────────────      ────────    ───────     ────
+  GoogLeNet         YES         YES         YES
+  YOLO v3           YES         YES         YES
+  Tiny YOLO v3      YES         YES         YES
+  Faster R-CNN      YES         NO          YES
+  Detectron2        YES         NO          YES
+  High Resolution   YES         NO          YES
+  Anomaly           YES         NO          YES
+  SSN               YES         NO          YES
+
+  If you need Core ML (mobile), you MUST use
+  GoogLeNet, YOLO v3, or Tiny YOLO v3.
+  No exceptions. No workarounds.
+```
+
+If you trained a Faster R-CNN model and need mobile deployment, you cannot export it to Core ML. You must retrain using YOLO v3 or Tiny YOLO v3. Plan your model architecture around your deployment target before training.
+
+---
+
+## Mobile Troubleshooting
+
+### Problem: MVI Mobile Not Available for Android
+
+**Symptom:** You searched the Google Play Store for MVI Mobile or IBM Maximo Visual Inspection. Nothing found.
+
+**Diagnosis:** This is not a search issue. MVI Mobile does not exist for Android.
+
+**Fix:** MVI Mobile is exclusively for iOS and iPadOS, available on the Apple App Store. IBM has not announced Android support. If your field teams use Android devices, your options are:
+
+1. **Procure iOS/iPadOS devices** for inspectors who need mobile visual inspection.
+2. **Use MVI Edge** with network cameras instead of mobile device inspection. Edge provides real-time inference without requiring specific mobile hardware.
+3. **Use the MVI web interface** on Android devices for manual image upload and analysis (not real-time inference).
+
+> **Source:** [MVI Mobile](https://www.ibm.com/products/ibm-maximo-visual-inspection/mobile)
+
+---
+
+### Problem: Model Cannot Export to Core ML for Mobile
+
+**Symptom:** You trained a model (Faster R-CNN, Detectron2, or another architecture) and want to deploy it to MVI Mobile. The Core ML export option is not available.
+
+**Diagnosis:** Only 3 of the available model architectures support Core ML export.
+
+**Fix:** Only GoogLeNet (classification), YOLO v3 (object detection), and Tiny YOLO v3 (lightweight object detection) export to Core ML. All other architectures -- Faster R-CNN, Detectron2, High Resolution, SSD, Anomaly, SSN -- do not support Core ML export.
+
+If you need mobile deployment, choose your model architecture accordingly before training. Retraining with a compatible architecture is the only path.
+
+---
+
+### Problem: MVI Mobile Model Sync Fails
+
+**Symptom:** MVI Mobile is installed and connected to your MVI Server, but models do not sync to the device.
+
+**Diagnosis:**
+
+1. Verify MVI Server version is 1.3 or later. MVI Mobile requires v1.3+ for model sync.
+2. Check network connectivity between the iOS device and the MVI Server endpoint.
+3. Verify the model was exported to Core ML format on the server before attempting sync.
+4. Check that the API key configured in MVI Mobile is valid and not revoked.
+
+**Fix:**
+
+```bash
+# Verify server API is accessible from a network the device can reach
+curl -k -H "X-Auth-Token: <api-key>" \
+  https://<mvi-server>/api/v1/trained_models
+
+# Confirm response includes your model with status "deployed"
+```
+
+Ensure the server endpoint is reachable from the device's network. Corporate firewalls and VPN configurations frequently block the connection. The device does not need to be on the same network as the OpenShift cluster -- it needs HTTPS access to the MVI API endpoint.
+
+---
+
+### Problem: MVI Mobile Offline Inference Not Working
+
+**Symptom:** MVI Mobile does not run inference when the device has no network connection.
+
+**Diagnosis:** Models must be synced to the device before going offline. If the model was never successfully downloaded, offline inference has nothing to run.
+
+**Fix:**
+
+1. Connect the device to a network with access to the MVI Server.
+2. Open MVI Mobile and verify the model appears in the model list.
+3. Trigger a sync and confirm the model downloads completely (check model file size).
+4. Disconnect from the network and test inference.
+
+Core ML models run entirely on-device using Apple's Neural Engine. Once downloaded, no network connection is required for inference. The network dependency is only for the initial model download and subsequent updates.
+
+---
+
+## Edge Troubleshooting
+
+### Problem: MVI Edge Cannot Connect to MQTT Broker
+
+**Symptom:** MVI Edge is deployed and running inference, but alerts are not reaching Maximo Monitor. The MQTT connection shows disconnected or failed.
+
+**Diagnosis:**
+
+```bash
+# On the edge device, check MQTT connectivity
+docker logs <mvi-edge-container> | grep -i mqtt
+
+# Test MQTT broker connectivity
+mosquitto_pub -h <broker-host> -p <broker-port> \
+  -t "test/topic" -m "test message" \
+  -u <username> -P <password>
+```
+
+**Common causes and fixes:**
+
+1. **Incorrect broker credentials.** MQTT broker authentication is case-sensitive. Verify username, password, and client ID exactly match the broker configuration.
+2. **Firewall blocking MQTT port.** Default MQTT port is 1883 (unencrypted) or 8883 (TLS). Verify the edge device can reach the broker on the correct port.
+3. **TLS certificate mismatch.** If the broker uses TLS, the edge device must trust the broker's certificate. Self-signed certificates need to be explicitly added to the trust store.
+4. **v2 API format mismatch.** MAS 9.0 introduced v2 APIs for MQTT. If your Monitor instance expects v2 format but Edge is sending v1, messages are silently dropped. Verify both sides use the same API version.
+
+---
+
+### Problem: GigE Vision Camera Not Detected
+
+**Symptom:** You connected a Basler or other GigE Vision camera to MVI Edge (MAS 9.0+) but it does not appear in the camera list.
+
+**Diagnosis:**
+
+1. GigE Vision camera support was added in MAS 9.0. Verify your Edge version.
+2. Check physical network connectivity. GigE Vision uses Ethernet, not USB.
+3. Verify the camera and edge device are on the same subnet.
+
+**Fix:**
+
+```
+  GigE VISION TROUBLESHOOTING
+  ════════════════════════════
+
+  Step 1: Network configuration
+  - Camera and edge device on same subnet
+  - Jumbo frames enabled (MTU 9000) for
+    high-resolution image transfer
+  - No firewall between camera and edge
+
+  Step 2: Camera discovery
+  - GigE Vision uses UDP broadcast for discovery
+  - Verify UDP broadcast not blocked
+  - Camera must have valid IP in same range
+
+  Step 3: Driver compatibility
+  - Basler cameras officially supported
+  - Other GigE Vision cameras may work
+  - Check IBM compatibility matrix
+```
+
+> **Source:** [What's New in MVI 9.0](https://www.ibm.com/docs/en/masv-and-l/maximo-vi/cd?topic=new-in-90)
+
+---
+
+### Problem: NVIDIA Jetson Xavier NX Edge Device Issues
+
+**Symptom:** MVI Edge deployed on an NVIDIA Jetson Xavier NX is not running or inference is failing.
+
+**Diagnosis:** Verify the Jetson software version. MVI Edge requires `nvidia-jetpack 4.5.1-b17`.
+
+**Fix:**
+
+1. Flash the Jetson with JetPack 4.5.1-b17 if running a different version. Newer JetPack versions are not guaranteed to be compatible.
+2. Verify Docker is running on the Jetson: `systemctl status docker`.
+3. Check available memory. The Jetson Xavier NX has shared CPU/GPU memory. If system processes consume too much, inference will fail.
+4. Verify MVI Edge container has access to the NVIDIA runtime: `docker run --runtime nvidia --rm nvidia/cuda:11.4.3-base-ubuntu20.04 nvidia-smi`.
+
+> **Source:** [MVI Edge Planning](https://www.ibm.com/docs/en/masv-and-l/maximo-vi/8.5.0?topic=edge-planning)
+
+---
+
+### Problem: Edge Storage Running Out
+
+**Symptom:** MVI Edge device runs out of disk space over time. Inference slows or stops.
+
+**Diagnosis:** MVI Edge stores captured images, inference results, and log files locally. Without lifecycle management, storage fills up.
+
+**Fix:** MAS 9.0 introduced the Data Lifecycle Manager for Edge devices. Configure it to automatically purge old images and results based on retention policies.
+
+```
+  DATA LIFECYCLE MANAGER CONFIGURATION
+  ═════════════════════════════════════
+
+  Set retention policies:
+  - Image retention: 7-30 days (depending on
+    regulatory requirements)
+  - Inference results: 30-90 days
+  - Log files: 7-14 days
+
+  Enable automatic purge on disk threshold:
+  - Trigger purge at 80% disk usage
+  - Delete oldest data first
+  - Always retain flagged/alerted items
+```
+
+If you are running a pre-9.0 Edge version, implement manual cleanup with a cron job or upgrade to 9.0 for the Data Lifecycle Manager.
+
+---
+
+### Problem: Edge Alert Messages Not Formatted Correctly
+
+**Symptom:** MVI Edge sends alerts via MQTT or Twilio SMS, but the messages contain raw data instead of human-readable content.
+
+**Diagnosis:** MAS 9.0 introduced alert message templates. If templates are not configured, Edge sends raw JSON payloads.
+
+**Fix:** Configure alert message templates in the Edge administration interface. Templates support variable substitution for detection class, confidence score, timestamp, and camera ID. For Twilio SMS integration, keep messages under 160 characters for single-segment delivery.
+
+---
+
+## Integration Troubleshooting
+
+### Problem: MVI to Monitor MQTT Alert Pipeline Fails
+
+**Symptom:** MVI Edge detects defects and sends MQTT messages, but Monitor does not receive them or does not create alerts.
+
+**Diagnosis:**
+
+```
+  MVI-TO-MONITOR MQTT DIAGNOSIS
+  ══════════════════════════════
+
+  MVI Edge  ──MQTT──>  Broker  ──MQTT──>  Monitor
+       │                  │                   │
+       │                  │                   │
+  Sending?          Receiving?          Processing?
+  Check Edge        Check broker         Check Monitor
+  logs for          subscription         device type
+  MQTT publish      topics match         configuration
+  confirmations     publish topics
+```
+
+**Fixes:**
+
+1. **Topic mismatch.** The MQTT topic MVI Edge publishes to must exactly match the topic Monitor subscribes to. A single character difference causes silent failure. Verify both configurations.
+2. **Device type not configured.** MVI Edge auto-configures device type and gateway in Monitor. If auto-configuration failed, manually create the device type in Monitor matching the Edge device identifier.
+3. **v2 API version mismatch.** MAS 9.0 introduced v2 MQTT APIs. If Edge sends v2 format but Monitor expects v1 (or vice versa), messages are received but not parsed. Align API versions.
+
+---
+
+### Problem: REST API Authentication Failures
+
+**Symptom:** API calls return 401 Unauthorized or 403 Forbidden errors.
+
+**Diagnosis:**
+
+```bash
+# Test API connectivity and authentication
+curl -k -H "X-Auth-Token: <your-api-key>" \
+  https://<mvi-host>/api/datasets
+
+# If 401: Token is invalid or expired
+# If 403: Token is valid but lacks permissions
+# If connection refused: Wrong host/port
+```
+
+**Fix:**
+
+MVI REST API authentication uses the `X-Auth-Token` header. Common mistakes:
+
+1. **Wrong header name.** It is `X-Auth-Token`, not `Authorization`, not `Bearer`, not `api-key`. This is the most common API integration error.
+2. **Token revoked.** MVI API keys do not expire, but they can be revoked by an administrator. Generate a new key if yours was revoked.
+3. **Incorrect host URL.** The API endpoint is the MVI route on OpenShift, not the OpenShift console URL. Verify with `oc get route -n <mvi-namespace>`.
+
+```bash
+# Key API endpoints for reference
+GET  /api/datasets              # List all datasets
+POST /api/datasets              # Create a dataset
+POST /api/datasets/<id>/files   # Upload images
+GET  /api/dnn-script            # List training scripts
+POST /api/v1/infer              # Run inference
+```
+
+> **Source:** [MVI REST APIs](https://www.ibm.com/docs/en/masv-and-l/maximo-vi/cd?topic=overview-rest-apis)
+
+---
+
+### Problem: Work Order Creation From MVI Detections Not Working
+
+**Symptom:** MVI detects defects and shows them in the UI, but work orders are not created in Maximo Manage.
+
+**Diagnosis:** MVI-to-Manage integration typically flows through Monitor as an intermediary or through direct API calls. Identify which pattern your implementation uses.
+
+**Fix:**
+
+1. **If using Monitor as intermediary:** Fix the MVI-to-Monitor MQTT pipeline first (see above). Then verify Monitor-to-Manage work order rules are configured. Monitor creates work orders based on alert rules -- if no rule exists for MVI alert types, no work order is created.
+2. **If using direct API integration:** Verify the Manage API endpoint is accessible from the MVI/integration layer. Check that the integration service has valid Manage API credentials. Verify work order template mappings exist for each detection class.
+3. **ITSM workflow support.** MAS 9.1 added ITSM workflow support. If you upgraded to 9.1, verify your existing integration is compatible with the new workflow engine.
+
+---
+
+### Problem: Vision-Tools CLI Not Found or Not Working
+
+**Symptom:** You are trying to use the `vision-tools` CLI for batch operations but the command is not found or returns errors.
+
+**Diagnosis:** The vision-tools CLI is a companion utility for batch operations against the MVI API. It is not installed by default with MVI.
+
+**Fix:** Install vision-tools according to the IBM documentation for your version. Verify Python dependencies are met. The CLI uses the same `X-Auth-Token` authentication as the REST API -- configure it with your API key and MVI endpoint URL.
+
+---
+
+## MAS 9.0/9.1 Migration Issues
+
+Upgrading to MAS 9.0 or 9.1 introduces several breaking changes specific to MVI. If you upgraded and things stopped working, this section is your checklist.
+
+### Kepler GPU Removal (MAS 9.0)
+
+**Impact:** Tesla K80 and all Kepler-architecture GPUs are no longer supported.
+
+**Action:** Replace K80s before upgrading. If you already upgraded and training fails, check `nvidia-smi` output for your GPU model. Any Kepler GPU must be replaced with Pascal or newer.
+
+### SSD Training Deprecation (MAS 9.1)
+
+**Impact:** SSD models cannot be trained or retrained. Existing SSD models still run inference.
+
+**Action:** Inventory all SSD models. Plan migration to YOLO v3 (speed priority) or Faster R-CNN (accuracy priority). Retrain using the same training datasets. Compare inference performance before switching production workloads.
+
+### v2 MQTT API (MAS 9.0)
+
+**Impact:** MQTT message format changed for Edge-to-Monitor communication.
+
+**Action:** Update all Monitor subscriptions and parsing rules to handle v2 format. Update any custom MQTT consumers. Test the full alert pipeline after migration.
+
+### GPU Workload Optimization (MAS 9.0)
+
+**Impact:** New capability to assign GPUs specifically to training or inference workloads.
+
+**Action:** This is not a breaking change but an optimization opportunity. Review GPU allocation and assign dedicated GPUs to training during business hours and inference during off-hours, or vice versa based on your workload pattern.
+
+### Edge Diagnostics Dashboard (MAS 9.0)
+
+**Impact:** New centralized monitoring for edge devices.
+
+**Action:** Configure the diagnostics dashboard after upgrade. Use it to monitor edge device health, model version consistency across fleet, and connectivity status.
+
+### Facial Redaction (MAS 9.0)
+
+**Impact:** New capability to automatically redact faces in captured images for privacy compliance.
+
+**Action:** Enable facial redaction on Edge deployments where cameras may capture worker or bystander faces. This addresses GDPR and privacy requirements in regions where visual inspection cameras are deployed in areas with human traffic.
+
+### Java 17 Migration
+
+**Impact:** MAS 9.x components may require Java 17 runtime. Custom integrations using older Java versions may break.
+
+**Action:** Audit all custom integration code. Update Java runtime dependencies. Test custom REST API clients and MQTT consumers against the upgraded environment.
+
+```
+  MAS 9.0/9.1 MIGRATION CHECKLIST
+  ═════════════════════════════════
+
+  PRE-UPGRADE:
+  [ ] Inventory all GPU hardware (remove Kepler)
+  [ ] Inventory all SSD models (plan YOLO v3 migration)
+  [ ] Document current MQTT topic/format configuration
+  [ ] Backup all trained models and datasets
+  [ ] Test custom integrations against 9.x APIs
+
+  POST-UPGRADE:
+  [ ] Verify GPU detection (nvidia-smi on all nodes)
+  [ ] Verify CUDA 11.8+ on all GPU nodes
+  [ ] Test training job on each GPU node
+  [ ] Verify MQTT v2 message flow (Edge to Monitor)
+  [ ] Configure GPU workload optimization
+  [ ] Enable Edge diagnostics dashboard
+  [ ] Enable facial redaction where required
+  [ ] Retrain SSD models as YOLO v3
+  [ ] Validate all API integrations (X-Auth-Token)
+  [ ] Run end-to-end test: capture -> train -> deploy
+      -> infer -> alert -> work order
+```
+
+---
+
+## The Top 20 FAQs
+
+### 1. Why is my MVI training running on CPU instead of GPU?
+
+Check three things: (1) NVIDIA GPU Operator is installed and healthy on OpenShift, (2) your GPU node has the `nvidia.com/gpu` label applied, (3) the training pod has GPU resource requests in its spec. Also verify CUDA version is 11.8+ for MAS 9.0 and your GPU has at least 16 GB VRAM. CPU-only training is 10-50x slower.
+
+### 2. Is MVI available for Android?
+
+No. MVI Mobile is iOS and iPadOS only. There is no Android version and IBM has not announced plans for one. For Android-equipped teams, use MVI Edge with network cameras or the MVI web interface.
+
+### 3. Why did my SSD model stop training after upgrading?
+
+SSD training was deprecated in MAS 9.1. Existing SSD models continue to run inference, but you cannot train new SSD models or retrain existing ones. Migrate to YOLO v3 for comparable real-time detection performance.
+
+### 4. What GPUs does MVI support?
+
+NVIDIA GPUs only. CUDA required. Supported architectures from MAS 9.0: Hopper (H100), Ada Lovelace (RTX 4000, L40), Ampere (A10, A16, A40, A30, A100), Turing (T4), Volta (V100), and Pascal (P4, P40, P100). Kepler (K80) was removed in MAS 9.0. Minimum 16 GB VRAM per GPU.
+
+### 5. Why does my PVC keep failing?
+
+MVI requires ReadWriteMany (RWX) access mode. ReadWriteOnce (RWO) silently fails when multiple pods try to mount the volume simultaneously. Recreate the PVC with RWX access mode. Also ensure minimum 40 GB storage and 3000+ IOPS.
+
+### 6. Which models can I deploy to MVI Mobile?
+
+Only three: GoogLeNet (classification), YOLO v3 (object detection), and Tiny YOLO v3 (lightweight object detection). These are the only architectures that export to Core ML. Faster R-CNN, Detectron2, High Resolution, SSD, Anomaly, and SSN do not export to Core ML.
+
+### 7. How do I authenticate to the MVI REST API?
+
+Use the `X-Auth-Token` HTTP header with your API key. Not `Authorization: Bearer`. Not `api-key`. The header is specifically `X-Auth-Token`. API keys do not expire but can be revoked by an administrator.
+
+### 8. What is the minimum storage requirement?
+
+40 GB PVC storage minimum with ReadWriteMany access mode. 75 GB minimum in `/var` for Docker images on each node. 3000+ IOPS recommended for training workloads.
+
+### 9. How many images do I need to train a model?
+
+Start with 50-100 high-quality, well-labeled images per class for a baseline model. Use auto-labeling to accelerate: train a preliminary model on 5-10 manually labeled images, then use auto-label to annotate the rest. More diverse images (different angles, lighting, conditions) matter more than sheer volume.
+
+### 10. What hyperparameters should I use?
+
+Start with the defaults: max_iter=1500, test_iter=100, test_interval=20, learning_rate=0.001. Reduce learning_rate by 10x if loss oscillates. Increase max_iter if the model has not converged by the end of training. Reduce max_iter if overfitting is detected.
+
+### 11. Can I use custom model architectures?
+
+Custom models were discontinued after MVI v8.7. Use the built-in architectures: GoogLeNet, YOLO v3, Tiny YOLO v3, Faster R-CNN, Detectron2, or the remaining supported options. Custom TensorFlow or PyTorch models are no longer supported.
+
+### 12. What OpenShift version do I need?
+
+OpenShift 4.8.22 or later for the NVIDIA GPU Operator. Check the MAS compatibility matrix for your specific MAS version, as newer MAS releases may require newer OpenShift versions.
+
+### 13. How does MVI Edge communicate with Monitor?
+
+Through MQTT. MVI Edge publishes detection alerts to an MQTT broker. Monitor subscribes to the same topics. MAS 9.0 introduced v2 MQTT APIs. Edge auto-configures the device type and gateway in Monitor during initial setup.
+
+### 14. Can MVI Edge send SMS alerts?
+
+Yes. MVI Edge supports Twilio SMS integration for alert notifications. Configure Twilio credentials in the Edge administration interface. MAS 9.0 added alert message templates so you can customize the SMS content.
+
+### 15. What is the difference between TensorRT and Core ML export?
+
+TensorRT is NVIDIA's inference optimization format -- it runs on NVIDIA GPUs (server, edge, cloud). Core ML is Apple's format -- it runs on iOS/iPadOS devices using the Neural Engine. TensorRT is available for most model architectures. Core ML is only available for GoogLeNet, YOLO v3, and Tiny YOLO v3.
+
+### 16. Why are my augmented training results worse?
+
+Not all augmentations help every dataset. Vertical flip on text or directional defects makes images unnatural. Aggressive blur can destroy the features the model needs to detect. Start with rotate and color augmentation, then add others incrementally. Test each addition against a baseline.
+
+### 17. How do I handle model drift?
+
+Monitor prediction distribution and confidence score trends over time. Track human override rate (how often inspectors disagree with the model). If override rate exceeds 15% or accuracy drops more than 5% from baseline, retrain with recent production data. See Part 10 for the complete governance framework.
+
+### 18. Can I run MVI without GPUs?
+
+Training requires NVIDIA GPUs. There is no way around this requirement. Inference can technically run on CPU, but it is 10-50x slower and not suitable for real-time use cases. For production deployments, GPU is effectively required for both training and inference.
+
+### 19. What deployment options are available?
+
+Five: SaaS on AWS (via AWS Marketplace), SaaS on IBM Cloud (via IBM Cloud Satellite or Terraform), on-premises on Red Hat OpenShift, Azure via Azure Red Hat OpenShift (ARO), or client-managed on RHOCP across any cloud or on-premises environment.
+
+### 20. How do I back up my trained models?
+
+Export models from the MVI UI or via the REST API (`GET /api/dnn-script`). Store exported model artifacts in version-controlled, backed-up storage. Include the training dataset, model configuration, and hyperparameters alongside the model artifact. Before any MAS upgrade, export all production models as a rollback safety net.
+
+---
+
+## Diagnostic Quick Reference
+
+When something breaks and you need to diagnose fast, use this flowchart:
+
+```
+  MVI MASTER DIAGNOSTIC FLOWCHART
+  ═════════════════════════════════
+
+  SYMPTOM: What is happening?
+  ┌─────────────────────────────────────────────┐
+  │                                             │
+  ├─► Training won't start                      │
+  │   └─► GPU detected? ──No──► GPU section     │
+  │       └─Yes─► PVC mounted? ──No──► Storage  │
+  │              └─Yes─► Check pod events        │
+  │                                             │
+  ├─► Training is slow                          │
+  │   └─► GPU or CPU? ──CPU──► GPU section      │
+  │       └─GPU─► IOPS? ──Low──► Upgrade storage│
+  │              └─OK─► Normal for dataset size  │
+  │                                             │
+  ├─► Model won't converge                      │
+  │   └─► Check labels first (90% of the time)  │
+  │       └─Labels OK─► Adjust hyperparameters  │
+  │                                             │
+  ├─► Inference returns errors                  │
+  │   └─► Pod running? ──No──► Check pod events │
+  │       └─Yes─► Auth correct? ──No──► Fix     │
+  │              │                X-Auth-Token   │
+  │              └─Yes─► Check model format      │
+  │                                             │
+  ├─► Mobile sync fails                         │
+  │   └─► iOS device? ──No──► Not supported     │
+  │       └─Yes─► Core ML model? ──No──► Only 3 │
+  │              │                   architectures
+  │              └─Yes─► Check network/API key   │
+  │                                             │
+  ├─► Edge alerts not reaching Monitor          │
+  │   └─► MQTT connected? ──No──► Check broker  │
+  │       └─Yes─► Topics match? ──No──► Align   │
+  │              └─Yes─► v2 API version match?   │
+  │                                             │
+  ├─► Post-upgrade failures                     │
+  │   └─► 9.0: Check GPU arch (Kepler removed)  │
+  │       9.1: Check SSD models (deprecated)    │
+  │       Both: Check MQTT v2 API format        │
+  │                                             │
+  └─► None of the above                         │
+      └─► Collect: pod logs, events, nvidia-smi │
+          oc describe pod, PVC status            │
+          Open IBM support case with all output  │
+  └─────────────────────────────────────────────┘
+```
+
+### Quick Command Reference
+
+```bash
+# GPU health check
+oc describe node <gpu-node> | grep nvidia
+oc exec <gpu-pod> -- nvidia-smi
+
+# Pod diagnostics
+oc get pods -n <mvi-namespace>
+oc describe pod <pod-name>
+oc logs <pod-name>
+oc logs <pod-name> --previous  # logs from crashed pod
+
+# Storage diagnostics
+oc get pvc -n <mvi-namespace>
+oc get pvc <pvc-name> -o yaml | grep accessModes
+
+# API health check
+curl -k -H "X-Auth-Token: <key>" https://<mvi-host>/api/datasets
+
+# MQTT diagnostics (from edge device)
+mosquitto_sub -h <broker> -p <port> -t "#" -v  # subscribe to all topics
+
+# Training status
+curl -k -H "X-Auth-Token: <key>" https://<mvi-host>/api/dnn-script
+```
+
+---
+
+## Key Takeaways
+
+1. **GPU issues are the number one cause of MVI setup failures.** Before troubleshooting anything else, verify NVIDIA hardware, CUDA version, GPU Operator health, and 16 GB VRAM minimum. If the GPU is not working, nothing downstream works.
+
+2. **ReadWriteMany PVC access mode is required and ReadWriteOnce silently fails.** This single configuration error causes intermittent failures that are maddening to diagnose because they only appear when multiple pods try to mount the volume simultaneously.
+
+3. **MVI Mobile is iOS and iPadOS only. Only 3 model architectures export to Core ML.** Plan your model architecture around your deployment target before training. Training a Faster R-CNN model and then discovering it cannot export to mobile wastes weeks of effort.
+
+4. **SSD training is deprecated in MAS 9.1.** If you relied on SSD models, migrate to YOLO v3. Existing SSD models still run inference, giving you time to migrate without production downtime.
+
+5. **Most API integration issues are the wrong authentication header.** MVI uses `X-Auth-Token`, not `Authorization: Bearer`. This single header name causes more integration failures than any other configuration issue.
+
+6. **The MAS 9.0 and 9.1 upgrades introduce breaking changes.** Kepler GPU removal, SSD deprecation, v2 MQTT APIs, and Java 17 migration all require pre-upgrade planning. Do not upgrade production without running through the migration checklist.
+
+7. **When in doubt, check labels.** Model convergence failures, poor accuracy, unexpected predictions -- the root cause is bad labels more often than bad architecture, bad hyperparameters, or bad infrastructure.
+
+---
+
+## Conclusion: The Troubleshooting Mindset
+
+MVI troubleshooting follows a pattern: infrastructure first, then data, then model, then integration.
+
+Most teams troubleshoot in the wrong order. They adjust hyperparameters when the GPU is not detected. They retrain models when the labels are wrong. They debug API code when the authentication header is misspelled.
+
+Start at the bottom of the stack. Verify the GPU. Verify the storage. Verify the pod is running. Then move up to data quality, model configuration, and integration. This order solves 90% of issues faster than any other approach.
+
+And if you have read this entire blog and your problem still is not solved, you now have the vocabulary and diagnostics to open an IBM support case that gets results. "My training is slow" gets triaged to the back of the queue. "Training pod has GPU resource requests but nvidia-smi shows 0% utilization, GPU Operator pods are in CrashLoopBackOff, and the operator logs show a driver version mismatch on a Tesla V100 node running CUDA 11.7" gets escalated immediately.
+
+Be specific. Show your work. Fix it faster.
+
+---
+
+**Previous:** [Part 11 - REST API Reference](/blog/mas-visual-inspection-rest-api-reference)
+
+**Series Index:** [MAS Visual Inspection Series](/blog/mas-visual-inspection-series-index)
+
+**Series:** MAS VISUAL INSPECTION | Part 12 of 12
+
+---
+
+**TheMaximoGuys** | Enterprise Maximo. No fluff. Just results.

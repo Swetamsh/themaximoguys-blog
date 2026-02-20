@@ -1,0 +1,463 @@
+---
+title: "MVI Deployment & Infrastructure: Choosing Your Path and Sizing Your Hardware"
+description: "Everything you need to plan MVI infrastructure. Five deployment options (SaaS, on-prem, Azure, client-managed), NVIDIA GPU requirements, storage sizing, and AppPoint licensing explained."
+date: "2026-02-19"
+slug: "mas-visual-inspection-deployment-infrastructure"
+tags: ["Maximo Visual Inspection", "MVI", "MAS Deployment", "Red Hat OpenShift", "SaaS", "Licensing", "GPU Requirements", "IBM Maximo", "AppPoints", "Infrastructure Planning"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "AI & Visual Inspection Specialists"]
+coverImage: "./images/mas-visual-inspection-03.png"
+
+faqs:
+  - question: "What are the deployment options for Maximo Visual Inspection?"
+    answer: "MVI deploys five ways: SaaS on AWS (via AWS Marketplace), SaaS on IBM Cloud (via IBM Cloud Satellite or Terraform), on-premises on Red Hat OpenShift, on Azure via Azure Red Hat OpenShift, or client-managed on RHOCP across any cloud or on-premises environment. Self-managed gives maximum control, and SaaS offers the fastest time to value with zero infrastructure management."
+  - question: "What hardware do I need for Maximo Visual Inspection?"
+    answer: "MVI training requires NVIDIA GPUs with minimum 16 GB GPU memory per GPU and CUDA 11.8 or later. Supported architectures include Hopper (H100), Ada Lovelace (RTX 4000, L40), Ampere (A10, A16, A40, A30, A100), Turing (T4), Volta (V100), and Pascal (P4, P40, P100). Kepler GPUs are no longer supported from MAS 9.0."
+  - question: "How is Maximo Visual Inspection licensed?"
+    answer: "MVI is included in the MAS entitlement through AppPoint-based concurrent licensing. Users are tiered: Limited (5 AppPoints), Base (10 AppPoints), and Premium (15 AppPoints). MVI requires Premium tier access. The minimum subscription is 12 months and is non-cancellable. MVI Edge has separate device-based licensing."
+
+keyTakeaways:
+  - "Five deployment options: SaaS on AWS, SaaS on IBM Cloud, on-premises OpenShift, Azure, or client-managed RHOCP"
+  - "NVIDIA GPUs required with minimum 16 GB VRAM per GPU and CUDA 11.8+"
+  - "MVI is included in MAS entitlement via AppPoint licensing at the Premium tier"
+  - "GPU configuration is the number one source of setup failures"
+  - "Storage requires ReadWriteMany access mode -- ReadWriteOnce will fail"
+
+series:
+  name: "MAS VISUAL INSPECTION"
+  part: 3
+  total: 12
+
+tldr: "MVI deploys on Red Hat OpenShift (self-managed), SaaS on AWS or IBM Cloud, Azure, or client-managed RHOCP. NVIDIA GPUs with 16 GB minimum VRAM and CUDA 11.8+ are required for training. Licensing is through MAS AppPoints at the Premium tier. This guide covers every deployment option, GPU requirement, storage configuration, and licensing detail so your infrastructure planning starts right."
+seoTitle: "MVI Deployment & Infrastructure: Deployment Options, GPU, and Licensing Guide | TheMaximoGuys"
+seoDescription: "Plan IBM Maximo Visual Inspection infrastructure. Five deployment options, NVIDIA GPU requirements, storage sizing, and AppPoint licensing explained."
+targetQuestions:
+  - "How do I deploy IBM Maximo Visual Inspection?"
+  - "What are the deployment options for MVI?"
+  - "How is MVI licensed in MAS?"
+  - "What GPU hardware does MVI require?"
+semanticKeywords:
+  - "MVI deployment options"
+  - "Maximo Visual Inspection infrastructure"
+  - "MAS SaaS deployment"
+  - "MVI licensing AppPoints"
+  - "GPU requirements MVI"
+  - "OpenShift visual inspection"
+  - "CUDA 11.8 MVI"
+  - "NVIDIA GPU MVI"
+  - "MVI storage requirements"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Understanding of MVI capabilities and use cases (Part 1)"
+  - "Basic familiarity with IBM Maximo Application Suite architecture"
+  - "Access to MAS environment or cloud subscription"
+speakableSections:
+  - "Introduction"
+  - "Deployment Options"
+  - "GPU Requirements"
+  - "Licensing"
+relatedSlugs:
+  - "mas-visual-inspection-introduction"
+  - "mas-visual-inspection-installation-first-project"
+  - "mas-predict-getting-started"
+  - "getting-started-maximo-ai"
+---
+
+> **Who this is for:** IT architects planning MVI infrastructure, Maximo administrators setting up the environment, and project leads who need to know what is required before telling the team "go." If you have budget approval and need a deployment plan, this is your starting point.
+
+**Read Time:** 12-15 minutes
+
+---
+
+## The Setup Nobody Talks About
+
+You have seen the demo. The sales engineer clicked three buttons, a model appeared, and defects lit up in red boxes on screen. Looked like 20 minutes of work.
+
+Here is what the demo did not show: the OpenShift cluster provisioning, the GPU node configuration, the storage class setup, the license activation, the network policy configuration, and the 47 other infrastructure decisions that happened before that first click.
+
+> *"We budgeted 2 weeks for MVI setup. It took 6 weeks. Not because it is hard -- because nobody told us what we actually needed before we started."*
+
+This blog is the checklist that does not exist in the official documentation. Every prerequisite, every decision point, every gotcha. So your 6 weeks becomes 2 weeks.
+
+---
+
+## Deployment Options: Choosing Your Path
+
+MVI runs in five deployment configurations. Your choice depends on existing infrastructure, data sovereignty requirements, and how much you want to manage. These are the verified deployment paths from IBM documentation.
+
+### Option 1: SaaS on AWS (AWS Marketplace)
+
+**What it is:** MVI deployed as part of MAS SaaS, available through the AWS Marketplace. IBM manages the infrastructure.
+
+```
+  SaaS ON AWS ARCHITECTURE
+  ========================
+
+  ┌───────────────────────────────────┐
+  │  AWS Cloud (Managed by IBM)       │
+  │                                   │
+  │  ┌─────────────────────────────┐  │
+  │  │  MAS SaaS                   │  │
+  │  │  ┌──────────┐ ┌──────────┐ │  │
+  │  │  │ MVI      │ │ Manage   │ │  │
+  │  │  │          │ │          │ │  │
+  │  │  └──────────┘ └──────────┘ │  │
+  │  │  ┌──────────┐ ┌──────────┐ │  │
+  │  │  │ GPU      │ │ Storage  │ │  │
+  │  │  │ (Managed)│ │ (Managed)│ │  │
+  │  │  └──────────┘ └──────────┘ │  │
+  │  └─────────────────────────────┘  │
+  └───────────────────────────────────┘
+
+  You: Upload images, label, train, deploy
+  IBM: Everything else
+```
+
+**Pros:**
+- Zero infrastructure management
+- Fastest time to value (days, not weeks)
+- IBM handles upgrades, patches, GPU scaling
+- AWS Marketplace procurement simplifies purchasing
+- Predictable subscription cost
+
+**Cons:**
+- Data resides in AWS Cloud
+- Less customization flexibility
+- Network dependency for all operations
+- May not meet air-gapped or data sovereignty requirements
+
+**Best for:** Teams wanting fastest start, organizations already on AWS, pilot projects evaluating MVI before committing to self-managed.
+
+### Option 2: SaaS on IBM Cloud
+
+**What it is:** MVI deployed as part of MAS SaaS on IBM Cloud infrastructure. Available through IBM Cloud Satellite or Terraform provisioning.
+
+**Pros:**
+- IBM Cloud Satellite enables hybrid cloud patterns
+- Terraform support for infrastructure-as-code deployment
+- Tight integration with IBM ecosystem
+- IBM manages core infrastructure
+
+**Cons:**
+- IBM Cloud ecosystem dependency
+- Less flexibility than self-managed
+
+**Best for:** Organizations already invested in IBM Cloud, teams wanting Satellite hybrid patterns.
+
+### Option 3: On-Premises on Red Hat OpenShift
+
+**What it is:** MVI deployed as part of MAS on your own OpenShift cluster, running on your infrastructure.
+
+```
+  ON-PREMISES ARCHITECTURE
+  ========================
+
+  ┌───────────────────────────────────┐
+  │  Your Infrastructure (On-Prem)    │
+  │                                   │
+  │  ┌─────────────────────────────┐  │
+  │  │  Red Hat OpenShift (4.8.22+)│  │
+  │  │                             │  │
+  │  │  ┌──────────┐ ┌──────────┐ │  │
+  │  │  │ MAS Core │ │ MVI      │ │  │
+  │  │  │          │ │ Server   │ │  │
+  │  │  └──────────┘ └──────────┘ │  │
+  │  │  ┌──────────┐ ┌──────────┐ │  │
+  │  │  │ Manage   │ │ GPU Node │ │  │
+  │  │  │          │ │ (Train)  │ │  │
+  │  │  └──────────┘ └──────────┘ │  │
+  │  └─────────────────────────────┘  │
+  └───────────────────────────────────┘
+```
+
+**Pros:**
+- Full control over infrastructure, security, and data
+- Data never leaves your network
+- Customizable GPU scaling
+- Integrates with existing on-premises systems
+- Air-gapped deployment possible
+
+**Cons:**
+- You manage OpenShift, GPUs, storage, networking
+- Requires OpenShift admin expertise
+- GPU hardware procurement can take months
+- Upgrades are your responsibility
+
+**Best for:** Regulated industries (defense, government, healthcare), organizations with existing OpenShift teams, sites with air-gapped requirements.
+
+### Option 4: Azure (Azure Red Hat OpenShift)
+
+**What it is:** MVI on Azure Red Hat OpenShift (ARO), combining Azure cloud with OpenShift container platform.
+
+**Pros:**
+- Azure cloud scale with OpenShift containerization
+- Integration with Azure services
+- Managed OpenShift control plane
+- GPU VM instances available (NVIDIA A10, A100, T4)
+
+**Cons:**
+- Azure and Red Hat combined licensing
+- More complex than pure SaaS
+- Azure region availability considerations
+
+**Best for:** Organizations standardized on Azure cloud, teams wanting managed OpenShift without on-premises infrastructure.
+
+### Option 5: Client-Managed (RHOCP on Any Cloud or On-Prem)
+
+**What it is:** Red Hat OpenShift Container Platform running on any supported infrastructure -- your cloud, your data center, your choice.
+
+**Pros:**
+- Maximum flexibility in infrastructure choice
+- Run on AWS, Azure, GCP, IBM Cloud, or bare metal
+- Full control over configuration and scaling
+- Can move between providers
+
+**Cons:**
+- You manage everything
+- Highest operational overhead
+- Requires deep OpenShift expertise
+
+**Best for:** Multi-cloud organizations, teams with strong OpenShift skills, complex infrastructure requirements.
+
+### Decision Matrix
+
+```
+  DEPLOYMENT DECISION MATRIX
+  ==========================
+
+  Requirement                    On-Prem    SaaS AWS   SaaS IBM   Azure    Client
+  ─────────────────────────────  ─────────  ────────   ────────   ─────    ──────
+  Data stays on-premises         YES        NO         PARTIAL    NO       YES
+  Air-gapped deployment          YES        NO         NO         NO       YES
+  Fastest time to value          NO         YES        YES        NO       NO
+  Minimal admin overhead         NO         YES        YES        PARTIAL  NO
+  GPU scaling flexibility        HIGH       LOW        LOW        MEDIUM   HIGH
+  OpenShift expertise needed     YES        NO         NO         PARTIAL  YES
+  AWS Marketplace procurement    NO         YES        NO         NO       NO
+  Regulated industry             BEST       CHECK      CHECK      CHECK    GOOD
+  Lowest total cost (3 yr)       DEPENDS    MEDIUM     MEDIUM     MEDIUM   DEPENDS
+```
+
+---
+
+## The GPU Requirements: This Is Where Teams Get Burned
+
+GPU configuration is the number one source of setup failures. IBM's documentation is specific, and deviating from it wastes weeks.
+
+### NVIDIA Only -- No Exceptions
+
+**MVI requires NVIDIA GPUs.** AMD, Intel, and other GPU vendors are not supported. The entire training pipeline depends on CUDA.
+
+```
+  GPU REQUIREMENTS (IBM VERIFIED)
+  ===============================
+
+  HARD REQUIREMENTS:
+  ──────────────────
+  - NVIDIA GPUs ONLY (CUDA required)
+  - Minimum GPU memory: 16 GB per GPU
+  - CUDA 11.8+ required (from MAS 9.0)
+  - NVIDIA GPU Operator on OpenShift
+
+  SUPPORTED GPU ARCHITECTURES:
+  ────────────────────────────
+  Architecture     GPU Models              MAS Version
+  ──────────────   ─────────────────────   ──────────
+  Hopper           H100                    9.0+ only
+  Ada Lovelace     RTX 4000, L40           9.0+ only
+  Ampere           A10, A16, A40, A30,     8.8+
+                   A100
+  Turing           T4                      8.8+
+  Volta            V100                    8.8+
+  Pascal           P4, P40, P100           8.8+
+
+  NO LONGER SUPPORTED:
+  ────────────────────
+  Kepler           K80, etc.              REMOVED in 9.0
+
+  EDGE DEVICE:
+  ────────────
+  NVIDIA Jetson Xavier NX with
+  nvidia-jetpack 4.5.1-b17
+```
+
+> **Key insight:** If you are running MAS 9.0 or later and have Kepler GPUs (K80), they will not work. You must upgrade. This catches teams who assume their existing GPU servers from a few years ago will suffice. The Ada Lovelace and Hopper support in 9.0 is the flip side -- you CAN now use the latest NVIDIA hardware.
+
+### GPU Sizing Guidelines
+
+```
+  GPU SIZING BY WORKLOAD
+  ======================
+
+  TRAINING WORKLOADS:
+  ──────────────────
+  Small models (classification, <1000 images):
+    Minimum: T4 (16 GB)
+    Recommended: V100 (32 GB) or A10 (24 GB)
+
+  Medium models (detection, 1000-5000 images):
+    Minimum: V100 (32 GB)
+    Recommended: A100 (40/80 GB)
+
+  Large models (Detectron2, High-Res, >5000 images):
+    Recommended: A100 (80 GB)
+    Enterprise: H100 (80 GB)
+
+  INFERENCE WORKLOADS:
+  ───────────────────
+  Low volume (<100 images/hour): CPU acceptable
+  Medium volume (100-1000 images/hour): T4
+  High volume (>1000 images/hour): A10 or better
+  Real-time production line: GPU required
+
+  GPU WORKLOAD OPTIMIZATION (MAS 9.0+):
+  ─────────────────────────────────────
+  MAS 9.0 introduced admin controls to specify
+  which GPUs handle training versus inference.
+  This prevents training jobs from starving
+  inference workloads (or vice versa).
+
+  Configure in MVI admin settings:
+  - Training GPUs: Dedicated for model training
+  - Inference GPUs: Dedicated for deployed models
+  - Shared GPUs: Available for both (default)
+```
+
+### Storage Requirements
+
+```
+  STORAGE REQUIREMENTS (IBM VERIFIED)
+  ====================================
+
+  Docker Images:
+  - Minimum 75 GB in /var for Docker images
+  - This is on the HOST, not the PVC
+
+  Persistent Storage:
+  - Minimum 40 GB PVC storage
+  - Access mode: ReadWriteMany (RWX)
+  - ReadWriteMany is REQUIRED -- ReadWriteOnce will fail
+  - Recommended: 500 GB+ for production image volumes
+  - Enterprise: 2 TB+ for large-scale deployments
+
+  Storage Class Requirements:
+  - Block storage for databases
+  - File storage with RWX for image data
+  - Performance: 3000+ IOPS for training workloads
+  - NFS, IBM Spectrum Scale, or equivalent
+```
+
+---
+
+## Licensing: Get This Wrong and Nothing Else Matters
+
+MVI licensing has changed significantly with the move to MAS. The old standalone license models are gone. Here is exactly how it works.
+
+### AppPoint-Based Concurrent Licensing
+
+```
+  MAS LICENSING MODEL
+  ===================
+
+  MAS uses AppPoints -- a credit-based,
+  concurrent licensing system.
+
+  USER TIERS:
+  ──────────
+  Tier       AppPoints    Access Level
+  ────────   ─────────    ─────────────────────────
+  Limited    5            Basic MAS access
+  Base       10           Standard MAS applications
+  Premium    15           Full MAS + MVI access
+
+  MVI REQUIRES PREMIUM TIER ACCESS.
+  There is no way around this. Limited and Base
+  tier users cannot access Visual Inspection.
+
+  SUBSCRIPTION TERMS:
+  ──────────────────
+  - Minimum subscription: 12 months
+  - Non-cancellable once activated
+  - MVI is INCLUDED in MAS entitlement
+    (not a separate purchase)
+  - AppPoints are consumed concurrently
+    (not per-named-user)
+
+  WHAT THIS MEANS IN PRACTICE:
+  ───────────────────────────
+  If you have 100 AppPoints and 5 Premium users
+  need MVI simultaneously:
+    5 users x 15 AppPoints = 75 AppPoints consumed
+    25 AppPoints remaining for other MAS applications
+
+  EDGE LICENSING:
+  ──────────────
+  MVI Edge has SEPARATE device-based licensing.
+  Each edge device requires its own license.
+  This is separate from user AppPoints.
+```
+
+### Licensing Checklist
+
+```
+  LICENSING CHECKLIST
+  ===================
+
+  [ ] MAS entitlement activated
+      - Confirm via IBM License Metric Tool (ILMT)
+      - Verify entitlement covers MVI (Premium tier)
+
+  [ ] AppPoint allocation planned
+      - Count concurrent Premium users needed
+      - Include MVI labelers, trainers, and reviewers
+      - Include admin and integration service accounts
+
+  [ ] Subscription term confirmed
+      - Minimum 12-month commitment
+      - Non-cancellable -- budget accordingly
+
+  [ ] MVI Edge device licenses (if applicable)
+      - Count all edge deployment devices
+      - Each device needs separate license
+
+  [ ] IBM entitlement key
+      - Active key from My IBM / Passport Advantage
+      - Not expired
+      - Covers MAS + MVI components
+```
+
+---
+
+## Key Takeaways
+
+1. **Five deployment paths serve different needs** -- SaaS on AWS for fastest start and Marketplace procurement, SaaS on IBM Cloud for hybrid patterns, on-premises OpenShift for data sovereignty, Azure for Azure-standardized organizations, and client-managed RHOCP for maximum flexibility. Choose based on your infrastructure reality, not aspirations.
+
+2. **NVIDIA GPUs with 16 GB VRAM minimum are non-negotiable for training** -- CUDA 11.8+ required from MAS 9.0. Kepler GPUs are no longer supported. MAS 9.0 adds Hopper (H100) and Ada Lovelace (RTX 4000, L40) support. Budget for GPU from day one.
+
+3. **GPU configuration is the number one source of setup failures** -- GPU Operator installation, CUDA version, node labeling, resource quotas, namespace access, and minimum VRAM all must be correct. MAS 9.0 adds GPU workload optimization for separating training and inference.
+
+4. **Storage requires ReadWriteMany access mode** -- ReadWriteOnce will silently fail. Minimum 40 GB PVC with RWX, 75 GB in /var for Docker images. Budget 500 GB+ for production image volumes.
+
+5. **Licensing is through MAS AppPoints at the Premium tier** -- MVI is not a separate product. It requires Premium user access (15 AppPoints per concurrent user). Minimum 12-month non-cancellable subscription. MVI Edge has separate device-based licensing.
+
+---
+
+## What Comes Next
+
+Your deployment path is chosen, your GPU hardware is planned, and your licenses are in order. In Part 4, we verify prerequisites and install MVI -- the prerequisites checklist, MAS 9.0 and 9.1 changes, the installation walkthrough, GPU configuration gotchas, and your first project to prove the pipeline works end-to-end.
+
+---
+
+**Previous:** [Part 2 - Computer Vision Fundamentals for Asset Managers](/blog/mas-visual-inspection-cv-fundamentals)
+
+**Next:** [Part 4 - Installation & Your First MVI Project](/blog/mas-visual-inspection-installation-first-project)
+
+**Series:** MAS VISUAL INSPECTION | Part 3 of 12
+
+---
+
+**TheMaximoGuys** | Enterprise Maximo. No fluff. Just results.

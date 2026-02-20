@@ -1,0 +1,543 @@
+---
+title: "Alerts and Automation in Maximo Monitor: From Detection to Work Order in Seconds"
+description: "Configure intelligent alert rules, severity-based escalation, multi-channel notifications, and automated work order creation in IBM Maximo Monitor."
+date: "2026-02-19"
+slug: "mas-monitor-alerts-automation"
+tags: ["Maximo Monitor", "IoT", "Alerts", "Automation", "Work Orders", "Notifications", "MAS"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "IoT & Real-Time Analytics Specialists"]
+coverImage: "./images/mas-monitor-06.png"
+
+faqs:
+  - question: "How do I prevent alert fatigue in Maximo Monitor?"
+    answer: "Use duration requirements so transient spikes do not trigger alerts. Implement hysteresis dead-bands so alerts do not fire repeatedly at boundary values. Correlate related alerts to group cascading failures. Review and tune thresholds monthly based on false positive rates."
+  - question: "Can Maximo Monitor automatically create work orders in Manage?"
+    answer: "Yes. Monitor integrates natively with Maximo Manage to create work orders when alerts fire. You configure the mapping from alert severity to work order priority, specify the asset, location, work type, and failure description. The work order appears in Manage ready for scheduling."
+  - question: "What notification channels does Maximo Monitor support?"
+    answer: "Monitor supports email, SMS, and webhook-based notifications out of the box. Webhooks enable integration with Microsoft Teams, Slack, PagerDuty, ServiceNow, and any system that accepts HTTP POST requests. You can route different severities to different channels."
+
+keyTakeaways:
+  - "Duration-based alerts prevent false positives from transient sensor spikes"
+  - "Compound alerts that combine multiple metrics catch complex failure patterns"
+  - "Escalation policies ensure critical alerts reach the right person within defined timeframes"
+  - "Automatic work order creation in Maximo Manage closes the loop from sensor to wrench turn"
+  - "Alert analytics -- MTTA, MTTR, false positive rate -- drive continuous threshold improvement"
+
+series:
+  name: "MAS MONITOR"
+  part: 6
+  total: 8
+
+tldr: "This post covers the alerting and automation stack in Maximo Monitor: threshold, pattern, and anomaly-based alert rules; severity classification and prioritization matrices; notification routing to email, SMS, Teams, Slack, and PagerDuty; escalation procedures; automated work order creation in Manage; and techniques to eliminate alert fatigue."
+seoTitle: "Maximo Monitor Alerts & Automation - Work Order Integration | TheMaximoGuys"
+seoDescription: "Configure intelligent alerts, multi-channel notifications, escalation policies, and automated work orders in IBM Maximo Monitor."
+targetQuestions:
+  - "How do I set up alerts in Maximo Monitor?"
+  - "Can Maximo Monitor create work orders automatically?"
+  - "How do I reduce alert fatigue in IoT monitoring?"
+semanticKeywords:
+  - "Maximo Monitor alerts"
+  - "IoT alert automation"
+  - "work order automation"
+  - "alert fatigue prevention"
+  - "notification escalation"
+  - "Maximo Manage integration"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Running Monitor environment with analytics (Parts 2-5)"
+  - "Understanding of alert severity frameworks"
+  - "Maximo Manage instance for work order integration"
+speakableSections:
+  - "Introduction"
+  - "Alert Rule Types"
+  - "Automation Actions"
+relatedSlugs:
+  - "mas-monitor-analytics-ai"
+  - "mas-monitor-integration-apis"
+  - "mas-monitor-best-practices"
+---
+
+## An Alert Nobody Reads Is Worse Than No Alert At All
+
+We audited a plant's Monitor configuration last year. They had 847 active alert rules. Eight hundred and forty-seven.
+
+On a typical Monday morning, operators received 200+ alerts before lunch. Know how many they investigated? Three. Maybe four.
+
+The rest? Dismissed. In bulk. Without reading them.
+
+> *"I get so many alerts that I stopped looking. If something is really wrong, someone will call me."*
+
+That is alert fatigue. And it is the single most common failure mode of IoT monitoring deployments. Not bad sensors. Not wrong data. Too many alerts that cry wolf until nobody listens.
+
+This post is about building an alerting system people trust. One that fires when it matters, stays quiet when it does not, and -- when it does fire -- drives immediate action all the way to a work order.
+
+---
+
+> **Who this is for:** Maximo administrators configuring alert rules, maintenance managers designing escalation procedures, reliability engineers tuning thresholds, and operations teams drowning in notifications they have learned to ignore.
+
+---
+
+## The Alert Processing Pipeline
+
+Every alert in Monitor follows this path:
+
+```
+Data Stream ──► Rule Evaluation ──► Alert Generation ──► Notification ──► Action
+                    │                     │                 │              │
+               Thresholds            Severity          Email/SMS      Work Order
+               Patterns              Grouping          Webhook        Automation
+               Anomalies            Correlation        Dashboard       Escalation
+```
+
+### Alert Components
+
+Every alert has six parts. Miss one and your alerting system has a gap.
+
+| Component | What It Is | Why It Matters |
+|-----------|-----------|---------------|
+| **Trigger** | The condition that fires the alert | Wrong trigger = false positives |
+| **Severity** | Critical / High / Medium / Low | Drives response urgency |
+| **Message** | What the operator reads | Must be actionable in 5 seconds |
+| **Context** | Related data and metadata | Enables fast diagnosis |
+| **Action** | What happens next | Without action, alerts are noise |
+| **Lifecycle** | New -> Acknowledged -> Resolved | Tracks accountability |
+
+---
+
+## Alert Rule Types
+
+### Basic Threshold Alerts
+
+The simplest and most common. A metric exceeds a value.
+
+```json
+{
+  "name": "High Bearing Temperature",
+  "deviceType": "Motor",
+  "condition": {
+    "type": "threshold",
+    "metric": "bearing_temp",
+    "operator": "greaterThan",
+    "value": 85
+  },
+  "severity": "high",
+  "message": "Bearing temp ${value} C exceeds 85 C limit on ${deviceId}"
+}
+```
+
+### Duration-Based Alerts
+
+Only fire if the condition persists. This single feature eliminates more false positives than any other.
+
+```json
+{
+  "name": "Sustained High Temperature",
+  "deviceType": "Motor",
+  "condition": {
+    "type": "duration",
+    "metric": "bearing_temp",
+    "operator": "greaterThan",
+    "value": 75,
+    "duration": "10m"
+  },
+  "severity": "high",
+  "message": "Bearing temp has exceeded 75 C for 10+ minutes on ${deviceId}"
+}
+```
+
+A temperature spike to 80 C for 30 seconds during startup? Not an alert. Sustained 80 C for 10 minutes under normal load? Absolutely an alert.
+
+### Rate of Change Alerts
+
+Detect rapid changes that indicate something went wrong, even if the absolute value is not alarming yet.
+
+```json
+{
+  "name": "Rapid Temperature Rise",
+  "deviceType": "Motor",
+  "condition": {
+    "type": "rateOfChange",
+    "metric": "bearing_temp",
+    "rate": 5,
+    "timeWindow": "5m",
+    "direction": "increasing"
+  },
+  "severity": "critical",
+  "message": "Temperature rising ${rate} C/min on ${deviceId} - potential runaway"
+}
+```
+
+### Compound Alerts
+
+Combine multiple conditions. This is where you catch specific failure signatures.
+
+```json
+{
+  "name": "Bearing Failure Pattern",
+  "deviceType": "Motor",
+  "condition": {
+    "type": "compound",
+    "operator": "AND",
+    "conditions": [
+      {"metric": "vibration_rms", "operator": "greaterThan", "value": 4.5},
+      {"metric": "bearing_temp", "operator": "greaterThan", "value": 70},
+      {"metric": "current_draw", "operator": "greaterThan", "value": 15}
+    ]
+  },
+  "severity": "critical",
+  "message": "Bearing failure pattern: vibration ${vibration_rms} mm/s, temp ${bearing_temp} C, current ${current_draw} A on ${deviceId}"
+}
+```
+
+High vibration alone? Could be a loose mounting bolt. High temperature alone? Could be ambient heat. High current alone? Could be a heavy load. All three together? That is a bearing on its way out.
+
+### Anomaly-Based Alerts
+
+Trigger when the anomaly detection engine from Part 5 flags something:
+
+```json
+{
+  "name": "Anomalous Behavior Detected",
+  "deviceType": "Motor",
+  "condition": {
+    "type": "threshold",
+    "metric": "anomaly_score",
+    "operator": "greaterThan",
+    "value": 0.8
+  },
+  "severity": "high",
+  "message": "Anomaly detected (score: ${value}) on ${deviceId} - investigate"
+}
+```
+
+---
+
+## Severity Classification
+
+Not all alerts are created equal. Your severity framework determines who gets woken up at 2 AM.
+
+### The Severity Matrix
+
+| Level | Color | Response Time | Example |
+|-------|-------|---------------|---------|
+| **Critical** | Red | Immediate | Safety hazard, imminent failure, equipment damage |
+| **High** | Orange | Under 1 hour | Performance degradation, approaching limits |
+| **Medium** | Yellow | Under 4 hours | Maintenance needed, efficiency loss |
+| **Low** | Blue | Under 24 hours | Informational, scheduled attention |
+
+### Prioritization: Severity x Asset Criticality
+
+A high-severity alert on a backup pump is less urgent than a medium-severity alert on the only pump feeding the production line.
+
+```
+                    Asset Criticality
+                  Low      Medium     High
+            ┌──────────┬──────────┬──────────┐
+   Critical │    P2    │    P1    │    P1    │
+            ├──────────┼──────────┼──────────┤
+   High     │    P3    │    P2    │    P1    │
+Severity    ├──────────┼──────────┼──────────┤
+   Medium   │    P4    │    P3    │    P2    │
+            ├──────────┼──────────┼──────────┤
+   Low      │    P5    │    P4    │    P3    │
+            └──────────┴──────────┴──────────┘
+
+P1 = Respond within 15 minutes
+P2 = Respond within 1 hour
+P3 = Respond within 4 hours
+P4 = Respond within 24 hours
+P5 = Next scheduled review
+```
+
+---
+
+## Notification Channels
+
+### Email
+
+Good for: medium and low severity, documentation, shift handoff.
+
+```json
+{
+  "channel": "email",
+  "recipients": ["maintenance-team@company.com"],
+  "subject": "[${severity}] ${alertName} - ${deviceId}",
+  "body": "Device: ${deviceId}\nLocation: ${location}\nValue: ${value}\nTime: ${timestamp}\n\nPlease investigate."
+}
+```
+
+### SMS
+
+Good for: critical and high severity, on-call notifications.
+
+```json
+{
+  "channel": "sms",
+  "recipients": ["+1234567890"],
+  "message": "CRITICAL: ${alertName} on ${deviceId}. Value: ${value}. Respond now.",
+  "severityFilter": ["critical"]
+}
+```
+
+### Microsoft Teams
+
+```json
+{
+  "channel": "webhook",
+  "url": "https://outlook.office.com/webhook/...",
+  "body": {
+    "@type": "MessageCard",
+    "themeColor": "${severityColor}",
+    "summary": "${alertName}",
+    "sections": [{
+      "activityTitle": "${alertName}",
+      "facts": [
+        {"name": "Device", "value": "${deviceId}"},
+        {"name": "Severity", "value": "${severity}"},
+        {"name": "Value", "value": "${value}"}
+      ]
+    }],
+    "potentialAction": [{
+      "@type": "OpenUri",
+      "name": "View in Monitor",
+      "targets": [{"os": "default", "uri": "${dashboardUrl}"}]
+    }]
+  }
+}
+```
+
+### PagerDuty
+
+For organizations with on-call rotation:
+
+```json
+{
+  "channel": "webhook",
+  "url": "https://events.pagerduty.com/v2/enqueue",
+  "body": {
+    "routing_key": "${PAGERDUTY_KEY}",
+    "event_action": "trigger",
+    "dedup_key": "${alertId}",
+    "payload": {
+      "summary": "${alertName} on ${deviceId}",
+      "severity": "${pagerduty_severity}",
+      "source": "Maximo Monitor"
+    }
+  }
+}
+```
+
+---
+
+## Escalation Procedures
+
+Alerts without escalation are alerts without accountability.
+
+### Time-Based Escalation
+
+```json
+{
+  "escalationPolicy": {
+    "levels": [
+      {
+        "delayMinutes": 0,
+        "channel": "email",
+        "recipients": ["operator-on-duty@company.com"]
+      },
+      {
+        "delayMinutes": 15,
+        "channel": "sms",
+        "recipients": ["+1234567890"],
+        "condition": "not_acknowledged"
+      },
+      {
+        "delayMinutes": 30,
+        "channel": "email",
+        "recipients": ["maintenance-supervisor@company.com"],
+        "condition": "not_acknowledged"
+      },
+      {
+        "delayMinutes": 60,
+        "channel": "sms",
+        "recipients": ["+0987654321"],
+        "condition": "not_resolved"
+      }
+    ]
+  }
+}
+```
+
+**The rule:** If nobody acknowledges a critical alert within 15 minutes, it escalates. If nobody resolves it within 60 minutes, it escalates again. No exceptions.
+
+---
+
+## Automated Actions
+
+### Work Order Creation in Maximo Manage
+
+This is the closed loop. Sensor detects anomaly. Analytics confirm pattern. Alert fires. Work order lands in Manage. Technician gets dispatched.
+
+No human had to copy data between systems. No one had to remember to create a work order. No failure fell through the cracks because someone was busy.
+
+```json
+{
+  "action": "createWorkOrder",
+  "trigger": "alert_created",
+  "severityFilter": ["critical", "high"],
+  "workOrderTemplate": {
+    "description": "Alert: ${alertName}",
+    "longDescription": "Automated from Monitor.\n\nDevice: ${deviceId}\nMetric: ${metric}\nValue: ${value}\nThreshold: ${threshold}\nTime: ${timestamp}",
+    "workType": "CM",
+    "priority": "${mapSeverityToPriority}",
+    "assetNum": "${assetId}",
+    "location": "${location}",
+    "reportedBy": "MONITOR_SYSTEM",
+    "classificationId": "IOT_ALERT"
+  }
+}
+```
+
+### Equipment Shutdown Commands
+
+For safety-critical conditions, Monitor can send commands back to devices:
+
+```json
+{
+  "action": "sendCommand",
+  "condition": {
+    "alertName": "Critical Overtemperature",
+    "severity": "critical"
+  },
+  "command": {
+    "deviceId": "${deviceId}",
+    "commandType": "emergency_stop",
+    "parameters": {
+      "reason": "Automated safety shutdown - temperature critical",
+      "operator": "MONITOR_SYSTEM"
+    }
+  }
+}
+```
+
+---
+
+## Alert Lifecycle Management
+
+### The Lifecycle
+
+```
+┌─────────┐    ┌──────────────┐    ┌──────────┐    ┌──────────┐
+│   New   │───►│ Acknowledged │───►│ In Work  │───►│ Resolved │
+└─────────┘    └──────────────┘    └──────────┘    └──────────┘
+      │                                                   │
+      └───────────────────────────────────────────────────┘
+                    (Auto-resolve when condition clears)
+```
+
+Every alert state transition should be tracked. Who acknowledged it? When? What was their assessment? Who resolved it? What was the root cause?
+
+This data is gold for continuous improvement. Without it, you cannot measure MTTA (Mean Time to Acknowledge) or MTTR (Mean Time to Resolve).
+
+### Alert Suppression
+
+During planned maintenance, suppress alerts for affected assets:
+
+```json
+{
+  "suppression": {
+    "name": "Quarterly PM - Line 3",
+    "devices": ["MOTOR-031", "MOTOR-032", "PUMP-015"],
+    "startTime": "2026-03-15T22:00:00Z",
+    "endTime": "2026-03-16T06:00:00Z",
+    "reason": "Scheduled quarterly maintenance"
+  }
+}
+```
+
+### Cascading Alert Correlation
+
+When the power goes out, every device in the building goes offline. You do not need 500 "Device Offline" alerts. You need one "Power Loss" alert with the others suppressed.
+
+```json
+{
+  "correlation": {
+    "rootAlert": "Power Loss Detected",
+    "suppressAlerts": ["Device Offline", "Communication Error", "Data Gap"],
+    "timeWindow": "5m",
+    "message": "Related alerts suppressed - upstream power loss"
+  }
+}
+```
+
+---
+
+## Eliminating Alert Fatigue
+
+### The Measurement
+
+Track these metrics monthly:
+
+- **MTTA** -- Mean Time to Acknowledge. Are operators engaging with alerts?
+- **MTTR** -- Mean Time to Resolve. Are issues getting fixed?
+- **False positive rate** -- What percentage of alerts were dismissed without action?
+- **Escalation rate** -- What percentage of alerts had to escalate?
+- **Alert volume** -- How many alerts per shift?
+
+If your false positive rate is above 20%, your thresholds are wrong. If your MTTA is increasing month over month, operators are tuning out.
+
+### The Fixes
+
+1. **Require duration.** If a condition must persist for 10 minutes to be real, enforce that in the rule.
+2. **Implement hysteresis.** If the threshold is 85 C, do not clear the alert until the reading drops to 80 C. Otherwise you get alert-clear-alert-clear oscillation.
+3. **Review monthly.** Pull the alert analytics. Find the rules with the highest false positive rates. Tune or retire them.
+4. **Differentiate by time of day.** A temperature that is alarming during idle time might be normal during startup. Context-aware thresholds reduce noise.
+5. **Correlate aggressively.** One root cause alert with 10 suppressed downstream alerts is better than 11 independent alerts.
+
+---
+
+## The 6 Commandments of Effective Alerting
+
+1. **Every alert must have a clear response action.** If the operator cannot do anything about it, it should not be an alert.
+2. **Duration-based filtering is mandatory.** Never alert on a single data point unless it is a safety-critical extreme.
+3. **Severity must map to response time.** If everything is critical, nothing is critical.
+4. **Automate the handoff.** Work order creation should not require copy-paste between Monitor and Manage.
+5. **Measure your alerting system.** MTTA, MTTR, and false positive rate are non-negotiable KPIs.
+6. **Tune quarterly.** Equipment ages, processes change, seasons shift. Your thresholds must keep pace.
+
+---
+
+## What Comes Next
+
+Your alerting system fires intelligently, routes to the right people, and creates work orders automatically. But Monitor does not exist in isolation.
+
+In [Part 7: Integration and APIs](/blog/mas-monitor-integration-apis), we connect Monitor to the rest of your enterprise:
+- REST API reference for device management and data queries
+- Python SDK for programmatic access
+- Webhook patterns for bidirectional integration
+- Maximo Manage, data lake, and ERP integration patterns
+- Real-time data streaming to external systems
+
+---
+
+## Series Navigation
+
+| Part | Title |
+|------|-------|
+| 1 | [Introduction to IBM Maximo Monitor](/blog/mas-monitor-introduction) |
+| 2 | [Getting Started with Maximo Monitor](/blog/mas-monitor-getting-started) |
+| 3 | [Data Ingestion and Device Management](/blog/mas-monitor-data-ingestion-devices) |
+| 4 | [Dashboards and Visualization](/blog/mas-monitor-dashboards-visualization) |
+| 5 | [Analytics and AI Integration](/blog/mas-monitor-analytics-ai) |
+| **6** | **Alerts and Automation (You are here)** |
+| 7 | [Integration and APIs](/blog/mas-monitor-integration-apis) |
+| 8 | [Best Practices and Case Studies](/blog/mas-monitor-best-practices) |
+
+---
+
+*Built by practitioners. For practitioners. No fluff.*
+
+**TheMaximoGuys** -- Maximo expertise, delivered different.

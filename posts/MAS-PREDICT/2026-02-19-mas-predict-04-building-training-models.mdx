@@ -1,0 +1,500 @@
+---
+title: "Building and Training Predictive Models in Maximo Predict: From Features to Forecasts"
+description: "The complete guide to model development in Maximo Predict. Model types, feature selection, training, validation, quality metrics, and what to do when your first model is terrible."
+date: "2026-02-19"
+slug: "mas-predict-building-training-models"
+tags: ["Maximo Predict", "Machine Learning", "Model Training", "Predictive Maintenance", "MAS", "Feature Engineering", "Model Validation"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Predictive Maintenance Specialists"]
+coverImage: "./images/mas-predict-04.png"
+
+faqs:
+  - question: "What types of predictive models does Maximo Predict support?"
+    answer: "Maximo Predict supports four primary model types: failure probability models that estimate likelihood of failure within a time window, remaining useful life models that estimate time until failure, anomaly detection models that flag unusual behavior, and classification models that predict which failure mode is most likely."
+  - question: "What is a good ROC-AUC score for a Maximo Predict model?"
+    answer: "For predictive maintenance, a ROC-AUC above 0.75 is generally useful. Above 0.80 is good. Above 0.85 is strong. But do not chase perfect scores. A model with 0.78 AUC that catches 70 percent of failures with acceptable false alarm rates is infinitely more valuable than a 0.95 model that never gets deployed."
+  - question: "How many failure examples do I need to train a model?"
+    answer: "As a practical minimum, aim for 30 or more failure examples for your target failure mode. Fewer than 15 makes reliable training very difficult. If you have limited examples, aggregate data across similar assets, extend the time window, or consider survival analysis approaches."
+
+keyTakeaways:
+  - "Four model types serve different prediction objectives: probability, RUL, anomaly, classification"
+  - "The 8-step development process moves from objective to deployment"
+  - "Feature selection with domain expertise beats automated selection alone"
+  - "Time-based data splits prevent leakage and simulate real scoring conditions"
+  - "Iterate on features and data before switching algorithms"
+
+series:
+  name: "MAS PREDICT"
+  part: 4
+  total: 8
+
+tldr: "Building predictive models in Maximo Predict follows an 8-step process from defining the objective to testing results. Feature engineering with domain expertise matters more than algorithm selection. Expect to iterate. Your first model will not be your best model. That is normal."
+seoTitle: "Building Predictive Models in IBM Maximo Predict: Training and Validation Guide | TheMaximoGuys"
+seoDescription: "Complete guide to model development in Maximo Predict. Model types, features, training, validation metrics, and iteration strategies."
+targetQuestions:
+  - "How do I build a predictive model in Maximo Predict?"
+  - "What model types does Maximo Predict support?"
+  - "How do I evaluate a predictive maintenance model?"
+semanticKeywords:
+  - "IBM Maximo Predict model"
+  - "predictive model training"
+  - "failure probability model"
+  - "remaining useful life model"
+  - "ROC-AUC score"
+  - "feature selection"
+  - "model validation"
+  - "data leakage prevention"
+proficiencyLevel: "beginner"
+dependencies:
+  - "Maximo Predict enabled and configured (Part 3)"
+  - "Data foundation prepared (Part 2)"
+  - "Basic familiarity with machine learning concepts"
+speakableSections:
+  - "Introduction"
+  - "The Four Model Types"
+  - "Understanding Quality Metrics"
+relatedSlugs:
+  - "mas-predict-getting-started"
+  - "mas-predict-deployment-monitoring"
+  - "getting-started-maximo-ai"
+---
+
+> **Who this is for:** Data scientists building models in Maximo Predict, reliability engineers collaborating on model development, and technical leads who need to understand what "good" looks like and when to push for better.
+
+## The Model That Predicted Everything and Nothing
+
+A manufacturing client built their first failure probability model. They threw in every feature they could find. 47 input variables. The model scored a 0.94 AUC on test data. The data science team celebrated.
+
+They deployed it on Monday. By Wednesday, every single pump in the plant was flagged as high-risk. 200 pumps. All of them.
+
+What happened? Data leakage. One of the 47 features was "days until next scheduled PM" -- which correlated perfectly with failure timing in historical data but told the model nothing about actual asset condition. The model learned to predict PM schedules, not failures.
+
+They stripped it out, rebuilt with 11 carefully chosen features grounded in reliability engineering knowledge, and ended up with a 0.82 AUC model that actually worked.
+
+**The lesson:** More features does not mean better predictions. Domain expertise combined with disciplined development beats algorithmic sophistication every time.
+
+---
+
+## The Four Model Types
+
+Maximo Predict supports multiple model types. Each answers a different question.
+
+### 1. Failure Probability Models
+
+**The question:** "How likely is this asset to fail within the next X days?"
+
+**The output:** A probability score between 0 and 100% for each asset.
+
+**Example:** "This pump has a 78% probability of bearing failure in the next 30 days."
+
+**When to use it:**
+- Prioritizing assets for inspection or maintenance
+- Triggering work orders based on risk thresholds
+- Ranking a fleet of assets from highest to lowest risk
+
+This is the most common model type and the best starting point for most organizations.
+
+### 2. Remaining Useful Life (RUL) Models
+
+**The question:** "How much time until this asset is likely to fail?"
+
+**The output:** A time estimate in hours, days, or cycles.
+
+**Example:** "This motor has approximately 45 days of remaining useful life."
+
+**When to use it:**
+- Planning component replacements before failure
+- Optimizing the timing of maintenance interventions
+- Supporting capital planning for asset replacements
+
+RUL models are powerful but require more failure examples than probability models because they need to learn the *shape* of degradation curves.
+
+### 3. Anomaly Detection Models
+
+**The question:** "Is this asset behaving abnormally?"
+
+**The output:** An anomaly score or flag.
+
+**Example:** "This compressor's vibration pattern is anomalous compared to its historical baseline."
+
+**When to use it:**
+- Early warning of developing problems
+- Triggering investigation before failure patterns emerge
+- Complementing other predictive models as a "catch-all"
+
+Anomaly detection does not predict *what* will fail or *when*. It says "something is different." Use it as an alert trigger, not a maintenance decision.
+
+### 4. Classification Models
+
+**The question:** "Which failure mode is most likely?"
+
+**The output:** A predicted failure type.
+
+**Example:** "The most likely failure mode for this transformer is insulation degradation, not bushing failure."
+
+**When to use it:**
+- Preparing the right parts and skills in advance
+- Routing work to the correct technician specialty
+- Supporting root cause analysis
+
+Classification requires well-coded failure data with multiple distinct failure modes. If 80% of your failures are coded the same way, classification adds little value.
+
+```
+  CHOOSING YOUR MODEL TYPE
+  ========================
+
+  Question You Need Answered          Model Type
+  ─────────────────────────           ──────────────
+  "Will it fail soon?"            --> Failure Probability
+  "How long until it fails?"      --> Remaining Useful Life
+  "Is something wrong?"           --> Anomaly Detection
+  "What will fail?"               --> Classification
+
+  Start here: ──> Failure Probability
+```
+
+---
+
+## The 8-Step Model Development Process
+
+Model development is structured. Follow the process and resist the urge to skip steps.
+
+### Step 1: Define the Prediction Objective
+
+Write it down. Specifically.
+
+- **What are you predicting?** Failure probability for bearing failures.
+- **What time horizon?** Next 30 days.
+- **Which assets?** Centrifugal pumps, ACME-3000 series, Houston plant.
+- **What action will the prediction enable?** Trigger inspection work order when probability exceeds 65%.
+
+Vague objectives produce vague models. "Predict pump problems" is not an objective. "Estimate probability of bearing failure within 30 days for ACME-3000 pumps" is an objective.
+
+### Step 2: Select the Asset Population
+
+Define which assets will be in your training and scoring population.
+
+**Rules for population selection:**
+- **Homogeneous:** Same asset type, similar operating context
+- **Sufficient history:** At least 2 years of operational data
+- **Balanced:** Include both failed and non-failed assets
+- **Representative:** The training population should look like the scoring population
+
+A population of 200 identical pumps across 3 plants is much better than 200 mixed assets (pumps, fans, compressors) from one plant.
+
+### Step 3: Select Features
+
+This is where domain expertise earns its keep. Features are the input variables the model examines.
+
+**Asset attributes:**
+- Age (days since installation)
+- Capacity or rating
+- Location characteristics
+
+**Usage and meters:**
+- Cumulative runtime hours
+- Operating cycles
+- Usage rate (hours per day)
+
+**Work history:**
+- Count of corrective WOs (last 30, 60, 90 days)
+- Days since last corrective work
+- Days since last PM
+- Total maintenance cost (rolling window)
+
+**Condition indicators:**
+- Latest inspection score
+- Rolling average of sensor readings
+- Trend slope of condition parameters
+- Alarm count (last 30 days)
+
+> **Key insight:** Start with 10 to 15 well-chosen features grounded in reliability engineering knowledge. You can always add more later. Starting with 50 features and pruning is harder and more error-prone.
+
+### Step 4: Define Labels
+
+Labels are the outcomes the model learns to predict.
+
+**For failure probability:**
+- Label = 1 if the asset failed within X days of the observation
+- Label = 0 if the asset did not fail within X days
+
+**For RUL:**
+- Label = number of days until failure actually occurred
+
+**Label creation rules:**
+- Use consistent failure code definitions
+- Handle censored data (assets that have not yet failed)
+- Align labels with your prediction horizon
+
+**The censoring problem:** If a pump has been running for 2 years without failure, is that because it is healthy or because it just has not failed *yet*? Survival analysis techniques handle this, but basic classification treats it as a non-failure. Be aware of this limitation.
+
+### Step 5: Prepare Training Data
+
+Transform everything into a structured dataset.
+
+1. **Create observation records:** Each row is one asset at one point in time
+2. **Calculate feature values:** Compute all features for each observation
+3. **Assign labels:** Attach outcomes
+4. **Handle missing values:** Impute, exclude, or flag
+5. **Split data:** Divide into training, validation, and test sets
+
+**Data splitting approaches:**
+
+| Method | How | Best For |
+|--------|-----|----------|
+| Time-based | Train on older data, test on recent | Most realistic for maintenance |
+| Random | Randomly assign observations | Large datasets with no time dependency |
+| Asset-based | Hold out entire assets for testing | Validating generalization to new assets |
+
+**Use time-based splits.** They simulate real-world conditions where you train on history and predict the future. Random splits can leak future patterns into training.
+
+### Step 6: Train the Model
+
+1. **Select the algorithm:** Maximo Predict provides appropriate algorithms per model type
+2. **Configure parameters:** Use defaults first, tune later
+3. **Fit the model:** The algorithm learns patterns from training data
+4. **Review initial results:** Check for obvious issues
+
+Training time varies from minutes to hours depending on data volume and feature count. Do not interrupt it.
+
+### Step 7: Validate the Model
+
+Validation tells you how the model performs on data it was not trained on.
+
+1. **Score the validation set:** Apply the model to held-out data
+2. **Calculate metrics:** Precision, recall, AUC, etc. (covered below)
+3. **Analyze errors:** Which failures did it miss? What false alarms did it generate?
+4. **Iterate:** Adjust features, labels, or approach based on findings
+
+Validation is where you learn. The model that comes out of Step 6 is rarely the model you deploy.
+
+### Step 8: Test the Model
+
+Final evaluation on completely held-out data.
+
+1. **Score the test set** (do this only once)
+2. **Report final metrics:** These represent expected production performance
+3. **Document everything:** Performance, limitations, assumptions
+
+**Do not use test results to tune the model.** That defeats the purpose. Test data is for reporting final expected performance, not for optimization. If test results are unacceptable, go back to Step 3 and iterate on validation data.
+
+---
+
+## Understanding Quality Metrics
+
+Numbers that tell you whether your model is actually useful.
+
+### For Failure Probability Models
+
+**Accuracy:** Percentage of correct predictions. Sounds useful. Often misleading. If failures are rare (2% of observations), a model that always predicts "no failure" is 98% accurate and completely useless.
+
+**Precision:** Of all predicted failures, what percentage actually failed? High precision means few false alarms. If you predict 100 failures and 60 actually occur, precision is 60%.
+
+**Recall (Sensitivity):** Of all actual failures, what percentage did you catch? High recall means you miss fewer failures. If 40 failures occurred and you predicted 30 of them, recall is 75%.
+
+**F1 Score:** The harmonic mean of precision and recall. Balances both concerns. Useful when you cannot afford to ignore either false alarms or missed failures.
+
+**ROC-AUC:** The model's overall ability to distinguish failures from non-failures. Ranges from 0.5 (random guessing) to 1.0 (perfect). Above 0.75 is useful. Above 0.80 is good. Above 0.85 is strong.
+
+```
+  METRIC TRADEOFF
+  ===============
+
+  High Precision, Low Recall:
+  "When we predict failure, we are usually right.
+   But we miss a lot of actual failures."
+
+  Low Precision, High Recall:
+  "We catch most failures, but we also
+   flag a lot of assets that are fine."
+
+  The sweet spot depends on YOUR costs:
+  - Missed failure costs $500K? ──> Optimize for recall
+  - Each inspection costs $10K?  ──> Optimize for precision
+```
+
+### For RUL Models
+
+**Mean Absolute Error (MAE):** Average difference between predicted and actual RUL. "On average, our predictions are off by 10 days." Lower is better.
+
+**Root Mean Squared Error (RMSE):** Similar to MAE but penalizes large errors more heavily. If some predictions being wildly wrong is worse than all predictions being slightly wrong, RMSE is your metric.
+
+**R-squared:** Proportion of variance explained. Closer to 1.0 is better. Below 0.5 means the model explains less than half the variation in actual outcomes.
+
+### What Metrics Should You Target?
+
+| Metric | Minimum Useful | Good | Strong |
+|--------|---------------|------|--------|
+| ROC-AUC | 0.70 | 0.80 | 0.85+ |
+| Precision | 0.50 | 0.65 | 0.75+ |
+| Recall | 0.60 | 0.75 | 0.85+ |
+| MAE (RUL, days) | <20 | <10 | <5 |
+
+**Business context determines the right target.** If a missed failure costs $500K and an inspection costs $5K, you want high recall even at the cost of some false alarms. The math works in your favor.
+
+---
+
+## Feature Importance and Interpretability
+
+You need to know *why* the model predicts what it predicts. Black boxes do not build trust.
+
+### Understanding Feature Importance
+
+Most algorithms report which features contribute most:
+
+- **Permutation importance:** How much does performance drop when this feature is randomized?
+- **Tree-based importance:** How often is this feature used in decision splits?
+- **Coefficient magnitude:** For linear models, larger coefficients mean more influence
+
+**A healthy feature importance profile for pump bearing prediction:**
+
+```
+  FEATURE IMPORTANCE
+  ==================
+
+  Vibration trend (7-day slope)   ████████████████████  0.28
+  Runtime since replacement       ██████████████████    0.24
+  Rolling avg vibration (30-day)  ████████████████      0.22
+  Days since last PM              ████████████          0.14
+  Asset age                       ████████              0.08
+  Corrective WO count (90-day)    ██████                0.04
+```
+
+This makes engineering sense. Vibration indicators dominate. Runtime drives degradation. PM recency matters. Good.
+
+**A red flag feature importance profile:**
+
+```
+  FEATURE IMPORTANCE (SUSPICIOUS)
+  ===============================
+
+  Days until next scheduled PM    ████████████████████  0.45
+  Month of year                   ██████████████        0.20
+  Asset ID number                 ████████████          0.15
+  ...
+```
+
+If "days until next PM" or "asset ID" dominate, your model has learned artifacts, not physics. Go back to feature selection.
+
+### Explaining Individual Predictions
+
+When a pump scores 82% failure probability, stakeholders will ask "why?" Be ready with:
+
+- Which features drove this particular score
+- How this asset's feature values compare to the population
+- What changed recently to elevate the score
+
+Explainability is not a nice-to-have. It is required for adoption.
+
+---
+
+## When Your First Model is Terrible
+
+It will be. Almost certainly. Here is what to do.
+
+### Diagnosis 1: Metrics are near random (AUC around 0.5)
+
+**Likely cause:** Features do not capture failure-relevant information.
+**Fix:** Revisit feature selection with reliability engineers. Add condition indicators. Remove irrelevant features.
+
+### Diagnosis 2: Great on training, terrible on validation (overfitting)
+
+**Likely cause:** Too many features, too little data, or too complex a model.
+**Fix:** Reduce feature count. Increase training data. Simplify the model. Add regularization.
+
+### Diagnosis 3: High precision, very low recall
+
+**Likely cause:** Class imbalance. The model learns to always predict "no failure."
+**Fix:** Use oversampling, class weights, or adjust the probability threshold.
+
+### Diagnosis 4: Metrics are acceptable but predictions make no sense
+
+**Likely cause:** Data leakage or spurious correlations.
+**Fix:** Audit feature engineering for future information. Check feature importance for suspicious variables. Validate with domain experts.
+
+### Diagnosis 5: Performance varies wildly across scoring runs
+
+**Likely cause:** Unstable model or data quality fluctuations.
+**Fix:** Use ensemble methods. Check data pipeline for intermittent quality issues. Increase training data.
+
+> **Key insight:** Iteration is the process, not a sign of failure. Expect 3 to 5 iteration cycles before your model is production-worthy. Budget time accordingly.
+
+---
+
+## Best Practices for Model Development
+
+### Lead with domain knowledge
+
+Engage reliability engineers from the start. They know what features should matter. They know what failure looks like. They can spot nonsensical predictions immediately.
+
+### Iterate on features before algorithms
+
+If your model is not performing, 80% of the time the answer is better features, not a better algorithm. Add a new condition indicator. Adjust the time window. Calculate a trend instead of a point value.
+
+### Prevent data leakage obsessively
+
+Ask for every feature: "Would I have this information at the time of prediction?" If the answer is no or even maybe, exclude it. Leakage creates models that look perfect in testing and fail completely in production.
+
+### Handle imbalanced data deliberately
+
+Failure events are rare. In a well-maintained plant, 2% of observation records might be failure events. Use class weights, SMOTE, or threshold adjustment. Do not rely on accuracy as your metric.
+
+### Document everything
+
+Record feature definitions, data transformations, missing value strategies, and model parameters. The person who retrains this model in 6 months might not be you.
+
+### Plan for production from the start
+
+A model that takes 12 hours to score 200 assets is not production-ready. Consider computational requirements, scoring frequency, and integration points before the final model selection.
+
+---
+
+## Real Example: The Full Development Cycle
+
+**Objective:** Predict bearing failure probability within 30 days for 200 centrifugal pumps.
+
+**Iteration 1:** 22 features from work history and meters. AUC: 0.68. Barely useful. Feature importance showed asset age and location dominating -- not failure-relevant signals.
+
+**Iteration 2:** Added vibration data from Monitor. Removed location and non-predictive features. 11 features. AUC: 0.77. Getting useful. Vibration trend emerged as top feature. Makes engineering sense.
+
+**Iteration 3:** Added rolling alarm count and temperature trend. Adjusted vibration window from 90-day to 30-day average. 13 features. AUC: 0.82. Good. Precision at 50% threshold: 0.65. Recall: 0.71.
+
+**Final model feature importance:**
+1. Vibration trend (7-day slope) -- 0.28
+2. Runtime since last bearing replacement -- 0.24
+3. Rolling 30-day average vibration -- 0.22
+4. Days since last PM -- 0.14
+5. Asset age -- 0.08
+
+**Decision:** Deploy with 65% threshold for triggering inspection work orders. Monitor performance monthly. Plan retraining in 6 months.
+
+Three iterations. About 3 weeks of work. A model that reliably catches 71% of bearing failures with a 35% false alarm rate. The maintenance team agreed that catching 7 out of 10 failures with 3 false inspections for every 10 alerts was a net win given the cost of unplanned failure.
+
+---
+
+## The 6 Commandments of Model Building
+
+1. **Define the objective before touching data.** Vague goals produce vague models.
+2. **Let reliability engineers guide feature selection.** They know the physics.
+3. **Use time-based splits.** Train on history. Test on recent. Simulate reality.
+4. **Audit for leakage.** If it seems too good, it probably is.
+5. **Iterate on features, not algorithms.** Better data beats better math.
+6. **Document your model.** Future you will thank present you.
+
+Build it right. Validate it honestly. Deploy it confidently.
+
+---
+
+**Next in the series:** [Part 5: Deployment, Monitoring, and Feedback Loops](/blog/mas-predict-deployment-monitoring) -- Getting models into production and keeping them accurate.
+
+---
+
+*This is Part 4 of the MAS Predict series by TheMaximoGuys. [View the complete series index](/blog/mas-predict-series-index).*
+
+---
+
+**TheMaximoGuys** | Enterprise Maximo. No fluff. Just results.

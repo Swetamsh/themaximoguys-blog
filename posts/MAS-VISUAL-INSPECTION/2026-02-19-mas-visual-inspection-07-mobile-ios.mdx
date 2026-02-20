@@ -1,0 +1,366 @@
+---
+title: "MVI Mobile: AI-Powered Inspection on iOS and iPadOS"
+description: "Deploy MVI to the field with MVI Mobile on iOS/iPadOS. Core ML export, on-device inference, device requirements, offline workflow, and mobile deployment best practices."
+date: "2026-02-19"
+slug: "mas-visual-inspection-mobile-ios"
+tags: ["Maximo Visual Inspection", "MVI Mobile", "iOS", "iPadOS", "Core ML", "Apple Neural Engine", "Field Inspection", "Offline AI", "Mobile Deployment"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "AI & Visual Inspection Specialists"]
+coverImage: "./images/mas-visual-inspection-07.png"
+
+faqs:
+  - question: "What is MVI Mobile and what devices does it support?"
+    answer: "MVI Mobile is an iOS/iPadOS application available on the Apple App Store. It enables field inspectors to run trained MVI models directly on their iPhone or iPad using Apple Neural Engine and Core ML. It supports offline inference so inspectors can analyze images without network connectivity, syncing results when connection is restored. Only three model types support Core ML export for mobile: GoogLeNet, YOLO v3, and Tiny YOLO v3."
+  - question: "Why is there no MVI Mobile for Android?"
+    answer: "MVI Mobile uses Apple's Core ML framework for on-device inference, which is proprietary to Apple and runs on the Neural Engine built into A-series and M-series chips. For Android-equipped field teams, alternatives include MVI Edge with camera integration, MVI Server API over network, or dedicated iPads for MVI field inspection."
+  - question: "Which MVI model types work on mobile?"
+    answer: "Only GoogLeNet (classification), YOLO v3 (detection), and Tiny YOLO v3 (fast detection) support Core ML export for MVI Mobile. Faster R-CNN, Detectron2, High Resolution, SSD, Anomaly Optimized, and SSN do not export to Core ML and cannot run on MVI Mobile."
+
+keyTakeaways:
+  - "MVI Mobile runs on iOS/iPadOS ONLY via the Apple App Store using Core ML"
+  - "Only GoogLeNet, YOLO v3, and Tiny YOLO v3 support Core ML export for mobile"
+  - "Offline-first design means inspections continue when the network fails"
+  - "Choose your model architecture BEFORE training if mobile is the deployment target"
+  - "Dedicated iPads are the most cost-effective solution for MVI field inspection"
+
+series:
+  name: "MAS VISUAL INSPECTION"
+  part: 7
+  total: 12
+
+tldr: "MVI Mobile runs on iOS/iPadOS using Core ML for on-device inference. Only GoogLeNet, YOLO v3, and Tiny YOLO v3 models export to Core ML. On-device inference means inspections continue offline with results synced when connectivity returns. Choose your model architecture before training if mobile deployment is the target."
+seoTitle: "MVI Mobile: AI-Powered Visual Inspection on iOS and iPadOS | TheMaximoGuys"
+seoDescription: "Deploy MVI to the field on iOS/iPadOS. Core ML export, on-device inference, device requirements, offline workflow, and mobile best practices."
+targetQuestions:
+  - "How does MVI Mobile work for field inspection?"
+  - "What devices support MVI Mobile?"
+  - "Which MVI models work on iOS?"
+  - "Is MVI available for Android?"
+semanticKeywords:
+  - "MVI Mobile iOS"
+  - "MVI Mobile Core ML"
+  - "Apple Neural Engine MVI"
+  - "offline visual inspection AI"
+  - "field deployment MVI"
+  - "Core ML model export"
+  - "iPadOS visual inspection"
+  - "mobile inspection app"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Trained MVI model ready for deployment (Part 5)"
+  - "Understanding of inference pipelines and confidence thresholds (Part 6)"
+  - "Access to iOS/iPadOS devices"
+speakableSections:
+  - "Introduction"
+  - "MVI Mobile"
+  - "Core ML Constraint"
+  - "Mobile Best Practices"
+relatedSlugs:
+  - "mas-visual-inspection-deploying-production"
+  - "mas-visual-inspection-edge-drones-field"
+  - "mas-visual-inspection-integration-mas"
+---
+
+> **Who this is for:** Field engineers deploying MVI to iOS/iPadOS devices, IT architects planning mobile inspection programs, and project managers who need to understand what MVI Mobile can and cannot do before committing to a device strategy. If your inspectors carry iPhones or iPads, this is your deployment guide.
+
+**Read Time:** 10-12 minutes
+
+---
+
+## The Inspector 200 Feet Up a Transmission Tower
+
+Picture this: An inspector climbs 200 feet up a high-voltage transmission tower. She photographs each insulator, each conductor connection, each structural member. 47 photos on this tower alone. 23 towers today.
+
+She climbs down. Drives to the next tower. Repeats.
+
+At the end of the day, she has 1,081 photos. She uploads them to the office. An image reviewer starts analyzing them the next morning. Findings arrive 48-72 hours later.
+
+**Now picture this:** Same inspector. Same tower. But her iPad runs MVI Mobile. She photographs each component. Before she starts climbing down, MVI has flagged 3 images: cracked insulator (94% confidence), corrosion on bracket (87% confidence), and vegetation encroachment (91% confidence).
+
+She does not wait 48 hours. She documents the critical findings, radios the crew, and a work order is initiated before she reaches the ground.
+
+> *"We used to inspect and hope. Now we inspect and know -- in real time, at the top of the tower, where it matters."*
+
+That is what mobile and edge deployment changes. Not the AI. The timing.
+
+---
+
+## MVI Mobile: AI in Your Inspector's Pocket
+
+### What MVI Mobile Does
+
+MVI Mobile is an application **exclusively for iOS and iPadOS**, available on the **Apple App Store**. It runs trained MVI models directly on the device using Apple's Core ML framework and Neural Engine. No cloud round-trip during inference.
+
+**This is the single most important fact about MVI Mobile: it is iOS/iPadOS only.** There is no Android version. There is no Google Play Store listing. If your field teams use Android devices, MVI Mobile is not an option -- you will need to use MVI Edge with connected cameras instead.
+
+```
+  MVI MOBILE ARCHITECTURE
+  =======================
+
+  ┌─────────────────────────────────┐
+  │  MVI SERVER (Cloud/On-Prem)     │
+  │                                 │
+  │  Trained Models                 │
+  │  ┌─────┐ ┌─────┐ ┌─────┐     │
+  │  │ M1  │ │ M2  │ │ M3  │     │
+  │  └──┬──┘ └──┬──┘ └──┬──┘     │
+  │     │       │       │         │
+  └─────┼───────┼───────┼─────────┘
+        │       │       │
+    Core ML Model Export + Sync
+    (when connected)
+        │       │       │
+  ┌─────┼───────┼───────┼─────────┐
+  │  iOS/iPadOS DEVICE             │
+  │  ┌──┴──┐ ┌──┴──┐ ┌──┴──┐    │
+  │  │ M1  │ │ M2  │ │ M3  │    │
+  │  │CoreML│ │CoreML│ │CoreML│   │
+  │  └─────┘ └─────┘ └─────┘    │
+  │                               │
+  │  Camera ──> Neural Engine    │
+  │              │                │
+  │        Core ML Inference     │
+  │              │                │
+  │         Display to Inspector  │
+  │              │                │
+  │  Queue results for sync       │
+  │  (when connectivity returns)  │
+  └───────────────────────────────┘
+```
+
+### The Core ML Constraint: Model Architecture Matters
+
+This is where teams get tripped up. **Not every MVI model type can run on MVI Mobile.** Only three architectures support Core ML export:
+
+```
+  CORE ML EXPORT COMPATIBILITY
+  ============================
+
+  Model Type              Core ML Export    MVI Mobile?
+  ──────────────────────  ──────────────    ──────────
+  GoogLeNet (Classify)    YES               YES
+  YOLO v3                 YES               YES
+  Tiny YOLO v3            YES               YES
+  Faster R-CNN            NO                NO
+  Detectron2              NO                NO
+  High Resolution         NO                NO
+  SSD                     NO                NO
+  Anomaly Optimized       NO                NO
+  SSN (Action)            NO                NO
+
+  IF YOU PLAN TO USE MVI MOBILE:
+  You MUST train using GoogLeNet, YOLO v3,
+  or Tiny YOLO v3. Period.
+
+  If you trained a beautiful Faster R-CNN model
+  and plan to deploy it to mobile, it will not
+  work. Choose your architecture BEFORE training.
+```
+
+> **Key insight:** The Core ML limitation is the most common "gotcha" in MVI Mobile deployments. Teams invest weeks training Faster R-CNN or Detectron2 models, then discover they cannot export to mobile. Plan your deployment target before you start training.
+
+### MVI Mobile Workflow
+
+```
+  FIELD INSPECTION WITH MVI MOBILE
+  ================================
+
+  BEFORE THE SHIFT:
+  ─────────────────
+  1. Open MVI Mobile on iPhone or iPad
+  2. Sync latest Core ML models (requires connectivity)
+  3. Download inspection assignments
+  4. Verify models are loaded and functional
+
+  DURING INSPECTION (Online or Offline):
+  ──────────────────────────────────────
+  1. Navigate to asset
+  2. Open camera within MVI Mobile
+  3. Point camera at inspection target
+  4. Neural Engine analyzes image in real-time
+  5. Screen shows:
+     - Detection overlays (bounding boxes for YOLO)
+     - Classification result (for GoogLeNet)
+     - Confidence scores
+     - Recommended action
+  6. Inspector confirms or overrides result
+  7. Adds notes if needed
+  8. Moves to next target
+
+  AFTER THE SHIFT:
+  ────────────────
+  1. Connect to network (WiFi or cellular)
+  2. Sync results to MVI server
+  3. Results flow to Maximo Manage
+  4. Work orders auto-generated for findings
+  5. Override data captured for model retraining
+```
+
+### iOS/iPadOS Device Requirements
+
+```
+  DEVICE REQUIREMENTS (iOS/iPadOS ONLY)
+  ======================================
+
+  MINIMUM:
+  ────────
+  - iPhone 11 or newer (A13 Bionic chip minimum)
+  - iPad (8th generation) or newer
+  - iOS/iPadOS 15 or later
+  - Neural Engine for Core ML inference
+  - Camera: 12 MP minimum
+
+  RECOMMENDED:
+  ───────────
+  - iPhone 14 Pro or later
+    (Best camera system + A16 Bionic Neural Engine)
+  - iPad Pro with M-series chip
+    (Larger screen for detailed review + fastest
+     Neural Engine performance)
+  - iPad Air with M-series chip
+    (Good balance of screen size and performance)
+
+  STORAGE:
+  ────────
+  - 2-5 GB per Core ML model (varies by complexity)
+  - Additional storage for captured images
+  - Recommend 64 GB+ device storage minimum
+
+  BATTERY:
+  ────────
+  - Full shift usage: 6-8 hours
+  - Neural Engine inference drains battery faster
+    than standard camera use
+  - Recommend external battery pack for full-day
+    field work (MagSafe battery for iPhone,
+    USB-C power bank for iPad)
+
+  RUGGED OPTIONS:
+  ──────────────
+  - OtterBox Defender or similar rugged case
+  - Catalyst Waterproof case (for wet environments)
+  - RAM Mounts for vehicle/equipment mounting
+  - Note: Apple does not make a "rugged" iPhone.
+    Invest in industrial-grade protective cases.
+```
+
+### Why Not Android?
+
+Teams frequently ask about Android support. The answer is straightforward: MVI Mobile uses Apple's Core ML framework for on-device inference. Core ML is proprietary to Apple and runs on the Neural Engine built into A-series and M-series chips.
+
+```
+  ANDROID ALTERNATIVES
+  ====================
+
+  If your field teams use Android devices,
+  your options are:
+
+  1. MVI Edge with Camera Integration
+     - Pair Android device with an edge device
+     - Edge device runs inference
+     - Android device displays results
+     - Requires network between device and edge
+
+  2. MVI Server API
+     - Android device captures image
+     - Sends to MVI server for inference
+     - Results returned over network
+     - Requires connectivity (no offline mode)
+
+  3. Switch to iOS for MVI Field Work
+     - Dedicated iPads for MVI inspectors
+     - Most cost-effective for dedicated use
+     - iPad (base model) starts at $329
+     - Best long-term solution for mobile MVI
+
+  OUR RECOMMENDATION: Dedicated iPads for MVI
+  field inspection. The cost of an iPad is
+  trivial compared to the MVI licensing and the
+  value of real-time field detection.
+```
+
+### Mobile Deployment Best Practices
+
+```
+  MOBILE BEST PRACTICES
+  =====================
+
+  1. MODEL ARCHITECTURE SELECTION
+     - Use GoogLeNet for classification tasks
+     - Use YOLO v3 for detection with accuracy
+     - Use Tiny YOLO v3 for fastest detection
+     - NEVER train Faster R-CNN or Detectron2
+       if the target is MVI Mobile
+
+  2. MODEL SIZE OPTIMIZATION
+     - Core ML models are optimized during export
+     - Tiny YOLO v3 produces smallest models
+       (fastest inference, least battery drain)
+     - GoogLeNet is efficient for classification
+     - Test inference speed on target device
+       BEFORE deploying to the field
+
+  3. LIGHTING COMPENSATION
+     - Mobile screens wash out in bright sunlight
+     - Use anti-glare screen protectors
+     - Train models on images from iPhone/iPad cameras
+       (not DSLR or drone cameras)
+     - iPhone cameras auto-adjust exposure differently
+       than industrial cameras
+     - Capture training data WITH the same device
+       that will run in production
+
+  4. OFFLINE DATA MANAGEMENT
+     - Inspect results stored locally until sync
+     - 1,000 inspections = approximately 2-5 GB
+     - Ensure sufficient device storage
+     - Auto-sync when WiFi detected
+     - Manual sync option for cellular
+     - iCloud DOES NOT sync MVI data
+       (sync is to MVI server only)
+
+  5. INSPECTOR TRAINING
+     - 2-hour hands-on session minimum
+     - Focus on: when to trust the model,
+       when to override, how to document
+     - Practice with known defects first
+     - Provide laminated quick reference card
+     - Cover: App Store installation, model sync,
+       offline workflow, result submission
+```
+
+---
+
+## Key Takeaways
+
+1. **MVI Mobile is iOS/iPadOS ONLY** -- Available exclusively on the Apple App Store, using Apple Neural Engine and Core ML for on-device inference. There is no Android version. Plan your device procurement accordingly.
+
+2. **Only three model types work on mobile** -- GoogLeNet, YOLO v3, and Tiny YOLO v3 are the only architectures that export to Core ML. If you plan mobile deployment, choose your architecture BEFORE training. A Faster R-CNN model cannot run on MVI Mobile.
+
+3. **Offline-first design is mandatory for mobile** -- Network failures are when, not if. MVI Mobile stores results locally on the iOS device and syncs when connectivity returns. Ensure sufficient device storage for a full shift of inspections.
+
+4. **Dedicated iPads are the most cost-effective mobile MVI solution** -- The cost of an iPad is trivial compared to MVI licensing and the value of real-time field detection. For Android teams, this is the recommended path over complex Edge workarounds.
+
+5. **Field deployment is a logistics problem, not just a technology problem** -- Device management (MDM for iOS fleet), battery life, storage capacity, sync schedules, Core ML model updates, and inspector training determine success as much as model accuracy.
+
+---
+
+## What Comes Next
+
+MVI Mobile is for inspectors with cameras. In Part 8, we cover the other side: MVI Edge for cameras without inspectors. Real-time AI at the source, MQTT alert pipelines, drone integration, and field deployment patterns for disconnected and remote environments.
+
+---
+
+**Previous:** [Part 6 - Deploying Models to Production](/blog/mas-visual-inspection-deploying-production)
+
+**Next:** [Part 8 - MVI Edge, Drones & Field Deployment](/blog/mas-visual-inspection-edge-drones-field)
+
+**Series:** MAS VISUAL INSPECTION | Part 7 of 12
+
+---
+
+**TheMaximoGuys** | Enterprise Maximo. No fluff. Just results.

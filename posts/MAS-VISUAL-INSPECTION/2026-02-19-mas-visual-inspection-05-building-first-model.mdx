@@ -1,0 +1,778 @@
+---
+title: "Building Your First Inspection Model: From Raw Images to Production-Ready AI"
+description: "The complete MVI model-building workflow. Data collection strategies, image labeling best practices, training configuration, accuracy metrics interpretation, and iterative improvement."
+date: "2026-02-19"
+slug: "mas-visual-inspection-building-first-model"
+tags: ["Maximo Visual Inspection", "MVI", "Model Training", "Image Labeling", "Data Collection", "Precision Recall", "Transfer Learning", "Object Detection"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "AI & Visual Inspection Specialists"]
+coverImage: "./images/mas-visual-inspection-05.png"
+
+faqs:
+  - question: "How many images do I need to train an MVI model?"
+    answer: "For a proof of concept, 50-100 images per class. For pilot deployment, 200-500 per class. For production, 500-1,000+ per class. These numbers assume diverse images with varied angles, lighting, and conditions plus transfer learning from a pre-trained base model."
+  - question: "How long does it take to train a model in MVI?"
+    answer: "Training time depends on dataset size, model architecture, and GPU hardware. A classification model with 500 images typically trains in 15-30 minutes on a V100 GPU. Object detection models with 1,000+ images may take 1-3 hours. The real time investment is in image labeling, not training."
+  - question: "What is the most important factor for model accuracy?"
+    answer: "Labeling quality and data diversity. A smaller dataset with accurate, consistent labels and varied conditions will outperform a larger dataset with sloppy labels and uniform conditions. Create a visual labeling guide and validate label consistency before training."
+
+keyTakeaways:
+  - "Data diversity matters more than data volume -- varied angles, lighting, and conditions are essential"
+  - "80% of model building time goes to labeling, not training or tuning"
+  - "Start with classification before attempting object detection"
+  - "Precision, recall, and F1 score are more important than raw accuracy"
+  - "Iterative improvement using misclassified examples is the fastest path to production quality"
+
+series:
+  name: "MAS VISUAL INSPECTION"
+  part: 5
+  total: 12
+
+tldr: "Building an MVI model is 80% labeling, 10% training, 10% tuning. Collect diverse images (not just more images), create a visual labeling guide for consistency, and iterate by analyzing what the model gets wrong. 500-1,000 well-labeled images per class reaches production accuracy."
+seoTitle: "Building Your First MVI Model: Data Collection to Production AI | TheMaximoGuys"
+seoDescription: "Complete MVI model building guide. Image collection, labeling best practices, training configuration, accuracy metrics, and iterative improvement."
+targetQuestions:
+  - "How do I build a visual inspection model in MVI?"
+  - "How many training images does MVI need?"
+  - "What is the best way to label images for MVI?"
+  - "How do I improve MVI model accuracy?"
+semanticKeywords:
+  - "MVI model training"
+  - "image labeling best practices"
+  - "visual inspection data collection"
+  - "training data requirements MVI"
+  - "precision recall F1 score"
+  - "object detection model building"
+  - "transfer learning fine-tuning"
+  - "iterative model improvement"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "MVI environment running and verified (Part 4)"
+  - "Understanding of CV concepts: classification, detection, metrics (Part 2)"
+  - "Access to image capture equipment (cameras, drones, or existing image archive)"
+speakableSections:
+  - "Introduction"
+  - "The Data Collection Strategy"
+  - "The Labeling Playbook"
+  - "Training and Iteration"
+relatedSlugs:
+  - "mas-visual-inspection-cv-fundamentals"
+  - "mas-visual-inspection-deploying-production"
+  - "mas-visual-inspection-installation-first-project"
+---
+
+> **Who this is for:** Reliability engineers building their first MVI model, quality managers defining defect categories, and anyone responsible for collecting and labeling the images that will teach AI to see your defects. This is the hands-on guide.
+
+**Read Time:** 22-25 minutes
+
+---
+
+## The Model That Took 3 Weeks to Train (and 3 Minutes to Break)
+
+A petrochemical company spent 3 weeks building a corrosion detection model. 3,000 images. Meticulous labeling. Beautiful accuracy metrics: 96.4% on the test set.
+
+Day one in the field, the model flagged 340 defects in a 200-image batch. The inspector reviewed them. **280 were shadows.**
+
+What went wrong? Every training image was taken outdoors, midday, full sun. The field camera was mounted under a pipe rack. Shadows everywhere. The model had never seen a shadow and concluded: dark patches = corrosion.
+
+> *"We had to go back and add 400 shadow images labeled 'no defect.' After retraining, the false positive rate dropped from 82% to 6%. Three more weeks of work because we did not think about lighting in week one."*
+
+This blog exists so you do not make that mistake.
+
+---
+
+## Phase 1: The Data Collection Strategy
+
+Before you take a single photograph, answer these five questions.
+
+### The Five Questions
+
+```
+  DATA COLLECTION PLANNING
+  ========================
+
+  QUESTION 1: What are my classes?
+  ────────────────────────────────
+  List every category the model needs to distinguish.
+
+  Example (corrosion detection):
+  - No corrosion (clean)
+  - Surface rust (cosmetic, no action)
+  - Moderate corrosion (schedule repair)
+  - Severe corrosion (immediate action)
+
+  RULE: Start with 2-4 classes. You can always
+  add classes later. Models with 15 classes
+  from day one rarely work.
+
+  QUESTION 2: What variability exists?
+  ─────────────────────────────────────
+  What conditions change between inspections?
+
+  - Lighting (sun angle, clouds, indoor vs outdoor)
+  - Camera angle (drone altitude, handheld angle)
+  - Distance (close-up vs wide shot)
+  - Surface condition (wet, dry, dirty, painted)
+  - Background (steel, concrete, vegetation)
+  - Season (summer vs winter coloring)
+
+  QUESTION 3: What could fool the model?
+  ──────────────────────────────────────
+  What looks like a defect but is not?
+
+  - Shadows that look like cracks
+  - Water stains that look like corrosion
+  - Paint drips that look like leaks
+  - Dirt that looks like surface damage
+  - Reflections that look like hot spots
+
+  INCLUDE THESE IN YOUR TRAINING DATA.
+
+  QUESTION 4: What is the image source?
+  ─────────────────────────────────────
+  Camera type and resolution determine what the
+  model can learn.
+
+  - Drone: High altitude = wide coverage, lower detail
+  - Fixed camera: Consistent angle, limited coverage
+  - Handheld: Variable angle, highest detail
+  - Inspection robot: Controlled, close range
+
+  TRAIN ON IMAGES FROM THE SAME SOURCE
+  THAT WILL BE USED IN PRODUCTION.
+
+  QUESTION 5: What is the minimum detectable defect?
+  ──────────────────────────────────────────────────
+  A 2mm crack needs to occupy enough pixels to be
+  visible. If your camera is 50 meters away, that
+  crack is one pixel. Undetectable.
+
+  Rule of thumb: Defect should be at least 20x20
+  pixels in the image for reliable detection.
+```
+
+### The Collection Protocol
+
+Stop taking random photos. Use a protocol.
+
+```
+  IMAGE COLLECTION PROTOCOL
+  =========================
+
+  For each asset/location:
+
+  1. MANDATORY ANGLES
+     - Front (0 degrees)
+     - Left (90 degrees)
+     - Right (270 degrees)
+     - Close-up of known problem areas
+
+  2. MANDATORY CONDITIONS
+     - Standard lighting (your normal inspection time)
+     - Alternative lighting (if operations run 24/7)
+     - Wet conditions (if outdoor assets)
+     - After cleaning (baseline)
+
+  3. DEFECT DOCUMENTATION
+     For each defect found:
+     - Full asset view showing defect location
+     - Medium shot (defect fills 25-50% of frame)
+     - Close-up (defect fills 75%+ of frame)
+     - Adjacent "good condition" area for comparison
+
+  4. METADATA
+     Record for every image:
+     - Asset ID
+     - Location
+     - Date/time
+     - Camera/device
+     - Inspector name
+     - Known condition (if applicable)
+```
+
+### How Many Images: The Real Numbers
+
+```
+  IMAGE COUNT TARGETS (PER CLASS)
+  ================================
+
+  Phase            Min     Target    Ideal
+  ───────────────  ──────  ────────  ───────
+  Proof of concept 50      100       200
+  Pilot ready      200     500       800
+  Production       500     1,000     2,000
+  Enterprise       1,000   3,000     5,000+
+
+  BALANCE RULE: No class should have more than
+  3x the images of the smallest class.
+
+  BAD:  Good=5,000  Defective=50  (100:1 ratio)
+  OK:   Good=1,000  Defective=500 (2:1 ratio)
+  BEST: Good=1,000  Defective=800 (1.25:1 ratio)
+
+  Data augmentation (flips, rotations, crops) can
+  help balance classes but does not replace diverse
+  real images.
+```
+
+---
+
+## Phase 2: The Labeling Playbook
+
+Labeling is where models are made or broken. This is not glamorous work. It is the most important work.
+
+### The Labeling Guide: Your Most Important Document
+
+Before anyone labels a single image, create this document.
+
+```
+  VISUAL LABELING GUIDE TEMPLATE
+  ==============================
+
+  PROJECT: [Name]
+  VERSION: 1.0
+  DATE: [Date]
+  APPROVED BY: [Senior SME Name]
+
+  CATEGORIES:
+  ───────────
+  1. GOOD CONDITION
+     Definition: No visible corrosion, cracking,
+     or coating failure.
+     Visual: [3-5 example photos]
+     Edge cases:
+     - Minor discoloration without pitting = GOOD
+     - Surface dirt/staining = GOOD (not defect)
+     - Old but intact coating = GOOD
+
+  2. MODERATE CORROSION
+     Definition: Visible rust with surface pitting
+     less than 2mm depth. No wall loss measurable.
+     Visual: [3-5 example photos]
+     Edge cases:
+     - Rust bloom without pitting = MODERATE (not severe)
+     - Single pit > 2mm = SEVERE (not moderate)
+     - Corrosion under insulation visible = MODERATE
+
+  3. SEVERE CORROSION
+     Definition: Deep pitting > 2mm, visible wall
+     loss, structural concern.
+     Visual: [3-5 example photos]
+     Edge cases:
+     - Perforated or through-wall = SEVERE
+     - Flaking with metal loss = SEVERE
+     - Surface rust only (no pitting) = MODERATE
+
+  LABELING RULES:
+  ───────────────
+  - When in doubt between two grades, choose the
+    MORE SEVERE grade (conservative)
+  - If image is blurry or unclear, label as
+    "UNCLEAR" and flag for re-capture
+  - If multiple conditions in one image, label
+    by the WORST condition present (classification)
+    or label each separately (object detection)
+```
+
+### Labeling for Classification vs. Detection
+
+```
+  CLASSIFICATION LABELING
+  =======================
+  - One label per image
+  - Click image, select category
+  - Speed: 200-400 images/hour
+  - Lower skill required
+
+  OBJECT DETECTION LABELING
+  =========================
+  - Draw bounding box around each defect
+  - Label each box with defect type
+  - Multiple boxes per image allowed
+  - Speed: 50-100 images/hour
+  - Higher skill required
+
+  LABELING TIME ESTIMATES
+  =======================
+  Images    Classification    Object Detection
+  ──────    ──────────────    ────────────────
+  500       1.5-2.5 hours     5-10 hours
+  1,000     3-5 hours         10-20 hours
+  3,000     8-15 hours        30-60 hours
+  5,000     13-25 hours       50-100 hours
+```
+
+### The Quality Assurance Process
+
+```
+  LABELING QA PROCESS
+  ===================
+
+  STEP 1: Calibration Session (Before labeling starts)
+  ─────────────────────────────────────────────────────
+  - All labelers review the labeling guide together
+  - Label 50 sample images independently
+  - Compare results
+  - Discuss disagreements
+  - Update guide with clarifications
+  - TARGET: >90% inter-labeler agreement
+
+  STEP 2: Spot Checks (During labeling)
+  ──────────────────────────────────────
+  - Senior SME reviews 10% random sample
+  - Flags inconsistencies
+  - Relabeler corrects errors
+  - Track error rate per labeler
+
+  STEP 3: Validation Set Review (Before training)
+  ────────────────────────────────────────────────
+  - Set aside 15% of labeled data as validation set
+  - Senior SME reviews 100% of validation labels
+  - Ensures validation set is ground truth
+  - Model evaluated against this curated set
+
+  QUALITY METRICS:
+  - Inter-labeler agreement > 90%
+  - SME audit pass rate > 95%
+  - Validation set confidence: 100% verified
+```
+
+---
+
+## Phase 3: Training Your Model
+
+You have images. They are labeled. Time to train.
+
+### Training Configuration
+
+```
+  MVI TRAINING CONFIGURATION
+  ==========================
+
+  MODEL TYPE SELECTION
+  ────────────────────
+  Classification (GoogLeNet):
+  - Fastest training
+  - Simpler to start
+  - MVI's system default for classification
+  - Use for: pass/fail, grading, sorting
+
+  Object Detection:
+  - Longer training
+  - More data required
+  - Use for: locating specific defects
+  - Multiple architecture choices (see below)
+
+  MVI MODEL ARCHITECTURES
+  ───────────────────────
+  For Classification:
+  - GoogLeNet (Inception): System default
+    Best for most classification tasks
+
+  For Object Detection:
+  - Faster R-CNN: Default detection model
+    Best accuracy, slower inference
+  - YOLO v3: Speed-optimized detection
+    Good for real-time applications
+  - Tiny YOLO v3: Fastest detection
+    Lower accuracy, ideal for edge devices
+  - Detectron2: Polygon-labeled detection
+    Best for small objects, instance segmentation
+    Requires POLYGON annotations (not bounding boxes)
+  - High Resolution: Detailed imagery analysis
+  - Anomaly Optimized: Unusual/anomalous objects
+  - SSD: Real-time inference
+    WARNING: Training UNSUPPORTED from MAS 9.1
+    Use YOLO v3 instead for new models
+
+  For Video:
+  - SSN (Structured Segment Network): Action detection
+    No transfer learning or multi-GPU support
+
+  RECOMMENDATION: Start with GoogLeNet for
+  classification, Faster R-CNN for detection.
+  Use YOLO v3 when speed matters more than accuracy.
+
+  DATA SPLIT
+  ──────────
+  - Training: 70% of images
+  - Validation: 15% of images
+  - Test: 15% of images
+
+  MVI handles the split automatically.
+  Ensure each split has representative samples
+  from all classes and conditions.
+
+  MVI-SPECIFIC TRAINING HYPERPARAMETERS
+  ─────────────────────────────────────
+  MVI defaults (verified from documentation):
+  - max_iter: 1500
+  - test_iter: 100
+  - test_interval: 20
+  - learning_rate: 0.001
+
+  Batch size depends on GPU memory:
+    - T4 (16GB): batch 8-16
+    - V100 (32GB): batch 16-32
+    - A100 (40/80GB): batch 32-64
+    - H100 (80GB): batch 64+ (MAS 9.0+)
+
+  FOR YOUR FIRST MODEL: Use all defaults.
+  Tune parameters only after you have baseline
+  metrics to improve upon. The MVI defaults
+  are well-optimized for most use cases.
+```
+
+### Data Augmentation: Built-In and Powerful
+
+Before training, MVI offers built-in data augmentation to expand your dataset and improve model robustness.
+
+```
+  MVI BUILT-IN AUGMENTATION OPTIONS
+  ==================================
+
+  Available augmentations:
+  - Blur: Simulate out-of-focus conditions
+  - Sharpen: Enhance edge detail
+  - Crop: Random region cropping
+  - Rotate: Angular rotation
+  - Vertical Flip: Top-to-bottom mirror
+  - Horizontal Flip: Left-to-right mirror
+  - Color: Color channel adjustment
+  - Noise: Add image noise
+
+  Works on:
+  - Images (all classification and detection models)
+  - Video frames (for action detection)
+
+  API access:
+  POST /datasets/{id}/action
+  Body: {"detector": "data_augmentation"}
+
+  WHEN TO AUGMENT:
+  ───────────────
+  - Class imbalance (expand minority class)
+  - Small datasets (<200 images per class)
+  - Limited capture conditions
+  - Want to simulate field variability
+
+  LIMITATION: Augmentation helps but does NOT
+  replace diverse real-world image collection.
+  500 diverse real images > 5,000 augmented
+  copies of 100 identical images.
+```
+
+### Auto-Labeling: Accelerate Your Labeling Pipeline
+
+MVI includes an auto-labeling feature that dramatically reduces labeling time after initial model training.
+
+```
+  AUTO-LABELING WORKFLOW
+  ======================
+
+  STEP 1: Manually label 5-10 images per class
+          (your initial seed dataset)
+
+  STEP 2: Train a preliminary model on seed data
+          (accuracy will be low -- that is expected)
+
+  STEP 3: Use trained model to auto-label
+          remaining unlabeled images
+
+  STEP 4: Human expert REVIEWS auto-labels
+          - Correct errors
+          - Flag ambiguous cases
+          - Approve accurate labels
+
+  STEP 5: Retrain with corrected full dataset
+
+  TIME SAVINGS:
+  - Manual labeling 1,000 images: 10-20 hours
+  - Auto-label + review 1,000 images: 3-5 hours
+  - 60-75% time reduction on labeling phase
+```
+
+### The Training Process (What Happens Behind the Curtain)
+
+```
+  WHAT HAPPENS WHEN YOU CLICK "TRAIN"
+  ====================================
+
+  EPOCH 1-5: Learning basics
+  ─────────────────────────
+  - Network adjusts weights dramatically
+  - Loss drops rapidly
+  - Accuracy jumps from random to meaningful
+  - Validation accuracy may fluctuate wildly
+
+  EPOCH 5-20: Refining features
+  ─────────────────────────────
+  - Loss continues to decrease but slower
+  - Accuracy improvements become incremental
+  - Network learns subtle distinctions
+  - Validation accuracy stabilizes
+
+  EPOCH 20-50: Fine-tuning
+  ────────────────────────
+  - Marginal improvements
+  - Watch for overfitting:
+    Training accuracy increasing but
+    validation accuracy decreasing = OVERFITTING
+
+  OVERFITTING SIGNALS:
+  - Training accuracy: 99%
+  - Validation accuracy: 78%
+  - GAP > 10% = Model memorizing, not learning
+
+  OVERFITTING FIXES:
+  - Add more diverse training data
+  - Use data augmentation (MVI has built-in options)
+  - Reduce model complexity
+  - Stop training earlier (early stopping)
+```
+
+### Reading the Results
+
+After training completes, MVI presents metrics. Here is how to read them.
+
+```
+  MODEL RESULTS INTERPRETATION
+  ============================
+
+  OVERALL ACCURACY: 93.2%
+  ───────────────────────
+  This tells you: Of all test images, the model
+  got 93.2% correct. Simple but insufficient.
+
+  CHECK THE CONFUSION MATRIX:
+
+                Predicted
+              Good  Moderate  Severe
+  Actual  ┌───────┬─────────┬────────┐
+  Good    │  142  │    8    │   0    │  = 94.7%
+  Moderate│   12  │   118   │   5    │  = 87.4%
+  Severe  │    0  │    3    │   62   │  = 95.4%
+          └───────┴─────────┴────────┘
+
+  READ THIS AS:
+  - Good condition: 94.7% correct. 8 called Moderate.
+  - Moderate: 87.4% correct. 12 called Good (!), 5 called Severe.
+  - Severe: 95.4% correct. 3 called Moderate.
+
+  THE DANGEROUS ERROR: 12 Moderate corrosion images
+  classified as Good. That means 12 assets needing
+  repair get passed as healthy. THIS IS YOUR MISS RATE.
+
+  PER-CLASS METRICS:
+  ──────────────────
+  Class       Precision  Recall  F1 Score
+  ──────────  ─────────  ──────  ────────
+  Good        0.922      0.947   0.934
+  Moderate    0.915      0.874   0.894  <-- Weakest
+  Severe      0.925      0.954   0.939
+
+  ACTION: Moderate class needs more training data,
+  especially images that distinguish moderate from
+  good condition.
+```
+
+---
+
+## Phase 4: The Iteration Loop
+
+Your first model is never your production model. Iteration is the process.
+
+### The Three-Question Review
+
+After every training run, answer these three questions:
+
+```
+  POST-TRAINING REVIEW
+  ====================
+
+  QUESTION 1: Where does the model fail?
+  ──────────────────────────────────────
+  - Review every misclassified image
+  - Group errors by pattern:
+    - Lighting issue? (too dark, shadows)
+    - Angle issue? (unusual perspective)
+    - Ambiguous condition? (between two grades)
+    - Bad label? (image was mislabeled)
+
+  QUESTION 2: Is the failure fixable with data?
+  ─────────────────────────────────────────────
+  - Lighting: Add images in that lighting condition
+  - Angle: Add images from that perspective
+  - Ambiguous: Clarify labeling guide, relabel
+  - Bad label: Fix the label
+
+  QUESTION 3: Is the failure acceptable?
+  ──────────────────────────────────────
+  - Some ambiguity is inherent (Grade 2 vs Grade 3)
+  - If two human inspectors disagree on the same
+    image, the model will too
+  - Accept the error if humans cannot do better
+```
+
+### The Iteration Workflow
+
+```
+  ITERATION CYCLE
+  ===============
+
+  ROUND 1: Baseline
+  ─────────────────
+  - 200-500 images per class
+  - Default training settings
+  - Record: Accuracy, precision, recall per class
+  - TIME: 1-2 days (collection + labeling + training)
+
+  ROUND 2: Error Analysis
+  ──────────────────────
+  - Review all misclassified images
+  - Identify top 3 error patterns
+  - Collect 50-100 images targeting each pattern
+  - Add to training set, retrain
+  - TIME: 2-3 days
+
+  ROUND 3: Edge Case Hardening
+  ───────────────────────────
+  - Deliberately capture difficult images:
+    - Worst lighting conditions
+    - Unusual angles
+    - Borderline defects
+    - Confounding factors (shadows, stains)
+  - Add to training set, retrain
+  - TIME: 2-3 days
+
+  ROUND 4: Production Validation
+  ─────────────────────────────
+  - Run model against a held-out test set
+    (images never used in training)
+  - Have senior inspector independently grade
+    the same images
+  - Compare model vs human on same images
+  - TIME: 1-2 days
+
+  TOTAL: 2-3 weeks from first image to
+  production-ready model
+```
+
+### When Is the Model Good Enough?
+
+```
+  PRODUCTION READINESS CRITERIA
+  =============================
+
+  MINIMUM THRESHOLDS:
+  ───────────────────
+  Classification:
+  - Overall accuracy > 90%
+  - Per-class F1 score > 0.85
+  - No class with recall < 0.80
+  - Confusion matrix reviewed by SME
+
+  Object Detection:
+  - mAP > 0.80
+  - Per-class AP > 0.75
+  - False positive rate < 10%
+  - Miss rate on critical defects < 5%
+
+  OPERATIONAL READINESS:
+  ─────────────────────
+  - Model tested on images from actual production
+    camera/drone (not lab images)
+  - Model tested across all expected conditions
+    (lighting, weather, angles)
+  - Inference latency acceptable for use case
+  - Human review process defined for edge cases
+  - Rollback plan documented
+
+  THE GOLDEN RULE:
+  Model accuracy on real-world images must meet
+  or exceed human inspector accuracy on the same
+  images. If the model is at 91% and your best
+  inspector is at 88%, deploy it.
+```
+
+---
+
+## Named Failure Patterns: Learn from Others
+
+### Failure 1: The Lab Photo Trap
+
+**Setup:** All training images taken in a controlled environment. Clean backgrounds. Studio lighting. Perfect focus.
+
+**Result:** 98% accuracy in testing. 62% in the field.
+
+**Root cause:** The model learned "defect on white background" not "defect on pipe surface." It had never seen field conditions.
+
+**Fix:** Collect at least 50% of training data from actual field conditions. Include messy backgrounds, variable lighting, and real-world clutter.
+
+### Failure 2: The Seasonal Blind Spot
+
+**Setup:** All training images collected in summer. Model deployed year-round.
+
+**Result:** Excellent performance June through September. 40% accuracy November through February.
+
+**Root cause:** Snow, ice, condensation, and low-angle winter sunlight created visual conditions the model had never seen.
+
+**Fix:** Collect training data across all seasons. If deploying before you have a full year of data, explicitly schedule retraining after each season.
+
+### Failure 3: The Class Imbalance Trap
+
+**Setup:** 4,000 "good" images, 80 "defective" images. Model reports 98% accuracy.
+
+**Result:** Model predicts "good" for everything. Catches zero defects. But technically 98% accurate because 98% of test images are good.
+
+**Fix:** Balance classes to within 3:1 ratio. Use data augmentation for minority class. Evaluate with precision, recall, and F1 -- not raw accuracy.
+
+### Failure 4: The Labeler Disagreement Problem
+
+**Setup:** Three labelers with different standards. One labels minor scratches as defects. One only labels deep gouges. One labels based on mood.
+
+**Result:** Model learns an average of three inconsistent standards. Predictions are inconsistent. Nobody trusts them.
+
+**Fix:** Labeling guide with visual examples. Calibration session before labeling starts. 10% spot checks by senior SME. Track inter-labeler agreement.
+
+---
+
+## Key Takeaways
+
+1. **Answer five questions before taking a single photo** -- Define classes, identify variability, anticipate confounders, match image source to production, and confirm minimum detectable defect size. Planning prevents the most expensive mistakes.
+
+2. **Diversity beats volume** -- 500 images across varied lighting, angles, and conditions outperforms 5,000 images taken under identical conditions. The model learns what it sees. Show it the real world.
+
+3. **The labeling guide is your most important document** -- Visual examples, edge case definitions, disagreement protocols. Create it before labeling starts. Update it when ambiguity surfaces. This document determines model quality more than any training parameter.
+
+4. **80% of model building is labeling** -- Classification labeling: 200-400 images/hour. Object detection labeling: 50-100 images/hour. Budget time and personnel accordingly. Labeling is not grunt work -- it is where domain expertise becomes AI capability.
+
+5. **Read the confusion matrix, not just accuracy** -- 93% accuracy means nothing if the model misses 20% of severe defects. Per-class precision, recall, and F1 tell you where the model fails and what to fix.
+
+6. **Iterate on errors, not parameters** -- When accuracy plateaus, the fix is almost always better data, not better hyperparameters. Collect images that match your error patterns. Clarify ambiguous labels. Fix the data first.
+
+7. **The production readiness bar is "beats human inspectors on real-world images"** -- Not 99%. Not perfection. Better than human, tested on field conditions, with a human review process for edge cases.
+
+---
+
+## What Comes Next
+
+You have a trained, validated model. In Part 6, we deploy it to production. Inference pipelines, confidence threshold tuning, handling the edge cases that appear only after deployment, and the monitoring framework that keeps your model honest.
+
+Building the model was the science. Deploying it is the engineering.
+
+---
+
+**Previous:** [Part 4 - Installation & Your First MVI Project](/blog/mas-visual-inspection-installation-first-project)
+
+**Next:** [Part 6 - Deploying Models to Production](/blog/mas-visual-inspection-deploying-production)
+
+**Series:** MAS VISUAL INSPECTION | Part 5 of 12
+
+---
+
+**TheMaximoGuys** | Enterprise Maximo. No fluff. Just results.

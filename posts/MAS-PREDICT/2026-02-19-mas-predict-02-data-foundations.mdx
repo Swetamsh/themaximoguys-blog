@@ -1,0 +1,439 @@
+---
+title: "Data Foundations for Maximo Predict: Why Your Data Makes or Breaks Everything"
+description: "Your predictive models are only as good as your data. Learn the 5 data types, 5 quality dimensions, and 5 deadly sins that determine Maximo Predict success."
+date: "2026-02-19"
+slug: "mas-predict-data-foundations"
+tags: ["Maximo Predict", "Predictive Maintenance", "MAS", "Data Quality", "Feature Engineering", "Data Preparation", "Machine Learning"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Predictive Maintenance Specialists"]
+coverImage: "./images/mas-predict-02.png"
+
+faqs:
+  - question: "What data does Maximo Predict need to work?"
+    answer: "At minimum, Maximo Predict needs asset master data, work order history with failure codes, and ideally meter readings from Maximo Manage. Sensor data from Monitor enriches models significantly. Two to three years of consistent history with at least 30 failure examples for your target failure mode is the practical starting point."
+  - question: "How do I know if my data quality is good enough for predictive maintenance?"
+    answer: "Run a data readiness assessment. Check that failure codes are specific and consistent, work orders are associated with assets, meter readings are regular, and you have enough failure examples. If more than 20 percent of failure codes say Other or Unknown, fix that before building models."
+  - question: "What is feature engineering in the context of Maximo Predict?"
+    answer: "Feature engineering transforms raw data into model inputs. Examples include calculating days since last PM, rolling average vibration over 30 days, or count of corrective work orders in the last quarter. Effective feature engineering often has more impact on model accuracy than algorithm selection."
+
+keyTakeaways:
+  - "Five data types feed Maximo Predict: asset master, work history, meters, inspections, and sensors"
+  - "Data quality has five dimensions: completeness, consistency, accuracy, timeliness, and relevance"
+  - "Feature engineering often matters more than algorithm selection for model performance"
+  - "Two to three years of failure history with 30 or more examples is the practical minimum"
+  - "Assess data readiness before investing in model building"
+
+series:
+  name: "MAS PREDICT"
+  part: 2
+  total: 8
+
+tldr: "Your Maximo Predict models will never be better than your data. This blog covers the five data types you need, the five quality dimensions that matter, common data traps that sink prediction projects, and a readiness assessment framework you can apply today."
+seoTitle: "Data Foundations for IBM Maximo Predict: Quality, Preparation, Readiness | TheMaximoGuys"
+seoDescription: "Data requirements for Maximo Predict. Five data types, quality dimensions, feature engineering, and readiness assessment for predictive maintenance."
+targetQuestions:
+  - "What data does IBM Maximo Predict need?"
+  - "How do I prepare data for predictive maintenance?"
+  - "What is data readiness for Maximo Predict?"
+semanticKeywords:
+  - "IBM Maximo Predict"
+  - "predictive maintenance data"
+  - "data quality assessment"
+  - "feature engineering"
+  - "failure code standardization"
+  - "work order history analysis"
+  - "sensor data integration"
+  - "data readiness assessment"
+proficiencyLevel: "beginner"
+dependencies:
+  - "Part 1 of this series (recommended)"
+  - "Familiarity with Maximo Manage data structures"
+  - "Basic understanding of asset management data"
+speakableSections:
+  - "Introduction"
+  - "The Five Data Types"
+  - "The Five Data Quality Dimensions"
+relatedSlugs:
+  - "mas-predict-introduction"
+  - "mas-predict-getting-started"
+  - "getting-started-maximo-ai"
+---
+
+> **Who this is for:** Reliability engineers assessing data readiness, data scientists preparing training datasets, IT/OT teams responsible for data pipelines, and maintenance managers who need to understand why their data matters more than they think.
+
+## The Uncomfortable Truth
+
+Here is a number that should make you pause: **73% of data in enterprise asset management systems has quality issues significant enough to affect predictive model accuracy.**
+
+We did not make that up. We have seen it. Over and over.
+
+A utility spent 8 months building a transformer failure model. Impressive algorithms. Beautiful dashboards. The model scored a 0.82 AUC on test data. They deployed it to production and within 3 months, accuracy dropped to barely above random guessing.
+
+The problem was not the model. The problem was that three different regions used different failure codes for the same failure. The model learned patterns that did not exist.
+
+Data is not the glamorous part of predictive maintenance. But it is the part that determines whether your investment pays off or becomes expensive shelf-ware.
+
+> *"We spent six months tuning the algorithm. Turned out we needed six weeks fixing the failure codes."*
+> -- Data scientist, manufacturing client
+
+---
+
+## The Five Data Types That Feed Maximo Predict
+
+Maximo Predict consumes multiple data types. Each one teaches the model something different about how your assets behave and fail.
+
+```
+  THE DATA PYRAMID
+  ================
+
+         /\
+        /  \       Sensor & IoT Data
+       / S  \      (Monitor - enrichment)
+      /──────\
+     / I  C   \    Inspections & Condition
+    /──────────\   (snapshots of health)
+   /  M    U    \  Meters & Usage
+  /──────────────\ (how hard, how long)
+ /  W  O  H      \ Work Orders & Failures
+/──────────────────\(what broke, when, why)
+━━━━━━━━━━━━━━━━━━━━
+  Asset Master Data
+  (the foundation)
+```
+
+### 1. Asset Master Data -- The Foundation
+
+Every prediction starts with knowing what you have.
+
+- **Asset identifiers and hierarchy:** Unique IDs, parent-child relationships, location assignments
+- **Asset attributes:** Manufacturer, model, serial number, install date, specifications
+- **Classification:** Asset type, criticality rating, grouping for analysis
+
+This data establishes context. Without accurate asset master data, you cannot even define which assets to model, let alone predict their failures.
+
+**The common problem:** Assets created as placeholders with minimal attributes. No install dates. No manufacturer data. Generic classifications. If your asset records look like "PUMP-001, Type: Equipment, Location: Plant" with nothing else, your models have nothing to work with.
+
+### 2. Work Order and Failure History -- The Gold Mine
+
+This is usually the most valuable data source. Work orders tell the model what failure looks like and what preceded it.
+
+- **Work order records:** Dates, types (corrective, preventive, emergency), durations
+- **Failure codes:** Problem, cause, and remedy codes describing what failed and why
+- **Labor and material usage:** Resources consumed during repairs
+- **Downtime records:** Duration and production impact
+
+**Why this matters:** The model needs to learn the *signature* of impending failure. "What did the data look like 30 days before this pump's bearing failed?" The answer comes from work history.
+
+**The common problem:** Inconsistent failure coding. "BEARING FAILURE" at one plant, "MECH-FAIL" at another, "OTHER" everywhere. If the model cannot identify consistent failure events, it cannot learn to predict them.
+
+### 3. Meter Readings and Usage Data -- The Wear Clock
+
+Meters quantify how hard and how long assets work.
+
+- **Runtime meters:** Operating hours, cycles, starts and stops
+- **Production meters:** Units produced, throughput, load
+- **Odometers:** Distance for mobile assets
+
+Usage data reveals degradation patterns. An asset with 8,000 runtime hours since its last overhaul behaves differently than one with 2,000. Models use these patterns to estimate remaining life.
+
+**The common problem:** Sporadic updates. If runtime meters are only updated during PMs, you have data points every 6 months instead of weekly. That is not a trend. That is two dots.
+
+### 4. Condition and Inspection Data -- The Health Snapshots
+
+Inspections capture point-in-time observations about asset state.
+
+- **Inspection results:** Readings, measurements, pass/fail outcomes
+- **Condition assessments:** Ratings on standardized scales
+- **Technician observations:** Notes about unusual conditions
+
+This data provides snapshots that can be correlated with subsequent failures. "Every time the vibration reading exceeded 4.5 mm/s during inspection, failure occurred within 60 days."
+
+**The common problem:** Unstructured observations. "Looks okay" and "running rough" in a free-text field. Models cannot learn from prose. They need numbers and consistent categories.
+
+### 5. Sensor and IoT Data -- The Enrichment Layer
+
+High-frequency data from Maximo Monitor or other systems provides the most detailed view.
+
+- **Vibration:** Amplitude, frequency spectra, trends
+- **Temperature:** Operating temperatures, thermal profiles
+- **Pressure and flow:** Process conditions
+- **Electrical parameters:** Current, voltage, power quality
+
+Sensor data catches subtle changes that precede failures by days or weeks, well before a human would notice.
+
+**The common problem:** Data volume without data value. Collecting 10,000 sensor readings per day is useless if you are not storing them accessibly, handling gaps, and connecting them to asset IDs in Manage.
+
+---
+
+## Where the Data Comes From
+
+```
+  DATA SOURCES
+  ============
+
+  Maximo Manage ─────────────────────> Primary Source
+  (assets, WOs, meters, inspections)   System of Record
+
+  Maximo Monitor ────────────────────> Sensor Enrichment
+  (IoT, vibration, temperature)        High-Frequency Data
+
+  External Systems ──────────────────> Supplementary
+  (historians, SCADA, ERP, weather)    Contextual Data
+```
+
+**Maximo Manage** is typically the primary source. It holds the system-of-record data for assets, work, and operations. Most Predict models start here.
+
+**Maximo Monitor** adds sensor richness. When available, it significantly improves model accuracy for condition-sensitive failure modes.
+
+**External systems** -- historians (OSIsoft PI, Honeywell), SCADA, weather services, production planning systems -- can provide additional context. Integration requires pipelines and transformation, but the payoff can be substantial.
+
+---
+
+## The Five Data Quality Dimensions
+
+Not all data is equal. These five dimensions determine whether your data is model-ready.
+
+### Dimension 1: Completeness
+
+Are all relevant fields populated? Are there gaps in time-series data? Are failure records captured consistently?
+
+**What bad looks like:** 40% of work orders have no failure code. Meter readings have 3-month gaps. Half your assets have no install date.
+
+**What good looks like:** Failure codes on 90%+ of corrective work orders. Weekly or better meter updates. Core asset attributes populated for all in-scope assets.
+
+### Dimension 2: Consistency
+
+Are failure codes used the same way across sites and teams? Are meters in consistent units? Are asset classifications standardized?
+
+**What bad looks like:** "BEARING" at Plant A, "BRG-FAIL" at Plant B, "MECHANICAL" at Plant C. Same failure. Three different codes. The model sees three different patterns.
+
+**What good looks like:** Standardized failure taxonomy across all sites. Consistent units (all runtime in hours, not a mix of hours and minutes). Uniform classification hierarchies.
+
+### Dimension 3: Accuracy
+
+Are failure dates correct? Are meter readings realistic? Are asset attributes current?
+
+**What bad looks like:** Work orders backdated by weeks. Meter readings that decrease over time (someone entered hours instead of cumulative). Assets still showing original install dates after major rebuilds.
+
+**What good looks like:** Work orders completed within days of actual work. Meter readings validated against reasonable ranges. Asset records updated after modifications.
+
+### Dimension 4: Timeliness
+
+Is data available when the model needs it? Are there delays in work order completion or meter uploads?
+
+**What bad looks like:** Work orders completed months after the work was done. Sensor data batched and uploaded weekly. Predictions based on data that is 3 weeks old.
+
+**What good looks like:** Work orders completed within 48 hours. Sensor data streaming or daily batched. Feature calculations use recent data.
+
+### Dimension 5: Relevance
+
+Does the data capture the failure modes you want to predict? Is there enough history to identify patterns?
+
+**What bad looks like:** Trying to predict bearing failures with no vibration data and generic failure codes. Six months of history for an asset that fails once every 3 years.
+
+**What good looks like:** Data directly related to target failure modes. Two to three years minimum history. Enough failure examples (30+) for statistical learning.
+
+---
+
+## The Five Deadly Sins of Prediction Data
+
+We have seen these kill projects. Every single one is avoidable.
+
+### Sin 1: The "Other" Epidemic
+
+> **Failure Code Analysis:**
+> - Bearing Failure: 12%
+> - Seal Leak: 8%
+> - Motor Burnout: 5%
+> - **Other: 47%**
+> - Unknown: 28%
+
+When 75% of your failure codes are "Other" or "Unknown," you are asking the model to predict something you have not even defined. Fix your failure taxonomy first.
+
+**The fix:** Standardize failure codes. Train technicians. Audit regularly. It is not glamorous work, but it is the single highest-ROI data improvement you can make.
+
+### Sin 2: Orphan Work Orders
+
+Work orders not associated with specific assets. "Fixed pump in Building 7" with no asset number. The model cannot learn from work it cannot connect to an asset.
+
+**The fix:** Enforce asset association on work order creation. Retroactively link orphan work orders where possible. Make it part of work order closure quality checks.
+
+### Sin 3: The Meter Desert
+
+Assets with runtime meters that get updated twice a year during PMs. You cannot build a meaningful usage curve from two data points per year.
+
+**The fix:** Increase meter reading frequency. Automate where possible (IoT, SCADA integration). Weekly readings are a reasonable minimum for most use cases.
+
+### Sin 4: The Data Silo
+
+Vibration data in a standalone system. Process data in the historian. Work orders in Manage. None of them talking to each other.
+
+**The fix:** Invest in data integration before model building. Maximo Monitor can help centralize sensor data. Data pipelines (DataStage, App Connect) bridge the gaps.
+
+### Sin 5: The Survivorship Bias
+
+Only analyzing assets that are still running. The assets that catastrophically failed and were replaced are absent from your data. But those are exactly the failure events the model needs to learn from.
+
+**The fix:** Include historical data from decommissioned and replaced assets. Archive failure records before deleting assets. Ensure your training data includes the full spectrum of outcomes.
+
+---
+
+## Feature Engineering: Turning Raw Data into Predictions
+
+Raw data does not go directly into a model. It gets transformed into *features* -- calculated variables that capture meaningful patterns.
+
+### What Makes a Good Feature
+
+A feature should capture something relevant to failure likelihood. Examples:
+
+- **Age:** Days since installation or last major overhaul
+- **Usage intensity:** Average daily runtime hours
+- **Degradation signal:** Rolling 30-day average vibration
+- **Maintenance recency:** Days since last preventive maintenance
+- **Failure momentum:** Count of corrective work orders in last 90 days
+- **Trend direction:** Slope of temperature readings over last 7 days
+
+### Feature Types
+
+| Type | Description | Example |
+|------|-------------|---------|
+| Point-in-time | Current value | Asset age today |
+| Aggregation | Summary over window | Average vibration, last 30 days |
+| Trend | Rate of change | Vibration slope, last 7 days |
+| Count | Event frequency | Corrective WOs in last quarter |
+| Categorical | Group membership | Asset type, location, manufacturer |
+
+### Critical Rules
+
+**No future leakage.** Features must only use data available at prediction time. If you accidentally include information from *after* the prediction date in training, your model will look fantastic in testing and fail completely in production.
+
+**Time windows matter.** A 7-day rolling average and a 90-day rolling average tell different stories. Experiment with multiple windows.
+
+**Missing value strategy.** Decide upfront: impute (fill in), exclude, or flag. Be consistent. Document your choices.
+
+> **Key insight:** Effective feature engineering often has more impact on model performance than choosing between algorithms. Spend your time here.
+
+---
+
+## The Data Readiness Assessment
+
+Before you build a single model, answer these questions honestly.
+
+### The Quick Assessment
+
+| Question | Ready | Needs Work | Not Ready |
+|----------|-------|------------|-----------|
+| 2+ years of work order history? | Yes | 1-2 years | Less than 1 year |
+| Failure codes specific and consistent? | 80%+ coded | 50-80% coded | Less than 50% |
+| Meters regularly updated? | Weekly+ | Monthly | Sporadic |
+| 30+ failure examples for target mode? | Yes | 15-30 | Fewer than 15 |
+| Assets properly associated? | 90%+ | 70-90% | Less than 70% |
+| Sensor data integrated? | In Monitor | Available | Not integrated |
+
+**Three or more "Ready"** -- You can start building models.
+
+**Mostly "Needs Work"** -- Address the gaps first. Three to six months of data cleanup will pay for itself.
+
+**Mostly "Not Ready"** -- Invest in data foundations before pursuing Predict. Seriously.
+
+### The Detailed Walk-Through
+
+For a thorough assessment, examine each data type:
+
+**Step 1: Profile your failure codes.** What percentage are generic? How many distinct failure modes exist? Are they consistent across sites?
+
+**Step 2: Analyze work order quality.** What percentage have asset associations? How complete are the date fields? Are corrective and preventive clearly distinguished?
+
+**Step 3: Evaluate meter coverage.** What percentage of target assets have active meters? What is the update frequency? Are there significant gaps?
+
+**Step 4: Assess sensor integration.** Is Monitor deployed? Are devices mapped to assets? Is historical data accessible?
+
+**Step 5: Count failure examples.** For your target failure mode, how many confirmed failure events exist in the data? Across how many unique assets?
+
+---
+
+## Real Example: Preparing Pump Failure Data
+
+Consider predicting bearing failures in centrifugal pumps.
+
+**Available data:**
+- 200 pumps across 3 plants
+- 3 years of work orders with failure codes
+- Runtime meters updated weekly
+- Vibration and temperature sensors (hourly via Monitor)
+
+**Preparation steps:**
+
+1. **Filter work orders** to bearing-related corrective work using standardized failure codes
+2. **Calculate features:**
+   - Runtime since last bearing replacement
+   - Rolling 30-day average vibration
+   - Temperature trend (slope over last 7 days)
+   - Count of alarms in last 30 days
+   - Days since last PM
+3. **Create labels:** For each pump on each date, did a bearing failure occur within the next 30 days?
+4. **Handle gaps:** Impute missing sensor readings using forward-fill; exclude pumps with less than 6 months of sensor history
+5. **Split data:** Training on 2020-2022 data; testing on 2023 data
+
+**Result:** A clean training dataset with 47 positive failure examples across 200 pumps. Enough to build a meaningful model.
+
+---
+
+## The Data Improvement Roadmap
+
+If your assessment reveals gaps, here is the priority order:
+
+**Month 1-2: Failure Code Standardization**
+- Define standardized failure taxonomy
+- Train technicians on proper coding
+- Begin retroactive cleanup of recent history
+
+**Month 2-3: Work Order Quality**
+- Enforce asset association requirements
+- Implement completion quality checks
+- Link orphan work orders
+
+**Month 3-4: Meter Improvement**
+- Increase reading frequency
+- Automate where possible
+- Validate historical readings
+
+**Month 4-6: Sensor Integration**
+- Deploy Monitor for target assets
+- Map devices to Manage assets
+- Establish data pipelines
+
+**Ongoing: Quality Monitoring**
+- Regular audits of failure coding
+- Data quality dashboards
+- Feedback loop from model results to data improvement
+
+---
+
+## The 7 Commandments of Prediction Data
+
+1. **Fix failure codes first.** Everything else depends on knowing what failed.
+2. **Associate every work order with an asset.** Orphan work orders are invisible to models.
+3. **Update meters regularly.** Monthly minimum. Weekly preferred.
+4. **Standardize across sites.** The model does not care about your regional preferences.
+5. **Keep history.** Do not purge failure data. Ever. Archive it if you must, but keep it accessible.
+6. **Integrate, do not silo.** Data in disconnected systems might as well not exist.
+7. **Measure quality continuously.** What gets measured gets managed.
+
+Assess your data. Fix what is broken. Then build models. Not the other way around.
+
+---
+
+**Next in the series:** [Part 3: Getting Started with Maximo Predict](/blog/mas-predict-getting-started) -- Setup, configuration, scopes, and selecting your first use case.
+
+---
+
+*This is Part 2 of the MAS Predict series by TheMaximoGuys. [View the complete series index](/blog/mas-predict-series-index).*
+
+---
+
+**TheMaximoGuys** | Enterprise Maximo. No fluff. Just results.

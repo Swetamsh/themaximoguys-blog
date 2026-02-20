@@ -1,0 +1,893 @@
+---
+title: "Best Practices, Governance, and Scaling: Making MVI Sustainable at Enterprise Scale"
+description: "Model lifecycle management, retraining schedules, quality governance, scaling across sites, and the organizational change that makes or breaks enterprise visual inspection programs."
+date: "2026-02-19"
+slug: "mas-visual-inspection-best-practices-governance"
+tags: ["Maximo Visual Inspection", "MVI", "Model Governance", "Retraining", "Model Drift", "Enterprise Scaling", "Change Management", "AI Governance", "MLOps"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "AI & Visual Inspection Specialists"]
+coverImage: "./images/mas-visual-inspection-10.png"
+
+faqs:
+  - question: "How often should I retrain my MVI models?"
+    answer: "Monitor performance monthly. Retrain quarterly as standard practice, or immediately when human override rate exceeds 15% or accuracy drops more than 5% from baseline. Seasonal changes, equipment modifications, and camera replacements all trigger unscheduled retraining."
+  - question: "What is model drift and how do I detect it?"
+    answer: "Model drift occurs when production conditions change from training conditions, degrading model accuracy over time. Detect it by monitoring prediction distribution shifts, confidence score trends, and human override rates. A sudden spike in low-confidence predictions or increased overrides signals drift."
+  - question: "How do I scale MVI from one use case to enterprise-wide deployment?"
+    answer: "Scale in concentric rings: prove value on one defect type at one site, expand to additional defect types at the same site, then replicate the proven model to similar sites. Each ring validates before expanding. Attempting enterprise-wide deployment without a proven pilot fails 80% of the time."
+
+keyTakeaways:
+  - "Model lifecycle management treats AI models like living systems, not one-time deployments"
+  - "Quarterly retraining with fresh production data prevents drift-related accuracy degradation"
+  - "Human override rate is the most reliable indicator of real-world model health"
+  - "Scale in concentric rings: one defect, one site, then expand systematically"
+  - "Organizational change management determines adoption more than model accuracy"
+
+series:
+  name: "MAS VISUAL INSPECTION"
+  part: 10
+  total: 12
+
+tldr: "Sustaining MVI at scale requires model lifecycle management (quarterly retraining, drift monitoring, version control), governance (approval gates, audit trails, compliance), and organizational change (inspector trust-building, role evolution, executive sponsorship). Technology gets you started. Governance keeps you running."
+seoTitle: "MVI Best Practices, Governance, and Enterprise Scaling Guide | TheMaximoGuys"
+seoDescription: "Model lifecycle management, retraining schedules, governance frameworks, and scaling strategies for enterprise Maximo Visual Inspection deployment."
+targetQuestions:
+  - "How do I maintain MVI models over time?"
+  - "What governance framework do I need for visual inspection AI?"
+  - "How do I scale MVI across multiple sites?"
+  - "How do I handle model drift in MVI?"
+semanticKeywords:
+  - "MVI model lifecycle"
+  - "model retraining schedule"
+  - "AI governance visual inspection"
+  - "model drift detection"
+  - "enterprise scaling MVI"
+  - "MLOps visual inspection"
+  - "change management AI"
+  - "visual inspection quality governance"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "MVI deployed in production with integration to MAS (Parts 6-9)"
+  - "Understanding of model training and accuracy metrics (Parts 2, 5)"
+  - "Organizational authority to implement governance processes"
+speakableSections:
+  - "Introduction"
+  - "Model Lifecycle Management"
+  - "The Governance Framework"
+  - "Scaling Strategy"
+  - "The 10 Commandments"
+relatedSlugs:
+  - "mas-visual-inspection-deploying-production"
+  - "mas-visual-inspection-integration-mas"
+  - "mas-predict-best-practices-governance"
+---
+
+> **Who this is for:** IT managers responsible for AI model governance, reliability directors scaling visual inspection programs, and executives who approved the MVI investment and now need to sustain it. Building the model was the beginning. This is the rest of the story.
+
+**Read Time:** 22-25 minutes
+
+---
+
+## The Model That Died at Month 14
+
+A mining company deployed MVI to detect conveyor belt damage. Month 1: 94% accuracy. Standing ovation at the quarterly review.
+
+Month 7: 89% accuracy. Nobody noticed because nobody was monitoring.
+
+Month 14: 71% accuracy. The belt tore. $2.3M in downtime. The investigation found that a camera was replaced at month 5 with a different lens. The new lens produced images with slightly different distortion characteristics. The model had never been retrained on images from the new camera.
+
+Fourteen months of silent degradation. Nobody was watching.
+
+> *"We treated the model like a piece of equipment. Install it and forget it. But a model is not a motor. A motor does not forget how to spin when you change the lighting."*
+
+**Models are living systems. They require monitoring, maintenance, and periodic renewal.** This blog is the operating manual for keeping MVI alive at enterprise scale.
+
+---
+
+## Model Lifecycle Management
+
+Every MVI model goes through a lifecycle. Managing that lifecycle is the difference between a 14-month success and a permanent capability.
+
+### The Model Lifecycle
+
+```
+  MVI MODEL LIFECYCLE
+  ====================
+
+  ┌──────────┐     ┌──────────┐     ┌──────────┐
+  │  BUILD   │────>│  DEPLOY  │────>│ MONITOR  │
+  │          │     │          │     │          │
+  │ Collect  │     │ Shadow   │     │ Track    │
+  │ Label    │     │ Validate │     │ Metrics  │
+  │ Train    │     │ Go-Live  │     │ Alerts   │
+  │ Validate │     │          │     │          │
+  └──────────┘     └──────────┘     └─────┬────┘
+       ^                                   │
+       │                                   │
+       │           ┌──────────┐            │
+       │           │ RETRAIN  │<───────────┘
+       │           │          │  (When metrics
+       │           │ New data │   degrade)
+       └───────────│ Retrain  │
+    (Major change) │ Validate │
+                   │ Redeploy │
+                   └──────────┘
+
+  LIFECYCLE DURATIONS:
+  ───────────────────
+  Build:    2-6 weeks (first model)
+  Deploy:   1-3 weeks (shadow + go-live)
+  Monitor:  Continuous
+  Retrain:  1-2 weeks (quarterly)
+  Full cycle: 3-4 months between major retrains
+```
+
+### Retraining: The Discipline That Sustains Accuracy
+
+```
+  RETRAINING SCHEDULE
+  ===================
+
+  SCHEDULED RETRAINING (Mandatory):
+  ─────────────────────────────────
+  Frequency: Quarterly (every 3 months)
+  Data: Add all images from last quarter
+        Include human-overridden images
+        Include new edge cases discovered
+  Process:
+  1. Export last quarter's production images
+  2. Include human override corrections
+  3. Add to existing training dataset
+  4. Retrain model
+  5. Validate against held-out test set
+  6. Compare metrics to current production model
+  7. If improved: deploy through shadow mode
+  8. If degraded: investigate and fix
+
+  TRIGGERED RETRAINING (Event-Driven):
+  ────────────────────────────────────
+  Trigger 1: Human override rate > 15%
+  Trigger 2: Accuracy drops > 5% from baseline
+  Trigger 3: Camera replaced or repositioned
+  Trigger 4: Lighting conditions permanently changed
+  Trigger 5: New defect type needs to be added
+  Trigger 6: Asset surface treatment changed
+             (e.g., new paint, coating)
+
+  RETRAINING DATA REQUIREMENTS:
+  ────────────────────────────
+  - Minimum 100 new images per class
+  - Include specific failure patterns found
+  - Include all human overrides (correctly labeled)
+  - Maintain total dataset balance (< 3:1 ratio)
+  - Validate new labels before training
+```
+
+### Model Drift: The Silent Killer
+
+```
+  MODEL DRIFT TYPES
+  =================
+
+  DATA DRIFT (Input changes):
+  ──────────────────────────
+  - Camera replaced (different lens/sensor)
+  - Lighting change (new lights installed)
+  - Season change (sun angle, weather)
+  - Asset surface changed (repainted, coated)
+  - Background changed (new equipment nearby)
+
+  Detection: Monitor input image distribution
+  - Average brightness shifting?
+  - Color histogram changing?
+  - Image resolution different?
+
+  CONCEPT DRIFT (What "defect" means changes):
+  ────────────────────────────────────────────
+  - Inspection standards updated
+  - Regulatory requirements changed
+  - New defect types emerge
+  - Severity thresholds redefined
+
+  Detection: Monitor prediction distribution
+  - Class distribution shifting?
+  - Confidence scores trending down?
+  - Override patterns changing?
+
+  DRIFT DETECTION DASHBOARD:
+  ─────────────────────────
+  Metric                    Baseline    Current    Alert?
+  ────────────────────────  ────────    ───────    ──────
+  Avg confidence            82.4%       75.1%      YES
+  Override rate             4.2%        11.8%      YES
+  Class distribution (defect) 5.1%     12.3%      YES
+  Inference latency         127ms       134ms      NO
+  Images/day processed      2,847       2,903      NO
+
+  TWO OF FIVE ALERTS = INVESTIGATE IMMEDIATELY
+```
+
+---
+
+## The Governance Framework
+
+Governance is not bureaucracy. It is the system that prevents the conveyor belt story from happening to you.
+
+### Governance Structure
+
+```
+  MVI GOVERNANCE STRUCTURE
+  ========================
+
+  ┌─────────────────────────────────────┐
+  │  AI GOVERNANCE BOARD                │
+  │  (Quarterly Review)                 │
+  │                                     │
+  │  Members:                           │
+  │  - Reliability Director (Chair)     │
+  │  - IT Manager                       │
+  │  - Quality Manager                  │
+  │  - HSE Representative               │
+  │  - Data/Analytics Lead              │
+  │                                     │
+  │  Responsibilities:                  │
+  │  - Approve new model deployments    │
+  │  - Review model performance reports │
+  │  - Authorize retraining decisions   │
+  │  - Manage model retirement          │
+  │  - Incident review and response     │
+  └──────────────┬──────────────────────┘
+                 │
+  ┌──────────────┴──────────────────────┐
+  │  MODEL OWNERS (Per Model)           │
+  │  (Monthly Review)                   │
+  │                                     │
+  │  - Domain expert (inspector/SME)    │
+  │  - Technical lead (IT/data)         │
+  │                                     │
+  │  Responsibilities:                  │
+  │  - Monitor model performance        │
+  │  - Manage retraining pipeline       │
+  │  - Handle escalations               │
+  │  - Document changes and decisions   │
+  └──────────────┬──────────────────────┘
+                 │
+  ┌──────────────┴──────────────────────┐
+  │  OPERATIONAL USERS                  │
+  │  (Daily Use)                        │
+  │                                     │
+  │  - Inspectors using MVI Mobile/Edge │
+  │  - Planners reviewing MVI WOs       │
+  │  - Supervisors approving actions    │
+  │                                     │
+  │  Responsibilities:                  │
+  │  - Use MVI in daily workflow        │
+  │  - Record overrides accurately      │
+  │  - Report anomalies                 │
+  │  - Participate in labeling/review   │
+  └─────────────────────────────────────┘
+```
+
+### Approval Gates
+
+```
+  MODEL LIFECYCLE APPROVAL GATES
+  ==============================
+
+  GATE 1: MODEL TRAINING APPROVAL
+  ───────────────────────────────
+  Before training begins:
+  - [ ] Use case documented and approved
+  - [ ] Training data collected and labeled
+  - [ ] Labeling guide reviewed by SME
+  - [ ] Data quality validated
+  - [ ] Expected accuracy targets defined
+  Approver: Model Owner
+
+  GATE 2: DEPLOYMENT APPROVAL
+  ───────────────────────────
+  Before shadow mode begins:
+  - [ ] Training accuracy meets targets
+  - [ ] Confusion matrix reviewed by SME
+  - [ ] Edge cases documented
+  - [ ] Integration tested (WO creation, etc.)
+  - [ ] Rollback plan documented
+  Approver: Model Owner + IT Manager
+
+  GATE 3: PRODUCTION APPROVAL
+  ───────────────────────────
+  After shadow mode completes:
+  - [ ] Shadow mode results meet criteria
+  - [ ] Human comparison validates accuracy
+  - [ ] Stakeholders signed off
+  - [ ] Monitoring dashboard configured
+  - [ ] Retraining schedule established
+  Approver: Governance Board
+
+  GATE 4: RETRAINING APPROVAL
+  ───────────────────────────
+  Before retraining model replaces production:
+  - [ ] Retrained model metrics equal or better
+  - [ ] No regression on previously-caught defects
+  - [ ] Shadow mode validation passed
+  - [ ] Version documented in model registry
+  Approver: Model Owner
+
+  GATE 5: RETIREMENT APPROVAL
+  ───────────────────────────
+  Before model is decommissioned:
+  - [ ] Replacement model deployed (or manual process restored)
+  - [ ] Historical data archived
+  - [ ] Dependent integrations updated
+  - [ ] Users notified
+  Approver: Governance Board
+```
+
+### Audit Trail and Compliance
+
+```
+  AUDIT TRAIL REQUIREMENTS
+  ========================
+
+  FOR EACH MODEL, MAINTAIN:
+  ─────────────────────────
+
+  1. MODEL CARD
+     - Model name and version
+     - Training data description (size, classes, sources)
+     - Architecture and parameters
+     - Accuracy metrics (precision, recall, F1 per class)
+     - Known limitations
+     - Approved use cases
+     - Deployment date and approver
+
+  2. TRAINING DATA RECORD
+     - Image count per class
+     - Labeling guide version used
+     - Labelers and QA reviewer
+     - Data split (train/validate/test)
+     - Augmentation applied
+
+  3. DEPLOYMENT LOG
+     - Deployment date/time
+     - Shadow mode duration and results
+     - Production go-live date
+     - Confidence thresholds set
+     - Integration configurations
+
+  4. PERFORMANCE LOG
+     - Weekly: Accuracy metrics snapshot
+     - Weekly: Override rate
+     - Monthly: Drift metrics
+     - Quarterly: Formal review results
+
+  5. CHANGE LOG
+     - Every retraining event
+     - Every threshold adjustment
+     - Every integration change
+     - Every incident and resolution
+
+  FOR REGULATED INDUSTRIES:
+  ────────────────────────
+  - Retain all above for 7+ years
+  - Include regulatory mapping
+    (Which regulation? Which requirement?)
+  - Maintain chain of custody for training data
+  - Document bias testing and fairness metrics
+```
+
+---
+
+## Scaling Strategy: From Pilot to Enterprise
+
+### The Concentric Ring Model
+
+Do not attempt enterprise rollout from day one. Scale in concentric rings, validating at each level.
+
+```
+  CONCENTRIC RING SCALING
+  =======================
+
+  RING 1: Single Defect, Single Site (Months 1-3)
+  ────────────────────────────────────────────────
+  - ONE defect type (e.g., corrosion detection)
+  - ONE asset class (e.g., heat exchangers)
+  - ONE site
+  - ONE camera source
+
+  SUCCESS CRITERIA:
+  - Model accuracy > 90% in production
+  - Work order integration functioning
+  - Human override rate < 10%
+  - Inspector team trusts and uses system
+
+  RING 2: Multiple Defects, Single Site (Months 4-6)
+  ──────────────────────────────────────────────────
+  - ADD defect types (cracks, coating failure, leaks)
+  - SAME asset class (heat exchangers)
+  - SAME site
+  - May add camera sources
+
+  SUCCESS CRITERIA:
+  - All models > 90% accuracy
+  - Integrations working for all defect types
+  - Team capacity to manage multiple models
+  - Retraining pipeline proven
+
+  RING 3: Multiple Assets, Single Site (Months 7-9)
+  ─────────────────────────────────────────────────
+  - Expand to additional asset classes
+    (pumps, vessels, piping, structural)
+  - SAME site
+  - Governance framework operational
+
+  SUCCESS CRITERIA:
+  - Cross-asset model management working
+  - Model registry and version control proven
+  - Governance board established and functioning
+  - ROI documented and validated
+
+  RING 4: Multi-Site Replication (Months 10-18)
+  ─────────────────────────────────────────────
+  - Replicate proven models to similar sites
+  - Adapt for site-specific conditions
+    (different cameras, lighting, asset variants)
+  - Establish site-level model owners
+  - Centralized governance, distributed operations
+
+  SUCCESS CRITERIA:
+  - Models adapted and performing > 88% at new sites
+  - Site teams trained and autonomous
+  - Centralized monitoring dashboard
+  - Enterprise ROI exceeds investment
+
+  RING 5: Enterprise Standard (Months 18+)
+  ────────────────────────────────────────
+  - Visual inspection as standard practice
+  - All applicable assets covered
+  - Continuous improvement cycle operational
+  - Visual data feeding Predict models
+  - Full MAS integration active
+```
+
+### Cross-Site Model Reuse
+
+```
+  MODEL REUSE BETWEEN SITES
+  =========================
+
+  OPTION 1: Direct Deployment
+  ──────────────────────────
+  Deploy Site A's model directly to Site B.
+  Works when: Same asset type, similar conditions.
+  Risk: Site-specific conditions may reduce accuracy.
+  TEST BEFORE TRUSTING.
+
+  OPTION 2: Fine-Tuning
+  ────────────────────
+  Start with Site A's model.
+  Add 200-500 images from Site B.
+  Retrain (fine-tune) on combined dataset.
+  Works when: Similar but not identical conditions.
+  This is the most common and effective approach.
+
+  OPTION 3: Rebuild
+  ────────────────
+  Train new model from scratch for Site B.
+  Works when: Significantly different conditions
+  (different asset types, different cameras,
+   different defect patterns).
+  Most expensive. Sometimes necessary.
+
+  DECISION MATRIX:
+  Similarity to Site A    Approach         Effort
+  ─────────────────────   ──────────────   ──────
+  > 90%                   Direct Deploy    Low
+  60-90%                  Fine-Tune        Medium
+  < 60%                   Rebuild          High
+```
+
+---
+
+## Organizational Change Management
+
+Technology is 40% of the challenge. People are the other 60%.
+
+### The Inspector Trust Gap
+
+```
+  THE TRUST JOURNEY
+  =================
+
+  STAGE 1: SKEPTICISM (Weeks 1-4)
+  ───────────────────────────────
+  "AI is going to replace us."
+  "It does not know what a real crack looks like."
+  "I have been doing this 20 years."
+
+  RESPONSE:
+  - Position MVI as a tool, not a replacement
+  - Show inspectors what they missed
+    (carefully -- not as blame, as demonstration)
+  - Involve inspectors in labeling (they ARE the experts)
+  - Celebrate when MVI catches something new
+
+  STAGE 2: TESTING (Weeks 4-8)
+  ───────────────────────────
+  "OK, let me try it. But I am still doing my inspection."
+  "It flagged 3 things. Two were shadows."
+  "It missed the one I found obvious."
+
+  RESPONSE:
+  - Capture shadow images for retraining
+  - Add the "obvious" miss to training data
+  - Show improvement after retraining
+  - Keep inspectors in the loop on model updates
+
+  STAGE 3: CAUTIOUS ADOPTION (Weeks 8-16)
+  ───────────────────────────────────────
+  "It caught that hairline crack I almost missed."
+  "The work orders are better with the images."
+  "Can it also check for coating failure?"
+
+  RESPONSE:
+  - Expand capabilities per inspector requests
+  - Share success stories across the team
+  - Involve inspectors in defining new defect types
+  - Recognize inspectors as model quality drivers
+
+  STAGE 4: CHAMPION (Months 4+)
+  ────────────────────────────
+  "I would not go back to manual-only."
+  "We should add this to the night shift too."
+  "The new guy should use this from day one."
+
+  RESPONSE:
+  - Formalize inspector role in model governance
+  - Create "AI Champion" designation
+  - Use champions to train other sites
+  - Include AI proficiency in career development
+```
+
+### Role Evolution
+
+```
+  HOW ROLES CHANGE WITH MVI
+  =========================
+
+  INSPECTOR:
+  Before: Sole defect detector and documenter
+  After: Model quality driver, verification expert,
+         edge case specialist
+  New skills: Image labeling, model feedback,
+              threshold adjustment
+
+  PLANNER:
+  Before: Receives text-only inspection reports
+  After: Receives image-enriched, AI-prioritized
+         work orders with confidence scores
+  New skills: Understanding confidence scores,
+              managing AI-generated WO volume
+
+  RELIABILITY ENGINEER:
+  Before: Analyzes sensor data and maintenance history
+  After: Integrates visual condition data with
+         sensor data for holistic asset health
+  New skills: Visual-predictive feature engineering,
+              model performance interpretation
+
+  IT/DATA TEAM:
+  Before: N/A (no role in inspection)
+  After: Model lifecycle management, edge device
+         management, integration maintenance
+  New skills: MLOps, GPU management, model
+              versioning, drift monitoring
+
+  MANAGEMENT:
+  Before: Reviews inspection reports and backlogs
+  After: Reviews AI-augmented dashboards with
+         visual evidence and confidence metrics
+  New skills: AI governance, model risk management,
+              AI ROI measurement
+```
+
+---
+
+## MAS 9.0/9.1 Governance Considerations
+
+If you are running MAS 9.0 or later, several platform features directly support governance workflows.
+
+### Data Lifecycle Manager (DLM) -- MAS 9.0
+
+```
+  DATA LIFECYCLE MANAGEMENT
+  =========================
+
+  DLM provides policy-based data management for MVI:
+
+  WHAT IT DOES:
+  ────────────
+  - Automated data retention policies
+  - Time-based data purging
+  - Storage optimization
+  - Compliance-driven data lifecycle
+
+  GOVERNANCE IMPLICATIONS:
+  ───────────────────────
+  1. Set retention policies per project:
+     - Training data: Retain indefinitely
+       (needed for model reproduction)
+     - Inference results: Retain per policy
+       (30 days, 90 days, 1 year)
+     - Edge sync data: Purge after processing
+
+  2. Compliance documentation:
+     - DLM logs show data lifecycle compliance
+     - Useful for GDPR, HIPAA, industry audits
+     - Automated purging prevents data hoarding
+
+  3. Storage cost management:
+     - Prevent uncontrolled storage growth
+     - Alert before storage limits reached
+     - Automated cleanup of expired data
+
+  RECOMMENDATION:
+  Set DLM policies BEFORE production deployment.
+  Retroactive cleanup is painful and risky.
+```
+
+### Facial Redaction -- MAS 9.0
+
+```
+  FACIAL REDACTION FOR PRIVACY COMPLIANCE
+  ========================================
+
+  MAS 9.0 introduced automatic face blurring.
+
+  USE WHEN:
+  ────────
+  - Cameras capture personnel in frame
+  - GDPR or privacy regulations apply
+  - Training data includes identifiable faces
+  - Edge cameras in public-adjacent areas
+
+  HOW IT WORKS:
+  ────────────
+  - Automatic face detection in captured images
+  - Faces blurred before storage and processing
+  - Applies to both training data and inference
+
+  GOVERNANCE ACTION:
+  - Enable for ALL projects unless faces are
+    specifically needed (safety PPE detection)
+  - Document in model card: "Facial redaction
+    applied/not applied" with justification
+```
+
+### SSD Deprecation Management -- MAS 9.1
+
+```
+  SSD MODEL TRANSITION PLAN
+  ==========================
+
+  MAS 9.1 deprecated SSD training.
+
+  IF YOU HAVE SSD MODELS IN PRODUCTION:
+  ────────────────────────────────────
+  1. Existing SSD models continue to run inference
+  2. You CANNOT retrain SSD models on MAS 9.1
+  3. Plan migration to YOLO v3 architecture
+  4. Document in governance: SSD sunset timeline
+
+  MIGRATION STEPS:
+  ───────────────
+  1. Inventory all SSD models in production
+  2. For each model, train YOLO v3 equivalent
+     using same training dataset
+  3. Shadow deploy YOLO v3 alongside SSD
+  4. Compare metrics (YOLO v3 typically matches
+     or exceeds SSD accuracy)
+  5. Cut over to YOLO v3 per approval gate
+  6. Retire SSD model per Gate 5
+
+  TIMELINE: Complete before next major MAS upgrade
+```
+
+### ITSM Workflow Support -- MAS 9.1
+
+```
+  ITSM INTEGRATION
+  ================
+
+  MAS 9.1 added ITSM workflow support.
+
+  WHAT THIS MEANS:
+  ───────────────
+  - MVI detections can trigger IT Service
+    Management tickets (not just Manage WOs)
+  - Useful when inspection findings need
+    IT team response (sensor replacement,
+    camera maintenance, network issues)
+
+  GOVERNANCE:
+  - Define which detections route to ITSM
+    vs Maximo Manage work orders
+  - Document routing rules in governance framework
+```
+
+---
+
+## Verified Case Studies: Governance at Scale
+
+### Sund & Baelt (Denmark): Governance for National Infrastructure
+
+Sund & Baelt's deployment on the Great Belt Fixed Link demonstrates governance at national scale.
+
+```
+  SUND & BAELT GOVERNANCE LESSONS
+  ================================
+
+  Scale: National infrastructure (one of world's
+         longest suspension bridges)
+
+  Governance requirements:
+  - Public safety mandate (bridge failure = catastrophic)
+  - Long-term model management (100-year lifespan target)
+  - Regulatory compliance (Danish infrastructure standards)
+  - CO2 impact tracking (750,000 tons avoidance)
+
+  Key metrics achieved:
+  - >30% reduction in incident-to-repair time
+    (shows governance-driven response improvement)
+  - 15-25% projected productivity increase over 5-10 years
+    (shows sustained, not one-time, improvement)
+  - Inspection time: Months → Days
+    (shows operational transformation)
+
+  LESSON: For critical infrastructure, governance
+  is not overhead -- it is the operating license.
+  Without documented model performance, audit trails,
+  and retraining pipelines, regulators will not
+  allow AI-driven inspection at this scale.
+```
+
+### Melbourne Water: Governance for Distributed IoT
+
+```
+  MELBOURNE WATER GOVERNANCE LESSONS
+  ===================================
+
+  Scale: 14,000 sq km catchment area
+         Thousands of distributed IoT cameras
+
+  Governance requirements:
+  - Environmental compliance (stormwater regulations)
+  - Fleet-wide model version management
+  - Edge device lifecycle management
+  - Cost justification vs SCADA alternatives
+
+  Key metrics achieved:
+  - Thousands of staff hours saved annually
+  - Tens to hundreds of thousands in cost savings
+  - IoT camera cost << SCADA alternatives
+
+  LESSON: Distributed edge deployments require
+  fleet-wide governance. Model versions must be
+  consistent across devices. Edge diagnostics
+  dashboards (MAS 9.0) enable centralized
+  monitoring of distributed AI fleet.
+```
+
+---
+
+## The Cost of Getting It Wrong vs. Getting It Right
+
+```
+  FAILURE COSTS (Unmanaged MVI):
+  ════════════════════════════════
+
+  Model drift (undetected for 6 months):
+  - Missed defects: $500K-$5M in avoided prevention
+  - Regained trust: 3-6 months
+  - Total cost: $1-6M
+
+  No governance (camera replaced, model not updated):
+  - False sense of security: 2-14 months
+  - Catastrophic miss: $2-20M (one major failure)
+  - Program credibility: Destroyed
+
+  No retraining (model performance erodes):
+  - Gradual accuracy decline: 2-5% per quarter
+  - Inspector workarounds: Model ignored by month 12
+  - Sunk investment: $250K-$1M in licensing + setup
+
+  SUCCESS COSTS (Managed MVI):
+  ═════════════════════════════
+
+  Governance overhead: 4-8 hours/month per model
+  Quarterly retraining: 40-80 hours/quarter
+  Monitoring infrastructure: $10K-$20K/year
+  Annual governance total: $50K-$100K
+
+  vs.
+
+  Annual savings: $500K-$5M per use case
+  Defect cost avoidance: $1M-$10M+ per year
+  NET ROI: 500-5,000%
+
+  THE MATH IS CLEAR.
+  Governance costs 1-2% of the value it protects.
+```
+
+---
+
+## The 10 Commandments of Enterprise Visual Inspection
+
+1. **Models are living systems.** Feed them new data. Monitor their health. Retire them when they no longer serve. Neglected models do not just underperform -- they create false confidence.
+
+2. **Your inspectors are your best model trainers.** Twenty years of pattern recognition expertise does not get replaced by AI -- it gets amplified by it. Involve inspectors from day one.
+
+3. **Governance costs 1-2% of the value it protects.** A quarterly review, a retraining schedule, an audit trail. The mining company that lost $2.3M to an unmonitored camera change would have paid that gladly.
+
+4. **Scale in rings, not leaps.** One defect. One site. Validate. Then expand. Organizations that attempt enterprise-wide visual inspection from day one fail 80% of the time.
+
+5. **Every detection needs an action.** If MVI findings do not flow to work orders, health scores, or alerts, you are running an expensive photo analyzer. Connect the loop.
+
+6. **Diversity in training data is non-negotiable.** Seasons, lighting, angles, cameras, conditions. The model that has not seen winter will fail in December.
+
+7. **Human override rate is your truth metric.** Not lab accuracy. Not training F1 score. The percentage of times a human corrects the AI in daily use. If that number climbs, retrain.
+
+8. **Plan for cameras to change.** They will be replaced, repositioned, cleaned, upgraded. Every camera change is a potential model-breaking event. Monitor for it. Retrain when it happens.
+
+9. **Document everything.** Model cards. Training data records. Deployment logs. Performance trends. Change logs. The audit trail you wish you had during the incident investigation.
+
+10. **Start today.** Not after the perfect dataset. Not after the enterprise architecture review. Not after the governance framework is published. Build one model on one defect for one asset. Prove value. Then govern and scale.
+
+Start with what you have. Improve with what you learn. Scale with what you prove.
+
+---
+
+## Conclusion: The Visual Inspection Transformation
+
+Over ten blogs, we have covered the full journey:
+
+- **Part 1:** What MVI is and why it matters
+- **Part 2:** How computer vision works for asset managers
+- **Part 3:** Deployment options and infrastructure planning
+- **Part 4:** Installation, prerequisites, and your first project
+- **Part 5:** Building your first production-quality model
+- **Part 6:** Deploying with confidence thresholds and monitoring
+- **Part 7:** MVI Mobile on iOS for field inspection
+- **Part 8:** MVI Edge, drones, and field deployment
+- **Part 9:** Integrating with Manage, Health, Monitor, and Predict
+- **Part 10:** Sustaining and scaling with governance
+
+The technology is mature. The integration points are proven. The ROI is documented across industries.
+
+The question is not "Does visual inspection AI work?" It does.
+
+The question is: **"Which asset are you going to start with?"**
+
+Pick one. Label some images. Train a model. Deploy it in shadow mode. Watch it catch what your eyes miss.
+
+Then do it again. And again. And again.
+
+That is how you build an enterprise visual inspection capability. Not with a big bang. With disciplined, iterative, governed expansion.
+
+Your cameras are ready. Your assets are waiting. Go find what you have been missing.
+
+---
+
+**Previous:** [Part 9 - Integration with MAS Applications](/blog/mas-visual-inspection-integration-mas)
+
+**Next:** [Part 11 - REST API Reference](/blog/mas-visual-inspection-rest-api-reference)
+
+**Series:** MAS VISUAL INSPECTION | Part 10 of 12
+
+---
+
+**TheMaximoGuys** | Enterprise Maximo. No fluff. Just results.

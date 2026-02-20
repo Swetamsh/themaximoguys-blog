@@ -1,0 +1,703 @@
+---
+title: "MVI REST API Reference: The Complete Developer Guide to Programmatic Visual Inspection"
+description: "Complete REST API reference for IBM Maximo Visual Inspection. Authentication, endpoints, code examples, automation patterns, and the vision-tools CLI."
+date: "2026-02-19"
+slug: "mas-visual-inspection-rest-api-reference"
+tags: ["Maximo Visual Inspection", "MVI", "REST API", "API Reference", "Automation", "vision-tools", "IBM Maximo", "Developer Guide"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "AI & Visual Inspection Specialists"]
+coverImage: "./images/mas-visual-inspection-11.png"
+
+faqs:
+  - question: "How do I authenticate with the MVI REST API?"
+    answer: "All API calls use the X-Auth-Token header with an API key generated from the MVI web interface. Keys do not expire but can be revoked. For CLI automation, set the VAPI_TOKEN environment variable."
+  - question: "What can I automate with the MVI API?"
+    answer: "The API supports full lifecycle automation: dataset creation, bulk image upload, data augmentation, model training, deployment, and inference. The IBM vision-tools CLI on GitHub provides ready-made scripts for common automation tasks."
+  - question: "Is there a rate limit on the MVI API?"
+    answer: "MVI does not impose explicit rate limits on the REST API. Performance is constrained by your infrastructure capacity -- GPU availability for training, storage for uploads, and compute for inference. For bulk operations, use chunked upload endpoints and batch operations."
+
+keyTakeaways:
+  - "X-Auth-Token authentication with non-expiring, revocable API keys"
+  - "Full lifecycle API coverage from dataset creation through inference"
+  - "Data augmentation API eliminates manual image preprocessing"
+  - "vision-tools CLI accelerates automation for common workflows"
+  - "Chunked upload endpoints handle large image batches reliably"
+
+series:
+  name: "MAS VISUAL INSPECTION"
+  part: 11
+  total: 12
+
+tldr: "The MVI REST API uses X-Auth-Token authentication and covers the full visual inspection lifecycle: datasets, files, labels, training, deployment, and inference. This reference covers every endpoint, query parameter, and automation pattern, plus the vision-tools CLI for pipeline scripting."
+seoTitle: "MVI REST API Reference: Complete Developer Guide | TheMaximoGuys"
+seoDescription: "Complete REST API reference for IBM Maximo Visual Inspection. Authentication, endpoints, automation patterns, vision-tools CLI, and code examples."
+targetQuestions:
+  - "How do I use the MVI REST API?"
+  - "What endpoints does Maximo Visual Inspection expose?"
+  - "How do I automate MVI model training via API?"
+  - "What is vision-tools CLI for MVI?"
+semanticKeywords:
+  - "MVI REST API"
+  - "Maximo Visual Inspection API"
+  - "X-Auth-Token MVI"
+  - "vision-tools CLI"
+  - "MVI automation"
+  - "MVI API endpoints"
+  - "bulk upload MVI"
+  - "programmatic model training"
+proficiencyLevel: "advanced"
+dependencies:
+  - "MVI environment deployed and accessible (Part 4)"
+  - "Familiarity with REST API concepts"
+  - "Basic command-line experience for vision-tools CLI"
+speakableSections:
+  - "Introduction"
+  - "Authentication"
+  - "Quick Start"
+relatedSlugs:
+  - "mas-visual-inspection-installation-first-project"
+  - "mas-visual-inspection-integration-mas"
+  - "mas-visual-inspection-deploying-production"
+---
+
+> **Who this is for:** Developers building automation pipelines, integration architects connecting MVI to external systems, and DevOps engineers who need programmatic control over the entire visual inspection lifecycle. If you are writing code that talks to MVI, this is your reference.
+
+**Read Time:** 28-32 minutes
+
+---
+
+## The API Documentation That Should Have Existed
+
+You have a trained MVI model. It works in the UI. Now someone asks you to automate the pipeline -- upload 10,000 images nightly, trigger training when new data arrives, promote the best model, run inference from a custom application.
+
+You open the IBM documentation. You find fragments. A few endpoints here. Authentication mentioned there. Query parameters buried somewhere else.
+
+> *"We spent three days reverse-engineering the API from the Swagger spec and browser network logs. Every endpoint was there, but no one had written the cookbook."*
+
+This is that cookbook. Every endpoint, every parameter, every automation pattern. Consolidated from IBM API documentation with the code examples the official docs never provide.
+
+---
+
+## Authentication
+
+Every API call to MVI requires exactly one thing: an API key in the `X-Auth-Token` header.
+
+```
+  MVI AUTHENTICATION
+  ==================
+
+  HEADER:   X-Auth-Token: {your-api-key}
+
+  GENERATE: MVI UI > User Settings > Generate API Key
+            Copy immediately -- shown only once.
+
+  KEY BEHAVIOR:
+  - Keys do NOT expire
+  - Keys CAN be revoked (immediate, returns 401)
+  - One key per user recommended
+  - No built-in rotation mechanism
+
+  SERVICE ACCOUNTS (for automation):
+  - Create dedicated user: svc-mvi-automation
+  - Never use personal keys in scripts
+  - Service account keys survive personnel changes
+
+  CLI ENVIRONMENT VARIABLES:
+  export VAPI_TOKEN="your-api-key-here"
+  export VAPI_HOST="https://mvi.your-domain.com"
+```
+
+### Authentication Test
+
+Before you write a single line of automation code, verify your key works.
+
+```bash
+# Verify API key is valid
+curl -s -o /dev/null -w "%{http_code}" \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  https://mvi.your-domain.com/api-keys
+
+# Expected: 200
+# If 401: Key is invalid or revoked
+# If 404: Wrong base URL
+```
+
+---
+
+## Quick Start: Dataset to Inference in 5 Minutes
+
+You want a working example before reading 30 endpoints. Here is the shortest path from zero to inference using only curl.
+
+```bash
+# Step 1: Create a dataset
+curl -X POST https://mvi.your-domain.com/datasets \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "api-test-dataset"}'
+
+# Response: {"_id": "abc123", "name": "api-test-dataset", ...}
+# Save the _id value -- you need it for everything else.
+
+# Step 2: Create categories
+curl -X POST https://mvi.your-domain.com/datasets/abc123/categories \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "defective"}'
+
+curl -X POST https://mvi.your-domain.com/datasets/abc123/categories \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "good"}'
+
+# Step 3: Upload an image
+curl -X POST https://mvi.your-domain.com/datasets/abc123/files \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  -F "files=@defective_part_001.jpg"
+
+# Step 4: Run inference (on a deployed model)
+curl -X POST https://mvi.your-domain.com/api/v1/infer \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  -F "image=@test_image.jpg" \
+  -F "model_id=deployed_model_id"
+
+# Response includes classification result and confidence score
+```
+
+That is the full lifecycle in four API calls. The rest of this post is the complete reference for every variation.
+
+---
+
+## Endpoint Reference
+
+The MVI API organizes around six resource groups: **Datasets** (`/datasets`), **Files** (`/datasets/{id}/files`), **Labels** (`object-labels`, `action-labels`), **Training** (`/dnn-script`), **Inference** (`/api/v1/infer`), and **API Keys** (`/api-keys`). Additional resources include categories, file-metadata, object-tags, dltasks, trained-models, deployed-models, projects, users, and action-tags.
+
+---
+
+### API Keys
+
+Manage authentication tokens programmatically.
+
+```
+  API KEY ENDPOINTS
+  =================
+
+  GET    /api-keys              Retrieve the current user's API key
+  POST   /api-keys              Generate a new API key
+  DELETE /api-keys              Revoke the existing API key
+```
+
+```bash
+# Get current API key info
+curl -X GET https://mvi.your-domain.com/api-keys \
+  -H "X-Auth-Token: YOUR_API_KEY"
+
+# Generate a new API key (invalidates the previous one)
+curl -X POST https://mvi.your-domain.com/api-keys \
+  -H "X-Auth-Token: YOUR_API_KEY"
+
+# Revoke the API key
+curl -X DELETE https://mvi.your-domain.com/api-keys \
+  -H "X-Auth-Token: YOUR_API_KEY"
+```
+
+> **Warning:** Generating a new key invalidates the old one. If you have automation scripts using the old key, they will break immediately. Coordinate key rotation across all consumers.
+
+---
+
+### Datasets
+
+Datasets are the top-level container for images, labels, and categories.
+
+```
+  DATASET ENDPOINTS
+  =================
+
+  GET    /datasets                  List all datasets
+  POST   /datasets                  Create a new dataset
+  GET    /datasets/{id}             Retrieve dataset info
+  DELETE /datasets/{id}             Delete dataset and all files
+  POST   /datasets/action           Batch operations (delete multiple)
+  POST   /datasets/import           Import dataset from zip file
+  GET    /datasets/{id}/export      Export dataset as zip file
+  POST   /datasets/{id}/action      Rename, clone, preprocess,
+                                    autolabel, augment, apply retention,
+                                    calculate size
+```
+
+```bash
+# List all datasets (with pagination)
+curl -X GET "https://mvi.your-domain.com/datasets?limit=20&skip=0" \
+  -H "X-Auth-Token: YOUR_API_KEY"
+
+# Create a new dataset
+curl -X POST https://mvi.your-domain.com/datasets \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "corrosion-inspection-q1-2026"}'
+
+# Get dataset details
+curl -X GET https://mvi.your-domain.com/datasets/abc123 \
+  -H "X-Auth-Token: YOUR_API_KEY"
+
+# Delete a dataset (DESTRUCTIVE -- deletes all associated files)
+curl -X DELETE https://mvi.your-domain.com/datasets/abc123 \
+  -H "X-Auth-Token: YOUR_API_KEY"
+
+# Export dataset as zip (for backup or migration)
+curl -X GET https://mvi.your-domain.com/datasets/abc123/export \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  --output dataset_backup.zip
+
+# Import dataset from zip
+curl -X POST https://mvi.your-domain.com/datasets/import \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  -F "file=@dataset_backup.zip"
+
+# Dataset actions: clone, rename, augment, preprocess, autolabel
+curl -X POST https://mvi.your-domain.com/datasets/abc123/action \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "clone", "dataset_name": "corrosion-clone"}'
+```
+
+### Categories and Action Tags
+
+```
+  CATEGORY AND TAG ENDPOINTS
+  ==========================
+  GET    /datasets/{id}/categories              List categories
+  POST   /datasets/{id}/categories              Create a category
+  DELETE /datasets/{id}/categories/{cat_id}      Remove a category
+  GET    /datasets/{id}/action-tags             List action tags
+  POST   /datasets/{id}/action-tags             Create an action tag
+```
+
+```bash
+# Create a category
+curl -X POST https://mvi.your-domain.com/datasets/abc123/categories \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "severe_corrosion"}'
+```
+
+---
+
+### Files
+
+Upload, download, and manage images and videos within datasets.
+
+```
+  FILE ENDPOINTS
+  ==============
+
+  GET    /datasets/{id}/files                       List files
+  POST   /datasets/{id}/files                       Upload files
+  DELETE /datasets/{id}/files/{file_id}              Remove a file
+  POST   /datasets/{id}/files/upload/{upload_id}     Chunked upload
+  GET    /datasets/{id}/files/{file_id}/download     Download file
+  GET    /datasets/{id}/files/{file_id}/thumbnail/download
+                                                     Download thumbnail
+  POST   /datasets/{id}/files/{file_id}/action       Capture frames,
+                                                     autolabel,
+                                                     change category
+  GET    /datasets/{id}/files/user-metadata          Export metadata CSV
+```
+
+```bash
+# List files in a dataset (with pagination and filtering)
+curl -X GET \
+  "https://mvi.your-domain.com/datasets/abc123/files?limit=50&skip=0" \
+  -H "X-Auth-Token: YOUR_API_KEY"
+
+# Upload a single image
+curl -X POST https://mvi.your-domain.com/datasets/abc123/files \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  -F "files=@inspection_001.jpg"
+
+# Upload multiple images in one request
+curl -X POST https://mvi.your-domain.com/datasets/abc123/files \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  -F "files=@image_001.jpg" \
+  -F "files=@image_002.jpg" \
+  -F "files=@image_003.jpg"
+
+# Download a file
+curl -X GET \
+  https://mvi.your-domain.com/datasets/abc123/files/file789/download \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  --output downloaded_image.jpg
+
+# File actions: change category, capture frames, autolabel
+curl -X POST \
+  https://mvi.your-domain.com/datasets/abc123/files/file789/action \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "change_category", "category_id": "cat456"}'
+```
+
+### Chunked Upload for Large Batches
+
+For hundreds or thousands of images, use the chunked upload endpoint (`/files/upload/{upload_id}`). Start an upload to receive an `upload_id`, then send subsequent chunks to that ID. Benefits: resume after network failure, progress tracking per chunk, no timeout on large batches.
+
+---
+
+### Labels
+
+Labels are the annotations on files -- bounding boxes for object detection, categories for classification, and action labels for video.
+
+```
+  LABEL ENDPOINTS
+  ===============
+
+  OBJECT LABELS (bounding boxes, polygons):
+  GET    /datasets/{id}/files/{file_id}/object-labels
+                                          List object labels on a file
+  POST   /datasets/{id}/files/{file_id}/object-labels
+                                          Create object label on a file
+
+  ACTION LABELS (video temporal annotations):
+  GET    /datasets/{id}/files/{file_id}/action-labels
+                                          List action labels on a video
+  POST   /datasets/{id}/files/{file_id}/action-labels
+                                          Create action label on a video
+  PUT    /datasets/{id}/files/{file_id}/action-labels/{label_id}
+                                          Update an action label
+  DELETE /datasets/{id}/files/{file_id}/action-labels/{label_id}
+                                          Remove an action label
+```
+
+```bash
+# Get object labels for an image
+curl -X GET \
+  https://mvi.your-domain.com/datasets/abc123/files/file789/object-labels \
+  -H "X-Auth-Token: YOUR_API_KEY"
+
+# Create an object label (bounding box)
+curl -X POST \
+  https://mvi.your-domain.com/datasets/abc123/files/file789/object-labels \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "x": 120,
+    "y": 340,
+    "w": 180,
+    "h": 95,
+    "label": "crack",
+    "confidence": 1.0
+  }'
+
+# Create an action label on a video (PUT to update, DELETE to remove)
+curl -X POST \
+  https://mvi.your-domain.com/datasets/abc123/files/file789/action-labels \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"start_frame": 30, "end_frame": 90, "label": "bearing_vibration"}'
+```
+
+---
+
+### Training (DNN Scripts)
+
+Custom inference scripts and training pipelines.
+
+```
+  TRAINING ENDPOINTS
+  ==================
+
+  GET    /dnn-script                List all DNN scripts
+  POST   /dnn-script                Upload a custom inference script
+  GET    /dnn-script/{id}           Get specific DNN script details
+  PUT    /dnn-script/{id}           Update a DNN script
+  DELETE /dnn-script/{id}           Remove a DNN script
+```
+
+```bash
+# Upload a custom DNN script
+curl -X POST https://mvi.your-domain.com/dnn-script \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  -F "file=@custom_inference.py" \
+  -F "name=custom-corrosion-detector"
+
+# List, get, update, delete follow standard REST patterns
+```
+
+---
+
+### Inference
+
+The inference endpoint is where trained, deployed models classify or detect objects in new images.
+
+```
+  INFERENCE ENDPOINT
+  ==================
+
+  POST   /api/v1/infer              Run inference on an image
+```
+
+```bash
+# Run inference on an image
+curl -X POST https://mvi.your-domain.com/api/v1/infer \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  -F "image=@test_image.jpg" \
+  -F "model_id=deployed_model_id"
+
+# Example response (classification):
+# {
+#   "classified": {
+#     "good": 0.12,
+#     "defective": 0.88
+#   },
+#   "result": "defective",
+#   "confidence": 0.88
+# }
+
+# Example response (object detection):
+# {
+#   "detections": [
+#     {
+#       "label": "crack",
+#       "confidence": 0.94,
+#       "x": 120, "y": 340, "w": 180, "h": 95
+#     },
+#     {
+#       "label": "corrosion",
+#       "confidence": 0.87,
+#       "x": 400, "y": 150, "w": 220, "h": 130
+#     }
+#   ]
+# }
+```
+
+The inference flow is straightforward: POST the image with your API key and model ID, MVI loads the deployed model, preprocesses the image, runs inference, and returns the classification or detection results as JSON.
+
+---
+
+## Query Parameters and Filtering
+
+Most list endpoints (`GET /datasets`, `GET /datasets/{id}/files`) support pagination, sorting, and filtering.
+
+```
+  QUERY PARAMETERS
+  ================
+  limit     Max results per page (integer)
+  skip      Offset for pagination (integer)
+  sortby    Sort field (append " DESC" for descending)
+  query     Filter expression using operators:
+            ==, !=, >, >=, <, <=
+```
+
+```bash
+# Paginate: first 20 datasets, then next 20
+curl -X GET "https://mvi.your-domain.com/datasets?limit=20&skip=0" \
+  -H "X-Auth-Token: YOUR_API_KEY"
+
+# Combined: filter by category, sort newest first, paginate
+curl -X GET \
+  "https://mvi.your-domain.com/datasets/abc123/files?query=category_name==defective&sortby=created_at%20DESC&limit=50&skip=0" \
+  -H "X-Auth-Token: YOUR_API_KEY"
+```
+
+**Pagination pattern:** For large datasets, loop with `limit=100` and increment `skip` by 100 each iteration. Read the `file_count` from the response to know when to stop. Always paginate -- never try to fetch all files in a single request.
+
+---
+
+## Data Augmentation API
+
+The data augmentation endpoint generates synthetic training data from existing images. This is one of the most valuable API features for teams with limited training data.
+
+POST to `/datasets/{id}/action` with `"detector": "data_augmentation"` and a parameters object. Seven augmentation types are available: **color** (brightness/contrast/saturation), **crop** (random scales), **noise** (Gaussian grain), **rotation** (random angles), **sharpness** (vary levels), **flip** (horizontal/vertical), **blur** (Gaussian focus). Set each to `true` or `false`. MVI creates a NEW dataset with augmented images -- the original is unchanged. Labels are preserved and transformed (bounding boxes rotate/flip with the image).
+
+```bash
+# Run full data augmentation
+curl -X POST \
+  https://mvi.your-domain.com/datasets/abc123/action \
+  -H "X-Auth-Token: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "detector": "data_augmentation",
+    "parameters": {
+      "color": true, "crop": true, "noise": true,
+      "rotation": true, "sharpness": true,
+      "flip": true, "blur": true
+    },
+    "dataset_name": "corrosion-augmented-v1"
+  }'
+
+# Selective augmentation: set unwanted parameters to false
+```
+
+**Augmentation strategy:** Start with rotation + flip + noise (covers most field conditions). Add color if lighting varies between shifts. Add blur for drone images with vibration. Avoid color augmentation when color IS the defect (rust discoloration). Avoid rotation when orientation matters (text, directional wear). Typical result: 5-8x original dataset size with labels preserved.
+
+---
+
+## Automation Patterns
+
+Here is where the API becomes powerful. These patterns turn manual MVI workflows into repeatable, scriptable pipelines.
+
+### Pattern 1: Nightly Bulk Upload
+
+Schedule a cron job that iterates through an image directory, POSTs each file to `/datasets/{id}/files`, checks the HTTP response code (201 = success), moves uploaded files to an archive directory, and logs failures. Use `VAPI_TOKEN` from the environment so credentials stay out of the script.
+
+### Pattern 2: Batch Inference Pipeline
+
+```bash
+#!/bin/bash
+# batch_inference.sh -- Run inference on a directory of images
+MODEL_ID="deployed_model_123"
+IMAGE_DIR="/mnt/inspection-images/pending"
+MVI_HOST="https://mvi.your-domain.com"
+
+for IMAGE in "$IMAGE_DIR"/*.{jpg,jpeg,png}; do
+  [ -f "$IMAGE" ] || continue
+  RESULT=$(curl -s -X POST "${MVI_HOST}/api/v1/infer" \
+    -H "X-Auth-Token: ${VAPI_TOKEN}" \
+    -F "image=@${IMAGE}" \
+    -F "model_id=${MODEL_ID}")
+  LABEL=$(echo "$RESULT" | jq -r '.result // "N/A"')
+  CONFIDENCE=$(echo "$RESULT" | jq -r '.confidence // "N/A"')
+  echo "$(date) $(basename $IMAGE): ${LABEL} (${CONFIDENCE})" >> /var/log/mvi-inference.log
+done
+```
+
+### Pattern 3: Model Promotion
+
+Export a dataset from staging MVI (`GET /datasets/{id}/export`), download the zip, then import to production MVI (`POST /datasets/import`). This is how you move validated datasets between environments without re-uploading images.
+
+### Pattern 4: CI/CD Integration
+
+A five-stage CI/CD pipeline: **(1)** Upload new training data (`POST /datasets/{id}/files`), **(2)** Augment (`POST /datasets/{id}/action`), **(3)** Train and poll for completion, **(4)** Validate via inference (`POST /api/v1/infer`) against known-good images, **(5)** Promote to production if validation passes. Works with Jenkins, GitHub Actions, or any CI/CD platform.
+
+---
+
+## vision-tools CLI
+
+IBM provides an open-source CLI tool for common MVI API operations. It wraps the REST API into simple command-line utilities.
+
+```bash
+# Installation
+git clone https://github.com/IBM/vision-tools.git
+cd vision-tools && pip install -r requirements.txt
+
+# Configuration (two env vars -- that is all you need)
+export VAPI_TOKEN="your-api-key"
+export VAPI_HOST="https://mvi.your-domain.com"
+```
+
+### Key Commands
+
+```bash
+# Dataset operations
+python vision_datasets.py --list
+python vision_datasets.py --create "my-dataset"
+
+# Bulk upload a directory of images
+python vision_upload.py --dsid {dataset_id} --dir /path/to/images/
+
+# Export / import datasets
+python vision_export.py --dsid {dataset_id} --output dataset.zip
+python vision_import.py --file dataset.zip
+
+# Inference (single image or entire directory)
+python vision_infer.py --modelid {model_id} --image test.jpg
+python vision_infer.py --modelid {model_id} --dir /path/to/images/
+```
+
+**When to use vision-tools vs. raw API:** Use vision-tools for bulk uploads, quick export/import, batch inference, and prototyping. Use the raw API when building custom integrations, embedding inference in web services, implementing retry logic, or programming in a language other than Python.
+
+---
+
+## Response Codes and Error Handling
+
+```
+  HTTP RESPONSE CODES
+  ===================
+  200  Successful operation (GET, PUT, DELETE)
+  201  Successful creation (POST)
+  400  Invalid input (bad JSON, missing fields, bad format)
+  401  Authentication failure (missing/invalid/revoked key)
+  404  Resource not found (bad ID or URL)
+  422  Processing error (insufficient data, bad parameters)
+  500  Server error (GPU OOM, storage full, service crash)
+```
+
+### Common Errors and Fixes
+
+```
+  TROUBLESHOOTING QUICK REFERENCE
+  ================================
+
+  401  API key missing/invalid/revoked
+       Fix: Check X-Auth-Token header, regenerate key in UI
+
+  400  Bad request (usually file upload)
+       Fix: Verify JPEG/PNG format, use multipart (not JSON)
+       for file uploads, check file is not zero bytes
+
+  404  Resource not found
+       Fix: GET /datasets to verify IDs, check base URL
+
+  422  Processing error (augmentation/training)
+       Fix: Verify dataset has images, check parameters
+
+  500  Server error (inference/training)
+       Fix: Check model is deployed, verify GPU availability,
+       review pod logs (oc logs), restart pod if GPU OOM
+
+  Connection refused / timeout
+       Fix: oc get pods -n mas-{instance}-visualinspection,
+       check ingress/route, verify TLS cert
+```
+
+### Retry Logic
+
+For automation scripts, always implement retry with exponential backoff. Retry on 5xx errors (transient server issues). Never retry on 401 (fix authentication first) or 400 (fix the request). Start with 3 retries, 5-second initial delay, doubling each attempt. Log every failure for debugging.
+
+---
+
+## Key Takeaways
+
+1. **Authentication is a single header: X-Auth-Token.** Keys are generated in the MVI UI, do not expire, and can be revoked instantly. Use dedicated service accounts for automation -- never embed a personal key in a script.
+
+2. **The API covers the full visual inspection lifecycle.** From creating datasets and uploading images, through labeling and augmentation, to training and inference. Everything you can do in the UI, you can do through the API.
+
+3. **Data augmentation via API is a force multiplier.** Seven augmentation types (color, crop, noise, rotation, sharpness, flip, blur) generate synthetic training data from existing images. A 200-image dataset becomes 1,000+ images with labels preserved.
+
+4. **Chunked upload handles large-scale ingestion.** When uploading thousands of images, use the chunked upload endpoint to handle network interruptions. Combine with retry logic for production-grade reliability.
+
+5. **vision-tools CLI eliminates boilerplate for common tasks.** Bulk upload, batch inference, dataset export/import -- all are one-liners with the IBM CLI tool. Use it for prototyping and operational scripts. Build custom integrations with the raw API.
+
+6. **Query parameters enable efficient data retrieval.** Use `limit`, `skip`, `sortby`, and `query` operators (==, !=, >, >=, <, <=) to paginate and filter large datasets without downloading everything.
+
+7. **Retry logic is not optional for automation.** Transient failures happen. Implement exponential backoff for 5xx errors. Never retry 401 errors -- fix the authentication first. Log every failure for debugging.
+
+---
+
+## What Comes Next
+
+You have the complete API reference. You can automate dataset creation, bulk uploads, augmentation, and inference. In Part 12, we bring the troubleshooting guide: every common MVI problem diagnosed and solved, from GPU configuration failures to integration debugging, plus 20+ frequently asked questions.
+
+The API turns manual inspection into a software pipeline. The next post makes sure that pipeline stays running.
+
+---
+
+**Previous:** [Part 10 - Best Practices, Governance, and Scaling](/blog/mas-visual-inspection-best-practices-governance)
+
+**Next:** [Part 12 - Troubleshooting & FAQ](/blog/mas-visual-inspection-troubleshooting-faq)
+
+**Series:** MAS VISUAL INSPECTION | Part 11 of 12
+
+---
+
+*IBM Documentation Sources:*
+- *[MVI REST API Overview](https://www.ibm.com/docs/en/masv-and-l/maximo-vi/cd?topic=overview-rest-apis)*
+- *[MVI API Documentation v8.5](https://public.dhe.ibm.com/systems/power/docs/powerai/api850.html)*
+- *[IBM Vision Tools CLI](https://github.com/IBM/vision-tools)*
+- *[MVI Master API](https://github.com/IBM/mas-mvi-master-api)*
+
+---
+
+**TheMaximoGuys** | Enterprise Maximo. No fluff. Just results.

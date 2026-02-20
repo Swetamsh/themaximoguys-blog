@@ -1,0 +1,416 @@
+---
+title: "Integrating Health with Monitor and Predict: From Snapshot to Heartbeat"
+description: "How to feed real-time IoT telemetry from Maximo Monitor and failure predictions from Maximo Predict into your Maximo Health models. Architecture, data flows, and governance."
+date: "2026-02-19"
+slug: "mas-health-integrating-monitor-predict"
+tags: ["Maximo Health", "MAS", "Maximo Monitor", "Maximo Predict", "IoT", "Predictive Maintenance", "Integration", "Telemetry"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Asset Performance Management Specialists"]
+coverImage: "./images/mas-health-05.png"
+
+faqs:
+  - question: "Do I need Monitor and Predict to use Maximo Health?"
+    answer: "No. Health works with Maximo Manage data alone. Monitor and Predict are additive enrichments that make health scores more dynamic and forward-looking. Start with Manage data, add integrations when ready."
+  - question: "How does Monitor data flow into Health?"
+    answer: "Monitor processes IoT telemetry (vibration, temperature, pressure) and produces derived signals like threshold breaches, anomaly scores, and statistical summaries. These are mapped to condition indicators in Health, either through direct field updates or event-driven triggers."
+  - question: "What does Predict add that Health alone cannot do?"
+    answer: "Predict adds forward-looking signals -- failure probability and remaining useful life estimates. Health without Predict tells you where an asset is now. Health with Predict tells you where it is heading and when it is likely to fail."
+
+keyTakeaways:
+  - "Monitor provides real-time condition signals; Predict provides forward-looking failure estimates"
+  - "Integration follows a layered architecture: sensors to monitoring to analytics to health to action"
+  - "Event-driven patterns ensure health scores respond quickly to meaningful condition changes"
+  - "New indicators from Monitor and Predict should be introduced gradually with validation"
+  - "Governance must coordinate across monitoring, analytics, and health model ownership"
+
+series:
+  name: "MAS HEALTH"
+  part: 5
+  total: 8
+
+tldr: "Maximo Health works without Monitor and Predict but becomes dramatically more powerful with them. Monitor provides real-time condition telemetry. Predict provides failure probability and remaining useful life. This post covers the integration architecture, data flow patterns, and governance needed to keep integrated scores trustworthy."
+seoTitle: "Integrating Maximo Health with Monitor & Predict | TheMaximoGuys"
+seoDescription: "How to connect IBM Maximo Health with Monitor IoT telemetry and Predict analytics. Architecture, data flows, event patterns, and integration governance."
+targetQuestions:
+  - "How does Maximo Health integrate with Monitor?"
+  - "How does Predict data flow into Health scores?"
+  - "Do I need Monitor and Predict for Maximo Health?"
+  - "What is the architecture for integrated asset health?"
+  - "How do IoT sensors feed into health scoring?"
+semanticKeywords:
+  - "Maximo Health Monitor integration"
+  - "Maximo Predict Health integration"
+  - "IoT asset health scoring"
+  - "predictive maintenance Maximo"
+  - "remaining useful life"
+  - "failure probability indicator"
+  - "condition-based maintenance IoT"
+  - "sensor data health scoring"
+  - "event-driven health updates"
+  - "MAS integration architecture"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 1-4 of the MAS Health series"
+  - "Basic understanding of IoT and sensor data concepts"
+  - "Familiarity with Maximo Monitor and Predict (helpful but not required)"
+speakableSections:
+  - "Introduction"
+  - "The Integration Architecture"
+  - "Monitor Integration Patterns"
+  - "Predict Integration Patterns"
+relatedSlugs:
+  - "mas-health-configuring-scores-criticality"
+  - "mas-health-dashboards-kpis"
+  - "mas-monitor-introduction"
+  - "mas-predict-introduction"
+---
+
+# Integrating Health with Monitor and Predict: From Snapshot to Heartbeat
+
+> **Who this is for:** Maximo architects, reliability engineers, and integration leads who want to connect IoT telemetry and predictive analytics into their Health scoring models -- and need to understand the architecture, data flows, and governance that make it work.
+
+**Estimated read time: 15 minutes**
+
+---
+
+## 🔥 The Pump That Died Between Inspections
+
+An oil and gas operator had Maximo Health running on their critical rotating equipment. Health scores were based on quarterly inspections, monthly vibration rounds, and work order history. The model was solid. Expert-validated. Trusted.
+
+Pump P-312 scored 71 on a Tuesday. Healthy enough. Watch band, but nothing urgent.
+
+The following Sunday, P-312 experienced a catastrophic bearing failure. Unplanned shutdown. $180,000 in repairs. Three days of lost production.
+
+Post-mortem found the root cause: a rapid increase in bearing temperature that started Wednesday -- the day after the health score was calculated. The quarterly inspection was not due for another 8 weeks. The monthly vibration round was not due for another 3 weeks. Nobody was watching the continuous temperature data streaming from the sensor bolted to the bearing housing.
+
+The sensor data was there. In the historian. Updating every 30 seconds. Nobody connected it to Health.
+
+> *"We had the data that would have caught it. We just did not use it."*
+
+This is the gap that Monitor and Predict integration closes. Without it, health scores are snapshots -- accurate at the moment of calculation, blind to what happens next. With it, health scores become a heartbeat -- continuously updated, responsive to real-time changes, forward-looking.
+
+---
+
+## 📊 The Before and After
+
+Let's make this concrete before we get into architecture:
+
+```
+BEFORE INTEGRATION (Health + Manage only)
+
+  Data frequency:      Work orders (as completed)
+                       Inspections (quarterly)
+                       Vibration rounds (monthly)
+                       Meter readings (weekly)
+
+  Health update:       When data changes (event-driven from Manage)
+  Blind spots:         Everything between measurement intervals
+  Forward-looking:     None -- scores reflect current/past state only
+
+─────────────────────────────────────────────────────────────
+
+AFTER INTEGRATION (Health + Monitor + Predict)
+
+  Data frequency:      All of the above, PLUS:
+                       IoT telemetry (every 30 seconds to 5 minutes)
+                       Anomaly detection (continuous)
+                       Failure probability (daily recalculation)
+                       RUL estimates (daily recalculation)
+
+  Health update:       Near real-time for IoT-connected assets
+  Blind spots:         Dramatically reduced for instrumented assets
+  Forward-looking:     Yes -- scores reflect predicted trajectory
+```
+
+The difference is not incremental. It is architectural.
+
+---
+
+## 🏗️ The Integration Architecture
+
+At a conceptual level, the integrated stack flows like this:
+
+```
+LAYER 1: PHYSICAL WORLD
+┌──────────────────────────────────────────────────────────┐
+│  Sensors    PLCs    SCADA    Smart Instruments            │
+│  (vibration, temperature, pressure, flow, current)       │
+└──────────────────────────┬───────────────────────────────┘
+                           │ Raw telemetry
+                           ▼
+LAYER 2: MONITORING (Maximo Monitor)
+┌──────────────────────────────────────────────────────────┐
+│  Data ingestion and storage                              │
+│  Threshold monitoring and alerting                       │
+│  Statistical analysis (rolling averages, variance)       │
+│  Anomaly detection (deviation from normal patterns)      │
+└──────────────────────────┬───────────────────────────────┘
+                           │ Derived signals
+                           ▼
+LAYER 3: ANALYTICS (Maximo Predict)
+┌──────────────────────────────────────────────────────────┐
+│  Failure probability models                              │
+│  Remaining useful life (RUL) estimation                  │
+│  Degradation pattern recognition                         │
+│  Model training and validation                           │
+└──────────────────────────┬───────────────────────────────┘
+                           │ Predictive outputs
+                           ▼
+LAYER 4: HEALTH (Maximo Health)
+┌──────────────────────────────────────────────────────────┐
+│  Condition indicators (from Manage + Monitor + Predict)  │
+│  Component scores and overall health                     │
+│  Criticality and risk calculation                        │
+│  Portfolio views and dashboards                          │
+└──────────────────────────┬───────────────────────────────┘
+                           │ Health and risk insights
+                           ▼
+LAYER 5: ACTION (Maximo Manage)
+┌──────────────────────────────────────────────────────────┐
+│  Work order creation and prioritization                  │
+│  PM frequency adjustments                                │
+│  Capital planning inputs                                 │
+│  Inspection scheduling                                   │
+└──────────────────────────────────────────────────────────┘
+```
+
+Each layer adds intelligence. Sensors create data. Monitor creates signals. Predict creates forecasts. Health creates priorities. Manage creates action.
+
+> **Key insight:** You do not need all layers to start. Layer 4 (Health) works with Layer 5 (Manage) alone. Layers 2 and 3 are additive. Add them when you are ready, for the assets where they add the most value.
+
+---
+
+## 📡 Monitor Integration: Real-Time Condition Signals
+
+### What Monitor Provides
+
+Maximo Monitor processes high-frequency IoT data and produces signals that Health can consume:
+
+**Threshold Breaches**
+- Temperature exceeding alarm limits
+- Vibration above warning thresholds
+- Pressure deviations from operating band
+
+**Statistical Derivatives**
+- Rolling averages that smooth out noise
+- Variance metrics that indicate instability
+- Rate-of-change calculations that flag rapid deterioration
+
+**Anomaly Indicators**
+- Statistical deviations from learned normal patterns
+- Multi-variate anomalies (combinations of parameters moving together)
+- Contextual anomalies (unusual behavior for the current operating mode)
+
+### How Monitor Signals Become Health Indicators
+
+Two primary patterns:
+
+**Pattern 1: Direct Indicator Mapping**
+
+Monitor signals map directly to condition indicators in the Health model:
+
+```
+MONITOR SIGNAL                    HEALTH INDICATOR
+─────────────────────────────────────────────────────
+Vibration RMS (rolling average)   → Vibration severity indicator
+Bearing temperature deviation     → Temperature health indicator
+Anomaly score                     → Anomaly condition indicator
+Threshold breach count (7 days)   → Operating exceedance indicator
+```
+
+The Health model treats these like any other indicator -- with scoring rules, weightings, and component assignments. The difference is the update frequency: instead of monthly or quarterly, these indicators update as fast as the data flows.
+
+**Pattern 2: Event-Driven Updates**
+
+Rather than continuous mapping, Monitor emits events when conditions change:
+
+```
+EVENT FLOW
+
+  1. Sensor detects bearing temperature rising
+  2. Monitor calculates rolling average crosses threshold
+  3. Monitor emits "threshold breach" event
+  4. Event triggers update to Health condition indicator
+  5. Health recalculates component and overall score
+  6. Asset moves from WATCH to POOR band
+  7. Asset appears on maintenance planner's high-risk list
+  8. Planner schedules diagnostic inspection
+```
+
+Event-driven patterns are efficient -- Health only recalculates when something meaningful changes. They also create an audit trail: every score change is traceable to a specific event.
+
+### Use Case: Vibration-Based Pump Monitoring
+
+Let's walk through a complete example:
+
+1. **Sensors** measure vibration on critical process pumps -- accelerometers on bearing housings, recording at 1 Hz
+2. **Monitor** ingests the stream, calculates RMS vibration over 15-minute windows, and compares to asset-specific thresholds
+3. **Threshold breach** detected: Pump P-312 vibration exceeds 5.5 mm/s (warning level)
+4. **Monitor emits event** that updates the vibration severity indicator in Health
+5. **Health recalculates**: vibration indicator drops from 75 to 40, pulling the Condition component down
+6. **Overall health drops** from 71 to 52 -- from WATCH to POOR
+7. **Risk recalculation**: combined with "Very High" criticality, P-312 moves to CRITICAL risk
+8. **Dashboard update**: P-312 appears at the top of the high-risk asset list
+9. **Planner action**: schedules bearing inspection within 48 hours
+10. **Inspection confirms** bearing degradation; corrective work planned for next outage
+
+Total time from sensor detection to planner awareness: **under 2 hours** (vs. up to 3 weeks waiting for the next vibration round).
+
+---
+
+## 🔮 Predict Integration: Forward-Looking Intelligence
+
+### What Predict Provides
+
+Maximo Predict uses historical and real-time data to generate forward-looking estimates:
+
+**Failure Probability**
+- Probability of failure within a defined time window (e.g., next 30 days)
+- Based on learned patterns from historical failure data and current conditions
+
+**Remaining Useful Life (RUL)**
+- Estimated time (hours, days, months) until failure
+- Based on degradation models trained on similar assets
+
+**Anomaly Scoring**
+- Risk scores based on deviation from expected degradation curves
+- Multi-parameter pattern recognition
+
+### How Predict Outputs Become Health Indicators
+
+Predict outputs map naturally into the Health scoring model:
+
+```
+PREDICT OUTPUT                    HEALTH INDICATOR
+─────────────────────────────────────────────────────
+Failure probability (30 days)     → Failure risk indicator
+                                    (high prob = low score)
+
+Remaining useful life             → RUL health indicator
+                                    (low RUL = low score)
+
+Anomaly risk score                → Predictive anomaly indicator
+                                    (high anomaly = low score)
+```
+
+These indicators can be:
+- **Added to existing components** (e.g., failure probability added to the Reliability component)
+- **Created as a new component** (e.g., a "Predictive" component alongside Condition, Reliability, Performance, Environment)
+
+We recommend starting by adding predictive indicators to existing components. Creating a separate Predictive component makes sense when predictive data covers the majority of your fleet and you want to give it independent weight.
+
+### Use Case: Remaining Useful Life for Transformers
+
+1. **Predict models** analyze historical data: oil test results, loading patterns, age, failure history for similar transformers
+2. **Current conditions** feed the model: latest oil quality, current loading, ambient temperature
+3. **Predict estimates** RUL for Transformer TF-201: 18 months
+4. **Health indicator** maps RUL to a score: 18 months on a 35-year-design-life transformer = 40/100
+5. **Combined with other indicators**: oil quality (58), loading stress (72), age (40)
+6. **Overall health**: 52 (POOR band)
+7. **Criticality**: High (grid reliability, regulatory)
+8. **Risk**: HIGH
+9. **Capital planning team** includes TF-201 in the next budget cycle for replacement
+
+Without Predict, the health score would have been ~63 (WATCH band) -- based only on current condition. Predict added the trajectory information that moved it into POOR. That 11-point difference is the difference between "monitor" and "plan replacement."
+
+---
+
+## 🔄 The Complete Data Flow
+
+Putting Monitor and Predict together with Health creates a continuous loop:
+
+```
+CONTINUOUS HEALTH LOOP
+
+  ┌─── SENSE ──────────────────────────────────────────┐
+  │  Sensors generate telemetry                        │
+  │  Technicians complete inspections                  │
+  │  Work orders are closed with failure codes         │
+  └──────────────────────────┬─────────────────────────┘
+                             ▼
+  ┌─── ANALYZE ────────────────────────────────────────┐
+  │  Monitor detects anomalies and threshold breaches  │
+  │  Predict estimates failure probability and RUL     │
+  │  Manage records work and inspection outcomes       │
+  └──────────────────────────┬─────────────────────────┘
+                             ▼
+  ┌─── SCORE ──────────────────────────────────────────┐
+  │  Health updates indicators from all sources        │
+  │  Component scores and overall health recalculate   │
+  │  Risk combines health with criticality             │
+  └──────────────────────────┬─────────────────────────┘
+                             ▼
+  ┌─── PRIORITIZE ─────────────────────────────────────┐
+  │  Dashboards show updated risk rankings             │
+  │  Planners see highest-risk assets first            │
+  │  Capital lists reflect latest trajectory data      │
+  └──────────────────────────┬─────────────────────────┘
+                             ▼
+  ┌─── ACT ────────────────────────────────────────────┐
+  │  Work orders created for high-risk assets          │
+  │  Inspections scheduled based on health triggers    │
+  │  PM frequencies adjusted based on trends           │
+  │  Capital projects approved based on risk data      │
+  └──────────────────────────┬─────────────────────────┘
+                             │
+                             └─── Results feed back ──> SENSE
+```
+
+This loop is the goal state. Not every asset needs every layer. But for your most critical, highest-consequence assets, closing this loop is transformational.
+
+---
+
+## 🏛️ Governance for Integrated Health
+
+Integration adds power. It also adds complexity. Governance keeps it manageable.
+
+### Data Quality for Integrated Sources
+
+- **Sensor validation**: Confirm that telemetry is accurate and current. A stuck sensor reading "OK" for three months will inflate health scores falsely.
+- **Model drift monitoring**: Predictive models degrade over time as operating conditions change. Establish retraining cadences.
+- **Signal mapping validation**: Periodically verify that the mapping from Monitor/Predict outputs to Health indicators is still correct and calibrated.
+
+### Ownership Boundaries
+
+Define clearly:
+
+| Domain | Owner | Responsibility |
+|--------|-------|---------------|
+| Sensor infrastructure | OT/Instrumentation | Physical sensors, connectivity, data quality |
+| Monitoring platform | Monitor team | Data ingestion, threshold config, anomaly detection |
+| Predictive models | Data science / Reliability | Model training, validation, retraining |
+| Health scoring models | Asset management / Reliability | Indicator mapping, weightings, thresholds |
+| Work management | Maintenance planning | Acting on health insights |
+
+When a predictive model changes behavior, the Health model owner needs to know. When a Health threshold changes, the planners who act on it need to know. **Coordination processes are as important as technical configuration.**
+
+### Change Control
+
+- Introduce new indicators from Monitor and Predict **one at a time**
+- Validate each new indicator's impact on health scores before making it permanent
+- Communicate changes to all stakeholders who consume health dashboards
+- Maintain a changelog that documents what changed, when, and why
+
+---
+
+## 🎯 The 7 Commandments of Integration
+
+1. **Thou shalt not require integration to start.** Health with Manage data alone is valuable. Add Monitor and Predict when ready.
+2. **Thou shalt validate sensor data before trusting it.** A stuck sensor is worse than no sensor -- it creates false confidence.
+3. **Thou shalt introduce predictive indicators gradually.** One new indicator, validated, is worth more than five unvalidated ones.
+4. **Thou shalt define ownership boundaries.** Who owns the sensor? The model? The indicator? The threshold? The action?
+5. **Thou shalt close the loop.** Data to insight to action to outcome. If any link is broken, the loop is broken.
+6. **Thou shalt monitor the monitors.** Sensor health, model drift, and mapping accuracy need their own review cadence.
+7. **Thou shalt not over-instrument.** Not every asset needs 10 sensors. Focus IoT investment on high-criticality assets where the data changes decisions.
+
+---
+
+**Next in the series:** [Part 6 -- Dashboards, KPIs, and Portfolio Views](/blog/mas-health-dashboards-kpis) shows how to make all of this visible to the people who need to act on it.
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams build, configure, and optimize IBM Maximo Application Suite. Our content comes from real implementations, not marketing slides. If it is in our blog, we have done it in production.

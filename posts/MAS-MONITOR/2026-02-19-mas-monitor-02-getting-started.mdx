@@ -1,0 +1,543 @@
+---
+title: "Getting Started with IBM Maximo Monitor: From Zero to First Dashboard"
+description: "Step-by-step guide to deploying IBM Maximo Monitor, connecting your first IoT device via MQTT, and building your first operational dashboard."
+date: "2026-02-19"
+slug: "mas-monitor-getting-started"
+tags: ["Maximo Monitor", "IoT", "MAS", "Setup Guide", "MQTT", "Dashboard", "OpenShift"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "IoT & Real-Time Analytics Specialists"]
+coverImage: "./images/mas-monitor-02.png"
+
+faqs:
+  - question: "What are the minimum hardware requirements for Maximo Monitor?"
+    answer: "For development and testing, you need at least 16 vCPU, 64 GB RAM, and 500 GB storage on OpenShift 4.10+. Production deployments recommend 32+ vCPU, 128+ GB RAM, and 1+ TB storage. SaaS deployments only require a modern web browser."
+  - question: "Can I try Maximo Monitor without a full Cloud Pak deployment?"
+    answer: "Yes. The IBM Cloud SaaS option lets you provision Monitor without managing infrastructure. You can be ingesting data within hours of provisioning. This is the recommended starting point for evaluation and proof-of-concept work."
+  - question: "What protocol should I use for my first device connection?"
+    answer: "Start with MQTT on port 8883 with TLS. It is the primary protocol for Monitor, offers the best real-time performance, supports bidirectional communication, and handles intermittent connectivity gracefully. HTTP is a solid fallback for firewall-restricted environments."
+
+keyTakeaways:
+  - "SaaS deployment gets you from zero to data ingestion in hours, not weeks"
+  - "Cloud Pak deployment on OpenShift gives full control for production environments"
+  - "MQTT on port 8883 with TLS is the recommended device connection protocol"
+  - "Device types define your data schema -- design them carefully before registration"
+  - "Your first dashboard should have a summary card, time-series chart, and alert table"
+
+series:
+  name: "MAS MONITOR"
+  part: 2
+  total: 8
+
+tldr: "This post walks you through deploying Maximo Monitor via SaaS or Cloud Pak, configuring your organization structure, registering your first IoT device, sending test data via MQTT, and building a starter dashboard with summary cards and time-series charts."
+seoTitle: "Getting Started with IBM Maximo Monitor Setup Guide | TheMaximoGuys"
+seoDescription: "Step-by-step guide to deploying IBM Maximo Monitor, connecting IoT devices via MQTT, and building your first operational dashboard."
+targetQuestions:
+  - "How do I set up IBM Maximo Monitor?"
+  - "How do I connect an IoT device to Maximo Monitor?"
+  - "What are the system requirements for Maximo Monitor?"
+semanticKeywords:
+  - "IBM Maximo Monitor setup"
+  - "Maximo Monitor deployment"
+  - "MQTT IoT connection"
+  - "Maximo Monitor dashboard"
+  - "OpenShift Maximo installation"
+  - "Watson IoT Platform"
+proficiencyLevel: "beginner"
+dependencies:
+  - "Understanding of Maximo Monitor concepts (Part 1)"
+  - "Access to IBM Cloud account or OpenShift cluster"
+  - "Basic familiarity with command-line tools"
+speakableSections:
+  - "Introduction"
+  - "Deployment Options"
+  - "Connecting Your First Device"
+relatedSlugs:
+  - "mas-monitor-introduction"
+  - "mas-monitor-data-ingestion-devices"
+  - "getting-started-maximo-ai"
+---
+
+## The Longest Journey Starts With One MQTT Message
+
+Here is the dirty secret of IoT implementations: 40% of them stall at setup.
+
+Not because the technology is hard. Because the prerequisites are unclear, the deployment docs assume you already know what you are doing, and nobody tells you which path to take first.
+
+We are going to fix that right now. By the end of this post, you will have:
+
+- A running Maximo Monitor environment
+- A registered device type and device
+- Test data flowing in via MQTT
+- A dashboard displaying real-time sensor values
+
+No ambiguity. No "refer to the IBM documentation for details." We will walk through every step.
+
+> *"I spent three weeks reading documentation before I sent my first MQTT message. Then it took 20 minutes. I wish someone had just shown me the 20-minute version first."*
+
+This is the 20-minute version.
+
+---
+
+> **Who this is for:** Maximo administrators deploying Monitor for the first time, IoT engineers connecting devices to MAS, and technical leads evaluating Monitor's setup complexity for project planning.
+
+---
+
+## Choosing Your Deployment Path
+
+Before you touch a keyboard, you need to make one decision. How are you deploying Monitor?
+
+```
+QUESTION                           PATH
+────────────────────────────────   ─────────────────────────
+Evaluating or proof-of-concept?    IBM Cloud SaaS
+Production with compliance needs?  Cloud Pak on OpenShift
+Geographically distributed?        Hybrid (Edge + Cloud)
+```
+
+### Path A: IBM Cloud SaaS (Fastest)
+
+**Time to first data:** Hours, not days.
+
+This is the path if you want to evaluate Monitor, build a proof of concept, or run a pilot without infrastructure overhead.
+
+**Step 1: Provision the Service**
+
+1. Log into [IBM Cloud](https://cloud.ibm.com)
+2. Navigate to **Catalog**
+3. Search for "Maximo Application Suite"
+4. Select your pricing plan
+5. Configure your instance -- name, resource group, region
+6. Click **Create**
+
+**Step 2: Access the Suite**
+
+1. Go to your **Resource List** once provisioning completes
+2. Find your MAS instance
+3. Click **Launch** to open the Suite Navigator
+4. Select **Monitor** from the application menu
+
+**Step 3: Run the Welcome Wizard**
+
+1. Complete the initial configuration wizard
+2. Set up your organization structure
+3. Configure user access and roles
+
+That is it. You have a Monitor environment. Total elapsed time: 30-90 minutes depending on provisioning queue.
+
+### Path B: Cloud Pak for Data on OpenShift (Production)
+
+**Time to first data:** Days to weeks, depending on your cluster readiness.
+
+This path gives you full control over data residency, security policies, and infrastructure. It is the right choice for production deployments with compliance requirements.
+
+**Prerequisites Checklist:**
+
+- Red Hat OpenShift Container Platform 4.10+
+- IBM Cloud Pak for Data 4.6+
+- Cluster: minimum 16 vCPU, 64 GB RAM, 500 GB storage (dev); 32+ vCPU, 128+ GB RAM, 1+ TB (prod)
+- Network: outbound HTTPS (443), MQTT (8883)
+- IBM entitlement key with MAS license
+
+**Step 1: Prepare the Cluster**
+
+```bash
+# Verify cluster meets requirements
+oc get nodes
+oc describe node <node-name> | grep -E "cpu|memory"
+
+# Create namespace for MAS
+oc new-project mas-monitor-prod
+```
+
+**Step 2: Install the IBM Operator Catalog**
+
+```yaml
+# operator-catalog.yaml
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: ibm-operator-catalog
+  namespace: openshift-marketplace
+spec:
+  displayName: IBM Operator Catalog
+  publisher: IBM
+  sourceType: grpc
+  image: icr.io/cpopen/ibm-operator-catalog:latest
+  updateStrategy:
+    registryPoll:
+      interval: 45m
+```
+
+```bash
+oc apply -f operator-catalog.yaml
+```
+
+**Step 3: Install MAS Operator**
+
+1. Open OpenShift Console
+2. Navigate to **Operators > OperatorHub**
+3. Search for "Maximo Application Suite"
+4. Click **Install**
+5. Select namespace and approval strategy
+
+**Step 4: Create Suite Instance**
+
+```yaml
+# mas-instance.yaml
+apiVersion: core.mas.ibm.com/v1
+kind: Suite
+metadata:
+  name: mas-prod
+  namespace: mas-monitor-prod
+spec:
+  domain: mas.example.com
+  license:
+    accept: true
+  settings:
+    icr:
+      cp: cp.icr.io/cp
+      cpopen: icr.io/cpopen
+```
+
+**Step 5: Activate Monitor**
+
+1. Access the MAS Admin Console
+2. Navigate to **Catalog**
+3. Find **Monitor** and click **Activate**
+4. Configure workspace and database connections
+5. Complete the activation wizard
+
+> **Key insight:** If this is your first time deploying MAS on OpenShift, budget 2-3 days for the infrastructure setup alone. The operator installation is straightforward, but storage class configuration and certificate management always take longer than expected.
+
+---
+
+## Configuring Your Environment
+
+Whether you chose SaaS or Cloud Pak, the next steps are the same.
+
+### Step 1: Build Your Organization Structure
+
+Monitor uses a hierarchy that mirrors your physical world:
+
+```
+Organization (CORP)
+└── Site (PLANT-NORTH)
+    └── Asset (PUMP-001)
+        └── Device (VIBSENSOR-001)
+```
+
+**Create an Organization:**
+1. Navigate to **Setup > Organizations**
+2. Click **Create Organization**
+3. Enter: Organization ID (`CORP`), Description, Time zone, Base currency
+4. Save
+
+**Create a Site:**
+1. Navigate to **Setup > Sites**
+2. Click **Create Site**
+3. Enter: Site ID (`PLANT01`), Organization (`CORP`), Description, Address
+4. Save
+
+### Step 2: Set Up User Access
+
+Create three user groups to start. You can refine later.
+
+| Group | Access Level | Who |
+|-------|-------------|-----|
+| Monitor-Admins | Full configuration | You, plus backup admin |
+| Monitor-Analysts | Dashboards + analytics | Reliability engineers |
+| Monitor-Operators | View-only dashboards | Shift supervisors, operators |
+
+1. Navigate to **Administration > User Groups**
+2. Create each group with appropriate permissions
+3. Navigate to **Administration > Users**
+4. Add users and assign to groups
+
+### Step 3: Configure the IoT Data Source
+
+Monitor ingests data through IBM Watson IoT Platform.
+
+1. Navigate to **Setup > Data Sources**
+2. Click **Add Data Source**
+3. Select **Watson IoT Platform**
+4. Enter: Organization ID, API Key, Authentication Token
+5. Test the connection
+6. Save
+
+---
+
+## Connecting Your First IoT Device
+
+This is the moment of truth. You are going to register a device, send it data, and see that data appear in Monitor.
+
+### Step 1: Create a Device Type
+
+Device types are templates. Every similar device shares the same schema.
+
+1. Navigate to **Setup > Device Types**
+2. Click **Create Device Type**
+3. Name: `TemperatureSensor`
+4. Description: "Industrial temperature and humidity sensors"
+5. Define your metrics:
+
+```json
+{
+  "metrics": [
+    {
+      "name": "temperature",
+      "type": "NUMBER",
+      "unit": "celsius"
+    },
+    {
+      "name": "humidity",
+      "type": "NUMBER",
+      "unit": "percent"
+    },
+    {
+      "name": "battery",
+      "type": "NUMBER",
+      "unit": "percent"
+    }
+  ]
+}
+```
+
+6. Save
+
+> **Key insight:** Spend time on your device type schema now. Changing it later -- after thousands of data points are stored -- is painful. Include every metric you might need, even if some sensors do not report all of them.
+
+### Step 2: Register a Device
+
+1. Navigate to **Setup > Devices**
+2. Click **Register Device**
+3. Device ID: `TEMP-001`
+4. Device Type: `TemperatureSensor`
+5. Description: "Production floor sensor - Zone A"
+6. **CRITICAL:** Copy the generated Authentication Token. It is shown exactly once.
+7. Save
+
+### Step 3: Send Test Data via MQTT
+
+Here is a working example. Copy it. Change the credentials. Run it.
+
+```bash
+# Connection parameters
+ORG_ID="your-org-id"
+DEVICE_TYPE="TemperatureSensor"
+DEVICE_ID="TEMP-001"
+AUTH_TOKEN="your-auth-token"
+
+# Send a single data point via MQTT using mosquitto_pub
+mosquitto_pub \
+  -h "${ORG_ID}.messaging.internetofthings.ibmcloud.com" \
+  -p 8883 \
+  -u "use-token-auth" \
+  -P "${AUTH_TOKEN}" \
+  -i "d:${ORG_ID}:${DEVICE_TYPE}:${DEVICE_ID}" \
+  -t "iot-2/evt/status/fmt/json" \
+  --capath /etc/ssl/certs/ \
+  -m '{"d":{"temperature":23.5,"humidity":45.2,"battery":87}}'
+```
+
+If you prefer HTTP (simpler, no MQTT client needed):
+
+```bash
+curl -X POST \
+  "https://${ORG_ID}.messaging.internetofthings.ibmcloud.com/api/v0002/device/types/${DEVICE_TYPE}/devices/${DEVICE_ID}/events/status" \
+  -H "Content-Type: application/json" \
+  -u "use-token-auth:${AUTH_TOKEN}" \
+  -d '{
+    "d": {
+      "temperature": 23.5,
+      "humidity": 45.2,
+      "battery": 87
+    }
+  }'
+```
+
+### Step 4: Verify Data Reception
+
+1. Navigate to **Monitor > Device Data**
+2. Select device type: `TemperatureSensor`
+3. Select device: `TEMP-001`
+4. You should see your data point with the values you sent
+
+If you see it -- congratulations. You just bridged the OT/IT gap. A sensor value from the physical world landed in your enterprise monitoring platform.
+
+If you do not see it, jump to the Troubleshooting section below.
+
+---
+
+## Building Your First Dashboard
+
+Data flowing is step one. Making it useful is step two. Let's build a starter dashboard that actually tells you something.
+
+### Step 1: Create the Dashboard
+
+1. Navigate to **Monitor > Dashboards**
+2. Click **Create Dashboard**
+3. Name: "Production Floor Overview"
+4. Description: "Real-time monitoring of production sensors"
+5. Click **Create**
+
+### Step 2: Add a Summary Card
+
+1. Click **Add Widget**
+2. Select **Summary Card**
+3. Configure:
+   - Title: "Average Temperature"
+   - Data source: `TemperatureSensor`
+   - Metric: `temperature`
+   - Aggregation: Average
+   - Time range: Last 1 hour
+4. Set thresholds:
+   - Green: below 35 C
+   - Yellow: 35-45 C
+   - Red: above 45 C
+5. Click **Save**
+
+### Step 3: Add a Time-Series Chart
+
+1. Click **Add Widget**
+2. Select **Time-Series Chart**
+3. Configure:
+   - Title: "Temperature and Humidity Trend"
+   - Data source: `TemperatureSensor`
+   - Metrics: temperature (left axis), humidity (right axis)
+   - Time range: Last 24 hours
+4. Customize colors and legend
+5. Click **Save**
+
+### Step 4: Add an Alert Table
+
+1. Click **Add Widget**
+2. Select **Alert Table**
+3. Configure:
+   - Title: "Active Alerts"
+   - Filter by device type: `TemperatureSensor`
+   - Columns: Severity, Device, Message, Time
+4. Click **Save**
+
+### Step 5: Arrange and Publish
+
+1. Drag widgets into a logical layout -- summary cards across the top, chart in the middle, alert table at the bottom
+2. Resize as needed
+3. Click **Save Dashboard**
+
+```
+┌──────────────┬──────────────┬──────────────┐
+│  Avg Temp    │  Avg Humid   │  Low Battery │
+│   23.5 C     │   45.2%      │   0 devices  │
+├──────────────┴──────────────┴──────────────┤
+│                                            │
+│  Temperature & Humidity Trend (24h)        │
+│  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~  │
+│                                            │
+├────────────────────────────────────────────┤
+│  Active Alerts                             │
+│  (none)                                    │
+└────────────────────────────────────────────┘
+```
+
+> **Key insight:** Resist the urge to add 15 widgets on your first dashboard. Start with 3-5. Prove value. Iterate. The best dashboards we have seen in production evolved over 6-8 weeks of feedback from the people who actually use them.
+
+---
+
+## Best Practices for Initial Setup
+
+### Naming Conventions
+
+Decide these now. You will thank yourself later when you have 500 devices.
+
+| Entity | Convention | Example |
+|--------|-----------|---------|
+| Organization | ALL CAPS short code | `CORP` |
+| Site | PLANT-LOCATION | `PLANT-NORTH` |
+| Device Type | PascalCase | `TemperatureSensor` |
+| Device ID | TYPE-NUMBER | `TEMP-001` |
+| Dashboard | Descriptive phrase | `Production Floor Overview` |
+
+### Security From Day One
+
+1. **Unique token per device** -- Never share authentication tokens across devices
+2. **TLS always** -- Port 8883, never 1883
+3. **Role-based access** -- Configure user groups before adding users
+4. **Credential rotation** -- Set a calendar reminder to rotate tokens quarterly
+
+### Performance Sanity Check
+
+1. Start with essential metrics only -- collect what you will analyze, not everything you can
+2. Set transmission intervals based on use case -- 5 seconds for vibration, 1 minute for temperature, 15 minutes for environmental
+3. Plan your data retention policy before data starts accumulating
+
+---
+
+## Troubleshooting Common First-Day Issues
+
+### Device Not Connecting
+
+**Symptom:** Device shows offline, no data appears.
+
+Check these in order:
+1. Can you reach the MQTT broker? `telnet ${ORG_ID}.messaging.internetofthings.ibmcloud.com 8883`
+2. Is the client ID format correct? Must be `d:{org-id}:{device-type}:{device-id}`
+3. Does the device ID match what you registered? Case-sensitive.
+4. Is the auth token correct? You only saw it once. If in doubt, regenerate.
+5. Firewall allowing outbound on port 8883?
+
+### Data Not Appearing in Dashboard
+
+**Symptom:** Device shows online but dashboard is empty.
+
+Check these:
+1. Is the device type selected as the dashboard data source?
+2. Do metric names in the payload match the device type schema exactly?
+3. Is the dashboard time range set to include the current time?
+4. Does the logged-in user have permission to view this device type?
+
+### Dashboard Loading Slowly
+
+**Symptom:** Widgets spin or time out.
+
+Quick fixes:
+1. Reduce the time range -- do not query 30 days of raw data
+2. Use aggregation -- hourly averages instead of every-5-second readings
+3. Reduce widget count per dashboard -- split into multiple views if needed
+
+---
+
+## What Comes Next
+
+You have a running Monitor environment, a connected device, and a dashboard. That is the foundation. Now we build on it.
+
+In [Part 3: Data Ingestion and Device Management](/blog/mas-monitor-data-ingestion-devices), we go deep on:
+- MQTT vs. HTTP -- when to use each and why
+- Gateway architectures for legacy devices
+- Bulk device registration for large deployments
+- Data quality validation at the edge
+- Scaling from 1 device to 10,000
+
+---
+
+## Series Navigation
+
+| Part | Title |
+|------|-------|
+| 1 | [Introduction to IBM Maximo Monitor](/blog/mas-monitor-introduction) |
+| **2** | **Getting Started with Maximo Monitor (You are here)** |
+| 3 | [Data Ingestion and Device Management](/blog/mas-monitor-data-ingestion-devices) |
+| 4 | [Dashboards and Visualization](/blog/mas-monitor-dashboards-visualization) |
+| 5 | [Analytics and AI Integration](/blog/mas-monitor-analytics-ai) |
+| 6 | [Alerts and Automation](/blog/mas-monitor-alerts-automation) |
+| 7 | [Integration and APIs](/blog/mas-monitor-integration-apis) |
+| 8 | [Best Practices and Case Studies](/blog/mas-monitor-best-practices) |
+
+---
+
+*Built by practitioners. For practitioners. No fluff.*
+
+**TheMaximoGuys** -- Maximo expertise, delivered different.
