@@ -1,0 +1,572 @@
+---
+title: "MAS Environment Architecture: Distributing Dev, Test, UAT, and Production"
+description: "A comprehensive guide to designing multi-environment MAS deployments on OpenShift. Covers four topology patterns (single-cluster to hub-spoke GitOps), namespace isolation, resource sizing per tier, promotion workflows, RBAC, network policies, and testing gates across dev, test, UAT, and production."
+date: "2026-02-06"
+slug: "mas-environment-distribution"
+tags: ["MAS Admin", "On-Prem", "OpenShift", "Multi-Environment", "GitOps", "ArgoCD", "DevOps", "Namespace", "RBAC", "Infrastructure"]
+draft: false
+tier: "admin"
+author: "Posam Lakshminarayana"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "/images/mas-admin/mas-admin-part-9.png"
+
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+
+faqs:
+  - question: "Can I run multiple MAS environments on a single OpenShift cluster?"
+    answer: "Yes. IBM explicitly supports running multiple MAS instances on a single cluster. Each instance is identified by a unique mas_instance_id and gets its own set of namespaces. Shared infrastructure like MongoDB, SLS licensing, and the operator catalog is reused across instances, reducing overhead. The key constraint is that all instances must be within one minor version of each other."
+  - question: "What is the most cost-effective way to set up non-production MAS environments?"
+    answer: "IBM recommends Single Node OpenShift (SNO) for non-production environments. At 16 vCPU and 64 GB RAM, SNO supports up to 70 concurrent users at approximately 15-25% of production cost. It lacks high availability but is ideal for development, testing, demos, and PoCs."
+  - question: "How do I promote configuration changes from dev to production in MAS?"
+    answer: "MAS uses two complementary promotion mechanisms. Migration Manager handles application-level content (workflows, actions, roles, templates) via export/import packages through source control. GitOps with ArgoCD handles infrastructure configuration (operator versions, cluster settings) via Git commits and PR-based approval gates. Both enforce audit trails."
+
+keyTakeaways:
+  - "Four topology patterns exist — single-cluster multi-instance, two-cluster non-prod/prod, per-tier multi-cluster, and hub-spoke GitOps — each with distinct cost and isolation tradeoffs"
+  - "MAS namespace convention mas-{instanceId}-{component} provides built-in environment isolation with shared infrastructure reducing overhead"
+  - "Resource sizing varies dramatically by tier — dev environments on SNO at 15-25% of production cost, while UAT should mirror production at 60-75%"
+  - "Promotion workflows use Migration Manager for application config and GitOps for infrastructure, both with defined approval gates"
+  - "Network policies, resource quotas, and RBAC per environment provide enterprise-grade isolation even on shared clusters"
+
+series:
+  name: "MAS ADMIN"
+  part: 9
+  total: 9
+
+tldr: "Multi-environment MAS architecture requires choosing between four topology patterns based on isolation needs and budget, then implementing namespace isolation, resource quotas, RBAC, network policies, and promotion workflows across dev, test, UAT, and production tiers."
+seoTitle: "MAS Environment Architecture | Dev Test UAT Production Guide"
+seoDescription: "Design multi-environment MAS deployments on OpenShift. Four topology patterns, namespace isolation, resource sizing, GitOps promotion workflows, and RBAC for dev, test, UAT, and production."
+targetQuestions:
+  - "How do I set up multiple MAS environments on OpenShift?"
+  - "What is the best topology for MAS dev, test, and production?"
+  - "How do I promote changes between MAS environments?"
+  - "How much infrastructure do I need per MAS environment?"
+  - "How do I isolate MAS environments on a shared cluster?"
+semanticKeywords:
+  - "MAS multi-environment architecture"
+  - "dev test UAT production MAS"
+  - "MAS namespace isolation"
+  - "GitOps MAS deployment"
+  - "MAS environment promotion"
+  - "OpenShift multi-instance MAS"
+  - "MAS resource sizing per environment"
+  - "ArgoCD MAS deployment"
+  - "MAS RBAC per environment"
+  - "Single Node OpenShift MAS"
+  - "MAS Migration Manager"
+  - "hub-spoke GitOps MAS"
+proficiencyLevel: "advanced"
+dependencies:
+  - "Understanding of MAS on-prem administration (Part 4)"
+  - "Familiarity with OpenShift namespaces and resource management"
+  - "Basic understanding of GitOps and CI/CD concepts"
+speakableSections:
+  - "Key Takeaways"
+  - "Four Topology Patterns for Environment Distribution"
+  - "Promotion Workflows: Moving Changes Between Environments"
+pillarSlug: "mas-admin-series-index"
+relatedSlugs:
+  - "sysadmin-role-mas-onprem"
+  - "new-mas-admin-responsibilities"
+  - "future-mas-sysadmin"
+---
+
+# MAS Environment Architecture: Distributing Dev, Test, UAT, and Production
+
+> **Who this is for:** MAS on-prem administrators, infrastructure architects, and IT managers responsible for designing and operating multi-environment MAS deployments. If you are planning how to distribute development, test, UAT, and production across your OpenShift infrastructure, this is your guide.
+
+**Read time:** 18 minutes
+
+---
+
+## Why Multiple Environments Matter
+
+One of the most critical design decisions for MAS on-prem is how to distribute your environments — development, test, UAT, gold (pre-production), and production — across your OpenShift infrastructure. Get this right, and you have clean isolation, efficient resource usage, and smooth promotion workflows. Get it wrong, and you face noisy neighbor problems, configuration drift, and production incidents caused by non-prod workloads.
+
+In legacy Maximo, environments were often separate servers — a dev database and app server, a test pair, and production. Spinning up a new environment meant provisioning new VMs and running through a multi-day installation.
+
+In MAS on OpenShift, each environment is a **MAS instance** identified by a unique `mas_instance_id` (lowercase alphanumeric, 3-12 characters, starting with a letter). Examples: `dev01`, `test`, `uat`, `gold`, `prod`. Each instance gets its own set of namespaces, databases, and configuration — but can share infrastructure like operators, MongoDB, and licensing.
+
+> **Critical constraint:** The instance ID is **immutable** after installation. It cannot be changed without a complete reinstallation. Choose your naming convention carefully before deploying.
+
+---
+
+## Four Topology Patterns for Environment Distribution
+
+Organizations deploying MAS choose from four patterns based on their isolation requirements, budget, and operational maturity.
+
+### Pattern 1: Single Cluster, Multiple Instances
+
+All environments run on one OpenShift cluster as separate MAS instances.
+
+| Aspect | Detail |
+|--------|--------|
+| **Architecture** | One cluster with `dev01`, `test`, `uat`, `prod` as separate MAS instances |
+| **Namespace isolation** | Each instance gets `mas-dev01-core`, `mas-test-core`, `mas-prod-core`, etc. |
+| **Shared infrastructure** | MongoDB, SLS licensing, cert-manager, operator catalog |
+| **Per-instance infrastructure** | Separate DB2 databases, separate Kafka clusters per instance |
+| **Version constraint** | All instances must be within 1 minor version of each other |
+| **Best for** | Small organizations, PoCs, cost-constrained deployments |
+
+**Pros:** Lowest cost (shared control plane, operators, MongoDB). Simpler operations. Shared AppPoints licensing pool.
+
+**Cons:** Noisy neighbor risk — non-prod workloads can impact production. Single blast radius at the cluster level. Operator upgrades affect all instances simultaneously.
+
+### Pattern 2: Two-Cluster Split (Non-Prod / Production)
+
+Non-production environments share one cluster; production runs on its own dedicated cluster.
+
+| Aspect | Detail |
+|--------|--------|
+| **Non-prod cluster** | Hosts `dev01`, `test`, `uat` instances on smaller nodes |
+| **Production cluster** | Hosts `prod` instance with full HA and dedicated resources |
+| **Isolation** | Production is completely isolated from non-prod workloads |
+| **Upgrade testing** | Test operator upgrades on non-prod cluster before production |
+| **Best for** | Mid-size organizations, regulatory environments, most enterprise deployments |
+
+**Pros:** Production isolation. Independent upgrade paths. Can right-size non-prod cluster (smaller nodes, fewer replicas). Separate blast radius.
+
+**Cons:** Two clusters to manage. Configuration drift risk between clusters. Need automation to keep environments consistent.
+
+> **This is the most common pattern** we see in enterprise MAS deployments. It balances cost with the safety of production isolation.
+
+### Pattern 3: Per-Tier Multi-Cluster
+
+Each environment tier gets its own dedicated OpenShift cluster.
+
+| Environment | Cluster Type | Nodes | HA Level |
+|------------|-------------|-------|----------|
+| **Development** | Single Node OpenShift (SNO) | 1 (16 vCPU / 64 GB) | None |
+| **Test** | Minimal multi-node | 3 masters + 3 workers (8 vCPU each) | Basic |
+| **UAT** | Production-like | 3 masters + 4-5 workers (16 vCPU each) | Full |
+| **Production** | Full HA | 3 masters + 6+ workers (16 vCPU each) | Full + DR |
+
+**Pros:** Maximum isolation. Independent scaling, upgrades, and maintenance windows per tier. No version coupling between environments.
+
+**Cons:** Highest infrastructure cost. Most complex operations. Requires strong automation (GitOps/Ansible) to maintain consistency.
+
+**Best for:** Large enterprises, heavily regulated industries, organizations with strict change management requirements.
+
+### Pattern 4: Hub-Spoke with GitOps (IBM Recommended for Enterprise)
+
+A central management cluster runs Red Hat Advanced Cluster Management (RHACM) and ArgoCD to orchestrate deployments across spoke clusters.
+
+| Component | Role |
+|-----------|------|
+| **Management Hub** | Runs RHACM + ArgoCD. Does not run MAS workloads. |
+| **Config Repository (Git)** | Single source of truth for all cluster and instance configurations |
+| **Spoke clusters** | Each runs one or more MAS instances, managed by ArgoCD applications |
+| **Sync mechanism** | ArgoCD polls the Config Repository every 3 minutes, self-heals drift |
+
+**How the GitOps hierarchy works:**
+
+| Level | Purpose | Example |
+|-------|---------|---------|
+| **Account Root** | Top-level ArgoCD application registered on management cluster | `account-1` |
+| **Cluster Root** | Generated per target cluster by ApplicationSet | `dev-cluster`, `prod-cluster` |
+| **Instance Root** | Generated per MAS instance within each cluster | `dev01`, `prod` |
+
+**GitOps Config Repository structure:**
+
+```
+config-repo/
+├── account-1/
+│   ├── dev-cluster/
+│   │   ├── ibm-mas-cluster-base.yaml
+│   │   ├── ibm-operator-catalog.yaml
+│   │   └── dev01/
+│   │       ├── ibm-mas-instance-base.yaml
+│   │       └── ibm-mas-suite.yaml
+│   ├── test-cluster/
+│   │   └── test/
+│   │       └── ...
+│   └── prod-cluster/
+│       └── prod/
+│           └── ...
+```
+
+**ArgoCD deployment orchestration mechanisms:**
+
+| Mechanism | Purpose |
+|-----------|---------|
+| **Sync Waves** | Resources process sequentially; filenames prefixed by wave number |
+| **Custom Health Checks** | ArgoCD blocks dependent resources until prerequisites complete |
+| **PreSync Hooks** | Kubernetes Jobs validate prerequisites (e.g., CRD presence) before syncing |
+| **PostSync Hooks** | Configuration jobs execute after syncing; critical tasks use Jobs in final waves |
+| **Self-Healing** | `selfHeal: true` reverts manual cluster changes automatically |
+| **Auto-Pruning** | `prune: true` removes resources when config files are deleted from Git |
+
+**Pros:** Centralized visibility across all environments. Git as the source of truth with full audit trail. Automated deployment with sync waves and health checks. Scalable to many clusters.
+
+**Cons:** Additional management cluster cost. RHACM licensing. Most complex initial setup. Requires GitOps expertise.
+
+### Choosing the Right Pattern
+
+| Factor | Pattern 1 (Single) | Pattern 2 (Two-Cluster) | Pattern 3 (Per-Tier) | Pattern 4 (Hub-Spoke) |
+|--------|-------------------|------------------------|---------------------|----------------------|
+| **Cost** | Lowest | Moderate | Highest | High (+ management cluster) |
+| **Isolation** | Namespace only | Prod isolated | Full isolation | Full + centralized mgmt |
+| **Operational complexity** | Simplest | Moderate | Complex | Most complex (initially) |
+| **Upgrade independence** | Coupled | Prod independent | Fully independent | Fully independent |
+| **Best for** | Small / PoC | Most enterprises | Large / regulated | Enterprise at scale |
+
+---
+
+## Namespace Architecture for Multi-Environment
+
+MAS uses a standardized namespace convention: `mas-{instanceId}-{component}`. Each instance creates its own set of namespaces, completely isolated from other instances.
+
+### Shared Namespaces (Cluster-Wide)
+
+These namespaces are created once per cluster and used by all MAS instances:
+
+| Namespace | Purpose |
+|-----------|---------|
+| `openshift-marketplace` | IBM Operator Catalog (CatalogSource) |
+| `ibm-common-services` | IBM Common Services, IAM, cert-manager |
+| `ibm-sls` | Suite License Service (shared AppPoints pool) |
+| `mongoce` or `mas-mongo-ce` | MongoDB Community (shared cluster, per-instance databases) |
+| `ibm-cpd` | Cloud Pak for Data (if using Predict/Health with Watson) |
+
+### Per-Instance Namespaces
+
+Each MAS instance creates these namespaces (repeated for every environment):
+
+| Dev Instance | Test Instance | UAT Instance | Prod Instance |
+|-------------|--------------|-------------|---------------|
+| `mas-dev01-core` | `mas-test-core` | `mas-uat-core` | `mas-prod-core` |
+| `mas-dev01-manage` | `mas-test-manage` | `mas-uat-manage` | `mas-prod-manage` |
+| `mas-dev01-pipelines` | `mas-test-pipelines` | `mas-uat-pipelines` | `mas-prod-pipelines` |
+| `mas-dev01-iot` | `mas-test-iot` | `mas-uat-iot` | `mas-prod-iot` |
+| `mas-dev01-monitor` | `mas-test-monitor` | `mas-uat-monitor` | `mas-prod-monitor` |
+
+```bash
+# List all namespaces for a specific instance
+oc get namespaces | grep "mas-dev01"
+
+# Compare pod counts across environments
+echo "Dev:  $(oc get pods -n mas-dev01-core --no-headers 2>/dev/null | wc -l) pods"
+echo "Test: $(oc get pods -n mas-test-core --no-headers 2>/dev/null | wc -l) pods"
+echo "Prod: $(oc get pods -n mas-prod-core --no-headers 2>/dev/null | wc -l) pods"
+```
+
+### Shared vs. Dedicated Infrastructure Components
+
+| Component | Single-Cluster (Shared) | Multi-Cluster (Dedicated) | Notes |
+|-----------|------------------------|--------------------------|-------|
+| **MongoDB** | Shared cluster, per-instance DBs | Dedicated per cluster | Shared reduces overhead; backup critical |
+| **Kafka** | Per-instance always | Per-instance always | Named `mas-{instanceId}-system` |
+| **DB2** | Per-instance always | Per-instance always | Named `mas-{instanceId}-system` / `manage` |
+| **SLS (Licensing)** | Shared across instances | Per-cluster | AppPoints pooled in shared mode |
+| **DRO (Reporting)** | Shared across instances | Per-cluster | Single DRO collects all data |
+| **cert-manager** | Shared across cluster | Per-cluster | Cluster-wide service |
+| **Operator Catalog** | Shared across cluster | Per-cluster | `openshift-marketplace` namespace |
+| **ODF/OCS Storage** | Shared across cluster | Per-cluster | 3 dedicated storage nodes minimum |
+
+---
+
+## Resource Sizing Per Environment Tier
+
+Each environment tier should be sized according to its purpose. Over-provisioning non-prod environments wastes budget; under-provisioning production causes outages.
+
+| Resource | Dev (SNO) | Test | UAT | Production |
+|----------|-----------|------|-----|------------|
+| **Master Nodes** | Combined (SNO) | 3 x (4 vCPU / 16 GB) | 3 x (8 vCPU / 32 GB) | 3 x (8 vCPU / 32 GB) |
+| **Worker Nodes** | Combined (SNO) | 3 x (16 vCPU / 64 GB) | 4-5 x (16 vCPU / 64 GB) | 6+ x (16 vCPU / 64 GB) |
+| **Storage per Worker** | 2 SSDs (LVM) | 300 GB | 300+ GB | 300+ GB (ZRS) |
+| **Concurrent Users** | Up to 70 | 25-50 | Match production load | Full production load |
+| **HA Level** | None (single point of failure) | Basic (3 zones) | Full | Full + DR |
+| **Applications** | Core + Manage (limited) | Match production set | Identical to production | Full MAS suite |
+| **Cost vs. Prod** | ~15-25% | ~40-50% | ~60-75% | 100% (baseline) |
+
+> **IBM recommendation:** Single Node OpenShift (SNO) at 16 vCPU / 64 GB serves as a cost-effective non-production option, supporting up to 70 concurrent users without high availability. Use it for dev environments, demos, and PoCs.
+
+### Application-Specific Resource Requirements
+
+Use this table when planning how much infrastructure each MAS application requires:
+
+| Configuration | vCPUs | Memory (GiB) | Storage (GiB) |
+|--------------|-------|--------------|----------------|
+| MAS Core only | ~13 | ~52 | ~200 |
+| MAS Manage (100 concurrent users) | 46.5 | 190 | 840 |
+| MAS Manage + Monitor (100+5 users) | 179.5 | 550 | 2,805 |
+
+> **IBM guidance:** Add 30-50% over calculator minimums for on-prem installations to account for overhead, growth, and burst capacity.
+
+---
+
+## Resource Quotas: Protecting Environments from Each Other
+
+When running multiple instances on a single cluster, use OpenShift ResourceQuota objects to prevent one environment from consuming resources needed by another.
+
+| Resource | Dev Quota | Test Quota | UAT Quota | Prod Quota |
+|----------|-----------|-----------|-----------|-----------|
+| CPU Requests | 16 cores | 32 cores | 48 cores | 96+ cores |
+| CPU Limits | 24 cores | 48 cores | 64 cores | 128+ cores |
+| Memory Requests | 64 Gi | 128 Gi | 192 Gi | 384+ Gi |
+| Memory Limits | 96 Gi | 192 Gi | 256 Gi | 512+ Gi |
+| PVCs | 20 | 30 | 40 | 60+ |
+| Max Pods | 100 | 200 | 300 | 500+ |
+
+```yaml
+# Example: Resource Quota for the dev environment core namespace
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: mas-dev-quota
+  namespace: mas-dev01-core
+spec:
+  hard:
+    requests.cpu: "16"
+    requests.memory: "64Gi"
+    limits.cpu: "24"
+    limits.memory: "96Gi"
+    persistentvolumeclaims: "20"
+    pods: "100"
+```
+
+```yaml
+# Example: LimitRange to set defaults for pods without explicit resource specs
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: mas-dev-limits
+  namespace: mas-dev01-core
+spec:
+  limits:
+  - default:
+      cpu: "2"
+      memory: "4Gi"
+    defaultRequest:
+      cpu: "500m"
+      memory: "1Gi"
+    type: Container
+```
+
+---
+
+## Network Isolation Between Environments
+
+When environments share a cluster, use NetworkPolicy objects to prevent cross-environment traffic while allowing intra-environment communication.
+
+### Recommended Network Policies
+
+| Traffic Path | Policy |
+|-------------|--------|
+| `mas-prod-core` ↔ `mas-prod-manage` | **Allow** — same environment |
+| `mas-dev01-core` → `mas-prod-core` | **Deny** — cross-environment |
+| All environments → `mongoce` | **Allow** — shared infrastructure |
+| All environments → `ibm-sls` | **Allow** — shared licensing |
+| All environments → external registries | **Allow** — container image pulls |
+
+```yaml
+# Deny all cross-environment traffic to production by default
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-cross-environment
+  namespace: mas-prod-core
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          environment: production
+```
+
+### Network Design Considerations
+
+| Consideration | Recommendation |
+|--------------|----------------|
+| Default pod network | `10.128.0.0/14` — ensure no overlap with on-prem subnets |
+| Service network | `172.30.0.0/16` — internal cluster services |
+| Pod CIDR sizing | `/21` or larger — MAS deploys 800+ pods with standard applications |
+| Storage network | 10 Gbps for ODF/storage nodes |
+| Database latency | Sub-millisecond between application and database pods required |
+
+---
+
+## RBAC Per Environment
+
+Control who can access and modify each environment using OpenShift role bindings mapped to corporate LDAP/AD groups.
+
+| Role | Dev | Test | UAT | Prod |
+|------|-----|------|-----|------|
+| **Cluster Admin** | Platform Team | Platform Team | Platform Team | Platform Team |
+| **Namespace Admin** | Dev Lead | Test Lead | UAT Lead | Prod Lead (restricted) |
+| **Edit (deploy)** | All Developers | Test Team | UAT Team | Change Management only |
+| **View (read-only)** | All Team | All Team | All Team | Ops + Management |
+| **MAS Admin UI** | Dev Admin | Test Admin | UAT Admin | Prod Admin (restricted) |
+
+> **Best practice:** Use RBAC Groups mapped to corporate LDAP/AD, not individual user bindings. This ensures access changes follow HR processes (onboarding, team transfers, offboarding) rather than requiring manual cluster updates.
+
+---
+
+## Promotion Workflows: Moving Changes Between Environments
+
+MAS uses two complementary promotion mechanisms — one for application configuration, one for infrastructure.
+
+### 1. Application Configuration — via Migration Manager
+
+Migration Manager is Maximo's built-in tool for promoting application-level configuration content between environments.
+
+| What Gets Promoted | How |
+|-------------------|-----|
+| Workflow definitions | Export from source environment as package file |
+| Actions, roles, communication templates | Package includes all dependent objects |
+| Inspection forms | Versioned through source control |
+| Custom configuration data | Imported into target environment |
+
+**Promotion flow:** Dev → Test → UAT → Production, with each tier requiring validation before the next promotion.
+
+**Best practices:**
+- Migrate during maintenance windows
+- Ensure error handling and rollback procedures
+- Keep source control as the master record
+- A single package can contain workflow + actions + roles + communication templates + custom code
+
+### 2. Infrastructure Configuration — via GitOps or Ansible
+
+Platform-level configuration (operator versions, cluster settings, resource quotas) is promoted through Git-based workflows:
+
+| Promotion Stage | Mechanism | Approval Gate |
+|----------------|-----------|---------------|
+| Dev → Test | Git commit to test cluster config | Automated (CI pipeline) |
+| Test → UAT | Pull Request to UAT cluster config | Technical review + Test lead sign-off |
+| UAT → Production | Pull Request to prod cluster config | Change Advisory Board + Business sign-off |
+
+**GitOps promotion workflow:**
+
+1. Developer makes configuration changes in Config Repository (dev cluster config)
+2. Git commit triggers ArgoCD sync to dev cluster
+3. Validation in dev environment
+4. PR created to update test cluster config with same changes
+5. PR review and approval
+6. Merge triggers ArgoCD sync to test cluster
+7. Testing and validation
+8. PR created for UAT, then production
+9. Each tier requires approval gates (PR reviews)
+
+### 3. Database Migration Between Environments
+
+For Db2-based MAS Manage environments:
+
+| Tool | Purpose |
+|------|---------|
+| `db2move` / `db2look` | Export schema and data from source, import into target |
+| IBM Db2 Bridge | Enterprise data movement for large-scale migrations |
+| Db2 Migration Tooling (Db2MT) | Guided migration with script customization |
+
+---
+
+## Testing Gates Between Environments
+
+Each promotion should pass through defined validation gates before progressing to the next tier.
+
+| Gate | From → To | Validation Required |
+|------|-----------|-------------------|
+| **Dev Gate** | Dev → Test | Unit tests pass, code review approved, no critical defects |
+| **Test Gate** | Test → UAT | Integration tests pass, performance baseline met, regression suite green |
+| **UAT Gate** | UAT → Prod | Business acceptance sign-off, security scan clean, performance test at scale |
+| **Change Advisory Board** | UAT → Prod | ITIL change management approval, rollback plan documented, communication plan ready |
+
+---
+
+## DNS and Routing Per Environment
+
+Each environment needs its own DNS subdomain for MAS routes.
+
+| Environment | Domain Pattern | Example |
+|------------|---------------|---------|
+| Dev | `*.dev.mas.example.com` | `admin.dev.mas.example.com` |
+| Test | `*.test.mas.example.com` | `manage.test.mas.example.com` |
+| UAT | `*.uat.mas.example.com` | `api.uat.mas.example.com` |
+| Production | `*.mas.example.com` | `manage.mas.example.com` |
+
+Each environment's cert-manager instance (or shared cert-manager) handles TLS certificate issuance for its domain.
+
+**DNS provider options:** Azure DNS, Cloudflare, Route 53 — cert-manager validates subdomains using ACME DNS-01 challenges.
+
+---
+
+## MAS Version and Catalog Management Across Environments
+
+IBM publishes curated operator catalogs (e.g., `v9-250925-amd64`) — each is a tested snapshot of compatible operator versions.
+
+| Strategy | How It Works | When to Use |
+|----------|-------------|-------------|
+| **Same catalog everywhere** | All environments reference the same catalog version | Simplest; reduces drift |
+| **Staged catalog promotion** | Non-prod runs newer catalog first; prod follows after validation | Recommended for enterprise |
+| **Per-environment catalogs** | Each environment can reference a different catalog version | Maximum flexibility; highest drift risk |
+
+```bash
+# Check which catalog version is running
+oc get catalogsource -n openshift-marketplace -o custom-columns=NAME:.metadata.name,IMAGE:.spec.image
+
+# Compare catalog versions across environments (multi-cluster)
+# Run on each cluster:
+oc get catalogsource ibm-operator-catalog -n openshift-marketplace -o jsonpath='{.spec.image}'
+```
+
+---
+
+## Disaster Recovery Considerations
+
+| Component | Recovery Strategy |
+|-----------|------------------|
+| **MongoDB** | Regular dumps (`mongodump`); consider MongoDB Atlas for production DR |
+| **Kafka** | Data likely lost during disaster with Strimzi; consider Confluent for critical data |
+| **DB2** | Traditional backup/restore; HADR for production |
+| **etcd** | Cluster-level backup (`cluster-backup.sh`); restore to new cluster if needed |
+| **Persistent Volumes** | Zone-redundant storage (ZRS) for production; regular snapshots |
+| **Configuration** | Git repository (GitOps) is inherently backed up; CRs exportable via `oc get -o yaml` |
+| **Multi-region DR** | RHACM enables multi-region deployment with automatic failover |
+
+---
+
+## Key Takeaways
+
+1. **Choose your topology pattern early.** The four patterns — single-cluster, two-cluster, per-tier, and hub-spoke — have fundamentally different cost, isolation, and operational characteristics. This decision is hard to change later.
+
+2. **Namespace isolation is built into MAS.** The `mas-{instanceId}-{component}` convention provides clean separation. Layer resource quotas, network policies, and RBAC on top for enterprise-grade isolation.
+
+3. **Right-size each environment tier.** Dev on SNO at 15-25% of production cost. Test at 40-50%. UAT at 60-75%. Do not over-provision non-prod or under-provision production.
+
+4. **Automate promotion workflows.** Migration Manager for application config, GitOps/Ansible for infrastructure. Both need defined approval gates and audit trails.
+
+5. **Plan instance IDs carefully.** They are immutable after installation. Use a clear convention (`dev01`, `test`, `uat`, `prod`) and document it.
+
+6. **The two-cluster pattern is the sweet spot for most organizations.** It provides production isolation without the operational complexity of per-tier clusters.
+
+---
+
+## References
+
+- [IBM MAS Sizing Guidance](https://ibm-mas.github.io/mas-performance/mas/sizing/guidance/)
+- [IBM MAS CLI Topology Reference](https://ibm-mas.github.io/cli/reference/topology/)
+- [Single Node OpenShift for MAS](https://ibm-mas-manage.github.io/sno/)
+- [IBM MAS GitOps Repository](https://github.com/ibm-mas/gitops)
+- [IBM MAS GitOps Documentation](https://ibm-mas.github.io/gitops/main/)
+- [MAS DevOps Ansible Collection](https://ibm-mas.github.io/ansible-devops/)
+- [Deploy MAS on Azure — Microsoft Architecture Center](https://learn.microsoft.com/en-us/azure/architecture/example-scenario/apps/deploy-ibm-maximo-application-suite)
+- [MAS On-Prem Design Considerations — Interloc Solutions](https://www.interlocsolutions.com/blog/ibm-maximo-application-suite-on-prem-installation-design-considerations)
+- [IBM MAS OCP Best Practices](https://ibm-mas.github.io/mas-performance/mas/ocp/bestpractice/)
+- [Red Hat Advanced Cluster Management](https://www.redhat.com/en/technologies/management/advanced-cluster-management)
+
+---
+
+**Series Navigation:**
+
+**Previous:** [Part 8 — The Future MAS SysAdmin: AI, Automation, and Autonomous Monitoring](/blog/future-mas-sysadmin)
+
+[View the full MAS ADMIN series index →](/blog/mas-admin-series-index)
+
+---
+
+*Part 9 of the "MAS ADMIN" series | Published by TheMaximoGuys*
+
+*The environment distribution design is one of the first decisions you will make in a MAS on-prem deployment — and one of the hardest to change later. Plan it early, automate it thoroughly, and let GitOps keep your environments consistent.*
