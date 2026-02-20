@@ -1,0 +1,438 @@
+---
+title: "Integrating Maximo Predict with Monitor, Health, and Manage: The Closed Loop"
+description: "Predictions without integration are dashboards nobody uses. Learn the end-to-end data flow from sensors to work orders across MAS applications."
+date: "2026-02-19"
+slug: "mas-predict-integration"
+tags: ["Maximo Predict", "Maximo Health", "Maximo Monitor", "Maximo Manage", "MAS Integration", "Predictive Maintenance", "Work Orders", "IoT"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Predictive Maintenance Specialists"]
+coverImage: "./images/mas-predict-06.png"
+
+faqs:
+  - question: "How does Maximo Predict connect to Monitor, Health, and Manage?"
+    answer: "Monitor feeds sensor data into Predict for feature enrichment. Predict sends scores to Health as scored indicators for visualization and risk assessment. Predict triggers work orders in Manage when thresholds are exceeded. Manage provides work history back to Predict for model training. It forms a continuous closed loop."
+  - question: "Can Maximo Predict automatically create work orders?"
+    answer: "Yes. When failure probability exceeds a configured threshold, Predict can trigger work order creation in Manage through automation scripts or workflow processes. Most organizations start in advisory mode where predictions are displayed but work orders require human approval, then move toward automation as trust builds."
+  - question: "What is the Health matrix and how does Predict feed into it?"
+    answer: "The Health matrix plots assets on two axes, typically failure probability versus criticality. Assets in the upper-right quadrant have both high failure risk and high business impact, demanding immediate attention. Predict provides the failure probability axis. Manage provides the criticality. Together they enable risk-based prioritization across an entire portfolio."
+
+keyTakeaways:
+  - "The closed loop from sensors to work orders is where predictions become operational value"
+  - "Monitor provides sensor enrichment; Health provides visualization; Manage provides action"
+  - "Device-to-asset mapping is the critical integration step between Monitor and Predict"
+  - "Start with advisory mode before automating work order creation from predictions"
+  - "Governance of shared indicators prevents confusion across MAS applications"
+
+series:
+  name: "MAS PREDICT"
+  part: 6
+  total: 8
+
+tldr: "Maximo Predict delivers value only when integrated with the rest of MAS. Monitor feeds sensor data into models. Health visualizes predictions for portfolio decisions. Manage turns predictions into work orders. This blog maps the complete data flow and integration patterns."
+seoTitle: "Integrating IBM Maximo Predict with Monitor, Health, and Manage | TheMaximoGuys"
+seoDescription: "End-to-end MAS integration for predictive maintenance. Data flow from Monitor sensors through Predict models to Health dashboards and Manage work orders."
+targetQuestions:
+  - "How does Maximo Predict integrate with other MAS applications?"
+  - "How do I connect Maximo Monitor data to Predict models?"
+  - "Can Maximo Predict trigger work orders automatically?"
+semanticKeywords:
+  - "MAS integration"
+  - "Maximo Predict Health integration"
+  - "Maximo Monitor Predict"
+  - "predictive work orders"
+  - "health indicators"
+  - "closed loop maintenance"
+  - "sensor to work order"
+  - "device asset mapping"
+proficiencyLevel: "beginner"
+dependencies:
+  - "Familiarity with MAS applications (Monitor, Predict, Health, Manage)"
+  - "Understanding of Predict model deployment (Part 5)"
+  - "Basic Maximo Manage concepts (assets, work orders)"
+speakableSections:
+  - "Introduction"
+  - "The Closed Loop Architecture"
+  - "End-to-End Data Flow Examples"
+relatedSlugs:
+  - "mas-predict-deployment-monitoring"
+  - "mas-predict-industry-use-cases"
+  - "mas-monitor-introduction"
+  - "mas-health-introduction"
+---
+
+> **Who this is for:** Solution architects designing MAS implementations, integration specialists connecting applications, reliability engineers leveraging predictions, and IT/OT teams managing data flows across the Maximo ecosystem.
+
+## The Integration Problem Nobody Warns You About
+
+We worked with a mining company that had all four MAS applications deployed. Monitor collecting vibration data from 400 sensors. Predict scoring 200 assets daily. Health dashboards looking beautiful. Manage handling 3,000 work orders per month.
+
+None of them were talking to each other.
+
+Monitor data never reached Predict because device-to-asset mapping was incomplete. Predict scores sat in a database table that Health was not configured to read. No automation existed to create work orders from predictions. The four applications were four islands.
+
+After 6 weeks of integration work -- mapping devices to assets, configuring Health indicators, building automation scripts in Manage -- the same four applications became a closed loop. Sensor anomalies triggered model scoring. Elevated scores appeared in Health dashboards. Threshold exceedances created work orders. Work outcomes fed back into model training.
+
+The technology was always there. The integration was not. That is what this blog is about.
+
+---
+
+## The Closed Loop Architecture
+
+Each MAS application has a specific role. Together, they create a cycle.
+
+```
+  THE MAS CLOSED LOOP
+  ====================
+
+  Sensors ──> MONITOR ──> PREDICT ──> HEALTH ──> MANAGE ──> Assets
+     ^        (collect)   (model)    (decide)   (execute)     |
+     |                                                         |
+     └──────────── Feedback & Operational Data ◄──────────────┘
+```
+
+| Application | Role | Input | Output |
+|-------------|------|-------|--------|
+| **Monitor** | Collect sensor data | Raw IoT telemetry | Processed metrics, KPIs |
+| **Predict** | Build and score models | Features from all sources | Probability, RUL scores |
+| **Health** | Visualize risk | Prediction scores + criticality | Prioritized asset views |
+| **Manage** | Execute maintenance | Work triggers, predictions | Work orders, outcomes |
+
+The loop works when data flows freely between applications. Break any connection and the loop breaks.
+
+---
+
+## Integration with Maximo Monitor
+
+Monitor provides the high-frequency data that makes models significantly more accurate.
+
+### What Monitor Contributes
+
+- **Raw sensor data:** Temperature, vibration, pressure, flow, current
+- **Calculated metrics:** Efficiency ratios, degradation rates, custom KPIs
+- **Alerts and anomalies:** Threshold violations and statistical anomalies
+- **Historical time series:** Months or years of sensor history for training
+
+### The Critical Step: Device-to-Asset Mapping
+
+Monitor organizes data by **device types** and **metrics**. Predict needs data organized by **Manage assets**. Without mapping, these two worlds do not connect.
+
+```
+  DEVICE-TO-ASSET MAPPING
+  ========================
+
+  MONITOR WORLD                    MANAGE WORLD
+  ─────────────                    ────────────
+  Device: VIB-SENSOR-042    ──>    Asset: PUMP-042
+  Metric: vibration_rms     ──>    Feature: rolling_avg_vibration
+  Device: TEMP-SENSOR-042   ──>    Asset: PUMP-042
+  Metric: bearing_temp      ──>    Feature: temperature_trend
+```
+
+**How to do it:**
+1. Export your Monitor device inventory
+2. Export your Manage asset register
+3. Create a mapping table linking device IDs to asset IDs
+4. Configure the mapping in Predict
+5. Validate by checking that asset-level features include sensor data
+
+**Common problems:**
+- Device naming conventions do not match asset naming conventions
+- One asset has multiple sensors (map all of them)
+- Sensors were added after initial Monitor deployment (update mappings)
+
+### Integration Patterns
+
+**Direct database access:** Predict queries Monitor data stores during feature calculation. Works well when both are in the same MAS workspace.
+
+**API integration:** Predict calls Monitor APIs to retrieve metrics. More flexible, works across environments, adds latency.
+
+**Data pipeline:** ETL processes stage Monitor data for Predict consumption. Best for complex transformations and large data volumes.
+
+### Example: Vibration Data for Pump Models
+
+1. Monitor collects vibration readings from pump bearing sensors (hourly)
+2. During feature calculation, Predict pulls the last 30 days of readings
+3. Predict computes: rolling 7-day average, 30-day trend slope, peak values
+4. These features join work history and meter features in the model input
+5. The model scores each pump using the complete feature set
+
+Without Monitor integration, this model would rely only on work orders and meters. With it, the model catches degradation signals days or weeks earlier.
+
+---
+
+## Integration with Maximo Health
+
+Health is where predictions become visible to decision-makers.
+
+### Predictions as Health Indicators
+
+Configure Predict outputs as Health indicators:
+
+**Failure probability indicator:**
+- Type: Scored indicator (0-100)
+- Source: Predict failure probability score table
+- Ranges: 0-30 = Good (green), 30-70 = Fair (yellow), 70-100 = Poor (red)
+
+**Remaining useful life indicator:**
+- Type: Numeric value with units (days)
+- Source: Predict RUL score table
+- Ranges: >180 days = Good, 60-180 = Fair, <60 = Poor
+
+### Health Score Composition
+
+Health calculates composite scores using weighted contributors:
+
+```
+  HEALTH SCORE COMPOSITION
+  ========================
+
+  Health Score = w1(Age) + w2(Condition) + w3(Failure Prob) + w4(Maintenance)
+
+  Example weights:
+  - Age factor:           20%
+  - Condition indicators: 25%
+  - Failure probability:  35%  ◄── From Predict
+  - Maintenance history:  20%
+                         ────
+                         100%
+```
+
+Failure probability from Predict can be the primary driver, a secondary contributor, or a modifier that adjusts other factors. The weighting depends on how much trust the organization places in the predictions and what other data is available.
+
+### The Health Matrix
+
+The Health matrix is the single most powerful visualization for risk-based decision-making.
+
+```
+  HEALTH MATRIX
+  ==============
+
+  CRITICALITY
+       ^
+  High |  [Monitor]    [IMMEDIATE]
+       |  Schedule      Priority
+       |  review        action
+       |
+  Med  |  [Routine]    [Schedule]
+       |  Normal        maintenance
+       |  monitoring    soon
+       |
+  Low  |  [Accept]     [Review]
+       |  Low risk      Unexpected
+       |  low impact    risk
+       └─────────────────────────────>
+            Low    Med     High
+                FAILURE PROBABILITY
+                  (from Predict)
+```
+
+Assets in the upper-right demand immediate action. Assets in the lower-left can wait. Everything else falls somewhere in between. This matrix replaces gut-feeling prioritization with data-driven triage.
+
+### Configuring Predict Indicators in Health
+
+1. **Define indicator type** in Health for each Predict output
+2. **Map the data source** to the Predict score table or view
+3. **Set scoring ranges** that align with your action thresholds
+4. **Configure display** options (charts, colors, drill-downs)
+5. **Assign to asset types** so the right assets show the right indicators
+
+---
+
+## Integration with Maximo Manage
+
+Manage is where predictions become maintenance actions. This is the integration that delivers ROI.
+
+### Prediction-Driven Work Orders
+
+When failure probability exceeds threshold, create work:
+
+**Threshold-based triggers:**
+- Failure probability > 65%: Create inspection work order
+- Failure probability > 85%: Create priority corrective work order
+- RUL < 30 days: Create planned replacement work order
+
+**Work order configuration:**
+- Type: Inspection, corrective, or preventive depending on threshold
+- Priority: Calculated from prediction score and asset criticality
+- Job plan: Attach appropriate inspection or repair checklist
+- Assignment: Route to correct craft or technician
+
+**Example workflow:**
+1. Predict scores pump PUMP-042 at 82% bearing failure probability
+2. Threshold exceeded: automation creates inspection work order
+3. Planner reviews and approves, schedules for Thursday
+4. Technician inspects, finds early-stage bearing wear
+5. Planner creates follow-up repair work order for bearing replacement
+6. Work completed, outcome recorded, Predict receives feedback
+
+### Predictive PM Optimization
+
+Predictions can dynamically adjust PM schedules:
+
+**Extending intervals for low-risk assets:**
+- Pump at 12% failure probability with PM due next week
+- Recommendation: Defer PM by 30 days
+- Savings: Avoided unnecessary PM labor and downtime
+
+**Shortening intervals for high-risk assets:**
+- Pump at 68% failure probability with PM not due for 2 months
+- Recommendation: Accelerate PM to next week
+- Value: Prevent failure before PM interval arrives
+
+**Implementation approaches:**
+
+| Approach | How It Works | Risk Level |
+|----------|-------------|------------|
+| Advisory | Display recommendation in Manage | Low |
+| Semi-automated | Generate change request for approval | Medium |
+| Automated | Directly modify PM schedule | High -- use carefully |
+
+**Start advisory.** Always. Let planners see recommendations and build trust before automating schedule changes.
+
+### Integration Mechanisms in Manage
+
+**Automation scripts:** Custom scripts react to prediction score changes. Create work orders, update PM frequencies, send notifications.
+
+**Workflow processes:** Route prediction-triggered actions through approval chains. Ensure appropriate review before work is created.
+
+**Escalation rules:** High-probability predictions on critical assets escalate automatically to senior personnel.
+
+---
+
+## End-to-End Data Flow Examples
+
+### Example 1: Sensor to Work Order
+
+A developing problem in a heat exchanger, caught and resolved before failure.
+
+```
+  DAY 1:  Monitor detects temperature approach increasing (sensors)
+  DAY 3:  Predict calculates features, scores exchanger at 58% (model)
+  DAY 5:  Score trends to 67%, Health flag turns yellow (visualization)
+  DAY 7:  Score reaches 74%, Manage creates inspection WO (action)
+  DAY 10: Technician inspects, finds tube fouling (execution)
+  DAY 11: Cleaning performed, exchanger returned to service (resolution)
+  DAY 12: Predict score drops to 15% on next cycle (feedback)
+```
+
+Without integration: the fouling progresses for weeks until a tube leak causes an unplanned shutdown.
+
+### Example 2: Fleet-Level PM Optimization
+
+A fleet of 150 identical motors shows varying risk profiles.
+
+```
+  1. Predict scores all 150 motors daily
+  2. 30 motors (20%) show elevated failure probability (>50%)
+  3. 120 motors (80%) show low risk (<30%)
+  4. Health matrix highlights the 30 high-risk motors
+  5. Planners accelerate PMs for the 30 high-risk motors
+  6. Planners defer PMs for 40 lowest-risk motors (savings)
+  7. Resources focused where risk is highest
+```
+
+Net result: Same maintenance budget, fewer failures, fewer unnecessary PMs.
+
+### Example 3: Capital Planning Support
+
+Aging transformer fleet needs replacement planning.
+
+```
+  1. Predict estimates RUL for 500 distribution transformers
+  2. Health sorts transformers by projected failure year
+  3. 45 transformers have RUL < 2 years (replacement candidates)
+  4. Capital budget allocated for 15 replacements per year
+  5. Manage creates planned replacement work orders
+  6. Replacements executed before failure
+  7. Insurance and regulatory compliance improved
+```
+
+Predictions drive capital decisions years in advance, not reactive replacements after failures.
+
+---
+
+## Governance for Shared Indicators
+
+When multiple applications share data, governance prevents confusion.
+
+### Indicator Standardization
+
+Everyone must agree on definitions:
+- "Failure probability" means the same thing to every user in every application
+- Scoring ranges are consistent (0-30 is always "good")
+- Units are standardized (RUL always in days, not sometimes hours)
+
+### Model Ownership
+
+- Who is responsible for each model's accuracy?
+- Who approves changes to models or thresholds?
+- How are changes communicated to users?
+
+### Data Quality Responsibility
+
+- Who ensures sensor data keeps flowing from Monitor?
+- Who validates that Manage data quality supports model training?
+- How are data issues escalated and resolved?
+
+### Access and Permissions
+
+- Who can view predictions? (Most users)
+- Who can act on predictions? (Planners, engineers)
+- Who can modify models and thresholds? (Data scientists, reliability leads)
+
+---
+
+## Common Integration Challenges
+
+### Challenge: Misaligned Master Data
+
+Monitor device IDs do not match Manage asset IDs. Common when systems were deployed independently.
+
+**Fix:** Create and maintain a mapping table. Assign ownership for keeping it current. Reconcile quarterly.
+
+### Challenge: Timing Mismatches
+
+Predictions are stale by the time work is planned. Daily scoring but weekly planning cycles.
+
+**Fix:** Display prediction timestamps prominently. Offer on-demand rescoring for critical decisions. Align scoring frequency with planning cadence.
+
+### Challenge: Alert Fatigue
+
+Too many prediction-triggered work orders overwhelm planners.
+
+**Fix:** Adjust thresholds upward. Implement tiered responses (review vs. action). Group related alerts. Batch low-priority recommendations.
+
+### Challenge: User Distrust
+
+Users ignore predictions they do not understand or believe.
+
+**Fix:** Show the *why* behind predictions (top features, trends). Track and publicize accuracy metrics. Celebrate correct predictions. Investigate incorrect ones transparently.
+
+---
+
+## The 6 Commandments of MAS Integration
+
+1. **Map devices to assets first.** No mapping, no sensor features, no enrichment.
+2. **Start with Health visualization.** Let people see predictions before automating actions.
+3. **Advisory before automation.** Earn trust before creating work orders automatically.
+4. **Standardize indicator definitions.** One definition for failure probability everywhere.
+5. **Assign ownership for every integration point.** Monitor data pipeline, Predict scores, Health indicators, Manage triggers.
+6. **Close the loop.** Every prediction should eventually result in a recorded outcome.
+
+Connect it. Standardize it. Govern it. Close the loop.
+
+---
+
+**Next in the series:** [Part 7: Industry Use Cases and Solution Patterns](/blog/mas-predict-industry-use-cases) -- Real-world applications across manufacturing, utilities, transportation, and oil and gas.
+
+---
+
+*This is Part 6 of the MAS Predict series by TheMaximoGuys. [View the complete series index](/blog/mas-predict-series-index).*
+
+---
+
+**TheMaximoGuys** | Enterprise Maximo. No fluff. Just results.

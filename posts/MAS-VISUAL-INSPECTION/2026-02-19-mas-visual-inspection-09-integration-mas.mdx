@@ -1,0 +1,874 @@
+---
+title: "Integration with MAS Applications: Closing the Loop from Camera to Work Order"
+description: "Connect MVI to Maximo Manage for automated work orders, Health for condition scoring, Monitor for visual alerts, and Predict for failure enrichment. The closed-loop inspection architecture."
+date: "2026-02-19"
+slug: "mas-visual-inspection-integration-mas"
+tags: ["Maximo Visual Inspection", "MVI", "Maximo Manage", "Maximo Health", "Maximo Monitor", "Maximo Predict", "Integration", "Work Orders", "MAS"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "AI & Visual Inspection Specialists"]
+coverImage: "./images/mas-visual-inspection-09.png"
+
+faqs:
+  - question: "How does MVI create work orders in Maximo Manage?"
+    answer: "MVI detections above the configured confidence threshold trigger work order creation through the MAS integration layer. The work order includes the inspection image, defect classification, confidence score, asset ID, location, and recommended priority -- eliminating manual documentation of visual findings."
+  - question: "Can MVI results feed into Maximo Health condition scoring?"
+    answer: "Yes. MVI visual condition assessments map to Health contributors. A 'Grade 3 corrosion' classification translates to a numeric condition score that factors into the overall asset health calculation alongside vibration data, age, and maintenance history."
+  - question: "How do MVI and Maximo Predict work together?"
+    answer: "MVI provides visual condition data that enriches Predict failure models. Historical visual inspection data showing corrosion progression over time becomes a predictive feature. Assets that show a specific visual deterioration pattern at month 6 may predict failure at month 14."
+
+keyTakeaways:
+  - "MVI to Manage integration automates work order creation from visual findings"
+  - "Visual condition data feeds Health scoring for composite asset health"
+  - "Monitor can trigger visual inspections and receive MVI results as alerts"
+  - "Historical MVI data enriches Predict failure probability models"
+  - "The closed loop turns inspection images into maintenance actions automatically"
+
+series:
+  name: "MAS VISUAL INSPECTION"
+  part: 9
+  total: 12
+
+tldr: "MVI integrates with Manage (work orders from detections), Health (visual condition scores), Monitor (alert triggers), and Predict (visual features for failure models). The closed-loop architecture turns camera images into maintenance actions without manual documentation."
+seoTitle: "MVI Integration with Maximo Manage, Health, Monitor, and Predict | TheMaximoGuys"
+seoDescription: "Connect MVI to Maximo Manage for work orders, Health for scoring, Monitor for alerts, and Predict for failure models. Closed-loop architecture guide."
+targetQuestions:
+  - "How does MVI integrate with Maximo Manage?"
+  - "Can MVI feed into Maximo Health condition scoring?"
+  - "How do visual inspection results connect to Maximo Monitor alerts?"
+  - "Does MVI work with Maximo Predict?"
+semanticKeywords:
+  - "MVI Manage integration"
+  - "visual inspection work orders"
+  - "Maximo Health condition scoring"
+  - "MVI Monitor alerts"
+  - "visual data predictive maintenance"
+  - "closed-loop inspection"
+  - "automated work order creation"
+  - "MAS application integration"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "MVI model deployed to production (Part 6)"
+  - "Maximo Manage configured with asset hierarchy"
+  - "Familiarity with MAS Health, Monitor, and Predict concepts"
+speakableSections:
+  - "Introduction"
+  - "MVI to Manage Integration"
+  - "The Closed-Loop Architecture"
+  - "Integration Patterns by Industry"
+relatedSlugs:
+  - "mas-visual-inspection-deploying-production"
+  - "mas-health-introduction"
+  - "mas-monitor-introduction"
+  - "mas-predict-introduction"
+---
+
+> **Who this is for:** Integration architects connecting MVI to the broader MAS ecosystem, Maximo administrators configuring work order automation, and reliability engineers who want visual inspection data to flow into health scores and predictive models. This is where AI detections become operational decisions.
+
+**Read Time:** 20-22 minutes
+
+---
+
+## The Detection That Went Nowhere
+
+A water utility deployed MVI to detect pipe corrosion from inline camera images. The model worked brilliantly. 94% accuracy. Caught hairline cracks that humans could not see at scroll speed.
+
+Three months later, the maintenance backlog had not changed. Not one work order had been created from MVI findings.
+
+The findings lived in the MVI dashboard. Nobody checked the MVI dashboard. The inspectors checked Maximo Manage. The planners checked Maximo Manage. The supervisors checked Maximo Manage.
+
+**The AI was seeing everything. The organization was acting on nothing.**
+
+> *"It was like having the world's best security camera in a room where nobody watches the monitors. We needed the camera to call the police itself."*
+
+They connected MVI to Manage. Detections above 85% confidence auto-created work orders. The backlog started moving within a week.
+
+**A detection without an action is a wasted inference.** This blog is about making every detection count.
+
+---
+
+## The Closed-Loop Architecture
+
+The integration vision is a closed loop: capture, analyze, decide, act, learn.
+
+```
+  THE CLOSED-LOOP VISUAL INSPECTION ARCHITECTURE
+  ===============================================
+
+                    ┌──────────────┐
+                    │   CAPTURE    │
+                    │ Camera/Drone │
+                    │ Mobile/Robot │
+                    └──────┬───────┘
+                           │
+                           v
+                    ┌──────────────┐
+                    │   ANALYZE    │
+                    │   MVI        │
+                    │ Classify     │
+                    │ Detect       │
+                    └──────┬───────┘
+                           │
+              ┌────────────┼────────────┐
+              │            │            │
+              v            v            v
+       ┌────────────┐ ┌────────┐ ┌──────────┐
+       │  MANAGE    │ │ HEALTH │ │ MONITOR  │
+       │ Work Order │ │ Score  │ │  Alert   │
+       │ Auto-Gen   │ │ Update │ │  Trigger │
+       └──────┬─────┘ └───┬────┘ └────┬─────┘
+              │            │           │
+              v            v           v
+       ┌──────────────────────────────────────┐
+       │              ACT                      │
+       │  Schedule repair / Update health     │
+       │  score / Investigate alert /         │
+       │  Adjust inspection frequency         │
+       └───────────────────┬──────────────────┘
+                           │
+                           v
+       ┌──────────────────────────────────────┐
+       │              LEARN                    │
+       │  Work order outcomes feed PREDICT    │
+       │  Overrides feed MVI retraining       │
+       │  Health trends inform inspection     │
+       │  frequency                           │
+       └──────────────────────────────────────┘
+                           │
+                           └──────> Back to CAPTURE
+```
+
+---
+
+## Integration 1: MVI to Maximo Manage
+
+This is the integration that matters most. Detections become work orders.
+
+### How It Works
+
+```
+  MVI TO MANAGE DATA FLOW
+  ========================
+
+  MVI Detection:
+  ─────────────
+  {
+    "asset_id": "PUMP-4731",
+    "location": "BLDG-A-FLOOR2",
+    "detection_type": "corrosion",
+    "severity": "Grade 3",
+    "confidence": 0.921,
+    "image_url": "/mvi/images/det_20260219_001.jpg",
+    "bounding_box": {"x": 120, "y": 340, "w": 180, "h": 95},
+    "timestamp": "2026-02-19T10:34:22Z"
+  }
+
+         │
+         v
+
+  Manage Work Order (Auto-Created):
+  ─────────────────────────────────
+  WO Number:     AUTO-VI-2026-0847
+  Description:   MVI Detection: Grade 3 corrosion
+                 on PUMP-4731 (92.1% confidence)
+  Asset:         PUMP-4731
+  Location:      BLDG-A-FLOOR2
+  Priority:      2 (mapped from severity)
+  Work Type:     INSP (Inspection follow-up)
+  Target Start:  2026-02-21
+  Attachments:   [Inspection image with detection overlay]
+  Long Desc:     AI-detected Grade 3 corrosion.
+                 Confidence: 92.1%.
+                 Recommended: Schedule repair within
+                 5 business days.
+                 Image attached with defect highlighted.
+```
+
+### Configuration: Mapping Detections to Work Orders
+
+```
+  DETECTION-TO-WO MAPPING TABLE
+  ==============================
+
+  Detection Class    Confidence    WO Priority    Work Type    Auto-Create?
+  ─────────────────  ──────────    ───────────    ─────────    ────────────
+  Critical crack     >= 0.80       1 (Emergency)  EMRG         YES
+  Critical crack     0.50-0.79     2 (Urgent)     INSP         YES (review)
+  Severe corrosion   >= 0.85       2 (Urgent)     CORR         YES
+  Severe corrosion   0.60-0.84     3 (Normal)     INSP         YES (review)
+  Moderate corrosion >= 0.85       3 (Normal)     CORR         NO (queue)
+  Minor wear         >= 0.90       4 (Low)        PM           NO (log only)
+  Vegetation contact >= 0.80       3 (Normal)     VEG          YES
+
+  RULES:
+  - Critical + high confidence = auto-create emergency WO
+  - Moderate + low confidence = log for periodic review
+  - All detections logged regardless of WO creation
+  - Human review required before WO status changes
+```
+
+### Work Order Enrichment
+
+MVI does not just trigger work orders. It enriches them.
+
+```
+  WORK ORDER ENRICHMENT FROM MVI
+  ===============================
+
+  STANDARD WO (Without MVI):
+  ──────────────────────────
+  Description: "Inspect pump 4731 for corrosion"
+  That is it. Inspector shows up with no context.
+
+  ENRICHED WO (With MVI):
+  ────────────────────────
+  Description: "MVI Detection: Grade 3 corrosion on
+  PUMP-4731 casing, north-facing surface (92.1%)"
+
+  Attachments:
+  1. Original inspection image
+  2. Image with detection overlay (defect highlighted)
+  3. Zoomed crop of defect area
+  4. Historical comparison (if previous inspection exists)
+
+  Long Description:
+  - Defect type: Corrosion, Grade 3
+  - Location on asset: North-facing casing, lower quadrant
+  - Confidence: 92.1%
+  - Defect dimensions (estimated from image): ~120mm x 65mm
+  - Previous inspection (60 days ago): Grade 2, same location
+  - Progression: Upgraded from Grade 2 to Grade 3 in 60 days
+  - Recommended action: Surface preparation and coating repair
+  - Estimated repair time: 4 hours (based on similar WOs)
+  - Parts likely needed: Primer, epoxy coating, surface prep kit
+
+  THE INSPECTOR ARRIVES KNOWING:
+  - Exactly where the defect is
+  - What it looks like
+  - How it has progressed
+  - What to bring
+  - How long it will take
+```
+
+### Duplicate Detection Logic
+
+MVI might flag the same defect in multiple images. You need deduplication.
+
+```
+  WORK ORDER DEDUPLICATION
+  ========================
+
+  PROBLEM: Drone captures 5 images of the same corroded spot.
+  MVI flags all 5. Without dedup, you create 5 work orders.
+
+  SOLUTION: Deduplication rules
+
+  Rule 1: Same asset + same defect class + within X hours
+          = Merge into single WO with all images attached
+
+  Rule 2: Same location + same defect class + within X meters
+          = Flag for human review (same defect? or adjacent?)
+
+  Rule 3: Same asset + different defect class
+          = Separate WOs (each defect needs separate action)
+
+  CONFIGURATION:
+  - Time window: 24 hours (adjust per inspection frequency)
+  - Distance threshold: 2 meters (if georeferenced)
+  - Confidence: Use highest confidence from duplicate set
+  - Images: Attach all images to merged WO
+```
+
+---
+
+## Integration 2: MVI to Maximo Health
+
+Visual condition data is one of the most valuable health contributors because it captures physical reality, not just sensor readings.
+
+### Visual Condition as Health Contributor
+
+```
+  MVI TO HEALTH DATA FLOW
+  ========================
+
+  MVI Inspection Result:
+  ─────────────────────
+  Asset: PUMP-4731
+  Visual Condition: Grade 3 corrosion
+  Confidence: 92.1%
+  Date: 2026-02-19
+
+         │
+         v
+
+  Health Contributor Mapping:
+  ──────────────────────────
+  Contributor: Visual Condition Score
+  Source: MVI
+  Weight: 25% of total health score
+
+  Grade Mapping:
+  - Grade 1 (Good):     Score = 90-100
+  - Grade 2 (Minor):    Score = 70-89
+  - Grade 3 (Moderate): Score = 50-69
+  - Grade 4 (Severe):   Score = 25-49
+  - Grade 5 (Critical): Score = 0-24
+
+  PUMP-4731 Visual Score: 55
+  (Grade 3 = midpoint of 50-69 range)
+
+         │
+         v
+
+  Health Composite Score:
+  ──────────────────────
+  Contributor          Weight    Score    Weighted
+  ─────────────────    ──────    ─────    ────────
+  Visual Condition     25%       55       13.75
+  Vibration            25%       72       18.00
+  Age/Lifecycle        20%       65       13.00
+  Maintenance History  15%       80       12.00
+  Operating Conditions 15%       68       10.20
+  ──────────────────────────────────────────────
+  TOTAL HEALTH SCORE:                     66.95
+
+  HEALTH STATUS: Fair (action recommended)
+```
+
+### Trend Analysis: Visual Health Over Time
+
+```
+  VISUAL HEALTH TREND (PUMP-4731)
+  ================================
+
+  Date         Visual    Action
+  ──────────   ──────    ──────────────────────
+  2025-08-19   92        No action (good)
+  2025-10-19   85        No action (good)
+  2025-12-19   71        Flagged for monitoring
+  2026-02-19   55        Work order created
+
+  TREND: Declining 9.25 points per inspection cycle
+  PROJECTION: Visual score reaches 25 (critical) in
+              approximately 3 inspection cycles (6 months)
+
+  RECOMMENDATION:
+  - Schedule corrective maintenance within 60 days
+  - Increase inspection frequency to monthly
+  - Feed trend data to Predict for RUL estimation
+```
+
+---
+
+## Integration 3: MVI to Maximo Monitor
+
+Monitor provides the alerting and anomaly detection platform. MVI adds visual anomaly detection to the mix. MAS 9.0 significantly enhanced this integration with v2 APIs and MQTT alert pipelines.
+
+### Visual Alerts in Monitor
+
+```
+  MVI TO MONITOR INTEGRATION
+  ==========================
+
+  PATTERN 1: MVI Edge MQTT Alert Pipeline
+  ────────────────────────────────────────
+  This is the PRIMARY integration path (MAS 9.0+):
+
+  MVI Edge detects object/defect
+    ──> MQTT alert message sent via v2 APIs
+    ──> Monitor receives via auto-configured
+        device gateway
+    ──> Monitor evaluates against alert rules
+    ──> Actions triggered per configuration
+
+  AUTO-CONFIGURATION:
+  MVI Edge automatically configures:
+  - Generic device type in Monitor
+  - Device gateway for MQTT communication
+  No manual Monitor device setup required.
+
+  ALERT MESSAGE TEMPLATES (MAS 9.0+):
+  Admins create reusable templates defining:
+  - MQTT message structure (to Monitor)
+  - Twilio SMS structure (to operators)
+  - Which detection fields to include
+  - Severity and priority mapping
+
+  RULE-BASED ALERTS:
+  Users configure rules per inspection:
+  - "If crack detected" → MQTT critical + Twilio SMS
+  - "If corrosion Grade 3+" → MQTT warning
+  - "If PPE missing" → Twilio SMS to supervisor
+  - "If all clear" → Log only (no alert)
+
+  Different inspections can trigger different
+  templates and routing rules.
+
+  PATTERN 2: MVI Server as Alert Source
+  ─────────────────────────────────────
+  Fixed camera captures image every 15 minutes.
+  MVI Server analyzes each image.
+  If anomaly detected:
+    ──> Send alert to Monitor
+    ──> Monitor evaluates against rules
+    ──> Monitor triggers notification/action
+
+  PATTERN 3: Monitor Triggers MVI
+  ───────────────────────────────
+  Monitor detects sensor anomaly:
+    - Vibration spike on pump
+    - Temperature surge on bearing
+  Monitor triggers camera capture:
+    ──> Camera captures image of asset
+    ──> MVI analyzes image
+    ──> Visual evidence added to alert
+    ──> Combined sensor + visual alert sent
+
+  PATTERN 4: Correlated Visual + Sensor Alerts
+  ─────────────────────────────────────────────
+  Monitor receives two signals:
+  1. Vibration sensor: Abnormal pattern on PUMP-4731
+  2. MVI MQTT alert: Visible vibration/movement detected
+
+  Correlated alert:
+  "PUMP-4731: Vibration anomaly confirmed visually.
+   Sensor: 12.4 mm/s (threshold: 4.0)
+   Visual: Visible casing movement detected (89% conf)
+   Combined confidence: HIGH
+   Action: Immediate investigation required"
+```
+
+### MQTT Alert Pipeline Deep Dive
+
+```
+  MQTT ALERT FLOW (MAS 9.0+)
+  ===========================
+
+  MVI Edge Device
+       │
+  ┌────┴────────────────────────────────┐
+  │  Inspection Running                 │
+  │  Camera captures image              │
+  │  Model inference: "Crack detected"  │
+  │  Confidence: 94%                    │
+  │                                     │
+  │  Alert Rule Match:                  │
+  │  Rule: "crack" + confidence > 85%   │
+  │  Template: "Critical Infrastructure"│
+  │                                     │
+  │  Actions:                           │
+  │  1. MQTT message to Monitor         │
+  │  2. Twilio SMS to field supervisor  │
+  └────┬──────────────────────┬─────────┘
+       │                      │
+       v                      v
+  MQTT to Monitor        Twilio SMS
+  (via v2 API)           to +1-555-0123
+       │
+       v
+  ┌────────────────────────────────────┐
+  │  Maximo Monitor                    │
+  │  Device: MVI-Edge-Site-A           │
+  │  (auto-configured device type)     │
+  │                                    │
+  │  Alert received:                   │
+  │  - Detection type: crack           │
+  │  - Confidence: 94%                 │
+  │  - Image reference                 │
+  │  - Device location                 │
+  │  - Timestamp                       │
+  │                                    │
+  │  Monitor rules:                    │
+  │  → Create Manage work order        │
+  │  → Escalate to maintenance lead    │
+  │  → Update Health score             │
+  └────────────────────────────────────┘
+```
+
+### Monitor Dashboard with Visual Data
+
+```
+  MONITOR DASHBOARD ENHANCEMENT
+  =============================
+
+  STANDARD MONITOR VIEW:
+  ┌──────────────────────────────────────┐
+  │ PUMP-4731              Status: ALERT │
+  │ Vibration: 12.4 mm/s  [GRAPH]       │
+  │ Temperature: 85 C      [GRAPH]       │
+  │ Pressure: Normal       [GRAPH]       │
+  └──────────────────────────────────────┘
+
+  ENHANCED WITH MVI:
+  ┌──────────────────────────────────────┐
+  │ PUMP-4731              Status: ALERT │
+  │ Vibration: 12.4 mm/s  [GRAPH]       │
+  │ Temperature: 85 C      [GRAPH]       │
+  │ Pressure: Normal       [GRAPH]       │
+  │                                      │
+  │ VISUAL INSPECTION (Latest):          │
+  │ ┌────────────────┐  Grade 3 Corrosion│
+  │ │                │  Confidence: 92%  │
+  │ │  [Asset Image  │  Last inspected:  │
+  │ │   with overlay]│  2026-02-19       │
+  │ │                │                   │
+  │ └────────────────┘  Trend: Declining │
+  │                                      │
+  │ COMBINED ASSESSMENT:                 │
+  │ Sensor + Visual data both indicate   │
+  │ degradation. Recommend intervention. │
+  └──────────────────────────────────────┘
+```
+
+---
+
+## Integration 4: MVI to Maximo Predict
+
+This is the most forward-looking integration. Visual inspection history becomes a feature in predictive failure models.
+
+### Visual Features for Prediction
+
+```
+  MVI DATA AS PREDICT FEATURES
+  ============================
+
+  Traditional Predict Features:
+  ────────────────────────────
+  - Vibration readings
+  - Temperature readings
+  - Operating hours
+  - Maintenance history
+  - Age/lifecycle position
+
+  + Visual Features from MVI:
+  ──────────────────────────
+  - Current visual condition grade
+  - Visual condition trend (improving/stable/declining)
+  - Rate of visual degradation (score points per month)
+  - Number of defect types detected
+  - Time since first visual defect detected
+  - Defect area progression (if segmentation used)
+
+  EXAMPLE: Pump Failure Prediction
+  ────────────────────────────────
+  Without visual data:
+    Feature: Vibration, temperature, hours, maintenance
+    Prediction: "68% failure probability in 90 days"
+
+  With visual data:
+    Feature: Above + "Grade 3 corrosion, declining 9 pts/cycle,
+             first detected 6 months ago"
+    Prediction: "84% failure probability in 60 days"
+
+  Visual data improved prediction confidence by 16%
+  and shortened the predicted failure window by 30 days.
+  The visual degradation pattern correlated with
+  accelerated mechanical failure.
+```
+
+### Building the Visual-Predictive Pipeline
+
+```
+  VISUAL-PREDICTIVE PIPELINE
+  ==========================
+
+  STEP 1: Collect Historical Visual Data
+  ──────────────────────────────────────
+  - Run MVI on historical inspection images
+  - Build visual condition history per asset
+  - Minimum: 4 inspection points per asset
+  - Ideal: 12+ inspection points (1 year monthly)
+
+  STEP 2: Correlate with Failure Events
+  ─────────────────────────────────────
+  - Match visual condition history to known failures
+  - Identify visual patterns preceding failure
+  - "Assets that show Grade 3 corrosion and declining
+     vibration fail within 4 months 72% of the time"
+
+  STEP 3: Add Visual Features to Predict Model
+  ────────────────────────────────────────────
+  - Export visual condition scores as time series
+  - Include in Predict feature set alongside sensors
+  - Retrain Predict model with visual features
+
+  STEP 4: Validate Improvement
+  ───────────────────────────
+  - Compare Predict accuracy: with vs without visual data
+  - If visual features improve accuracy: keep
+  - If no improvement: data may be insufficient
+    (collect more history before retrying)
+
+  TYPICAL IMPROVEMENT: 8-20% increase in prediction
+  accuracy when visual condition data is added to
+  sensor-only models.
+```
+
+---
+
+## Verified Case Studies: Integration in Action
+
+Before we look at industry patterns, let us ground this in two verified IBM case studies that demonstrate the closed-loop integration in practice.
+
+### Sund & Baelt (Denmark): Bridge Infrastructure Integration
+
+Sund & Baelt operates the Great Belt Fixed Link -- one of the world's longest suspension bridges. Their MVI integration demonstrates the full capture-analyze-act loop for national-scale infrastructure.
+
+```
+  SUND & BAELT INTEGRATION ARCHITECTURE
+  ======================================
+
+  Camera/Drone Capture
+       │
+       v
+  MVI: Concrete surface classification
+  (crack detection, spalling, deterioration)
+       │
+       ├──> Manage: Repair work orders
+       │    (with image + defect location + severity)
+       │
+       ├──> Health: Bridge section condition scores
+       │    (visual condition as health contributor)
+       │
+       └──> Predict: Deterioration rate modeling
+            (project lifespan to 100 years)
+
+  RESULTS:
+  - Inspection: Months reduced to days
+  - Incident response: >30% faster repair
+  - Projected productivity: 15-25% increase over 5-10 years
+  - Lifespan extension: Projected to 100 years
+  - CO2 impact: 750,000 tons saved by extending
+    bridge lifespan instead of rebuilding
+```
+
+### Melbourne Water (Australia): Distributed Infrastructure Integration
+
+Melbourne Water manages stormwater infrastructure across 14,000 square kilometers. Their integration pattern shows how MVI + Monitor works for distributed IoT-camera infrastructure.
+
+```
+  MELBOURNE WATER INTEGRATION ARCHITECTURE
+  =========================================
+
+  IoT Cameras (distributed across 14,000 sq km)
+       │
+       v
+  MVI Edge: Stormwater grate inspection
+  (blockage detection, structural damage)
+       │
+       ├──> Monitor: MQTT alerts for critical blockages
+       │    (via MVI Edge alert pipeline)
+       │
+       ├──> Manage: Maintenance work orders
+       │    (automated from Monitor alerts)
+       │
+       └──> Dashboard: Fleet-wide condition view
+            (central monitoring of distributed network)
+
+  RESULTS:
+  - Staff hours: Thousands saved annually
+  - Cost savings: Tens to hundreds of thousands/year
+  - Coverage: 14,000 sq km systematically monitored
+  - Cost advantage: IoT cameras << SCADA alternatives
+```
+
+> **Key insight:** Both case studies share a pattern: MVI is not deployed as a standalone tool. The value comes from the integration -- detections flowing to work orders (Manage), condition scores (Health), alerts (Monitor), and predictive models (Predict). The technology only matters when it connects to action.
+
+---
+
+## REST API Integration Reference
+
+For teams building custom integrations or automation pipelines, MVI exposes a complete REST API using `X-Auth-Token` authentication. Key integration endpoints include `/datasets`, `/files`, `/dnn-script`, and `/api/v1/infer`. Use service accounts for integration API keys.
+
+> **For the complete API reference** — every endpoint, query parameter, code example, automation pattern, and the vision-tools CLI guide — see [Part 11: REST API Reference](/blog/mas-visual-inspection-rest-api-reference).
+
+---
+
+## Integration Patterns by Industry
+
+### Manufacturing: Camera-to-Quality Loop
+
+```
+  MANUFACTURING CLOSED LOOP
+  =========================
+
+  Production Line Camera
+         │
+         v
+  MVI Edge (Real-Time Detection)
+         │
+    ┌────┴────┐
+    │         │
+  Defect    Pass
+    │         │
+    v         v
+  Manage:   Continue
+  Quality WO
+    │
+    v
+  Root Cause Analysis
+    │
+    v
+  Process Adjustment
+    │
+    v
+  Predict: Failure Pattern
+  (This defect type precedes
+   machine failure 60% of time)
+    │
+    v
+  Proactive Maintenance WO
+```
+
+### Utilities: Aerial Inspection Loop
+
+```
+  UTILITIES CLOSED LOOP
+  =====================
+
+  Drone Flight
+         │
+         v
+  MVI (Batch Processing)
+         │
+    ┌────┴─────────────┐
+    │                  │
+  Defects Found    Condition Scores
+    │                  │
+    v                  v
+  Manage:          Health:
+  Repair WOs       Update asset scores
+    │                  │
+    v                  v
+  Field Repair     Predict:
+                   RUL estimation
+                       │
+                       v
+                   Manage:
+                   Replacement planning
+```
+
+### Oil and Gas: Corrosion Management Loop
+
+```
+  OIL & GAS CLOSED LOOP
+  =====================
+
+  Inspection Robot / Camera
+         │
+         v
+  MVI (Corrosion Grading)
+         │
+    ┌────┴──────────────────┐
+    │           │            │
+  Grade 4-5  Grade 2-3    Grade 1
+  (Severe)   (Moderate)   (Good)
+    │           │            │
+    v           v            v
+  Manage:   Health:       Log only
+  Emergency  Score update  Next scheduled
+  WO + alert  │           inspection
+    │         v
+    │       Predict:
+    │       Corrosion rate model
+    │         │
+    │         v
+    │       Manage:
+    │       Proactive coating WO
+    │         │
+    v         v
+  Repair    Prevent
+  (reactive) (proactive)
+```
+
+---
+
+## Integration Implementation Checklist
+
+```
+  MVI INTEGRATION IMPLEMENTATION
+  ==============================
+
+  PHASE 1: MVI TO MANAGE (Weeks 1-4)
+  ───────────────────────────────────
+  [ ] Define detection-to-WO mapping table
+  [ ] Configure confidence thresholds per class
+  [ ] Set up work order templates for each defect type
+  [ ] Implement deduplication logic
+  [ ] Configure image attachment pipeline
+  [ ] Test: Detection creates correct WO
+  [ ] Test: Correct priority assignment
+  [ ] Test: Images attached successfully
+  [ ] Test: Deduplication prevents duplicates
+  [ ] UAT: Maintenance team validates WO quality
+
+  PHASE 2: MVI TO HEALTH (Weeks 3-6)
+  ──────────────────────────────────
+  [ ] Define visual condition scoring scale
+  [ ] Map MVI grades to Health contributor scores
+  [ ] Configure Health contributor weights
+  [ ] Set up score update automation
+  [ ] Test: MVI result updates Health score
+  [ ] Test: Health trend reflects visual progression
+  [ ] Validate: Composite score makes operational sense
+
+  PHASE 3: MVI TO MONITOR (Weeks 5-8)
+  ───────────────────────────────────
+  [ ] Define visual alert rules in Monitor
+  [ ] Configure camera trigger integration (if used)
+  [ ] Set up correlated alert logic
+  [ ] Test: MVI anomaly creates Monitor alert
+  [ ] Test: Monitor trigger captures image and analyzes
+  [ ] Validate: Alert routing and escalation
+
+  PHASE 4: MVI TO PREDICT (Weeks 8-16)
+  ────────────────────────────────────
+  [ ] Export historical visual condition data
+  [ ] Format as time series features
+  [ ] Add to Predict model feature set
+  [ ] Retrain Predict model with visual features
+  [ ] Validate accuracy improvement
+  [ ] Deploy enhanced model
+  [ ] Monitor prediction quality with visual features
+```
+
+---
+
+## Key Takeaways
+
+1. **A detection without an action is a wasted inference** -- The water utility with a perfect model and zero work orders proves the point. MVI-to-Manage integration is not optional. It is where MVI becomes operational.
+
+2. **Enriched work orders transform inspector efficiency** -- MVI does not just say "defect found." It tells the inspector where, what type, what confidence, what it looked like last time, and what to bring. The inspector arrives prepared, not guessing.
+
+3. **Visual condition is one of the most valuable Health contributors** -- It captures physical reality that sensors miss. A corroded surface, a cracked insulator, a worn bearing race -- these are visible before they register on vibration or temperature sensors.
+
+4. **Monitor + MVI creates correlated alerting** -- Sensor anomaly plus visual confirmation is a higher-confidence alert than either alone. "Vibration spike AND visible casing movement" triggers immediate action where vibration alone might be monitored.
+
+5. **Historical visual data improves Predict accuracy by 8-20%** -- Visual condition trends become features in failure models. The pattern "Grade 3 corrosion declining at 9 points per cycle" predicts failure better than sensor data alone.
+
+6. **Deduplication logic prevents work order flooding** -- Multiple images of the same defect must merge into one work order. Configure time windows, distance thresholds, and asset grouping rules before going live.
+
+7. **Integration is phased: Manage first, Health second, Monitor third, Predict last** -- Each phase builds on the previous. Do not attempt all four simultaneously. Manage integration alone delivers immediate value.
+
+---
+
+## What Comes Next
+
+Your visual inspection data flows through the entire MAS ecosystem. In Part 10, we zoom out to the strategic level: model lifecycle management, retraining pipelines, quality governance, organizational change management, and scaling from one use case to enterprise-wide visual inspection.
+
+The technology works. Sustaining it is the real challenge.
+
+---
+
+**Previous:** [Part 8 - MVI Edge, Drones & Field Deployment](/blog/mas-visual-inspection-edge-drones-field)
+
+**Next:** [Part 10 - Best Practices, Governance, and Scaling](/blog/mas-visual-inspection-best-practices-governance)
+
+**Series:** MAS VISUAL INSPECTION | Part 9 of 12
+
+---
+
+**TheMaximoGuys** | Enterprise Maximo. No fluff. Just results.

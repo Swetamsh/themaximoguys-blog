@@ -1,0 +1,418 @@
+---
+title: "Getting Started with Maximo Predict: Setup, Scopes, and Your First Use Case"
+description: "Step-by-step guide to deploying Maximo Predict in MAS. Entitlements, configuration, data connections, scope definition, and selecting a use case that wins."
+date: "2026-02-19"
+slug: "mas-predict-getting-started"
+tags: ["Maximo Predict", "MAS", "Configuration", "Deployment", "Use Case Selection", "Predictive Maintenance", "OpenShift"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Predictive Maintenance Specialists"]
+coverImage: "./images/mas-predict-03.png"
+
+faqs:
+  - question: "How long does it take to deploy Maximo Predict?"
+    answer: "The technical deployment itself takes 30 to 60 minutes on a properly configured OpenShift cluster. But getting to production-ready with data connections, scopes defined, and a validated first use case typically takes 4 to 8 weeks. Do not confuse deployment speed with readiness speed."
+  - question: "What is a scope in Maximo Predict?"
+    answer: "A scope defines the boundary of a predictive model: which assets are included, what time period of history to use, which data sources to draw from, and what features to calculate. Think of it as the lens through which Predict sees your data. Focused scopes produce better models."
+  - question: "How do I choose my first Maximo Predict use case?"
+    answer: "Select a use case with four qualities: business impact from the failure, sufficient data including 30 or more failure examples, detectable patterns preceding failure, and stakeholder willingness to act on predictions. Pump bearing failures are the most common and successful starting point."
+
+keyTakeaways:
+  - "Technical deployment takes under an hour; production readiness takes weeks"
+  - "Scopes define which assets, data, and time periods feed your models"
+  - "Your first use case selection is the most consequential decision in the program"
+  - "Start with one site, one asset type, one failure mode"
+  - "Use the verification checklist before declaring setup complete"
+
+series:
+  name: "MAS PREDICT"
+  part: 3
+  total: 8
+
+tldr: "Deploying Maximo Predict is the easy part. The real work is connecting data sources, defining focused scopes, and selecting a first use case that will actually prove value. This guide walks through the full setup process with a checklist-driven approach."
+seoTitle: "Getting Started with IBM Maximo Predict: Setup and Configuration Guide | TheMaximoGuys"
+seoDescription: "Deploy and configure Maximo Predict in MAS. Step-by-step setup, data connections, scope definition, and first use case selection guide."
+targetQuestions:
+  - "How do I set up IBM Maximo Predict?"
+  - "How do I configure Maximo Predict in MAS?"
+  - "What is the best first use case for Maximo Predict?"
+semanticKeywords:
+  - "IBM Maximo Predict setup"
+  - "MAS Predict configuration"
+  - "predictive maintenance deployment"
+  - "Maximo Predict scope"
+  - "use case selection"
+  - "MAS Suite Navigator"
+  - "OpenShift deployment"
+  - "AppPoint licensing"
+proficiencyLevel: "beginner"
+dependencies:
+  - "IBM Maximo Application Suite deployed on OpenShift"
+  - "Maximo Manage installed with asset and work order data"
+  - "Data readiness assessment completed (Part 2)"
+speakableSections:
+  - "Introduction"
+  - "Selecting Your First Use Case"
+  - "Verification Checklist"
+relatedSlugs:
+  - "mas-predict-data-foundations"
+  - "mas-predict-building-training-models"
+  - "getting-started-maximo-ai"
+---
+
+> **Who this is for:** MAS administrators deploying Predict, IT architects planning the implementation, and reliability engineers who need to define the first scope and use case. If you are responsible for making Predict operational, this is your playbook.
+
+## The Gap Nobody Talks About
+
+You have the license. You have the OpenShift cluster. You read the IBM docs. You click deploy.
+
+30 minutes later, Maximo Predict says "Ready" in Suite Navigator.
+
+Now what?
+
+This is where most organizations stall. The deployment was easy. But between "deployed" and "delivering value" sits a gap filled with data connections, scope definitions, use case debates, and configuration decisions that nobody documented well enough.
+
+We have seen organizations take 3 weeks from deploy to first model. We have also seen organizations take 9 months. The difference is not technical skill. It is having a structured approach to the setup that follows deployment.
+
+That is what this blog provides.
+
+---
+
+## Understanding Entitlements
+
+Before you deploy, make sure you actually have what you need.
+
+### MAS Licensing
+
+Maximo Application Suite uses AppPoint-based licensing. Maximo Predict requires specific AppPoint entitlements. Key things to verify:
+
+- **Your license includes Predict.** Not all MAS tiers include it.
+- **You have sufficient AppPoints** for the user roles you plan to assign.
+- **You understand which capabilities are included** versus which require additional entitlement.
+
+Check your license agreement. If you are unsure, talk to your IBM rep before deploying. Discovering licensing gaps after setup is painful.
+
+### User Roles
+
+Predict involves multiple user types, each consuming AppPoints differently:
+
+| Role | What They Do | Access Needed |
+|------|-------------|---------------|
+| Administrator | Deploy and configure | MAS admin, Predict admin |
+| Data Scientist | Build and manage models | Predict model development |
+| Reliability Engineer | Consume and validate predictions | Predict viewer, Health |
+| End User | View predictions in dashboards | Health, Manage |
+
+Set up role-based access early. Do not give everyone admin access "to make it easier." That creates problems later.
+
+---
+
+## Deploying Maximo Predict
+
+The technical deployment follows a straightforward path.
+
+### Step 1: Access MAS Administration
+
+1. Log in to MAS Suite Navigator with admin credentials
+2. Navigate to Administration
+3. Open the Application Catalog
+
+If you cannot access Suite Navigator, stop here and fix your admin access first.
+
+### Step 2: Deploy Predict
+
+1. Find Maximo Predict in the catalog
+2. Select Deploy
+3. Configure deployment settings:
+   - **Workspace:** Assign to the same workspace as Manage
+   - **Resources:** CPU and memory allocation (follow IBM sizing guidance)
+   - **Storage:** Persistent storage configuration
+4. Initiate deployment
+
+```
+  DEPLOYMENT TIMELINE
+  ===================
+
+  0 min         15 min        30 min        45 min        60 min
+  |─────────────|─────────────|─────────────|─────────────|
+  Deploy        Pods          Services      Verification  Ready
+  initiated     starting      connecting    checks
+```
+
+Deployment typically takes 30 to 60 minutes depending on cluster resources. Do not refresh the page every 30 seconds. Go get coffee.
+
+### Step 3: Verify Deployment
+
+1. Confirm Predict shows "Ready" in the application list
+2. Access Predict from Suite Navigator
+3. Verify initial screens load without errors
+4. Test that assigned user roles can access the application
+
+**If deployment fails:** Check OpenShift pod logs. Common issues include insufficient cluster resources, storage provisioning failures, and network policy restrictions. The error messages are usually specific enough to guide resolution.
+
+---
+
+## Initial Configuration
+
+Deployed is not configured. Here is what comes next.
+
+### Connecting to Maximo Manage
+
+Predict needs Manage data. In most MAS deployments where both applications share a workspace, this connection is automatic. But verify it:
+
+1. **Database connection:** Predict can query Manage objects (assets, work orders, meters)
+2. **Data synchronization:** Confirm sync frequency (default is typically daily)
+3. **Object mapping:** Predict recognizes the relevant Manage tables
+
+**Test it:** Navigate to Predict and verify that asset data from Manage appears. If you see assets, the connection works. If the asset list is empty, check synchronization status and workspace configuration.
+
+### Connecting to Maximo Monitor (Optional but Recommended)
+
+If you have Monitor deployed and plan to use sensor data:
+
+1. Configure the Predict-to-Monitor integration
+2. Map Monitor device types to Manage asset IDs
+3. Define which metrics will be available for modeling
+
+**The critical step:** Device-to-asset mapping. Monitor organizes data by device types. Predict needs data organized by Manage assets. Without this mapping, sensor data sits in Monitor but never reaches your models.
+
+### External Data Sources
+
+For data from historians, SCADA, or other systems:
+
+1. Use integration tools (DataStage, App Connect) to stage data
+2. Configure Predict to access staged data
+3. Map external identifiers to Manage asset IDs
+
+This adds complexity. Only do it if the external data adds clear predictive value for your chosen use case. Do not try to integrate everything on day one.
+
+---
+
+## Defining Scopes
+
+Scopes are how you tell Predict what to focus on. Get this right and your models have a fighting chance. Get it wrong and you are training on noise.
+
+### What a Scope Contains
+
+A scope defines four boundaries:
+
+1. **Asset population:** Which assets are in play
+2. **Time period:** How much historical data to use
+3. **Data sources:** Which data feeds to include
+4. **Features:** What calculated variables to build
+
+### Creating Your First Scope
+
+**Start narrow.** The most common mistake is defining a scope that is too broad.
+
+**Wrong approach:**
+> "Let's scope all rotating equipment across all 12 plants for the last 5 years."
+
+That gives you thousands of heterogeneous assets with different operating contexts, different failure modes, and different data quality. The model learns noise.
+
+**Right approach:**
+> "Let's scope all centrifugal pumps at the Houston plant, model ACME-3000 series, for January 2022 through December 2025."
+
+That gives you a homogeneous population with consistent operating context and focused failure patterns.
+
+```
+  SCOPE DEFINITION TEMPLATE
+  =========================
+
+  Asset Population:  [Type] at [Location] matching [Criteria]
+  Time Period:       [Start Date] through [End Date]
+  Data Sources:      [Manage WOs] + [Manage Meters] + [Monitor Sensors]
+  Target Prediction: [Failure mode] within [X days]
+  Feature Set:       [List of features to calculate]
+```
+
+### Scope Management Rules
+
+- **One scope per use case.** Do not mix bearing failures and seal failures in the same scope.
+- **Homogeneous populations.** Same asset type, similar operating conditions.
+- **Sufficient history.** At least 2 years. 3 years is better.
+- **Expand later.** Start with one site. Add sites after the model proves itself.
+
+---
+
+## Selecting Your First Use Case
+
+This is the decision that matters most. A well-chosen first use case builds credibility, proves value, and creates momentum. A poorly chosen one burns political capital and makes the second attempt harder.
+
+### The Four Criteria
+
+Your first use case must score well on all four:
+
+**1. Business Impact**
+Does this failure cause significant downtime, cost, or risk? If the answer is "not really," nobody will care about the predictions.
+
+**2. Sufficient Data**
+Do you have at least 30 failure examples in the historical data? Models need enough positive examples to learn patterns. Fewer than 15 and you are in dangerous territory.
+
+**3. Detectable Patterns**
+Are failures preceded by observable indicators? If failures are truly random (lightning strike, vandalism, manufacturing defect), no model can predict them. Look for degradation-based failure modes.
+
+**4. Actionable Outcomes**
+Can you actually do something with the prediction? If a pump is predicted to fail but there is no spare part and no maintenance window for 6 months, the prediction is useless.
+
+### The Selection Matrix
+
+| Use Case | Impact | Data | Patterns | Actionable | Verdict |
+|----------|--------|------|----------|------------|---------|
+| Pump bearing failures | High | 47 events | Vibration trends | Schedule repair | **Go** |
+| Transformer insulation | Very high | 12 events | DGA trends | Plan replacement | Wait (need more data) |
+| Conveyor belt wear | Medium | 60+ events | Thickness trending | Schedule replacement | **Go** |
+| Random electrical faults | Low | 8 events | None detectable | Limited | **No** |
+
+### Good First Use Cases
+
+These work reliably as starting points:
+
+- **Pump bearing failures** -- Common, detectable via vibration, many examples, actionable
+- **Conveyor belt wear** -- Progressive degradation, measurable, replacement can be scheduled
+- **HVAC compressor failures** -- Multiple sensors available, costly downtime, serviceable
+- **Motor winding degradation** -- Temperature and current indicators, plannable replacement
+
+### Challenging First Use Cases (Avoid These)
+
+- **Rare catastrophic events** -- Not enough examples to train
+- **Random electrical failures** -- No detectable pattern
+- **Brand new asset types** -- No historical data
+- **Externally caused damage** -- Not related to asset condition
+
+### Document the Use Case
+
+Before building anything, write it down:
+
+```
+  USE CASE DEFINITION
+  ===================
+
+  Business Goal:     Reduce unplanned pump downtime by 30%
+  Assets in Scope:   45 centrifugal pumps, Houston plant
+  Target Failure:    Bearing failure (FC: BEARING-01)
+  Prediction Window: 30 days
+  Success Criteria:  Catch 70%+ of failures with <30% false alarm rate
+  Data Available:    3 years WOs, weekly meters, hourly vibration
+  Failure Examples:  47 confirmed bearing failures
+  Stakeholders:      Reliability lead (John), Planner (Sarah), Plant Mgr (Mike)
+  Action Plan:       >65% probability triggers inspection WO
+```
+
+Get stakeholder sign-off before proceeding. Alignment now prevents arguments later.
+
+---
+
+## Preparing for First Model Development
+
+With Predict deployed, data connected, scope defined, and use case selected, confirm readiness:
+
+### Data Ready?
+
+- Quality issues from assessment (Part 2) have been addressed
+- Training data is available for the selected scope and time period
+- Features can be calculated from available data
+
+### Team Aligned?
+
+- Data science resources are available for model development
+- Reliability engineering will validate model outputs
+- IT support is on standby for technical issues
+
+### Process Defined?
+
+- Model development workflow is understood
+- Validation and approval process is established
+- Plan for deploying predictions to users is clear
+
+---
+
+## The Verification Checklist
+
+Do not skip this. Run through every item before declaring setup complete.
+
+### Deployment Verification
+
+- [ ] Maximo Predict shows "Ready" in MAS Suite Navigator
+- [ ] Application accessible from assigned workspace
+- [ ] No error messages on initial screens
+- [ ] All required user roles can access Predict
+
+### Data Connection Verification
+
+- [ ] Asset data from Manage is visible in Predict
+- [ ] Work order history is accessible and browsable
+- [ ] Meter readings appear for in-scope assets
+- [ ] Monitor data connected (if applicable)
+- [ ] Data refresh / sync is running on schedule
+
+### Scope Verification
+
+- [ ] Initial scope is defined and saved
+- [ ] Asset population count matches expectations
+- [ ] Historical data covers defined time period
+- [ ] Feature calculations complete without errors
+
+### Use Case Verification
+
+- [ ] First use case is documented and signed off
+- [ ] Sufficient failure examples confirmed in the data
+- [ ] Stakeholders are engaged and expectations are set
+- [ ] Success criteria are defined and measurable
+
+**All boxes checked? You are ready to build your first model.**
+
+---
+
+## Common Setup Issues and Fixes
+
+### Assets Not Appearing in Predict
+
+**Check:** Synchronization status. Did the initial sync complete?
+**Check:** Scope query. Is the filter too restrictive?
+**Check:** User permissions. Can this role access asset data?
+
+### No Work Order History Visible
+
+**Check:** Date range in scope. Is the time period correct?
+**Check:** Work order associations. Are WOs linked to assets in Manage?
+**Check:** Sync logs for errors or warnings.
+
+### Monitor Data Not Available
+
+**Check:** Integration configuration between Predict and Monitor.
+**Check:** Device-to-asset mappings. Are they complete?
+**Check:** Metric selection. Have you chosen which metrics to expose?
+
+### Feature Calculation Errors
+
+**Check:** Data quality. Are there null values, bad dates, or impossible meter readings?
+**Check:** Feature definitions. Do they reference available data fields?
+**Check:** Time window. Is there enough data within the specified lookback period?
+
+---
+
+## The 5 Commandments of Getting Started
+
+1. **Deploy to one workspace.** Keep Predict and Manage together.
+2. **Start with one scope.** One site, one asset type, one failure mode.
+3. **Verify data connections before building models.** If the data is not flowing, nothing else matters.
+4. **Document your use case formally.** Verbal agreements become verbal disputes.
+5. **Run the checklist.** Every item. No shortcuts.
+
+Deploy it. Configure it. Verify it. Then build.
+
+---
+
+**Next in the series:** [Part 4: Building and Training Predictive Models](/blog/mas-predict-building-training-models) -- Model types, training, validation, and interpreting results.
+
+---
+
+*This is Part 3 of the MAS Predict series by TheMaximoGuys. [View the complete series index](/blog/mas-predict-series-index).*
+
+---
+
+**TheMaximoGuys** | Enterprise Maximo. No fluff. Just results.

@@ -1,0 +1,468 @@
+---
+title: "Deployment, Monitoring, and Feedback Loops: Keeping Maximo Predict Models Alive"
+description: "Building the model is half the job. Learn how to deploy, monitor, retrain, and build feedback loops that keep your Maximo Predict models accurate over time."
+date: "2026-02-19"
+slug: "mas-predict-deployment-monitoring"
+tags: ["Maximo Predict", "Model Deployment", "MLOps", "Model Monitoring", "Predictive Maintenance", "MAS", "Model Drift", "Feedback Loops"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Predictive Maintenance Specialists"]
+coverImage: "./images/mas-predict-05.png"
+
+faqs:
+  - question: "How often should Maximo Predict score assets?"
+    answer: "Daily scoring is appropriate for most use cases. It balances prediction currency with computational cost. Weekly works for slow-changing assets. Near real-time is only needed for high-frequency sensor data on critical assets. Match your scoring frequency to how quickly conditions change."
+  - question: "What is model drift and how do I detect it?"
+    answer: "Model drift occurs when real-world conditions change enough that the patterns the model learned no longer match reality. Detect it by monitoring prediction accuracy over time, watching for score distribution shifts, and comparing predicted versus actual failure rates. When accuracy drops below your threshold, it is time to retrain."
+  - question: "How often should I retrain Maximo Predict models?"
+    answer: "Retrain when performance degrades below your defined threshold. For most use cases, plan for quarterly reviews with retraining as needed. Some organizations schedule semi-annual retraining regardless. Always retrain after significant operational changes like new equipment, modified procedures, or process changes."
+
+keyTakeaways:
+  - "Deployment is not the finish line but the starting line for model management"
+  - "Daily scoring frequency works for most predictive maintenance use cases"
+  - "Monitor prediction accuracy, score distributions, and data quality continuously"
+  - "Model drift is inevitable and retraining is a planned activity, not a crisis"
+  - "Feedback loops from operations make models better with every cycle"
+
+series:
+  name: "MAS PREDICT"
+  part: 5
+  total: 8
+
+tldr: "A deployed model is a living system. This blog covers scoring frequency, how predictions surface in Health and Manage, monitoring for drift, building feedback loops, retraining strategies, and rollout patterns that manage risk. Neglect any of these and your model degrades from asset to liability."
+seoTitle: "Deploying and Monitoring IBM Maximo Predict Models: MLOps Guide | TheMaximoGuys"
+seoDescription: "Deploy Maximo Predict models to production. Scoring, monitoring, drift detection, feedback loops, and retraining strategies for sustained accuracy."
+targetQuestions:
+  - "How do I deploy a Maximo Predict model to production?"
+  - "How do I monitor Maximo Predict model performance?"
+  - "When should I retrain my Maximo Predict models?"
+semanticKeywords:
+  - "IBM Maximo Predict deployment"
+  - "model monitoring"
+  - "model drift detection"
+  - "prediction feedback loop"
+  - "model retraining"
+  - "scoring frequency"
+  - "MLOps maintenance"
+  - "predictive model lifecycle"
+proficiencyLevel: "beginner"
+dependencies:
+  - "Completed model development and validation (Part 4)"
+  - "Understanding of Maximo Predict role in MAS"
+  - "Familiarity with Maximo Health and Manage interfaces"
+speakableSections:
+  - "Introduction"
+  - "Monitoring Model Performance"
+  - "The Feedback Loop"
+relatedSlugs:
+  - "mas-predict-building-training-models"
+  - "mas-predict-integration"
+  - "getting-started-maximo-ai"
+---
+
+> **Who this is for:** Data scientists deploying models to production, reliability engineers consuming predictions, operations leaders overseeing predictive maintenance programs, and IT teams responsible for keeping the scoring infrastructure running.
+
+## The Model That Worked Until It Did Not
+
+A chemical plant deployed a pump failure model in March. By June, it had correctly predicted 12 out of 15 bearing failures. The reliability team was sold. The maintenance manager presented it to leadership. Success story.
+
+By October, the model was flagging 40% of pumps as high-risk every scoring cycle. False alarms. The maintenance team stopped looking at the predictions. By December, the model was effectively dead -- still scoring daily, still consuming compute, but completely ignored.
+
+What happened? The plant changed its cooling water treatment process in August. Pump operating temperatures shifted. The model had learned old temperature patterns. Nobody was monitoring model performance, so nobody caught the drift.
+
+**A deployed model without monitoring is a time bomb.** It will degrade. The question is not if, but when. And whether you catch it before your users lose trust.
+
+---
+
+## Deploying Models to Production
+
+You have a validated model. Now make it operational.
+
+### The Deployment Process
+
+1. **Approve the model:** Confirm it meets quality thresholds and business requirements
+2. **Configure scoring settings:** Frequency, scope, output destinations
+3. **Deploy:** Activate for production scoring
+4. **Verify:** Confirm predictions are generated and accessible
+
+This is a formal step, not an informal one. Document the deployment. Record which model version was deployed, when, by whom, and with what expected performance.
+
+### Choosing Scoring Frequency
+
+How often should the model score your assets?
+
+| Frequency | Best For | Consideration |
+|-----------|----------|---------------|
+| **Daily** | Most use cases | Good balance of currency and cost |
+| **Weekly** | Slow-degradation assets (transformers, structures) | Lower compute; acceptable for long RUL |
+| **On-demand** | Event-triggered (alarm, inspection result) | Targeted but requires trigger logic |
+| **Near real-time** | Critical assets with high-frequency sensors | High compute cost; rarely needed |
+
+**Default to daily.** It works for 90% of predictive maintenance use cases. Adjust only with clear justification.
+
+### What Happens During a Scoring Run
+
+```
+  SCORING CYCLE
+  =============
+
+  1. Collect current data    ──>  Pull latest features for each asset
+  2. Calculate features      ──>  Compute derived values (rolling avgs, trends)
+  3. Apply model             ──>  Generate probability/RUL for each asset
+  4. Store results           ──>  Write scores to Predict tables
+  5. Propagate               ──>  Push to Health indicators, Manage triggers
+  6. Alert                   ──>  Notify on threshold exceedances
+```
+
+Each cycle should complete within a predictable time window. If scoring for 200 assets takes 2 hours, that is your baseline. If it suddenly takes 8 hours, investigate.
+
+---
+
+## How Predictions Surface in MAS
+
+Predictions are only useful if people can see them and act on them.
+
+### In Maximo Health
+
+Health is the primary consumption point for predictive scores.
+
+**Health indicators:** Failure probability displayed as a 0-100 scored indicator. Color-coded. Red, yellow, green. Visible at a glance.
+
+**Health matrix:** Assets plotted on two axes -- failure probability versus criticality. The upper-right quadrant (high probability, high criticality) demands immediate attention. The lower-left can wait.
+
+**Trending:** Historical scores over time. An asset trending upward is deteriorating. An asset that jumped from 20% to 75% in a week needs investigation.
+
+### In Maximo Manage
+
+Manage is where predictions become actions.
+
+**Work order triggers:** When failure probability exceeds threshold, create an inspection or corrective work order automatically or semi-automatically.
+
+**PM adjustment recommendations:** High-risk assets get accelerated PMs. Low-risk assets can have PMs deferred. Advisory mode first, automation later.
+
+**Work prioritization:** Prediction scores factor into priority calculations. The pump at 85% failure probability gets attention before the pump at 25%.
+
+### Who Sees What
+
+| Role | What They See | Where |
+|------|--------------|-------|
+| Reliability Engineer | Full prediction detail, trends, feature values | Health, Predict |
+| Maintenance Planner | Threshold alerts, recommended actions | Manage, Health |
+| Operations Manager | Portfolio risk view, summary metrics | Health dashboards |
+| Field Technician | Asset prediction score, reason for inspection | Mobile, Manage |
+
+---
+
+## Translating Predictions into Actions
+
+A prediction without an action plan is a wasted calculation.
+
+### Define Action Thresholds
+
+| Failure Probability | Action | Who Acts |
+|--------------------|--------|----------|
+| 0-30% | Normal operations | No action required |
+| 30-60% | Flag for review | Reliability engineer reviews |
+| 60-80% | Schedule inspection | Planner creates inspection WO |
+| 80-100% | Immediate attention | Priority corrective action |
+
+Adjust these thresholds based on:
+- **Asset criticality:** Lower thresholds for critical assets
+- **Consequence of failure:** Higher consequence warrants earlier action
+- **Cost of intervention:** Expensive inspections warrant higher thresholds
+- **Precision/recall balance:** More false alarms at lower thresholds
+
+### Document the Action Rationale
+
+For every prediction-driven action, record:
+- The prediction score and date
+- Which features were elevated
+- What action was taken and why
+- The outcome (what was found, what was done)
+
+This documentation feeds the feedback loop and provides accountability.
+
+---
+
+## Monitoring Model Performance
+
+This is not optional. This is the difference between a living model and a dead one.
+
+### What to Monitor
+
+**Prediction accuracy:** Track predictions against outcomes. Did the assets we flagged actually fail? Did assets we did not flag fail unexpectedly?
+
+**Score distributions:** Monitor how scores are distributed across the population. If the mean score drifts up or down over time, something changed.
+
+**Data quality:** Are features still being calculated correctly? Are data pipelines running? Are there new gaps in sensor data?
+
+**Business outcomes:** Is unplanned downtime actually decreasing? Are false alarms within acceptable bounds? Are users acting on predictions?
+
+### Monitoring Cadence
+
+```
+  MONITORING SCHEDULE
+  ===================
+
+  DAILY:   Score distribution check (automated)
+           Data pipeline health check (automated)
+
+  WEEKLY:  Prediction vs. outcome comparison
+           False alarm rate review
+
+  MONTHLY: Full performance metric calculation
+           User feedback review
+           Drift assessment
+
+  QUARTERLY: Comprehensive model review
+             Retraining decision
+             Stakeholder report
+```
+
+### Red Flags That Demand Attention
+
+| Red Flag | What It Means | Action |
+|----------|--------------|--------|
+| Accuracy drops below threshold | Model losing predictive power | Investigate cause; plan retraining |
+| All scores suddenly high or low | Data pipeline issue or drift | Check data inputs immediately |
+| False alarms increasing | Conditions changed from training | Review threshold; assess retraining |
+| Missed failures | New failure mode or data gap | Investigate; expand feature set |
+| Users stopped looking | Trust erosion | Address accuracy; communicate improvements |
+
+---
+
+## Understanding Model Drift
+
+Your model was trained on historical data. The real world keeps changing. Drift is when they diverge.
+
+### Types of Drift
+
+**Data drift (covariate shift):** The input feature distributions change. New operating procedures change temperature profiles. Different raw materials affect vibration patterns. The model sees data it was not trained on.
+
+**Concept drift:** The relationship between features and failures changes. A design modification makes a previously predictive vibration signature irrelevant. The model's learned rules no longer apply.
+
+**Label drift:** The failure rate changes. Improved maintenance practices reduce failures. The model's calibration (what constitutes "high probability") is off.
+
+### Common Drift Causes
+
+- Operational changes (new procedures, schedules, production volumes)
+- Equipment modifications (upgrades, design changes)
+- Environmental shifts (seasonal changes, new operating contexts)
+- Maintenance improvements (the predictions themselves change failure rates)
+- New failure modes the model was never trained on
+
+### Detecting Drift
+
+**Statistical monitoring:** Compare current feature distributions to training distributions. If vibration readings are consistently 20% higher than in training data, your model is extrapolating.
+
+**Performance tracking:** When accuracy drops, drift is a likely cause.
+
+**Feature value monitoring:** Alert when feature values fall outside the ranges seen in training data.
+
+> **Key insight:** The most ironic form of drift: your predictions succeed so well that maintenance improves, failure rates drop, and the model's calibration becomes inaccurate. Plan for this.
+
+---
+
+## The Feedback Loop
+
+Predictions should create a cycle that continuously improves accuracy.
+
+```
+  THE FEEDBACK LOOP
+  =================
+
+  Predictions ──> Actions ──> Outcomes ──> Learning ──> Better Predictions
+       ^                                                       |
+       └───────────────────────────────────────────────────────┘
+```
+
+### Implicit Feedback
+
+Outcomes you can infer from operational data:
+- Assets flagged as high-risk that subsequently failed (true positive)
+- Assets not flagged that failed anyway (false negative)
+- Flagged assets where inspection found no issue (false positive)
+- Assets scored low that continued operating normally (true negative)
+
+### Explicit Feedback
+
+Outcomes that require human input:
+- Technician reports: "Inspected per prediction. Found bearing wear. Prediction was correct."
+- Override records: "Model flagged high risk. Engineer assessed as low risk based on field observation."
+- Condition found: Work order closure fields capturing what was actually discovered
+
+### Capturing Feedback
+
+**Work order closure fields:** Add fields for technicians to indicate whether the prediction was accurate and what condition was found.
+
+**Prediction validation interface:** Give reliability engineers a way to rate predictions after outcomes are known.
+
+**Automated outcome matching:** Periodically match predictions to subsequent work orders and failure events.
+
+The easier you make feedback capture, the more feedback you will get. One extra dropdown on the work order closure screen is better than a separate feedback form nobody fills out.
+
+---
+
+## Model Retraining
+
+When drift is detected or performance degrades, retrain.
+
+### The Retraining Process
+
+1. **Assess need:** Performance below threshold? Drift detected? Significant operational change?
+2. **Update training data:** Include recent history and outcomes
+3. **Re-engineer features if needed:** Add new features that capture changed conditions
+4. **Retrain:** Fit the algorithm on updated data
+5. **Validate:** Confirm improved performance on recent data
+6. **Deploy updated model:** Replace the production model
+
+### Retraining Triggers
+
+- **Performance-based:** Accuracy drops below defined threshold
+- **Scheduled:** Quarterly or semi-annual regardless of performance
+- **Event-driven:** Major operational change, equipment modification, new failure mode
+- **Data-driven:** Significant drift detected in feature distributions
+
+### Retraining Best Practices
+
+**Keep the old model available.** If the retrained model performs worse, roll back.
+
+**Use recent data for validation.** Train on the full history, but validate on the most recent period to confirm the model handles current conditions.
+
+**Document changes.** What was different in this training cycle? New data? New features? Different parameters?
+
+**Do not retrain too frequently.** Every retraining cycle introduces risk. Monthly retraining is almost always overkill. Quarterly assessment with retraining as needed is usually right.
+
+---
+
+## Rollout Strategies
+
+New and updated models need careful rollout.
+
+### Pilot Deployment
+
+Deploy to a limited scope first.
+1. Choose one site or one asset subset
+2. Monitor closely for 2 to 4 weeks
+3. Gather feedback from the pilot group
+4. Expand if results are acceptable
+
+### Shadow Mode
+
+Run the new model alongside the old one.
+1. Both models score the same assets
+2. Only the old model drives actions
+3. Compare predictions side-by-side
+4. Cut over when the new model proves better
+
+Shadow mode is the safest approach for model updates. It adds computational cost but eliminates the risk of deploying a worse model.
+
+### Phased Rollout
+
+Expand incrementally.
+1. Start with low-criticality assets
+2. Expand to medium-criticality
+3. Finally deploy to high-criticality assets
+4. Pause at any phase if issues arise
+
+### Rollback Planning
+
+Always have a rollback plan.
+- Keep the previous model version deployable
+- Define triggers for rollback (accuracy drops, error rates, user complaints)
+- Test the rollback procedure before deploying the update
+
+---
+
+## Managing Multiple Models
+
+As your program matures, you will have multiple models in production.
+
+### Model Inventory
+
+Maintain a catalog:
+
+| Model | Target | Asset Scope | Version | Deployed | AUC | Retrain Due |
+|-------|--------|-------------|---------|----------|-----|-------------|
+| Pump-Bearing-FP | Bearing failure, 30d | 200 pumps, Houston | v2.1 | 2025-09-15 | 0.82 | 2026-03-15 |
+| Motor-RUL | Motor end of life | 150 motors, all sites | v1.0 | 2025-11-01 | - | 2026-05-01 |
+| Compressor-Anomaly | Anomalous behavior | 50 compressors | v1.2 | 2025-12-01 | - | 2026-06-01 |
+
+### Version Control
+
+Track every version. What changed. When it was deployed. What performance it achieved. Who approved it. Models are code. Treat them like code.
+
+### Ownership
+
+Every model has an owner. The owner is responsible for monitoring, retraining decisions, and stakeholder communication. Without clear ownership, models are orphaned and eventually ignored.
+
+---
+
+## Case Study: The Full Deployment Lifecycle
+
+**Month 0: Initial deployment**
+- Pump bearing model deployed for 200 pumps at 3 plants
+- Daily scoring with results in Health
+- Threshold: >70% triggers inspection
+- Team cautiously optimistic
+
+**Month 3: First review**
+- 9 of 12 predicted failures confirmed (75% precision)
+- 2 failures missed (83% recall on small sample)
+- 4 false alarms investigated (acceptable cost)
+- Users engaging but wanting earlier warnings
+
+**Month 6: Issues emerge**
+- One plant changed cooling water treatment
+- Temperature features shifted, increasing false positives at that plant
+- Overall precision dropped to 55%
+- Users at the affected plant losing trust
+
+**Month 7: Retraining**
+- Updated training data to include post-change period
+- Added a "days since last process change" feature
+- Retrained model deployed in shadow mode
+- After 3 weeks, shadow model outperformed old model
+
+**Month 8: Redeployment**
+- Retrained model promoted to production
+- Threshold adjusted to 60% for critical pumps
+- Mobile feedback field added for technicians
+- Performance recovered to 68% precision, 79% recall
+
+**Month 12: Program expansion**
+- Model expanded to 2 additional plant sites
+- Second model built for compressor failures
+- Quarterly review process formalized
+- Maintenance team now proactively asks for prediction updates
+
+That is the lifecycle. Not a straight line. Not a project with an end. A continuous cycle of deploy, monitor, learn, improve.
+
+---
+
+## The 7 Commandments of Model Operations
+
+1. **Deploy formally.** Document the model, version, date, and expected performance.
+2. **Monitor continuously.** Automated daily checks. Manual monthly reviews.
+3. **Detect drift early.** Do not wait for users to tell you the model is wrong.
+4. **Capture feedback systematically.** Make it easy. Make it expected.
+5. **Retrain proactively.** Before accuracy becomes unacceptable, not after.
+6. **Roll out carefully.** Shadow mode or pilot first. Full blast later.
+7. **Own every model.** No orphans. Every model has a name on it.
+
+Deploy it. Watch it. Feed it. Keep it alive.
+
+---
+
+**Next in the series:** [Part 6: Integration with Monitor, Health, and Manage](/blog/mas-predict-integration) -- The full closed-loop from sensors to work orders.
+
+---
+
+*This is Part 5 of the MAS Predict series by TheMaximoGuys. [View the complete series index](/blog/mas-predict-series-index).*
+
+---
+
+**TheMaximoGuys** | Enterprise Maximo. No fluff. Just results.

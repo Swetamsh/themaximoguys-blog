@@ -1,0 +1,434 @@
+---
+title: "Data Model and Health Scoring: How Maximo Health Turns Noise into Numbers"
+description: "Deep dive into the Maximo Health data model -- how condition indicators, component scores, and weightings transform raw maintenance data into actionable health and risk metrics."
+date: "2026-02-19"
+slug: "mas-health-data-model-health-scoring"
+tags: ["Maximo Health", "MAS", "Health Scoring", "Data Model", "Condition Indicators", "Asset Criticality", "Risk Matrix"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Asset Performance Management Specialists"]
+coverImage: "./images/mas-health-02.png"
+
+faqs:
+  - question: "How does Maximo Health calculate a health score?"
+    answer: "Health scores are built in layers. Individual condition indicators (failure count, vibration level, inspection rating) feed into component scores (Condition, Reliability, Performance). Components are weighted and combined into an overall 0-100 health score. Each layer is configurable per asset class."
+  - question: "What data from Maximo Manage does Health actually use?"
+    answer: "Health consumes asset master data, work order and failure history, meter readings, inspection results, and classification attributes. It can also incorporate IoT telemetry from Monitor and predictive outputs from Predict, but Manage data is the primary foundation."
+  - question: "How is risk different from health in Maximo?"
+    answer: "Health represents current condition and likelihood of failure. Criticality represents consequence of failure. Risk combines both. An asset can have poor health but low risk (non-critical backup equipment) or good health but high risk (critical asset with catastrophic failure consequences)."
+
+keyTakeaways:
+  - "Health scores are layered: raw data feeds indicators, indicators feed components, components feed the overall score"
+  - "Maximo Health consumes five primary data categories from Manage: assets, work orders, meters, inspections, and classifications"
+  - "Criticality models business impact across safety, production, regulatory, and financial dimensions"
+  - "Risk equals health times criticality -- the formula that powers every prioritization view"
+  - "Data quality is the single biggest factor determining whether health scores are trustworthy or misleading"
+
+series:
+  name: "MAS HEALTH"
+  part: 2
+  total: 8
+
+tldr: "Maximo Health builds scores in layers -- raw data feeds condition indicators, indicators feed component scores, components combine into overall health. When paired with criticality, health becomes risk. This post maps the entire data-to-risk pipeline so you know exactly what drives every number."
+seoTitle: "Maximo Health Data Model & Scoring Explained | TheMaximoGuys"
+seoDescription: "How Maximo Health calculates health scores from condition indicators, component weightings, and criticality models. Complete data model walkthrough."
+targetQuestions:
+  - "How does Maximo Health calculate health scores?"
+  - "What data does Maximo Health use from Manage?"
+  - "What is the difference between health and risk in Maximo?"
+  - "How do condition indicators work in Maximo Health?"
+  - "How is asset criticality modeled in Maximo?"
+semanticKeywords:
+  - "Maximo Health scoring model"
+  - "condition indicators Maximo"
+  - "asset health components"
+  - "criticality scoring"
+  - "risk matrix Maximo"
+  - "health score weightings"
+  - "MTBF Maximo Health"
+  - "asset condition assessment"
+  - "health data model"
+  - "portfolio risk views"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 1: Introduction to IBM Maximo Health"
+  - "Basic understanding of Maximo Manage data structures"
+  - "Familiarity with maintenance and reliability concepts"
+speakableSections:
+  - "Introduction"
+  - "The Five Data Pillars"
+  - "From Indicators to Scores: The Layered Model"
+  - "Health Plus Criticality Equals Risk"
+relatedSlugs:
+  - "mas-health-introduction"
+  - "mas-health-configuring-scores-criticality"
+  - "mas-monitor-introduction"
+  - "mas-predict-introduction"
+---
+
+# Data Model and Health Scoring: How Maximo Health Turns Noise into Numbers
+
+> **Who this is for:** Reliability engineers, asset management professionals, and Maximo configurators who need to understand exactly how health scores are calculated -- not the marketing version, the engineering version.
+
+**Estimated read time: 18 minutes**
+
+---
+
+## 🔥 The Score That Fooled Everyone
+
+A water utility had been running Maximo Health for six months. The scores looked reasonable. Leadership was happy with the dashboards. Then a distribution pump scored 78 out of 100 -- solidly in the "Healthy" band -- and failed three days later. Catastrophically. Flooded a pump station. $400,000 in damage.
+
+Post-mortem revealed the truth: the health model was pulling from work order history and meter readings, but the inspection module had never been connected. The three most recent inspections -- all flagging severe corrosion on the pump casing -- were sitting in a separate system. The health score was accurate based on the data it had. The data it had was incomplete.
+
+> *"The model worked perfectly. We just forgot to feed it."*
+
+This is why understanding the data model matters. Not as an academic exercise. As the difference between a trustworthy score and a dangerous one.
+
+---
+
+## 📊 The Five Data Pillars
+
+Maximo Health does not invent data. It consumes data that already exists in your Maximo Manage environment -- and optionally from external sources. Understanding what it consumes is the first step to understanding what it produces.
+
+### Pillar 1: Asset and Location Master Data
+
+The asset register is the backbone. Every health calculation starts here:
+
+- **Assets** -- unique records for equipment, instruments, vehicles, and maintainable items
+- **Locations** -- functional and physical locations where assets are installed
+- **Hierarchies** -- parent-child relationships between locations, systems, and assets
+- **Classifications and attributes** -- metadata that groups assets and stores technical characteristics (pump type, voltage rating, design pressure)
+
+Health uses this structure to aggregate metrics across systems, sites, and asset classes. If your hierarchy is wrong, your portfolio views are wrong. If your classifications are inconsistent, your cross-asset comparisons are meaningless.
+
+> **Key insight:** Garbage in the asset register does not just affect Health. But Health makes the garbage visible in ways that Manage alone never does.
+
+### Pillar 2: Work Orders and Failure History
+
+Work and failure data reveal how assets behave over time:
+
+- **Corrective work orders** -- unplanned repairs and breakdowns
+- **Preventive maintenance work orders** -- planned activities that may reveal condition issues
+- **Failure codes** -- structured problem/cause/remedy descriptions
+- **Downtime and impact fields** -- severity and business impact indicators
+
+From these, Health derives reliability indicators:
+
+```
+RELIABILITY INDICATORS FROM WORK DATA
+
+  Failure frequency    ─── Count of corrective WOs in a time window
+  MTBF                 ─── Mean time between failures (hours or days)
+  Emergency work ratio ─── Corrective WOs / Total WOs
+  Repeat failures      ─── Same failure code on same asset within X months
+  PM compliance gaps   ─── Overdue or skipped preventive tasks
+```
+
+Here is where most organizations hit their first data quality wall. If your technicians close corrective work orders as "COMP" with no failure code, Health has nothing to count. If "General Repair" is your most-used failure code, your reliability indicators are noise.
+
+### Pillar 3: Meters and Usage Readings
+
+Meters represent quantitative measurements:
+
+- **Runtime hours** -- how long the asset has operated
+- **Start/stop counts** -- cycle stress indicators
+- **Production throughput** -- output volume or rate
+- **Environmental measures** -- temperature, pressure, humidity
+
+Health uses meter data to:
+
+- Track how intensively an asset is used relative to design expectations
+- Derive condition indicators (e.g., high runtime with minimal maintenance = risk)
+- Establish baselines for comparison across similar assets
+
+The catch: meters are only useful if they are updated. A runtime meter that was last read 8 months ago tells Health nothing about current condition. It tells Health the meter data is stale, and the resulting score reflects that staleness -- usually by defaulting to a less favorable assumption.
+
+### Pillar 4: Inspections and Condition Assessments
+
+Inspections provide qualitative views of asset condition:
+
+- **Visual inspections** with structured condition ratings (Good / Fair / Poor / Critical)
+- **Checklists** with defined thresholds or limits
+- **Specialized inspections** -- thermography, vibration analysis, corrosion mapping, oil analysis
+
+Health can incorporate these as **condition indicators**, but only when they are:
+
+- **Structured** -- a dropdown rating or numeric score, not a free-text comment
+- **Consistent** -- the same rating scale used across sites and inspectors
+- **Current** -- an inspection from 2022 does not represent 2026 condition
+
+> *"Our inspectors write detailed notes in the comment field."*
+>
+> That is great for the mechanic reading the work order. It is useless for Health. Health needs structured data. Convert those notes into rating fields, or they do not exist as far as the scoring model is concerned.
+
+### Pillar 5: External and Analytics Inputs
+
+Beyond Manage, Health can incorporate:
+
+- **IoT telemetry** from Maximo Monitor -- streaming temperature, vibration, flow, pressure
+- **Anomaly alerts** from analytics engines -- statistical deviations that indicate emerging issues
+- **Predictive outputs** from Maximo Predict -- failure probability, remaining useful life (RUL)
+
+These signals are mapped into health indicators or used to adjust existing scores. We cover this integration in detail in Part 5.
+
+---
+
+## 🧠 From Indicators to Scores: The Layered Model
+
+Maximo Health does not calculate a health score in one step. It builds it in layers, and understanding these layers is essential for configuration and troubleshooting.
+
+### Layer 1: Condition Indicators
+
+Condition indicators are the atomic building blocks. Each one represents a specific, measurable aspect of asset condition:
+
+| Indicator | Data Source | Calculation | Scale |
+|-----------|-----------|-------------|-------|
+| Failure count (12 months) | Work orders | Count of corrective WOs | 0-100 (inverse) |
+| Vibration severity | Meters / IoT | Latest reading vs. threshold | 0-100 |
+| Inspection rating | Inspections | Structured condition score | 0-100 |
+| Emergency work ratio | Work orders | Corrective / Total WOs | 0-100 (inverse) |
+| Runtime vs. design life | Meters | Actual hours / Design hours | 0-100 (inverse) |
+| Oil quality index | Inspections | Lab results vs. limits | 0-100 |
+
+Each indicator has:
+- A **data source** that defines where the raw value comes from
+- A **calculation rule** that transforms the raw value into a comparable score
+- A **scoring scale** that normalizes the result (typically 0-100)
+
+Indicators can be **generic** (applicable to any asset) or **class-specific** (e.g., "oil quality" only applies to transformers and rotating equipment with oil-lubricated bearings).
+
+### Layer 2: Health Score Components
+
+Indicators are grouped into broader components that represent categories of health:
+
+```
+HEALTH SCORE COMPONENTS (TYPICAL)
+
+  ┌─────────────────────────────────────────────────────────┐
+  │                    OVERALL HEALTH SCORE                  │
+  │                      (0-100, weighted)                   │
+  ├──────────────┬──────────────┬─────────────┬─────────────┤
+  │  CONDITION   │ RELIABILITY  │ PERFORMANCE │ ENVIRONMENT │
+  │    (40%)     │    (30%)     │    (20%)    │    (10%)    │
+  ├──────────────┼──────────────┼─────────────┼─────────────┤
+  │ Vibration    │ Failure      │ Throughput  │ Runtime vs  │
+  │ severity     │ count        │ deviation   │ design life │
+  │              │              │             │             │
+  │ Inspection   │ Emergency    │ Efficiency  │ Thermal     │
+  │ rating       │ work ratio   │ drop        │ stress      │
+  │              │              │             │             │
+  │ Oil quality  │ MTBF trend   │             │ Duty cycle  │
+  │ index        │              │             │ severity    │
+  └──────────────┴──────────────┴─────────────┴─────────────┘
+```
+
+Within each component, indicators are combined using configurable rules -- typically weighted averages. The component score represents a balanced view of that health dimension.
+
+### Layer 3: Overall Health Score
+
+The overall health score aggregates component scores using another set of configurable weightings:
+
+- **Normalized scale** -- typically 0-100, where 100 is best health
+- **Configurable weightings** per asset class
+- **Defined bands** that translate numbers into action categories
+
+```
+HEALTH BANDS (EXAMPLE)
+
+  100 ┬───────────────────────── HEALTHY ──────────────────────┐
+      │  No immediate concerns. Continue routine maintenance.  │
+   80 ┼───────────────────────── WATCH ────────────────────────┤
+      │  Early signs of deterioration. Monitor more closely.   │
+   60 ┼───────────────────────── POOR ─────────────────────────┤
+      │  Needs attention in near term. Plan intervention.      │
+   40 ┼───────────────────────── CRITICAL ─────────────────────┤
+      │  High risk of failure. Act now.                        │
+    0 ┴────────────────────────────────────────────────────────┘
+```
+
+The specific thresholds (80/60/40) are starting points. Part 4 covers how to tune them for your environment.
+
+---
+
+## ⚡ Health Plus Criticality Equals Risk
+
+A health score alone is half the story. A pump scoring 35 might need immediate repair -- or it might be a backup unit that has not run in months. The difference is criticality.
+
+### Defining Criticality
+
+Criticality models the potential impact of failure across dimensions:
+
+| Dimension | What It Captures | Example (High) |
+|-----------|-----------------|-----------------|
+| Safety & Environment | Potential for injury or environmental damage | Pressure vessel in occupied area |
+| Production | Lost output, service disruption | Bottleneck equipment on critical line |
+| Regulatory | Non-compliance risk, penalties | Equipment under EPA or OSHA mandates |
+| Financial | Direct repair cost + indirect losses | Asset where failure triggers $2M+ losses |
+
+Criticality can be expressed as:
+- **Categorical** -- Low / Medium / High / Very High
+- **Multi-dimensional scores** -- separate ratings for each dimension
+- **Aggregated numeric score** -- a single number for cross-asset comparison
+
+### The Risk Matrix
+
+Risk combines health (likelihood of failure) with criticality (consequence of failure):
+
+```
+THE RISK MATRIX
+
+                     CRITICALITY
+              Low      Medium     High      Very High
+         ┌─────────┬──────────┬──────────┬───────────┐
+ GOOD    │         │          │          │           │
+ (80+)   │  LOW    │  LOW     │ MONITOR  │  MONITOR  │
+         ├─────────┼──────────┼──────────┼───────────┤
+ WATCH   │         │          │          │           │
+ (60-79) │  LOW    │ MODERATE │ ELEVATED │  HIGH     │
+H        ├─────────┼──────────┼──────────┼───────────┤
+E  POOR  │         │          │          │           │
+A (40-59)│MODERATE │ ELEVATED │  HIGH    │ CRITICAL  │
+L        ├─────────┼──────────┼──────────┼───────────┤
+T CRIT   │         │          │          │           │
+H (0-39) │ELEVATED │  HIGH    │ CRITICAL │ CRITICAL  │
+         └─────────┴──────────┴──────────┴───────────┘
+```
+
+This matrix is the engine behind every prioritization view in Maximo Health. Assets in the top-right quadrant (poor health, high criticality) get immediate attention. Assets in the bottom-left (good health, low criticality) get routine maintenance.
+
+### Portfolio-Level Risk Views
+
+By calculating risk across your fleet, Health provides:
+
+- **Ranked lists** of high-risk assets by site, system, or class
+- **Risk heat maps** showing where exposure is concentrated
+- **Trend views** showing whether risk exposure is improving or deteriorating over time
+
+These views turn individual scores into organizational intelligence. They answer: "Where should we spend our next dollar?"
+
+---
+
+## 🏭 Making It Real: Three Scenarios
+
+### Scenario 1: Rotating Equipment (Pump)
+
+```
+Asset: P-4407 (Critical process pump)
+
+INDICATORS:
+  Vibration severity ........... 42/100 (trending down)
+  Bearing temperature .......... 55/100 (above baseline)
+  Failure count (12 mo) ........ 30/100 (17 corrective WOs)
+  Inspection rating ............ 60/100 (Fair, with seal weep noted)
+  Emergency work ratio ......... 35/100 (high unplanned work)
+
+COMPONENTS:
+  Condition: (0.4 x 42) + (0.3 x 55) + (0.3 x 60) = 51.3
+  Reliability: (0.5 x 30) + (0.5 x 35) = 32.5
+  Performance: 70 (within tolerance)
+  Environment: 65 (normal duty cycle)
+
+OVERALL HEALTH: (0.4 x 51.3) + (0.3 x 32.5) + (0.2 x 70) + (0.1 x 65)
+             = 20.5 + 9.75 + 14 + 6.5 = 50.8
+
+CRITICALITY: Very High (safety risk + production bottleneck)
+RISK: CRITICAL
+ACTION: Immediate inspection, plan overhaul
+```
+
+### Scenario 2: Substation Transformer
+
+```
+Asset: TF-201 (Distribution transformer)
+
+INDICATORS:
+  Oil quality index ............ 58/100 (deteriorating)
+  Loading history .............. 72/100 (moderate stress)
+  Age vs design life ........... 40/100 (28 years on 35-year design)
+  Inspection rating ............ 65/100 (minor issues noted)
+
+COMPONENTS:
+  Condition: 61
+  Reliability: 75 (low failure count)
+  Environment: 56 (high thermal stress environment)
+
+OVERALL HEALTH: 63
+
+CRITICALITY: High (grid reliability, regulatory)
+RISK: HIGH
+ACTION: Schedule detailed assessment, include in capital planning review
+```
+
+### Scenario 3: Building HVAC Unit
+
+```
+Asset: AHU-B7-03 (Air handling unit, office building)
+
+INDICATORS:
+  Runtime hours ................ 85/100 (within normal range)
+  Failure count (12 mo) ........ 90/100 (1 minor failure)
+  Inspection rating ............ 80/100 (Good condition)
+
+COMPONENTS:
+  Condition: 82
+  Reliability: 90
+  Performance: 78 (minor comfort complaints)
+
+OVERALL HEALTH: 83
+
+CRITICALITY: Low (standard office space)
+RISK: LOW
+ACTION: Continue routine PM, no escalation needed
+```
+
+---
+
+## 🔍 The Data Quality Truth
+
+We need to talk about this directly because it determines whether your Health program succeeds or fails.
+
+### The Four Questions
+
+Before trusting any health score, ask:
+
+1. **Completeness** -- Are failure codes, inspection results, and meter readings consistently populated? If 40% of your work orders close without a failure code, your reliability indicators are fiction.
+
+2. **Consistency** -- Are the same rating scales and coding structures used across all sites? If Site A rates condition 1-5 and Site B rates it Good/Fair/Poor, your cross-site comparisons are meaningless.
+
+3. **Accuracy** -- Do inspectors and technicians trust the ratings they assign? If everyone marks "Good" to avoid paperwork, your condition scores are inflated.
+
+4. **Timeliness** -- How quickly do new events appear in the model? If inspections from last month are still sitting in a queue, the health score is showing you last quarter's condition.
+
+### The Honest Approach
+
+Do not pretend your data is better than it is. Instead:
+
+- Run Health on a pilot set of assets where data quality is strongest
+- Document known gaps and their impact on scores
+- Track data quality metrics alongside health metrics
+- Improve data quality as a parallel workstream, not a prerequisite
+
+> **Key insight:** You do not need perfect data to start. You need honest data -- and honest acknowledgment of where it falls short.
+
+---
+
+## 🎯 The 7 Commandments of Health Scoring
+
+1. **Thou shalt understand every indicator in thy model.** If you cannot explain what drives a score, the score is a random number.
+2. **Thou shalt validate scores against expert judgment.** Run your model. Show the results to your best reliability engineer. If she says "that is wrong," the model needs tuning.
+3. **Thou shalt not over-weight what you measure easily.** Just because you have good meter data does not mean meters should dominate the score. Weight by importance, not availability.
+4. **Thou shalt make data quality visible.** Track which indicators have missing or stale data. Show it on the dashboard. Do not hide it.
+5. **Thou shalt score criticality separately from health.** They are different questions. Keep them separate. Combine them in the risk matrix.
+6. **Thou shalt start simple and iterate.** Three indicators per component is enough for a pilot. Add complexity when you have evidence it improves decisions.
+7. **Thou shalt document everything.** Indicators, weightings, thresholds, assumptions. When the reliability engineer who built the model leaves, the documentation is all you have.
+
+---
+
+**Next in the series:** [Part 3 -- Getting Started in MAS](/blog/mas-health-getting-started) walks you through prerequisites, activation, and onboarding your first batch of assets into Maximo Health.
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams build, configure, and optimize IBM Maximo Application Suite. Our content comes from real implementations, not marketing slides. If it is in our blog, we have done it in production.

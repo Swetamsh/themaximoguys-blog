@@ -1,0 +1,686 @@
+---
+title: "Computer Vision Fundamentals for Asset Managers: How Machines Learn to See Defects"
+description: "How computer vision works for asset inspection without the PhD. Classification, detection, segmentation explained. No-code model building in MVI demystified."
+date: "2026-02-19"
+slug: "mas-visual-inspection-cv-fundamentals"
+tags: ["Maximo Visual Inspection", "MVI", "Computer Vision", "Deep Learning", "Image Classification", "Object Detection", "Transfer Learning", "No-Code AI"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "AI & Visual Inspection Specialists"]
+coverImage: "./images/mas-visual-inspection-02.png"
+
+faqs:
+  - question: "How does computer vision detect defects in industrial images?"
+    answer: "Computer vision uses convolutional neural networks (CNNs) that learn to recognize visual patterns from labeled example images. The network extracts features like edges, textures, and shapes in successive layers, building up from simple patterns to complex defect recognition without explicit programming."
+  - question: "What is transfer learning and why does it matter for MVI?"
+    answer: "Transfer learning means starting with a neural network pre-trained on millions of general images, then fine-tuning it on your specific inspection images. This means you need hundreds of labeled images instead of millions, reducing the data collection effort from years to weeks."
+  - question: "Do I need to understand deep learning math to use Maximo Visual Inspection?"
+    answer: "No. MVI provides a no-code interface where you label images and click train. But understanding concepts like classification versus detection, precision versus recall, and overfitting versus underfitting helps you build better models and troubleshoot problems faster."
+
+keyTakeaways:
+  - "CNNs learn visual features automatically from labeled examples, no manual feature programming needed"
+  - "Transfer learning reduces training data from millions to hundreds of images per class"
+  - "Classification answers 'what is this' while detection answers 'where is it'"
+  - "Precision measures false alarm rate; recall measures miss rate -- you must balance both"
+  - "No-code model building lets domain experts drive model quality, not data scientists"
+
+series:
+  name: "MAS VISUAL INSPECTION"
+  part: 2
+  total: 12
+
+tldr: "Computer vision uses deep neural networks to learn visual patterns from labeled images. Transfer learning means you need hundreds, not millions, of training images. MVI wraps this in a no-code interface so domain experts -- not data scientists -- build and refine inspection models."
+seoTitle: "Computer Vision Fundamentals for Asset Managers: MVI Deep Learning Guide | TheMaximoGuys"
+seoDescription: "How computer vision detects defects in industrial assets. Classification, detection, transfer learning, and no-code model building explained."
+targetQuestions:
+  - "How does computer vision work for industrial inspection?"
+  - "What is the difference between image classification and object detection?"
+  - "How many images do I need to train a visual inspection model?"
+  - "What is transfer learning in computer vision?"
+semanticKeywords:
+  - "computer vision fundamentals"
+  - "convolutional neural network"
+  - "image classification vs object detection"
+  - "transfer learning industrial inspection"
+  - "no-code computer vision"
+  - "precision and recall explained"
+  - "deep learning asset inspection"
+  - "MVI model training concepts"
+proficiencyLevel: "beginner"
+dependencies:
+  - "Basic understanding of what Maximo Visual Inspection does (Part 1)"
+  - "No prior computer vision or machine learning knowledge required"
+speakableSections:
+  - "Introduction"
+  - "How a Neural Network Sees"
+  - "The Three Tasks"
+  - "Understanding Model Accuracy"
+relatedSlugs:
+  - "mas-visual-inspection-introduction"
+  - "mas-visual-inspection-building-first-model"
+  - "getting-started-maximo-ai"
+---
+
+> **Who this is for:** Reliability engineers, quality managers, maintenance supervisors, and IT leaders who need to understand how computer vision works well enough to make smart decisions -- without becoming data scientists. You will not write code. You will understand why your model works (or does not).
+
+**Read Time:** 20-22 minutes
+
+---
+
+## The Question Nobody Asks
+
+You are in a meeting. Someone says, "We are going to use AI to detect corrosion on our heat exchangers."
+
+Everyone nods. Budget gets approved. Images get collected. A model gets trained.
+
+Six months later, the model flags every shadow as corrosion and misses half the actual pitting.
+
+Nobody in that meeting asked: **"How does this actually work?"**
+
+Not the math. Not the code. The concepts. The mental model that tells you why 500 images of corrosion might be enough but 500 images taken from the same angle at the same time of day definitely are not.
+
+This blog gives you that mental model. No PhD required. No Python. Just enough understanding to be dangerous in the right way.
+
+---
+
+## How a Neural Network Sees
+
+When you look at a photograph of a corroded pipe, your brain does something remarkable. In milliseconds, it recognizes the pipe shape, identifies the orange-brown discoloration, notices the surface texture change, and concludes: corrosion.
+
+You do not think about this process. You just see it.
+
+A convolutional neural network (CNN) does something similar, but it learns differently. Here is the simplified version:
+
+### Layer by Layer: From Pixels to Understanding
+
+```
+  HOW A CNN PROCESSES AN IMAGE
+  ============================
+
+  LAYER 1: EDGES
+  ──────────────
+  The network looks at tiny patches of pixels (3x3, 5x5)
+  and learns to detect: edges, gradients, color transitions.
+
+  Think: "Something changes here"
+
+       ░░░░░█████
+       ░░░░█████░
+       ░░░█████░░    <-- "I see a diagonal edge"
+       ░░█████░░░
+       ░█████░░░░
+
+  LAYER 2: TEXTURES AND PATTERNS
+  ──────────────────────────────
+  Combines edges into: textures, corners, curves, simple patterns.
+
+  Think: "This area has a rough, pitted texture"
+
+  LAYER 3: PARTS
+  ──────────────
+  Combines patterns into: recognizable parts of objects.
+
+  Think: "This looks like a pipe surface with discoloration"
+
+  LAYER 4: OBJECTS AND CONDITIONS
+  ──────────────────────────────
+  Combines parts into: complete understanding.
+
+  Think: "This is Grade 3 corrosion on a carbon steel pipe"
+```
+
+**The key insight:** Nobody programs these layers. The network learns them from examples. Show it 1,000 images labeled "corroded" and 1,000 images labeled "good condition," and it figures out what features distinguish one from the other.
+
+This is why **your training data quality matters more than any algorithm setting.** The network can only learn what you show it.
+
+### What Makes This Different from Traditional Image Processing
+
+Old-school image processing used hand-crafted rules:
+
+```
+  TRADITIONAL (Rule-Based)          DEEP LEARNING (Learned)
+  ─────────────────────────         ─────────────────────────
+  IF red_channel > 150              "Here are 2,000 examples.
+  AND texture_variance > 0.7        You figure out the rules."
+  AND area > 500 pixels
+  THEN corrosion = True             Network learns:
+                                    - Color patterns
+  Problems:                         - Texture patterns
+  - Brittle to lighting changes     - Shape patterns
+  - Misses novel appearances        - Context patterns
+  - Requires CV expert to write     - Combinations humans miss
+  - Different rules per defect
+                                    Advantages:
+                                    - Adapts to conditions
+                                    - Learns subtle patterns
+                                    - Domain expert trains it
+                                    - One approach, many defects
+```
+
+> *"We spent 6 months writing image processing rules for weld defect detection. 73% accuracy. Then we trained an MVI model in 3 weeks. 94% accuracy. The AI found patterns in the weld bead texture that we never thought to code for."*
+
+---
+
+## The Three Tasks: Classification, Detection, and Segmentation
+
+Every visual inspection question maps to one of these three tasks. Choosing wrong means building the wrong model.
+
+### Task 1: Image Classification
+
+**Question:** "What category does this entire image belong to?"
+
+**Input:** One image.
+**Output:** One label (and a confidence score).
+
+```
+  IMAGE CLASSIFICATION
+  ====================
+
+  ┌─────────────────────┐
+  │                     │
+  │    [Photo of        │  ──>  LABEL: "Corrosion Grade 3"
+  │     pipe surface]   │       CONFIDENCE: 94.2%
+  │                     │
+  └─────────────────────┘
+
+  Use when:
+  - Pass/fail quality gate (good vs defective)
+  - Condition grading (Grade 1-5)
+  - Asset type identification
+  - Sorting into categories
+
+  Limitations:
+  - Only one label per image
+  - No location information
+  - Entire image must show one condition
+```
+
+**Real example:** Solar panel inspection. Drone captures one photo per panel. MVI classifies: "Clean," "Soiled," "Cracked," "Hot spot," or "Shading damage." One label per panel. 50,000 panels classified in 2 hours.
+
+### Task 2: Object Detection
+
+**Question:** "Where in this image are the objects I care about?"
+
+**Input:** One image.
+**Output:** Multiple bounding boxes, each with a label and confidence score.
+
+```
+  OBJECT DETECTION
+  ================
+
+  ┌──────────────────────────────────┐
+  │                                  │
+  │    [Photo of transmission        │
+  │     pole with multiple           │
+  │     components]                  │
+  │        ┌──────┐                  │
+  │        │CRACK │ 96%              │  ──>  3 detections:
+  │        └──────┘                  │       - Cracked insulator (96%)
+  │              ┌─────────┐        │       - Woodpecker damage (89%)
+  │              │WOODPECK │ 89%    │       - Vegetation contact (91%)
+  │              └─────────┘        │
+  │   ┌──────────┐                  │
+  │   │VEGETATION│ 91%              │
+  │   └──────────┘                  │
+  └──────────────────────────────────┘
+
+  Use when:
+  - Multiple defects per image
+  - Need defect location
+  - Counting objects
+  - Complex scenes with many components
+
+  Requires:
+  - Bounding box annotations during labeling
+  - More training images than classification
+  - More compute for training and inference
+```
+
+**Real example:** Weld inspection on a pipeline. Single image may contain 3 welds. MVI draws a box around each defective weld, labels it (porosity, undercut, crack, incomplete fusion), and reports the location. Inspector knows exactly which weld needs attention without reviewing the entire image.
+
+### Task 3: Instance Segmentation (Detectron2 in MVI)
+
+**Question:** "Which exact pixels belong to each object?"
+
+**Input:** One image.
+**Output:** Pixel-level mask showing category for every detected object.
+
+```
+  INSTANCE SEGMENTATION (Detectron2)
+  ==================================
+
+  ┌──────────────────────┐     ┌──────────────────────┐
+  │                      │     │ ████                  │
+  │    [Photo of         │     │ ████ = Corrosion      │
+  │     corroded         │ ──> │      ██████           │
+  │     surface]         │     │      ██████ = Pitting  │
+  │                      │     │ ░░░░░░░░░░░ = Good    │
+  └──────────────────────┘     └──────────────────────┘
+
+  In MVI, Detectron2 handles this:
+  - Requires POLYGON labels (not bounding boxes)
+  - Best for small objects and fine-grained detection
+  - Supports instance segmentation natively
+  - Ideal for measuring defect area and extent
+
+  Use when:
+  - Need exact defect boundaries
+  - Measuring defect area/extent
+  - Precise damage mapping
+  - Corrosion progression tracking
+  - Small object detection requiring polygon accuracy
+
+  Requires:
+  - Polygon annotation in MVI (more time than bounding boxes)
+  - More training time than standard detection
+  - GPU compute for training and inference
+```
+
+**Real example:** Corrosion mapping on storage tank walls. Detectron2 polygon masks show exactly how much surface area is corroded, enabling accurate repair cost estimates and progression tracking over time. Unlike bounding boxes, polygon labels capture the irregular shape of corrosion patches.
+
+### Task 4: Action Detection
+
+MVI also supports **action detection** using the Structured Segment Network (SSN) architecture. This analyzes video to identify temporal activities -- not just what exists in a frame, but what is happening over time.
+
+```
+  ACTION DETECTION (SSN)
+  ======================
+
+  Input: Video clip
+  Output: Activity labels with temporal boundaries
+
+  Use when:
+  - Process compliance monitoring
+  - Safety procedure verification
+  - Assembly sequence validation
+  - Detecting motion-based anomalies
+
+  Note: SSN does NOT support transfer learning
+  or multi-GPU training in MVI.
+```
+
+### Choosing the Right Task and MVI Model Type
+
+```
+  MVI MODEL SELECTION MATRIX
+  ==========================
+
+  Your inspection question               MVI Model Type
+  ──────────────────────────────────     ──────────────────────
+  "Is this part good or defective?"      Classification (GoogLeNet)
+  "What condition grade is this?"        Classification (GoogLeNet)
+  "Where are the cracks?"                Faster R-CNN (accuracy)
+  "Real-time defect detection?"          YOLO v3 (speed)
+  "Low-power edge detection?"            Tiny YOLO v3 (fastest)
+  "Precise polygon boundaries?"          Detectron2 (segmentation)
+  "High-res detailed imagery?"           High Resolution
+  "Unusual/anomalous objects?"           Anomaly Optimized
+  "What is happening in video?"          Action Detection (SSN)
+  "Detect specific objects quickly?"     SSD (v9.0 inference only)
+
+  MVI MODEL ARCHITECTURES:
+  ────────────────────────
+  Model Type              Architecture     Key Trait
+  ──────────────────────  ─────────────    ──────────────────────
+  Image Classification    GoogLeNet        System default, Inception
+  Object Detection        Faster R-CNN     Default detection, accurate
+  Object Detection        YOLO v3          Speed-optimized
+  Object Detection        Tiny YOLO v3     Fastest, edge-friendly
+  Object Detection        Detectron2       Polygon labels, small objects
+  Object Detection        High Resolution  Detailed high-res imagery
+  Object Detection        SSD              Real-time (train unsupported v9.1)
+  Object Detection        Anomaly          Unusual object detection
+  Action Detection        SSN              Video-based, temporal
+
+  Effort to label data:
+  Classification < Bounding Box Detection < Polygon Detection
+
+  Model accuracy (given same data volume):
+  Classification > Object Detection > Instance Segmentation
+
+  OUR RECOMMENDATION: Start with GoogLeNet classification
+  or Faster R-CNN detection. Move to Detectron2 only when
+  you specifically need polygon-level precision. Use YOLO v3
+  or Tiny YOLO v3 when speed matters more than accuracy.
+```
+
+---
+
+## Transfer Learning: Why You Do Not Need a Million Images
+
+Here is the biggest misconception in enterprise AI: "We need massive amounts of data."
+
+For general-purpose AI? Maybe. For visual inspection? **Transfer learning changes the equation entirely.**
+
+### How Transfer Learning Works
+
+Imagine hiring a senior inspector with 20 years of experience versus a new graduate. The senior inspector already knows what metal looks like, how light reflects off surfaces, what a pipe shape means. You just need to teach them your specific defect types.
+
+Transfer learning is the same concept for neural networks.
+
+```
+  TRANSFER LEARNING
+  =================
+
+  STEP 1: Start with a pre-trained network
+  (Trained on ImageNet: 14 million images, 20,000 categories)
+
+  This network already knows:
+  - Edges, textures, shapes
+  - Metal vs plastic vs concrete
+  - Surface patterns
+  - Lighting and shadow handling
+
+  STEP 2: Fine-tune on YOUR images
+  (Your specific assets, defects, conditions)
+
+  You teach it:
+  - What YOUR corrosion looks like
+  - What YOUR cracking pattern means
+  - What YOUR "good condition" baseline is
+
+  RESULT: 200-500 images per class gets you started
+          1,000+ images per class gets you to production
+          (vs. 100,000+ without transfer learning)
+```
+
+### Transfer Learning Support in MVI
+
+Not every MVI architecture supports transfer learning. This matters for your data planning.
+
+```
+  TRANSFER LEARNING SUPPORT BY MODEL TYPE
+  ========================================
+
+  Model Type              Transfer Learning    Multi-GPU Training
+  ──────────────────────  ─────────────────    ──────────────────
+  GoogLeNet (Classify)    YES                  YES
+  Faster R-CNN            YES                  YES
+  YOLO v3                 YES                  YES
+  Tiny YOLO v3            YES                  YES
+  Detectron2              YES                  YES
+  High Resolution         YES                  YES
+  SSD                     YES                  YES
+  Anomaly Optimized       YES                  YES
+  SSN (Action)            NO                   NO
+  Custom Models           NO                   NO
+
+  Models WITHOUT transfer learning require
+  significantly more training data.
+```
+
+### Data Requirements: The Real Numbers
+
+```
+  TRAINING DATA GUIDELINES
+  ========================
+
+  Phase           Images/Class    Expected Accuracy    Use Case
+  ──────────────  ──────────────  ─────────────────    ────────────────
+  Proof of        50-100          70-80%               "Does this work?"
+  Concept
+
+  Pilot           200-500         85-92%               Limited deployment
+  Ready
+
+  Production      500-1,000       90-95%               Full deployment
+  Ready
+
+  Enterprise      1,000-5,000     95-98%               High-stakes,
+  Grade                                                 regulated
+
+  CRITICAL: These numbers assume:
+  - Diverse angles, lighting, conditions
+  - Accurate labels
+  - Balanced classes (similar count per category)
+  - Transfer learning from pre-trained base
+  - For SSN/Custom models (no transfer learning),
+    multiply these numbers by 3-5x
+```
+
+**Failure 1: The 10,000 Image Mistake**
+
+A manufacturing company collected 10,000 images of their product. Impressive number. Terrible dataset. All 10,000 images were taken from the same camera angle, under the same fluorescent lighting, during the day shift. The model scored 98% in testing. Deployed to the night shift with different lighting? 52% accuracy.
+
+**The lesson:** 500 diverse images beats 10,000 identical images. Every time.
+
+---
+
+## Understanding Model Accuracy: The Metrics That Matter
+
+Your model is trained. It reports 95% accuracy. Time to deploy, right?
+
+Not so fast. "95% accuracy" can mean very different things depending on what it is getting wrong.
+
+### Precision vs. Recall: The Inspection Trade-off
+
+```
+  THE CONFUSION MATRIX
+  ====================
+
+                          Actual Condition
+                    ┌──────────┬──────────┐
+                    │  Defect  │  No Defect│
+  ┌────────────┬───┼──────────┼──────────┤
+  │ Model Says │YES│ TRUE     │ FALSE    │
+  │ "Defect"   │   │ POSITIVE │ POSITIVE │ <-- False alarm
+  ├────────────┼───┼──────────┼──────────┤
+  │ Model Says │NO │ FALSE    │ TRUE     │
+  │ "OK"       │   │ NEGATIVE │ NEGATIVE │ <-- Missed defect
+  └────────────┴───┴──────────┴──────────┘
+
+  PRECISION = True Positives / (True Positives + False Positives)
+  "When the model says DEFECT, how often is it right?"
+  HIGH PRECISION = Few false alarms
+
+  RECALL = True Positives / (True Positives + False Negatives)
+  "Of all actual defects, how many did the model catch?"
+  HIGH RECALL = Few missed defects
+```
+
+### Why This Matters for Inspection
+
+> *"Our model has 98% precision."*
+
+Translation: When it flags a defect, it is right 98% of the time. Great -- few false alarms. But it might be missing half the actual defects.
+
+> *"Our model has 98% recall."*
+
+Translation: It catches 98% of all defects. Great -- very few misses. But it might be flagging 500 false positives per day.
+
+**The trade-off is real:**
+
+```
+  PRECISION vs RECALL TRADE-OFF
+  ============================
+
+  HIGH PRECISION, LOW RECALL
+  "Conservative model"
+  - Rarely cries wolf
+  - But misses real defects
+  - Use when: False alarms are expensive
+    (unnecessary shutdowns, wasted inspector time)
+
+  LOW PRECISION, HIGH RECALL
+  "Aggressive model"
+  - Catches almost everything
+  - But lots of false alarms
+  - Use when: Missing defects is dangerous
+    (safety-critical, high-cost failures)
+
+  THE SWEET SPOT
+  Use F1 Score = 2 x (Precision x Recall) / (Precision + Recall)
+  Balances both. Target F1 > 0.90 for production.
+```
+
+### mAP: The Object Detection Metric
+
+For object detection, mean Average Precision (mAP) is the standard metric.
+
+```
+  mAP (Mean Average Precision)
+  ============================
+
+  mAP combines:
+  - How well the model finds objects (recall)
+  - How accurate the bounding boxes are (IoU)
+  - How confident the predictions are (precision)
+
+  Across ALL defect types (averaged)
+
+  mAP Benchmarks for Industrial Inspection:
+  - mAP > 0.50: Proof of concept viable
+  - mAP > 0.70: Pilot deployment ready
+  - mAP > 0.85: Production deployment ready
+  - mAP > 0.90: Enterprise grade
+```
+
+---
+
+## The No-Code Promise: Where It Holds and Where It Breaks
+
+MVI's value proposition is that domain experts build models without code. Here is the honest assessment.
+
+### Where No-Code Works Brilliantly
+
+1. **Standard classification problems.** Good vs defective. Condition grades. Asset type identification. Upload images, label them, click train. It works.
+
+2. **Well-defined object detection.** "Find cracks." "Find corrosion spots." "Find missing bolts." Clear visual targets with consistent appearance. Label with bounding boxes, train, deploy.
+
+3. **Iterative improvement.** Model misclassifies some images? Add those images to training data with correct labels. Retrain. Accuracy improves. No code needed.
+
+### Where No-Code Hits Limits
+
+1. **Complex preprocessing.** Images need rotation correction, color normalization, or stitching? That is a code task (or a pipeline configuration task).
+
+2. **Custom metrics and alerting.** Standard accuracy metrics not enough? Need custom business logic for when to trigger work orders? That requires integration code.
+
+3. **Advanced augmentation strategies.** MVI handles built-in augmentation (blur, sharpen, crop, rotate, vertical flip, horizontal flip, color adjustment, noise). Advanced strategies (synthetic defect generation, GAN-based augmentation) require code.
+
+4. **Multi-model orchestration.** "Run classification first, then if defective, run object detection to find the specific defect." Chaining models requires pipeline logic.
+
+### The Practical Reality
+
+```
+  MVI MODEL BUILDING WORKFLOW (No-Code)
+  ======================================
+
+  STEP 1: Create Project
+  ──────────────────────
+  Name it. Define categories. Done.
+
+  STEP 2: Upload Images
+  ────────────────────
+  Drag and drop. Or use API for bulk upload.
+
+  STEP 3: Label Images
+  ───────────────────
+  Classification: Click image, assign category
+  Detection: Draw bounding box, assign label
+
+  THIS IS WHERE 80% OF YOUR TIME GOES.
+  Labeling quality = model quality. Period.
+
+  STEP 4: Configure Training
+  ─────────────────────────
+  Select model type:
+    Classification: GoogLeNet (default)
+    Detection: Faster R-CNN, YOLO v3, Tiny YOLO v3,
+              Detectron2, High-Res, Anomaly, SSD
+    Action: SSN (video only)
+  Set training parameters (or use defaults)
+
+  STEP 5: Train
+  ────────────
+  Click "Train." Wait 30 min to several hours.
+
+  STEP 6: Review Results
+  ─────────────────────
+  Check precision, recall, F1, mAP
+  Review misclassified images
+  Identify where model struggles
+
+  STEP 7: Iterate
+  ──────────────
+  Add more images where model fails
+  Correct mislabeled data
+  Retrain. Repeat until metrics meet targets.
+
+  STEP 8: Deploy
+  ────────────
+  Click "Deploy." Model is live.
+  API endpoint ready for inference.
+```
+
+---
+
+## Common Pitfalls: The Five Mistakes Everyone Makes
+
+### Mistake 1: Training on Perfect Images
+
+You take photos in ideal conditions. Perfect lighting, clean lens, asset centered in frame. Model scores 97% in testing. Field deployment? 71%.
+
+**Fix:** Include messy images. Partial views. Different lighting. Dirty lenses. The real world is not a lab.
+
+### Mistake 2: Imbalanced Classes
+
+You have 5,000 images of "good condition" and 50 images of "cracked." The model learns to say "good" for everything and achieves 99% accuracy (because 99% of images are good). It catches zero cracks.
+
+**Fix:** Balance your classes. Minimum 200 images per class. Use data augmentation (flips, rotations, crops) to increase minority class volume.
+
+### Mistake 3: Labeling by Committee Without Standards
+
+Three inspectors label the same image. Inspector A: "Minor corrosion." Inspector B: "Surface staining." Inspector C: "Grade 2 corrosion." The model learns inconsistency.
+
+**Fix:** Create a visual labeling guide with example images for each category. One senior expert validates a random sample of all labels.
+
+### Mistake 4: Ignoring the Confidence Threshold
+
+Model output: "Corrosion, 52% confidence." Is that a detection or noise? Default thresholds are rarely optimal for your use case.
+
+**Fix:** Tune your confidence threshold on a validation set. Plot precision-recall curves at different thresholds. Choose based on your tolerance for false alarms versus missed defects.
+
+### Mistake 5: Training Once and Walking Away
+
+Model deployed in June. By December, accuracy has dropped 12 points. Nobody noticed because nobody was monitoring. The camera angle shifted 5 degrees when they cleaned it.
+
+**Fix:** Monitor model performance continuously. Schedule quarterly retraining with fresh data. Alert when accuracy drops below threshold.
+
+---
+
+## Key Takeaways
+
+1. **CNNs learn visual features from examples, not rules** -- The network discovers what distinguishes "corroded" from "good condition" by analyzing thousands of labeled images through successive layers of increasing abstraction.
+
+2. **Transfer learning is the game-changer** -- Pre-trained networks already understand visual concepts. You just fine-tune on your specific defects. 200-500 images per class gets you pilot-ready; 1,000+ gets you to production.
+
+3. **Choose the right task for your inspection question** -- Classification for pass/fail and grading. Object detection for locating specific defects. Segmentation for exact boundaries. Start simple. Upgrade only when needed.
+
+4. **Precision and recall are the metrics that matter** -- Precision = false alarm rate. Recall = miss rate. F1 score balances both. Target F1 > 0.90 for production. Understand which errors cost you more.
+
+5. **No-code works for 80% of use cases** -- MVI lets domain experts label, train, and deploy models without code. The remaining 20% (complex preprocessing, multi-model pipelines, custom integration) needs engineering support.
+
+6. **Data diversity matters more than data volume** -- 500 diverse images (different angles, lighting, conditions) beats 10,000 identical images. The 10,000 Image Mistake is the most common failure mode.
+
+7. **Label quality is model quality** -- Create a visual labeling guide. Train your labelers. Validate label consistency. Garbage labels in, garbage predictions out.
+
+---
+
+## What Comes Next
+
+You understand how the technology works. In Part 3, we get practical. Deployment options, GPU requirements, licensing, and every infrastructure decision you need to make before installing MVI. Then Part 4 covers the actual installation, prerequisites verification, and your first project.
+
+---
+
+**Previous:** [Part 1 - Introduction to Maximo Visual Inspection](/blog/mas-visual-inspection-introduction)
+
+**Next:** [Part 3 - MVI Deployment & Infrastructure](/blog/mas-visual-inspection-deployment-infrastructure)
+
+**Series:** MAS VISUAL INSPECTION | Part 2 of 12
+
+---
+
+**TheMaximoGuys** | Enterprise Maximo. No fluff. Just results.

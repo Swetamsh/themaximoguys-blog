@@ -1,0 +1,488 @@
+---
+title: "Installation & Your First MVI Project: From Prerequisites to Running Inference"
+description: "Complete MVI installation walkthrough. Prerequisites checklist, MAS 9.0/9.1 changes, operator deployment, GPU configuration gotchas, verification, and your first 30-minute project."
+date: "2026-02-19"
+slug: "mas-visual-inspection-installation-first-project"
+tags: ["Maximo Visual Inspection", "MVI", "Installation", "Setup Guide", "OpenShift", "GPU Configuration", "First Project", "IBM Maximo", "MAS 9.0"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "AI & Visual Inspection Specialists"]
+coverImage: "./images/mas-visual-inspection-04.png"
+
+faqs:
+  - question: "What are the prerequisites before installing MVI?"
+    answer: "You need an OpenShift cluster (4.8.22+ minimum), NVIDIA GPU nodes with CUDA 11.8+ and 16 GB VRAM minimum, ReadWriteMany persistent storage (40 GB minimum PVC), 75 GB in /var for Docker images, MAS Core installed, NVIDIA GPU Operator deployed, and an active IBM entitlement key."
+  - question: "What changed for MVI in MAS 9.0 and 9.1?"
+    answer: "MAS 9.0 added Ada Lovelace and Hopper GPU support, GigE Vision cameras, Data Lifecycle Manager, facial redaction, GPU workload optimization, and edge diagnostics. MAS 9.1 deprecated SSD training (existing SSD models still run inference but cannot be retrained). Use YOLO v3 as the replacement for real-time detection."
+  - question: "How do I verify my MVI installation works?"
+    answer: "Run the verification checklist: confirm pods are running, UI is accessible, login works, you can create a project, upload and label images, start a training job on GPU, deploy the model, and run inference via the API with X-Auth-Token authentication. Fix any failure before investing in real data collection."
+
+keyTakeaways:
+  - "Prerequisites verification prevents weeks of wasted troubleshooting time"
+  - "First project can be running within hours of environment provisioning"
+  - "Start with the verification checklist before investing in model training"
+  - "MAS 9.0 and 9.1 bring significant changes including new GPU support and SSD deprecation"
+  - "The 30-minute quick start proves your end-to-end pipeline works"
+
+series:
+  name: "MAS VISUAL INSPECTION"
+  part: 4
+  total: 12
+
+tldr: "This guide walks you from prerequisites through a verified MVI installation. Run the infrastructure and software checklists, understand MAS 9.0/9.1 changes, deploy the MVI operator, configure GPU access, and complete the 30-minute quick start project to prove your end-to-end pipeline works before investing in real data."
+seoTitle: "MVI Installation & First Project: Prerequisites to Running Inference | TheMaximoGuys"
+seoDescription: "Install IBM Maximo Visual Inspection. Prerequisites checklist, MAS 9.0/9.1 changes, GPU configuration, verification, and first project walkthrough."
+targetQuestions:
+  - "How do I install IBM Maximo Visual Inspection?"
+  - "What are the MVI prerequisites?"
+  - "What changed in MAS 9.0 and 9.1 for MVI?"
+  - "How do I verify my MVI installation?"
+semanticKeywords:
+  - "MVI installation guide"
+  - "Maximo Visual Inspection prerequisites"
+  - "MAS 9.0 MVI changes"
+  - "GPU configuration MVI"
+  - "MVI first project"
+  - "OpenShift MVI operator"
+  - "MVI verification checklist"
+  - "CUDA 11.8 MVI"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Deployment path chosen and infrastructure planned (Part 3)"
+  - "Understanding of MVI capabilities and use cases (Part 1)"
+  - "Access to MAS environment or cloud subscription"
+speakableSections:
+  - "Introduction"
+  - "The Prerequisites Checklist"
+  - "Installation Walkthrough"
+  - "Your First Project"
+relatedSlugs:
+  - "mas-visual-inspection-deployment-infrastructure"
+  - "mas-visual-inspection-building-first-model"
+  - "mas-predict-getting-started"
+  - "getting-started-maximo-ai"
+---
+
+> **Who this is for:** Maximo administrators installing MVI, IT teams configuring GPU nodes and storage, and project leads running their first verification project. You have your deployment plan from Part 3 -- now it is time to execute.
+
+**Read Time:** 12-15 minutes
+
+---
+
+## The Prerequisites Checklist
+
+Before you install anything, verify everything on this list. Teams that skip prerequisites waste 2-4 weeks troubleshooting problems that should have been solved before they started.
+
+### Infrastructure Prerequisites
+
+```
+  INFRASTRUCTURE CHECKLIST
+  ========================
+
+  [ ] OpenShift cluster (4.8.22+ minimum for GPU Operator)
+      - Recommended: Latest stable 4.x release
+      - Minimum: 3 control plane + 3 worker nodes
+      - Worker nodes: 16 vCPU, 64 GB RAM minimum
+
+  [ ] GPU node(s) for training
+      - NVIDIA GPUs ONLY with CUDA 11.8+
+      - Minimum 16 GB GPU memory per GPU
+      - See supported architectures in Part 3
+      - GPU Operator installed on OpenShift
+      - Minimum 1 GPU node, recommended 2+ for parallel training
+
+  [ ] Storage
+      - Block storage class (for databases)
+      - File storage class with ReadWriteMany access mode
+      - Minimum 40 GB PVC (ReadWriteMany required)
+      - Minimum 75 GB in /var for Docker images
+      - Recommended: 500 GB+ for production image volumes
+      - Performance: 3000+ IOPS for training workloads
+
+  [ ] Networking
+      - Ingress controller configured
+      - TLS certificates for MVI endpoint
+      - Outbound internet access (for pulling images, updates)
+      - Internal network bandwidth: 10 Gbps between nodes
+
+  [ ] Container registry
+      - Access to IBM Entitled Registry (or mirrored)
+      - IBM entitlement key active
+```
+
+### Software Prerequisites
+
+```
+  SOFTWARE CHECKLIST
+  ==================
+
+  [ ] MAS Core installed and running
+      - Suite administrator configured
+      - SMTP configured (for notifications)
+      - Identity provider configured
+
+  [ ] MAS Manage deployed (for work order integration)
+      - Asset records populated
+      - Location hierarchy defined
+
+  [ ] IBM Operator Catalog
+      - CatalogSource configured for MAS operators
+      - MVI operator available in OperatorHub
+
+  [ ] NVIDIA GPU Operator
+      - Deployed and healthy on GPU nodes
+      - Device plugin pods running
+      - Node labels applied (nvidia.com/gpu)
+
+  [ ] Monitoring (recommended)
+      - Prometheus + Grafana for cluster metrics
+      - GPU utilization monitoring
+      - Storage capacity alerting
+```
+
+---
+
+## MAS 9.0 and 9.1: What Changed for MVI
+
+If you are deploying on MAS 9.0 or later, several significant changes affect your setup.
+
+### MAS 9.0 Changes
+
+```
+  MAS 9.0 MVI CHANGES
+  ====================
+
+  GPU Support:
+  - Ada Lovelace GPU support added (RTX 4000, L40)
+  - Hopper GPU support added (H100)
+  - Kepler GPU support REMOVED (K80 no longer works)
+
+  Camera Support:
+  - GigE Vision camera support added
+    (Basler cameras, Power over Ethernet)
+  - Direct camera-to-MVI integration
+
+  Data Management:
+  - Data Lifecycle Manager (DLM) introduced
+    - Policy-based data management
+    - Automated purging of old data
+    - Storage optimization
+
+  Privacy:
+  - Facial redaction (automatic face blurring)
+    - Important for GDPR and privacy compliance
+    - Blur faces automatically in captured images
+
+  Performance:
+  - Dataset operations in HPA scalable pods
+    - Horizontal Pod Autoscaling for dataset processing
+    - Better handling of large dataset operations
+  - GPU workload optimization
+    - Admin can specify training vs inference GPUs
+
+  Edge:
+  - Edge device diagnostics dashboard
+    - Monitor edge device health centrally
+  - Alert message templates
+    - Admins create reusable alert templates
+
+  Integration:
+  - Enhanced Monitor integration via v2 APIs
+    - MQTT messages for faster alerting
+    - Improved MVI Edge to Monitor pipeline
+
+  Platform:
+  - Migrated to Java SE 17
+    - Performance and security improvements
+```
+
+### MAS 9.1 Changes
+
+```
+  MAS 9.1 MVI CHANGES
+  ====================
+
+  Training:
+  - SSD training DEPRECATED/UNSUPPORTED
+    - SSD models can still run inference
+    - You cannot TRAIN new SSD models
+    - Existing SSD models remain deployable
+    - For new real-time detection, use YOLO v3
+
+  Workflow:
+  - ITSM workflow support added
+    - Integration with IT Service Management
+    - Automated ticket creation from detections
+```
+
+> **Key insight:** If you have been using SSD models and plan to upgrade to MAS 9.1, be aware that you cannot retrain them. Your existing SSD models will continue to work for inference, but any retraining must use a different architecture -- YOLO v3 is the recommended replacement for real-time detection needs.
+
+---
+
+## Installation Walkthrough
+
+Once prerequisites are verified, MVI installation follows the MAS operator pattern.
+
+### Step 1: Deploy the MVI Operator
+
+```
+  MVI OPERATOR DEPLOYMENT
+  =======================
+
+  1. Navigate to OpenShift OperatorHub
+  2. Search for "Maximo Visual Inspection"
+  3. Select the operator
+  4. Choose installation mode:
+     - Namespace: mas-{instance}-visualinspection
+     - Update channel: Match your MAS version
+     - Approval: Automatic or Manual
+
+  5. Wait for operator to reach "Succeeded" state
+     (Typical: 5-10 minutes)
+```
+
+### Step 2: Create the MVI Instance
+
+```
+  MVI INSTANCE CREATION
+  =====================
+
+  apiVersion: visualinspection.ibm.com/v1
+  kind: VisualInspection
+  metadata:
+    name: {instance-name}
+    namespace: mas-{instance}-visualinspection
+  spec:
+    license:
+      accept: true
+    storage:
+      class: {your-rwx-storage-class}
+      size: 500Gi
+    gpu:
+      enabled: true
+      count: 1
+    replicas:
+      core: 2
+      training: 1
+```
+
+### Step 3: Configure GPU Access
+
+This is where most teams hit their first wall.
+
+```
+  GPU CONFIGURATION GOTCHAS
+  =========================
+
+  PROBLEM 1: GPU not detected
+  ────────────────────────────
+  - Check: NVIDIA GPU Operator running?
+  - Check: Node has GPU label? (nvidia.com/gpu)
+  - Check: Device plugin pods healthy?
+  - Check: CUDA version >= 11.8?
+  - Fix: oc describe node {gpu-node} | grep nvidia
+
+  PROBLEM 2: Training pods pending
+  ────────────────────────────────
+  - Check: GPU resource limits in MVI config
+  - Check: Other workloads consuming GPU
+  - Check: ResourceQuota in namespace
+  - Fix: Ensure MVI namespace has GPU access
+  - MAS 9.0+: Check GPU workload assignment
+    (training vs inference designation)
+
+  PROBLEM 3: Out of GPU memory
+  ────────────────────────────
+  - Check: Model architecture vs GPU VRAM
+  - MINIMUM 16 GB per GPU (IBM requirement)
+  - T4: 16 GB VRAM (good for small-medium models)
+  - V100: 32 GB VRAM (good for large models)
+  - A100: 40/80 GB VRAM (enterprise scale)
+  - H100: 80 GB VRAM (MAS 9.0+ only)
+  - Fix: Reduce batch size or use larger GPU
+
+  PROBLEM 4: Kepler GPU not working (MAS 9.0+)
+  ─────────────────────────────────────────────
+  - K80 and other Kepler GPUs are NOT SUPPORTED
+    from MAS 9.0 onward
+  - Fix: Upgrade to Pascal, Volta, Turing,
+    Ampere, Ada Lovelace, or Hopper GPU
+```
+
+### Step 4: Verify the Installation
+
+Do not skip this. Run every check.
+
+```
+  MVI VERIFICATION CHECKLIST
+  ==========================
+
+  [ ] MVI pods running (all green)
+      oc get pods -n mas-{instance}-visualinspection
+
+  [ ] MVI UI accessible via browser
+      https://mvi.{mas-domain}/
+
+  [ ] Login with MAS credentials works
+
+  [ ] Can create a new project
+
+  [ ] Can upload an image (test with one image)
+
+  [ ] Can label an image
+
+  [ ] Can start a training job
+      (use 10-20 images, 2 classes, just to verify
+       GPU training works -- not a real model)
+
+  [ ] Training completes without error
+      (Verify GPU was actually used, not CPU fallback)
+
+  [ ] Can deploy trained model
+
+  [ ] Can run inference (send image, get result)
+
+  [ ] API endpoint responds
+      curl -X POST https://mvi.{domain}/api/v1/infer \
+        -H "X-Auth-Token: {api-key}" \
+        -F "image=@test.jpg"
+
+      NOTE: MVI uses X-Auth-Token header for API
+      authentication. API keys are generated in the
+      MVI UI and do not expire (but can be revoked).
+
+  IF ANY CHECK FAILS: Fix before proceeding.
+  Do not collect 5,000 images and then discover
+  GPU training is broken.
+```
+
+---
+
+## Your First Project: The 30-Minute Quick Start
+
+You have a running MVI instance. Let us create something real in 30 minutes to prove it works end-to-end.
+
+### The Quick Start Recipe
+
+**Goal:** Binary classification model -- "Good Condition" vs "Defective" -- using 20 images per class.
+
+This is NOT a production model. This is a verification exercise.
+
+```
+  30-MINUTE QUICK START
+  =====================
+
+  MINUTE 0-5: Create Project
+  ──────────────────────────
+  1. Log into MVI UI
+  2. Click "Create Project"
+  3. Name: "Quick Start - Verification"
+  4. Type: Classification
+  5. Categories: "Good", "Defective"
+
+  MINUTE 5-15: Upload and Label
+  ─────────────────────────────
+  1. Upload 20 "good condition" images
+  2. Upload 20 "defective" images
+  3. Label each image with correct category
+  (If you do not have real images yet,
+   use any 40 images with 2 clear categories)
+
+  MINUTE 15-20: Train
+  ───────────────────
+  1. Click "Train Model"
+  2. Model type: Classification (GoogLeNet default)
+  3. Start training
+  4. Wait (5-15 min with GPU)
+
+  MINUTE 20-25: Review Results
+  ────────────────────────────
+  1. Check accuracy metrics
+  2. Review confusion matrix
+  3. Note: With only 40 images, accuracy will
+     be modest -- that is expected and fine
+
+  MINUTE 25-30: Test Inference
+  ────────────────────────────
+  1. Deploy model
+  2. Upload a new test image
+  3. Verify model returns a prediction
+  4. Verify confidence score is present
+
+  SUCCESS CRITERIA:
+  - Model trained without GPU errors
+  - Model deployed and accessible
+  - Inference returns prediction + confidence
+  - End-to-end pipeline verified
+```
+
+### What You Just Proved
+
+That 30-minute exercise verified:
+
+- Image upload pipeline works
+- Labeling interface functions
+- GPU training executes (on a supported NVIDIA GPU)
+- GoogLeNet classification model trains successfully
+- Model deployment succeeds
+- Inference API responds with X-Auth-Token authentication
+- Entire pipeline is functional
+
+**Now you can invest time in real data collection and labeling, knowing the infrastructure will not let you down.**
+
+---
+
+## REST API Quick Reference
+
+MVI exposes a REST API for programmatic access using `X-Auth-Token` header authentication. Key endpoints include `/datasets`, `/files`, `/dnn-script`, and `/api/v1/infer`. IBM also provides the `vision-tools` CLI for automation.
+
+> **For the complete API reference** -- every endpoint, query parameter, code example, and automation pattern -- see [Part 11: REST API Reference](/blog/mas-visual-inspection-rest-api-reference).
+
+---
+
+## Common Setup Problems
+
+The most common setup failures involve GPU configuration, storage access modes, and API authentication. If you hit a wall during setup, the detailed diagnosis and fix for every common problem is in [Part 12: Troubleshooting & FAQ](/blog/mas-visual-inspection-troubleshooting-faq).
+
+**Quick checks before escalating:**
+- GPU not detected? Verify NVIDIA GPU Operator is running and node has `nvidia.com/gpu` label.
+- Training on CPU (10-50x slower)? Check CUDA version is 11.8+ and GPU has 16 GB+ VRAM.
+- Upload failing? Verify PVC access mode is ReadWriteMany (not ReadWriteOnce).
+- Kepler GPU error after MAS 9.0? K80 is no longer supported -- upgrade to Pascal or newer.
+
+---
+
+## Key Takeaways
+
+1. **Prerequisites verification prevents weeks of wasted time** -- Run the full checklist (infrastructure, software, GPU, storage) before installing MVI. Verify ReadWriteMany PVC access mode and 75 GB minimum Docker image storage.
+
+2. **The 30-minute quick start proves your pipeline works** -- Before collecting thousands of images, verify the end-to-end flow with 40 test images and GoogLeNet classification. Train, deploy, infer. If any step fails, fix it before investing in data.
+
+3. **GPU configuration is the most common setup failure** -- GPU Operator installation, CUDA version, node labeling, resource quotas, namespace access, and minimum VRAM all must be correct. MAS 9.0 adds GPU workload optimization for separating training and inference.
+
+4. **MAS 9.0 and 9.1 bring meaningful changes** -- New GPU architectures, GigE Vision cameras, Data Lifecycle Manager, facial redaction, GPU workload optimization, and edge diagnostics in 9.0. SSD training deprecated in 9.1. Plan your upgrade path accordingly.
+
+5. **First project can be running within hours of environment provisioning** -- The installation walkthrough takes you from operator deployment through verified inference in a single session.
+
+---
+
+## What Comes Next
+
+Your environment is running. Your pipeline is verified. In Part 5, we get to the real work: collecting the right images, labeling them properly, training your first production-quality model, and understanding the metrics that tell you whether it is ready for the field.
+
+That is where domain expertise starts to matter more than infrastructure.
+
+---
+
+**Previous:** [Part 3 - MVI Deployment & Infrastructure](/blog/mas-visual-inspection-deployment-infrastructure)
+
+**Next:** [Part 5 - Building Your First Inspection Model](/blog/mas-visual-inspection-building-first-model)
+
+**Series:** MAS VISUAL INSPECTION | Part 4 of 12
+
+---
+
+**TheMaximoGuys** | Enterprise Maximo. No fluff. Just results.

@@ -1,0 +1,588 @@
+---
+title: "Analytics and AI in Maximo Monitor: From Statistical Functions to Anomaly Detection"
+description: "Implement built-in analytics, custom Python functions, anomaly detection with Isolation Forest and LSTM, and ML-powered predictive maintenance in Maximo Monitor."
+date: "2026-02-19"
+slug: "mas-monitor-analytics-ai"
+tags: ["Maximo Monitor", "IoT", "AI", "Analytics", "Anomaly Detection", "Machine Learning", "Python", "MAS"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "IoT & Real-Time Analytics Specialists"]
+coverImage: "./images/mas-monitor-05.png"
+
+faqs:
+  - question: "Do I need to be a data scientist to use analytics in Maximo Monitor?"
+    answer: "No. Monitor includes a library of built-in functions for common calculations -- rolling averages, rate of change, standard deviation -- that require zero coding. Custom Python functions are available when you need domain-specific logic, and Watson ML integration handles advanced predictive models."
+  - question: "What anomaly detection methods does Maximo Monitor support?"
+    answer: "Monitor provides built-in statistical threshold detection, Spectral Residual analysis for seasonal data, and Generalized ESD for multiple outliers. For advanced needs, you can deploy custom Python functions using Isolation Forest, LSTM autoencoders, or any scikit-learn or TensorFlow model."
+  - question: "How do I deploy a machine learning model into Maximo Monitor?"
+    answer: "Train your model externally using Watson Studio, scikit-learn, or any ML framework. Deploy it as a Watson Machine Learning endpoint. Then create a custom analytics function in Monitor that calls the WML scoring API, feeding device metrics in and writing predictions back as calculated metrics."
+
+keyTakeaways:
+  - "Start with built-in functions before writing custom code -- they cover 70% of common analytics needs"
+  - "Custom Python functions extend Monitor with domain-specific calculations like OEE and maintenance scoring"
+  - "Anomaly detection should layer statistical methods for quick wins with ML methods for complex patterns"
+  - "Isolation Forest is the best starting algorithm for IoT anomaly detection -- simple, effective, minimal tuning"
+  - "Remaining Useful Life predictions integrate into Monitor as calculated metrics visible on dashboards"
+
+series:
+  name: "MAS MONITOR"
+  part: 5
+  total: 8
+
+tldr: "This post covers the analytics stack in Maximo Monitor: built-in statistical functions, custom Python analytics using the iotfunctions framework, anomaly detection with Isolation Forest and LSTM autoencoders, and ML model integration for predictive maintenance scoring and Remaining Useful Life estimation."
+seoTitle: "Maximo Monitor Analytics & AI - Anomaly Detection, ML Integration | TheMaximoGuys"
+seoDescription: "Implement analytics and AI in IBM Maximo Monitor. Built-in functions, custom Python, anomaly detection, and ML-powered predictive maintenance."
+targetQuestions:
+  - "How do I add analytics to Maximo Monitor?"
+  - "Can Maximo Monitor detect anomalies automatically?"
+  - "How do I integrate machine learning with Maximo Monitor?"
+semanticKeywords:
+  - "Maximo Monitor analytics"
+  - "IoT anomaly detection"
+  - "predictive maintenance ML"
+  - "custom Python analytics"
+  - "Isolation Forest IoT"
+  - "Watson Machine Learning"
+  - "Remaining Useful Life prediction"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Running Monitor environment with device data (Parts 2-3)"
+  - "Basic Python familiarity (for custom functions)"
+  - "Understanding of your equipment's normal operating patterns"
+speakableSections:
+  - "Introduction"
+  - "The Analytics Pipeline"
+  - "Anomaly Detection"
+relatedSlugs:
+  - "mas-monitor-dashboards-visualization"
+  - "mas-monitor-alerts-automation"
+  - "mas-predict-introduction"
+  - "getting-started-maximo-ai"
+---
+
+## You Are Sitting on a Gold Mine of Data You Are Not Mining
+
+Here is what typically happens after a Monitor deployment:
+
+Week 1: "Look at all this data flowing in! Beautiful dashboards!"
+Week 4: "The dashboards are nice. But how do we actually predict failures?"
+Week 8: "We have 3 months of data. We still can't tell which pump is going to fail next."
+
+The gap between data collection and data intelligence is where most IoT initiatives stall. You built the pipeline (Part 3). You built the dashboards (Part 4). Now you need to build the brains.
+
+> *"We had a year of vibration data on every motor in the plant. A year. And when Motor-47 failed, nobody saw it coming. The data showed the degradation pattern for three months. We just weren't looking for it."*
+
+This post teaches you how to look.
+
+---
+
+> **Who this is for:** Reliability engineers building condition monitoring logic, data-inclined maintenance managers who want to go beyond threshold alerts, Maximo administrators implementing analytics functions, and anyone who has sensor data and wants it to predict something.
+
+---
+
+## The Analytics Pipeline
+
+Data flows through Monitor's analytics engine in a clear progression:
+
+```
+Raw Data ──► Ingestion ──► Processing ──► Analytics ──► Insights ──► Action
+                                │
+                     ┌──────────┼──────────┐
+                     │          │          │
+                Built-in    Custom    AI/ML Models
+                Functions   Python
+                     │          │          │
+                     └──────────┼──────────┘
+                                │
+                         ┌──────┼──────┐
+                         │      │      │
+                      Anomaly  Predict  Recommend
+                      Detection  RUL    Action
+```
+
+### Four Types of Analytics
+
+| Type | Question | Example |
+|------|----------|---------|
+| **Descriptive** | What happened? | Average temperature last week was 72 C |
+| **Diagnostic** | Why did it happen? | Temperature correlated with ambient heat + load increase |
+| **Predictive** | What will happen? | Bearing failure probability: 78% within 14 days |
+| **Prescriptive** | What should we do? | Reduce load by 20% and schedule replacement Thursday |
+
+Most teams stop at descriptive. The money is in predictive and prescriptive.
+
+---
+
+## Built-in Analytics Functions
+
+Monitor ships with a library of pre-built functions that cover the most common analytics needs. No Python required. No data science degree needed.
+
+### Statistical Functions
+
+```
+Mean, Median, Std, Variance, Min, Max, Sum, Count
+```
+
+**Configuration example -- hourly temperature average:**
+
+```json
+{
+  "function": "Mean",
+  "input": "temperature",
+  "output": "avg_temperature",
+  "granularity": "hour"
+}
+```
+
+### Rolling Statistics
+
+Smooth out noise to see trends:
+
+```json
+{
+  "function": "RollingMean",
+  "input": "vibration_rms",
+  "output": "rolling_avg_vibration",
+  "windowSize": 10,
+  "windowUnit": "minutes"
+}
+```
+
+A 10-minute rolling average on vibration data filters out transient spikes and reveals the underlying degradation trend. This is the single most useful function for condition monitoring.
+
+### Rate of Change
+
+Detect how quickly a metric is changing -- not just "is it high?" but "is it climbing fast?"
+
+```json
+{
+  "function": "RateOfChange",
+  "input": "temperature",
+  "output": "temp_change_rate",
+  "timeUnit": "minute"
+}
+```
+
+A motor bearing at 70 C is fine. A motor bearing that went from 60 C to 70 C in 5 minutes is a problem. Rate of change catches patterns that static thresholds miss.
+
+### Exponential Smoothing
+
+Gives more weight to recent values. Better than a simple moving average when you care more about "what is happening now" than "what happened 30 minutes ago":
+
+```json
+{
+  "function": "ExponentialSmoothing",
+  "input": "demand",
+  "output": "smoothed_demand",
+  "alpha": 0.3
+}
+```
+
+> **Key insight:** Start with built-in functions. They cover 70% of what you need. Only write custom code when the built-in library does not have what you need. We see too many teams jump straight to Python and LSTM when a rolling average would have solved their problem.
+
+---
+
+## Custom Python Analytics
+
+When the built-in library is not enough, Monitor lets you write custom analytics functions in Python using the `iotfunctions` framework.
+
+### The Pattern
+
+Every custom function follows the same structure:
+
+1. Inherit from `BaseTransformer`
+2. Define inputs and outputs in `__init__`
+3. Implement the logic in `execute(self, df)`
+4. Build a UI definition in `build_ui(cls)`
+
+### Maintenance Urgency Score
+
+A practical example that combines multiple sensor readings into a single actionable score:
+
+```python
+from iotfunctions.base import BaseTransformer
+from iotfunctions import ui
+
+class MaintenanceScore(BaseTransformer):
+    """
+    Calculate maintenance urgency from multiple factors.
+    Score 0-100 where higher = more urgent.
+    """
+
+    def __init__(self, temperature, vibration, run_hours,
+                 output_item='maintenance_score'):
+        super().__init__()
+        self.temperature = temperature
+        self.vibration = vibration
+        self.run_hours = run_hours
+        self.output_item = output_item
+
+        # Thresholds from equipment specs
+        self.temp_limit = 85      # Celsius
+        self.vib_limit = 7.0      # mm/s RMS
+        self.hours_limit = 8000   # Operating hours
+
+    def execute(self, df):
+        temp_score = (df[self.temperature] / self.temp_limit).clip(0, 1)
+        vib_score = (df[self.vibration] / self.vib_limit).clip(0, 1)
+        hours_score = (df[self.run_hours] / self.hours_limit).clip(0, 1)
+
+        # Weighted combination: vibration matters most
+        df[self.output_item] = (
+            temp_score * 0.25 +
+            vib_score * 0.45 +
+            hours_score * 0.30
+        ) * 100
+
+        return df
+
+    @classmethod
+    def build_ui(cls):
+        inputs = [
+            ui.UISingleItem(name='temperature', datatype=float,
+                          description='Temperature metric'),
+            ui.UISingleItem(name='vibration', datatype=float,
+                          description='Vibration RMS metric'),
+            ui.UISingleItem(name='run_hours', datatype=float,
+                          description='Cumulative run hours'),
+        ]
+        outputs = [
+            ui.UIFunctionOutSingle(name='output_item', datatype=float,
+                                  description='Maintenance urgency score 0-100')
+        ]
+        return inputs, outputs
+```
+
+### Registering and Deploying
+
+```python
+from iotfunctions.db import Database
+
+db = Database(credentials=db_credentials)
+
+# Register the function
+db.register_functions([MaintenanceScore])
+
+# Attach to a device type
+db.add_function_to_entity_type(
+    entity_type_name='Motor',
+    function=MaintenanceScore(
+        temperature='bearing_temp',
+        vibration='vibration_rms',
+        run_hours='operating_hours',
+        output_item='maintenance_score'
+    )
+)
+```
+
+Once deployed, `maintenance_score` appears as a calculated metric on every Motor device. You can chart it, alert on it, and display it on summary cards exactly like any raw sensor reading.
+
+### Correlation Analysis
+
+Discover which metrics move together -- critical for root cause analysis:
+
+```python
+class CorrelationAnalysis(BaseTransformer):
+    def __init__(self, metric1, metric2, window_size=100,
+                 output_item='correlation'):
+        super().__init__()
+        self.metric1 = metric1
+        self.metric2 = metric2
+        self.window_size = window_size
+        self.output_item = output_item
+
+    def execute(self, df):
+        df[self.output_item] = df[self.metric1].rolling(
+            window=self.window_size
+        ).corr(df[self.metric2])
+        return df
+```
+
+When bearing temperature and vibration correlation shifts from 0.3 to 0.9, something physical changed. That shift is a diagnostic signal.
+
+---
+
+## Anomaly Detection: Teaching Monitor What "Normal" Looks Like
+
+Threshold alerts catch known problems. Anomaly detection catches **unknown** problems -- the failure modes you have not seen before.
+
+### Three Types of Anomalies
+
+- **Point anomalies** -- A single reading that is wildly out of range (temperature spike to 200 C)
+- **Contextual anomalies** -- A reading that is normal in one context but abnormal in another (70 C is fine under full load, alarming at idle)
+- **Collective anomalies** -- A pattern of readings that are individually normal but collectively indicate a problem (slow, steady vibration increase over 3 weeks)
+
+### Built-in Methods
+
+**Statistical Threshold** -- Flag values beyond N standard deviations:
+
+```json
+{
+  "function": "AnomalyDetection",
+  "method": "statistical",
+  "input": "temperature",
+  "output": "is_anomaly",
+  "threshold": 3,
+  "metric": "stddev"
+}
+```
+
+Simple. Effective. No training required. Start here.
+
+**Spectral Residual** -- Good for data with seasonal or cyclical patterns:
+
+```json
+{
+  "function": "SpectralResidual",
+  "input": "energy_demand",
+  "output": "anomaly_score",
+  "sensitivity": 85
+}
+```
+
+Catches anomalies that static thresholds miss because the threshold should change based on time of day, day of week, or season.
+
+### Isolation Forest: The Best Starting Algorithm
+
+If you need one ML algorithm for IoT anomaly detection, this is it. Isolation Forest works by randomly partitioning data. Anomalies, being rare and different, get isolated faster.
+
+```python
+from sklearn.ensemble import IsolationForest
+
+class IsolationForestAnomaly(BaseTransformer):
+    def __init__(self, features, contamination=0.05,
+                 output_item='is_anomaly'):
+        super().__init__()
+        self.features = features
+        self.contamination = contamination
+        self.output_item = output_item
+        self.model = None
+
+    def execute(self, df):
+        X = df[self.features].dropna()
+
+        if len(X) < 200:
+            df[self.output_item] = 0
+            return df
+
+        self.model = IsolationForest(
+            contamination=self.contamination,
+            random_state=42,
+            n_estimators=200
+        )
+        self.model.fit(X)
+
+        predictions = self.model.predict(X)
+        # -1 = anomaly, 1 = normal -> convert to 1/0
+        df.loc[X.index, self.output_item] = (predictions == -1).astype(int)
+
+        return df
+```
+
+**Why Isolation Forest wins for IoT:**
+- Works with multiple features simultaneously (temperature + vibration + current)
+- Does not require labeled failure data to train
+- Fast enough for near-real-time scoring
+- Handles the non-Gaussian distributions common in sensor data
+- `contamination` parameter gives you direct control over sensitivity
+
+### LSTM Autoencoder: For Complex Temporal Patterns
+
+When you need to detect anomalies in sequences -- not individual readings but patterns that unfold over time:
+
+```python
+import numpy as np
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, RepeatVector, TimeDistributed
+
+class LSTMAnomaly(BaseTransformer):
+    def __init__(self, features, sequence_length=50,
+                 threshold_percentile=95,
+                 output_item='anomaly_score'):
+        super().__init__()
+        self.features = features
+        self.seq_len = sequence_length
+        self.threshold_pct = threshold_percentile
+        self.output_item = output_item
+
+    def _build_model(self, n_features):
+        model = Sequential([
+            LSTM(64, activation='relu',
+                 input_shape=(self.seq_len, n_features),
+                 return_sequences=False),
+            RepeatVector(self.seq_len),
+            LSTM(64, activation='relu', return_sequences=True),
+            TimeDistributed(Dense(n_features))
+        ])
+        model.compile(optimizer='adam', loss='mse')
+        return model
+
+    def execute(self, df):
+        data = df[self.features].values
+
+        if len(data) < self.seq_len * 3:
+            df[self.output_item] = 0
+            return df
+
+        # Create sequences
+        sequences = []
+        for i in range(len(data) - self.seq_len):
+            sequences.append(data[i:i + self.seq_len])
+        X = np.array(sequences)
+
+        # Train autoencoder on all data (assumes mostly normal)
+        model = self._build_model(len(self.features))
+        model.fit(X, X, epochs=30, batch_size=32, verbose=0)
+
+        # Reconstruction error = anomaly score
+        reconstructed = model.predict(X)
+        mse = np.mean(np.power(X - reconstructed, 2), axis=(1, 2))
+
+        threshold = np.percentile(mse, self.threshold_pct)
+        scores = np.zeros(len(df))
+        scores[self.seq_len:] = mse / threshold
+        df[self.output_item] = scores
+
+        return df
+```
+
+> **Key insight:** Layer your anomaly detection. Use statistical thresholds for fast, simple catches. Use Isolation Forest for multivariate pattern detection. Reserve LSTM for assets where temporal patterns are the key diagnostic signal. Not everything needs deep learning.
+
+---
+
+## Machine Learning Integration
+
+### Remaining Useful Life (RUL) Prediction
+
+The holy grail of predictive maintenance: "This bearing has approximately 14 days of useful life remaining."
+
+```python
+from sklearn.ensemble import RandomForestRegressor
+
+class RULPredictor(BaseTransformer):
+    def __init__(self, features, output_item='predicted_rul_days'):
+        super().__init__()
+        self.features = features
+        self.output_item = output_item
+        self.model = None
+
+    def execute(self, df):
+        if self.model is None:
+            training_data = self._load_historical_failures()
+            X = training_data[self.features]
+            y = training_data['days_to_failure']
+            self.model = RandomForestRegressor(
+                n_estimators=200, random_state=42
+            )
+            self.model.fit(X, y)
+
+        X_current = df[self.features]
+        df[self.output_item] = self.model.predict(X_current).clip(lower=0)
+
+        return df
+```
+
+### Watson Machine Learning Integration
+
+For models that need dedicated infrastructure, deploy through Watson ML:
+
+```python
+from ibm_watson_machine_learning import APIClient
+
+class WatsonMLScorer(BaseTransformer):
+    def __init__(self, features, wml_credentials, deployment_id,
+                 output_item='prediction'):
+        super().__init__()
+        self.features = features
+        self.credentials = wml_credentials
+        self.deployment_id = deployment_id
+        self.output_item = output_item
+
+    def execute(self, df):
+        client = APIClient(self.credentials)
+
+        payload = {
+            "input_data": [{
+                "fields": self.features,
+                "values": df[self.features].values.tolist()
+            }]
+        }
+
+        result = client.deployments.score(self.deployment_id, payload)
+        predictions = result['predictions'][0]['values']
+        df[self.output_item] = [p[0] for p in predictions]
+
+        return df
+```
+
+---
+
+## Performance and Scheduling
+
+### Analytics Scheduling Options
+
+| Mode | Use Case | Cost |
+|------|----------|------|
+| Real-time | Safety-critical anomaly detection | Highest compute |
+| Micro-batch (30s-5m) | Operational scoring | Moderate |
+| Scheduled (hourly/daily) | Historical analysis, model retraining | Lowest |
+
+### Code Efficiency
+
+```python
+# GOOD: Vectorized operations (fast)
+df['result'] = df['metric1'] * df['metric2']
+
+# BAD: Row-by-row iteration (100x slower)
+for i in range(len(df)):
+    df.loc[i, 'result'] = df.loc[i, 'metric1'] * df.loc[i, 'metric2']
+```
+
+Always use pandas vectorized operations in custom functions. The difference between vectorized and iterative code can be 100x in execution time.
+
+---
+
+## The 5 Commandments of Monitor Analytics
+
+1. **Start with built-in functions.** Rolling average + rate of change catches 70% of degradation patterns.
+2. **Layer your anomaly detection.** Statistical for speed, Isolation Forest for depth, LSTM only when sequence patterns matter.
+3. **Train on normal, detect abnormal.** You do not need labeled failure data. Teach the system what normal looks like and let it flag everything else.
+4. **Maintenance score > raw metrics.** One number (0-100) that combines temperature, vibration, and run hours is more actionable than three separate charts.
+5. **Retrain models quarterly.** Equipment behavior shifts with seasons, product changes, and aging. Your models need to shift with it.
+
+---
+
+## What Comes Next
+
+Analytics detect patterns. But patterns without action are academic exercises.
+
+In [Part 6: Alerts and Automation](/blog/mas-monitor-alerts-automation), we build the bridge from detection to response:
+- Alert rules for thresholds, anomalies, and patterns
+- Severity classification and prioritization
+- Notification channels -- email, SMS, Teams, Slack, PagerDuty
+- Escalation procedures for unacknowledged alerts
+- Automatic work order creation in Maximo Manage
+
+---
+
+## Series Navigation
+
+| Part | Title |
+|------|-------|
+| 1 | [Introduction to IBM Maximo Monitor](/blog/mas-monitor-introduction) |
+| 2 | [Getting Started with Maximo Monitor](/blog/mas-monitor-getting-started) |
+| 3 | [Data Ingestion and Device Management](/blog/mas-monitor-data-ingestion-devices) |
+| 4 | [Dashboards and Visualization](/blog/mas-monitor-dashboards-visualization) |
+| **5** | **Analytics and AI Integration (You are here)** |
+| 6 | [Alerts and Automation](/blog/mas-monitor-alerts-automation) |
+| 7 | [Integration and APIs](/blog/mas-monitor-integration-apis) |
+| 8 | [Best Practices and Case Studies](/blog/mas-monitor-best-practices) |
+
+---
+
+*Built by practitioners. For practitioners. No fluff.*
+
+**TheMaximoGuys** -- Maximo expertise, delivered different.

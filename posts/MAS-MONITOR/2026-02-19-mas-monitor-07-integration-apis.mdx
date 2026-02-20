@@ -1,0 +1,707 @@
+---
+title: "Integration and APIs in Maximo Monitor: Connecting IoT to Your Enterprise"
+description: "Master Maximo Monitor REST APIs, Python SDK, webhook patterns, and enterprise integration with Manage, data lakes, ERP systems, and custom applications."
+date: "2026-02-19"
+slug: "mas-monitor-integration-apis"
+tags: ["Maximo Monitor", "IoT", "API", "Integration", "REST", "Python SDK", "Webhooks", "MAS"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "IoT & Real-Time Analytics Specialists"]
+coverImage: "./images/mas-monitor-07.png"
+
+faqs:
+  - question: "What APIs does Maximo Monitor expose?"
+    answer: "Monitor provides REST APIs for device management (CRUD), time-series data queries with aggregation, alert management and status updates, and analytics function execution. It also supports MQTT for real-time data streaming and webhooks for event-driven integration with external systems."
+  - question: "How do I authenticate to the Maximo Monitor API?"
+    answer: "Monitor supports API key authentication for service-to-service calls and OAuth 2.0 client credentials flow for enterprise applications. API keys are generated in the Monitor admin console. OAuth tokens are obtained from the MAS identity provider and included as Bearer tokens in request headers."
+  - question: "Can I stream Maximo Monitor data to Kafka or a data lake?"
+    answer: "Yes. Use MQTT subscriptions to consume real-time data streams, or use the REST API for scheduled batch exports. For data lake integration, export to Cloud Object Storage in Parquet format using scheduled jobs or custom Python functions that push data to S3-compatible storage."
+
+keyTakeaways:
+  - "REST APIs handle device management, data queries, and alert operations with standard HTTP methods"
+  - "The Python SDK wraps API calls in a developer-friendly interface for scripting and automation"
+  - "Webhook patterns enable bidirectional integration with Teams, Slack, ServiceNow, and PagerDuty"
+  - "The Maximo Manage integration pattern synchronizes assets and automates work order creation"
+  - "Always implement retry logic with exponential backoff for production API integrations"
+
+series:
+  name: "MAS MONITOR"
+  part: 7
+  total: 8
+
+tldr: "This post covers Maximo Monitor's integration capabilities: REST API reference for devices, data, and alerts; Python SDK usage; OAuth and API key authentication; webhook patterns for Teams, Slack, and PagerDuty; and enterprise integration patterns for Maximo Manage, data lakes, ERP systems, and custom applications."
+seoTitle: "Maximo Monitor APIs & Integration Guide - REST, Python SDK, Webhooks | TheMaximoGuys"
+seoDescription: "Master IBM Maximo Monitor APIs, Python SDK, webhooks, and enterprise integration patterns for Manage, data lakes, and ERP systems."
+targetQuestions:
+  - "How do I use the Maximo Monitor API?"
+  - "How do I integrate Maximo Monitor with other systems?"
+  - "Can I export data from Maximo Monitor programmatically?"
+semanticKeywords:
+  - "Maximo Monitor API"
+  - "IoT integration patterns"
+  - "Maximo Manage integration"
+  - "Python SDK IoT"
+  - "webhook integration"
+  - "REST API IoT"
+  - "data lake export"
+proficiencyLevel: "advanced"
+dependencies:
+  - "Running Monitor environment with data and alerts (Parts 2-6)"
+  - "Familiarity with REST APIs and HTTP methods"
+  - "Python programming ability (for SDK usage)"
+speakableSections:
+  - "Introduction"
+  - "REST API Reference"
+  - "Integration Patterns"
+relatedSlugs:
+  - "mas-monitor-alerts-automation"
+  - "mas-monitor-best-practices"
+  - "mas-monitor-data-ingestion-devices"
+---
+
+## Monitor In Isolation Is an Expensive Dashboard
+
+Here is the uncomfortable truth about standalone IoT platforms: they show you pretty charts. That is it.
+
+You see the temperature spiking. Great. Now what? Open another browser tab. Log into your CMMS. Manually create a work order. Copy the device ID. Look up the asset number. Paste the alert details. Assign a technician.
+
+By the time the work order exists, the bearing already failed.
+
+> *"Our IoT platform generates an alert. Then someone has to log into Maximo and type up a work order by hand. On night shift, that work order gets created the next morning. If it gets created at all."*
+
+The value of Monitor is not in seeing data. It is in connecting data to action through APIs and integrations. This post is about making those connections -- programmatically, reliably, and at scale.
+
+---
+
+> **Who this is for:** Integration architects connecting Monitor to enterprise systems, developers building custom applications on Monitor data, Maximo administrators automating cross-system workflows, and anyone tired of copying data between browser tabs.
+
+---
+
+## Authentication
+
+Before you call any API, you need credentials.
+
+### API Key Authentication
+
+The simpler option for service-to-service calls.
+
+```bash
+# Generate an API key from the Monitor UI:
+# Administration > API Keys > Create
+
+# Use in requests:
+curl -X GET "https://api.monitor.ibm.com/v1/devices" \
+  -H "Authorization: ApiKey YOUR_API_KEY"
+```
+
+### OAuth 2.0 Client Credentials
+
+The enterprise option for applications that need token refresh and fine-grained scoping.
+
+```python
+import requests
+
+def get_oauth_token(client_id, client_secret, token_url):
+    response = requests.post(
+        token_url,
+        data={
+            'grant_type': 'client_credentials',
+            'client_id': client_id,
+            'client_secret': client_secret
+        },
+        headers={'Content-Type': 'application/x-www-form-urlencoded'}
+    )
+
+    if response.status_code == 200:
+        return response.json()['access_token']
+    raise Exception(f"Auth failed: {response.text}")
+
+token = get_oauth_token(CLIENT_ID, CLIENT_SECRET, TOKEN_URL)
+headers = {'Authorization': f'Bearer {token}'}
+```
+
+---
+
+## REST API Reference
+
+### Device Management
+
+**List devices** with filtering and pagination:
+
+```bash
+GET /api/v1/deviceTypes/{deviceType}/devices?limit=100&offset=0&filter=status:online
+```
+
+Response:
+```json
+{
+  "results": [
+    {
+      "deviceId": "TEMP-001",
+      "deviceType": "TemperatureSensor",
+      "status": "online",
+      "lastEventTime": "2026-02-19T14:30:00Z",
+      "metadata": {
+        "location": "Building A",
+        "installDate": "2025-06-01"
+      }
+    }
+  ],
+  "totalCount": 150
+}
+```
+
+**Create a device:**
+
+```bash
+POST /api/v1/deviceTypes/{deviceType}/devices
+
+{
+  "deviceId": "TEMP-002",
+  "authToken": "auto-generate",
+  "deviceInfo": {
+    "serialNumber": "SN12345",
+    "manufacturer": "SensorCorp",
+    "model": "TC-1000",
+    "firmwareVersion": "2.1.0"
+  },
+  "metadata": {
+    "location": "Building B",
+    "floor": "2",
+    "room": "B-201"
+  }
+}
+```
+
+**Update device metadata:**
+
+```bash
+PUT /api/v1/deviceTypes/{deviceType}/devices/{deviceId}
+
+{
+  "metadata": {
+    "lastCalibration": "2026-02-19",
+    "firmwareVersion": "2.2.0"
+  }
+}
+```
+
+### Time-Series Data Queries
+
+**Get historical data with server-side aggregation:**
+
+```bash
+GET /api/v1/deviceTypes/{deviceType}/devices/{deviceId}/events
+  ?start=2026-02-01T00:00:00Z
+  &end=2026-02-19T23:59:59Z
+  &metrics=temperature,humidity
+  &aggregation=avg
+  &granularity=1h
+  &limit=1000
+```
+
+Response:
+```json
+{
+  "data": [
+    {
+      "timestamp": "2026-02-19T14:00:00Z",
+      "temperature": 23.5,
+      "humidity": 45.2
+    }
+  ],
+  "metadata": {
+    "deviceId": "TEMP-001",
+    "count": 456,
+    "aggregation": "avg",
+    "granularity": "1h"
+  }
+}
+```
+
+**Bulk data query** across multiple devices:
+
+```bash
+POST /api/v1/data/query
+
+{
+  "deviceType": "TemperatureSensor",
+  "devices": ["TEMP-001", "TEMP-002", "TEMP-003"],
+  "metrics": ["temperature"],
+  "timeRange": {
+    "start": "2026-02-18T00:00:00Z",
+    "end": "2026-02-19T00:00:00Z"
+  },
+  "aggregation": {
+    "type": "avg",
+    "granularity": "15m"
+  }
+}
+```
+
+### Alert APIs
+
+**Get active alerts:**
+
+```bash
+GET /api/v1/alerts?status=new,acknowledged&severity=critical,high&limit=50
+```
+
+**Acknowledge an alert:**
+
+```bash
+PUT /api/v1/alerts/{alertId}
+
+{
+  "status": "acknowledged",
+  "acknowledgedBy": "operator1",
+  "notes": "Investigating - appears to be sensor drift"
+}
+```
+
+**Resolve with root cause:**
+
+```bash
+PUT /api/v1/alerts/{alertId}/resolve
+
+{
+  "resolvedBy": "technician1",
+  "resolution": "Replaced faulty temperature sensor",
+  "rootCause": "Sensor drift due to age",
+  "preventiveAction": "Added to quarterly calibration schedule"
+}
+```
+
+---
+
+## Python SDK
+
+For scripting, automation, and building integrations in code:
+
+```python
+from iotfunctions.db import Database
+
+class MonitorClient:
+    def __init__(self, credentials):
+        self.db = Database(credentials=credentials)
+
+    def get_device_data(self, device_type, device_id, start, end, metrics):
+        query = f"""
+        SELECT timestamp, {', '.join(metrics)}
+        FROM {device_type}
+        WHERE deviceid = '{device_id}'
+          AND timestamp BETWEEN '{start}' AND '{end}'
+        ORDER BY timestamp
+        """
+        return self.db.read_sql(query)
+
+    def get_latest_values(self, device_type, metrics):
+        query = f"""
+        SELECT deviceid, {', '.join(metrics)}, timestamp
+        FROM {device_type}
+        WHERE timestamp = (
+            SELECT MAX(timestamp) FROM {device_type} t2
+            WHERE t2.deviceid = {device_type}.deviceid
+        )
+        """
+        return self.db.read_sql(query)
+
+# Usage
+client = MonitorClient(credentials={
+    'tenantId': 'your-tenant',
+    'db2': {
+        'host': 'db2-host', 'port': 50000,
+        'database': 'BLUDB',
+        'username': 'user', 'password': 'pass'
+    }
+})
+
+data = client.get_device_data(
+    'TemperatureSensor', 'TEMP-001',
+    '2026-02-01', '2026-02-19',
+    ['temperature', 'humidity']
+)
+```
+
+---
+
+## Enterprise Integration Patterns
+
+### Pattern 1: Maximo Manage -- Asset Sync and Work Orders
+
+The most important integration. Synchronize device status with asset records and automate work order creation.
+
+```python
+import requests
+
+class ManageIntegration:
+    def __init__(self, manage_url, api_key):
+        self.base_url = manage_url
+        self.headers = {
+            'apikey': api_key,
+            'Content-Type': 'application/json'
+        }
+
+    def create_work_order_from_alert(self, alert):
+        priority_map = {
+            'critical': 1, 'high': 2,
+            'medium': 3, 'low': 4
+        }
+
+        wo = {
+            'description': f"IoT Alert: {alert['alertName']}",
+            'description_longdescription': (
+                f"Device: {alert['deviceId']}\n"
+                f"Metric: {alert.get('metric', 'N/A')}\n"
+                f"Value: {alert.get('value', 'N/A')}\n"
+                f"Time: {alert['timestamp']}\n\n"
+                f"{alert.get('message', '')}"
+            ),
+            'assetnum': alert['deviceId'],
+            'siteid': 'BEDFORD',
+            'worktype': 'CM',
+            'wopriority': priority_map.get(alert['severity'], 3),
+            'reportedby': 'MONITOR',
+            'classificationid': 'IOT_ALERT'
+        }
+
+        response = requests.post(
+            f"{self.base_url}/maximo/oslc/os/mxwo",
+            headers=self.headers,
+            json=wo
+        )
+        return response.json()
+
+    def sync_device_as_asset(self, device):
+        asset = self._get_asset(device['deviceId'])
+
+        if asset:
+            return self._update_asset(asset['href'], {
+                'status': 'OPERATING' if device['status'] == 'online'
+                          else 'INACTIVE'
+            })
+        else:
+            return self._create_asset({
+                'assetnum': device['deviceId'],
+                'description': f"IoT Device {device['deviceId']}",
+                'siteid': 'BEDFORD',
+                'status': 'OPERATING'
+            })
+
+    def _get_asset(self, asset_num):
+        r = requests.get(
+            f"{self.base_url}/maximo/oslc/os/mxasset",
+            headers=self.headers,
+            params={'oslc.where': f'assetnum="{asset_num}"'}
+        )
+        results = r.json().get('member', [])
+        return results[0] if results else None
+
+    def _create_asset(self, data):
+        return requests.post(
+            f"{self.base_url}/maximo/oslc/os/mxasset",
+            headers=self.headers, json=data
+        ).json()
+
+    def _update_asset(self, href, data):
+        return requests.post(
+            href,
+            headers={**self.headers, 'x-method-override': 'PATCH'},
+            json=data
+        ).json()
+```
+
+### Pattern 2: Data Lake Export
+
+Push Monitor data to cloud object storage for long-term analytics and ML model training.
+
+```python
+import ibm_boto3
+from ibm_botocore.client import Config
+
+class DataLakeExport:
+    def __init__(self, cos_credentials, monitor_client):
+        self.cos = ibm_boto3.client(
+            's3',
+            ibm_api_key_id=cos_credentials['apikey'],
+            ibm_service_instance_id=cos_credentials['resource_instance_id'],
+            config=Config(signature_version='oauth'),
+            endpoint_url=cos_credentials['endpoint']
+        )
+        self.monitor = monitor_client
+
+    def export_daily(self, device_type, date, bucket):
+        data = self.monitor.get_device_data(
+            device_type=device_type,
+            device_id='*',
+            start=f"{date}T00:00:00Z",
+            end=f"{date}T23:59:59Z",
+            metrics=['*']
+        )
+
+        if data.empty:
+            return None
+
+        parquet_bytes = data.to_parquet()
+        key = f"{device_type}/{date}/data.parquet"
+
+        self.cos.put_object(Bucket=bucket, Key=key, Body=parquet_bytes)
+
+        return {'bucket': bucket, 'key': key, 'records': len(data)}
+```
+
+### Pattern 3: ERP Sync
+
+Push operational metrics to enterprise systems for production reporting and cost allocation.
+
+```python
+class ERPIntegration:
+    def __init__(self, erp_client, monitor_client):
+        self.erp = erp_client
+        self.monitor = monitor_client
+
+    def sync_daily_production(self, line_id, date):
+        data = self.monitor.get_device_data(
+            device_type='ProductionLine',
+            device_id=line_id,
+            start=f"{date}T00:00:00Z",
+            end=f"{date}T23:59:59Z",
+            metrics=['output_count', 'good_count', 'scrap_count',
+                     'runtime_minutes']
+        )
+
+        daily = {
+            'total_output': int(data['output_count'].sum()),
+            'good_output': int(data['good_count'].sum()),
+            'scrap': int(data['scrap_count'].sum()),
+            'runtime_hours': round(data['runtime_minutes'].sum() / 60, 1),
+        }
+
+        return self.erp.post_production_report(
+            production_line=line_id, date=date, metrics=daily
+        )
+```
+
+### Pattern 4: Custom Application Backend
+
+Build your own API layer on top of Monitor data for mobile apps, customer portals, or reporting tools.
+
+```python
+from flask import Flask, jsonify, request
+
+app = Flask(__name__)
+
+@app.route('/api/facility/<facility_id>/status')
+def get_facility_status(facility_id):
+    devices = monitor_client.get_devices_by_location(facility_id)
+
+    status = {
+        'facility_id': facility_id,
+        'total_devices': len(devices),
+        'online': sum(1 for d in devices if d['status'] == 'online'),
+        'offline': sum(1 for d in devices if d['status'] == 'offline'),
+        'active_alerts': get_active_alert_count(facility_id)
+    }
+
+    return jsonify(status)
+
+@app.route('/api/reports/efficiency')
+def efficiency_report():
+    start = request.args.get('start')
+    end = request.args.get('end')
+
+    data = monitor_client.get_device_data(
+        device_type='ProductionLine',
+        device_id='*',
+        start=start, end=end,
+        metrics=['oee', 'energy_per_unit', 'scrap_rate']
+    )
+
+    report = {
+        'period': {'start': start, 'end': end},
+        'avg_oee': round(data['oee'].mean(), 1),
+        'avg_energy_efficiency': round(data['energy_per_unit'].mean(), 2),
+        'avg_scrap_rate': round(data['scrap_rate'].mean(), 2)
+    }
+
+    return jsonify(report)
+```
+
+---
+
+## Webhook Implementation
+
+### Outbound Webhooks
+
+Push alerts to external systems:
+
+```json
+{
+  "webhook": {
+    "name": "Alert to ServiceNow",
+    "url": "https://instance.service-now.com/api/now/table/incident",
+    "method": "POST",
+    "headers": {
+      "Authorization": "Basic ${SERVICENOW_AUTH}",
+      "Content-Type": "application/json"
+    },
+    "trigger": {
+      "type": "alert",
+      "severity": ["critical", "high"]
+    },
+    "payload": {
+      "short_description": "${alertName}",
+      "description": "Device: ${deviceId}\nValue: ${value}",
+      "urgency": "${mapSeverityToUrgency}",
+      "category": "IoT",
+      "assignment_group": "IoT Support"
+    },
+    "retry": {
+      "maxAttempts": 3,
+      "backoffSeconds": [5, 30, 120]
+    }
+  }
+}
+```
+
+### Inbound Webhooks
+
+Receive events from external systems to update Monitor state:
+
+```python
+from flask import Flask, request, jsonify
+import hmac, hashlib
+
+app = Flask(__name__)
+
+@app.route('/webhook/inbound', methods=['POST'])
+def receive_webhook():
+    # Verify signature
+    signature = request.headers.get('X-Webhook-Signature')
+    expected = hmac.new(
+        WEBHOOK_SECRET.encode(), request.data, hashlib.sha256
+    ).hexdigest()
+
+    if not hmac.compare_digest(expected, signature or ''):
+        return jsonify({'error': 'Invalid signature'}), 401
+
+    event = request.json
+
+    if event['type'] == 'maintenance_complete':
+        monitor_client.update_device_metadata(
+            event['deviceType'], event['deviceId'],
+            {'lastMaintenance': event['timestamp'],
+             'technician': event['technician']}
+        )
+    elif event['type'] == 'calibration_update':
+        monitor_client.update_device_metadata(
+            event['deviceType'], event['deviceId'],
+            {'lastCalibration': event['timestamp'],
+             'nextCalibration': event['nextDue']}
+        )
+
+    return jsonify({'status': 'processed'}), 200
+```
+
+---
+
+## Production API Best Practices
+
+### Retry with Exponential Backoff
+
+```python
+import time
+from functools import wraps
+
+def retry_with_backoff(max_retries=3, backoff_factor=2):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    sleep = backoff_factor ** (attempt + 1)
+                    time.sleep(sleep)
+        return wrapper
+    return decorator
+```
+
+### Pagination for Large Result Sets
+
+```python
+def get_all_devices(device_type, page_size=100):
+    all_devices = []
+    offset = 0
+
+    while True:
+        response = api_call(
+            f'/api/v1/deviceTypes/{device_type}/devices',
+            params={'limit': page_size, 'offset': offset}
+        )
+        results = response['results']
+        all_devices.extend(results)
+
+        if len(results) < page_size:
+            break
+        offset += page_size
+
+    return all_devices
+```
+
+### Security Essentials
+
+1. **Store credentials in environment variables or vaults.** Never hardcode API keys.
+2. **Rotate API keys quarterly.** Set calendar reminders.
+3. **Use HTTPS for every call.** No exceptions.
+4. **Log all API usage.** Track who called what and when.
+5. **Implement least privilege.** Each integration gets its own API key with minimal permissions.
+
+---
+
+## The 5 Commandments of Monitor Integration
+
+1. **Automate the handoff.** If a human has to copy data between systems, the integration is not done.
+2. **Retry everything.** Networks fail. Tokens expire. Servers restart. Build resilience into every API call.
+3. **Page all results.** The first deployment has 50 devices. The production deployment has 5,000. Your code must handle both.
+4. **Secure by default.** Encrypted connections, rotated credentials, audited access. No shortcuts.
+5. **Monitor the monitors.** Track API response times, error rates, and integration job success rates. An integration you cannot observe is an integration you cannot trust.
+
+---
+
+## What Comes Next
+
+You have connected Monitor to your enterprise ecosystem. Data flows in from devices, intelligence flows through analytics, alerts flow out to notification channels, and work orders flow into Manage.
+
+In [Part 8: Best Practices and Case Studies](/blog/mas-monitor-best-practices), we bring it all together:
+- Implementation strategies that separate success from shelf-ware
+- Real-world case studies with measured ROI across five industries
+- Common pitfalls and how to avoid them
+- Scaling from pilot to enterprise-wide deployment
+- Future outlook: edge AI, digital twins, and what comes next
+
+---
+
+## Series Navigation
+
+| Part | Title |
+|------|-------|
+| 1 | [Introduction to IBM Maximo Monitor](/blog/mas-monitor-introduction) |
+| 2 | [Getting Started with Maximo Monitor](/blog/mas-monitor-getting-started) |
+| 3 | [Data Ingestion and Device Management](/blog/mas-monitor-data-ingestion-devices) |
+| 4 | [Dashboards and Visualization](/blog/mas-monitor-dashboards-visualization) |
+| 5 | [Analytics and AI Integration](/blog/mas-monitor-analytics-ai) |
+| 6 | [Alerts and Automation](/blog/mas-monitor-alerts-automation) |
+| **7** | **Integration and APIs (You are here)** |
+| 8 | [Best Practices and Case Studies](/blog/mas-monitor-best-practices) |
+
+---
+
+*Built by practitioners. For practitioners. No fluff.*
+
+**TheMaximoGuys** -- Maximo expertise, delivered different.

@@ -1,0 +1,589 @@
+---
+title: "MVI Edge, Drones & Field Deployment: Real-Time AI at the Source"
+description: "Deploy MVI Edge for real-time inference at the camera location. MQTT alert pipelines, edge diagnostics, hardware selection, drone integration patterns, and field deployment strategies."
+date: "2026-02-19"
+slug: "mas-visual-inspection-edge-drones-field"
+tags: ["Maximo Visual Inspection", "MVI Edge", "Edge Computing", "Drone Inspection", "IoT", "MQTT", "NVIDIA Jetson", "Field Deployment", "GigE Vision", "Real-Time AI"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "AI & Visual Inspection Specialists"]
+coverImage: "./images/mas-visual-inspection-08.png"
+
+faqs:
+  - question: "What is MVI Edge and when should I use it?"
+    answer: "MVI Edge deploys trained models to edge computing devices near the image source -- factory floor cameras, drone ground stations, or remote facilities. Use it when latency requirements are under 100ms, network bandwidth is limited, or operations must continue during network outages. MAS 9.0 added GigE Vision camera support, edge diagnostics dashboards, and alert message templates."
+  - question: "Can MVI integrate with drones for automated inspection?"
+    answer: "Yes. Drone-captured imagery feeds into MVI through two patterns: batch upload after flight (simpler) or real-time streaming to MVI Edge at the ground station (faster results). MVI does not control the drone -- it analyzes the imagery the drone captures."
+  - question: "What edge hardware does MVI support?"
+    answer: "NVIDIA Jetson Xavier NX is the IBM-verified edge platform with nvidia-jetpack 4.5.1-b17. Other options include Jetson Nano/Orin Nano for entry-level, Jetson AGX Orin for high-performance, and GPU servers at the edge for enterprise-scale deployments. Each edge device requires separate device-based licensing."
+
+keyTakeaways:
+  - "MVI Edge enables real-time inference at the camera location without cloud dependency"
+  - "MQTT alert pipelines to Monitor provide automated alerting with configurable templates"
+  - "NVIDIA Jetson Xavier NX is the IBM-verified edge platform"
+  - "Drone integration uses batch upload or edge streaming depending on latency needs"
+  - "Edge deployment patterns cover always-connected, occasionally-connected, and air-gapped scenarios"
+
+series:
+  name: "MAS VISUAL INSPECTION"
+  part: 8
+  total: 12
+
+tldr: "MVI Edge runs models on local hardware for real-time and offline processing with MQTT alert integration to Monitor. NVIDIA Jetson Xavier NX is the IBM-verified edge platform. Drone imagery feeds into MVI through batch upload or real-time edge streaming. This guide covers edge architecture, alert pipelines, hardware selection, drone integration, and field deployment patterns."
+seoTitle: "MVI Edge, Drones & Field Deployment: Real-Time AI at the Source | TheMaximoGuys"
+seoDescription: "Deploy MVI Edge for real-time inference. MQTT alert pipelines, edge hardware selection, drone integration patterns, and field deployment strategies."
+targetQuestions:
+  - "What is MVI Edge and what hardware does it need?"
+  - "How do I integrate drones with Maximo Visual Inspection?"
+  - "Can MVI work offline without internet?"
+  - "How does MVI Edge connect to Maximo Monitor?"
+semanticKeywords:
+  - "MVI Edge deployment"
+  - "edge computing visual inspection"
+  - "drone inspection Maximo"
+  - "MQTT alert pipeline MVI"
+  - "NVIDIA Jetson MVI"
+  - "disconnected inspection"
+  - "GigE Vision camera MVI"
+  - "field deployment patterns"
+  - "edge diagnostics MVI"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Trained MVI model ready for deployment (Part 5)"
+  - "Understanding of inference pipelines and confidence thresholds (Part 6)"
+  - "Access to edge hardware or drone equipment"
+speakableSections:
+  - "Introduction"
+  - "MVI Edge"
+  - "Drone Integration"
+  - "Field Deployment Patterns"
+relatedSlugs:
+  - "mas-visual-inspection-mobile-ios"
+  - "mas-visual-inspection-deploying-production"
+  - "mas-visual-inspection-integration-mas"
+  - "mas-monitor-introduction"
+---
+
+> **Who this is for:** IT architects designing edge computing infrastructure, operations teams deploying cameras at remote or disconnected sites, and project managers planning drone-based inspection programs. If your cameras outnumber your inspectors, this is your deployment guide.
+
+**Read Time:** 14-16 minutes
+
+---
+
+## MVI Edge: Real-Time AI at the Source
+
+### When You Need Edge
+
+MVI Mobile is for inspectors with cameras. MVI Edge is for cameras without inspectors.
+
+```
+  MVI EDGE USE CASES
+  ==================
+
+  Fixed Camera Inspection:
+  - Production line quality gate
+  - Facility perimeter monitoring
+  - Asset condition monitoring (hourly/daily capture)
+  - Safety compliance (PPE detection)
+
+  Remote/Disconnected Sites:
+  - Offshore platforms
+  - Remote substations
+  - Mining operations
+  - Pipeline right-of-way
+
+  Latency-Critical:
+  - Production line real-time reject
+  - Moving asset inspection (rail wheels)
+  - Automated sorting
+
+  Bandwidth-Constrained:
+  - Satellite-connected sites
+  - Sites with limited WAN
+  - High-resolution image volume
+
+  GigE Vision Camera Integration (MAS 9.0+):
+  - Basler cameras with Power over Ethernet
+  - Direct camera-to-MVI Edge pipeline
+  - Industrial-grade camera connectivity
+```
+
+### MVI Edge Architecture
+
+```
+  MVI EDGE DEPLOYMENT
+  ====================
+
+  ┌─────────────────────────────────────┐
+  │  EDGE LOCATION                      │
+  │  (Factory Floor / Remote Site)      │
+  │                                     │
+  │  Camera ──> Edge Device ──> Result  │
+  │  (incl.      │                      │
+  │  GigE        │                      │
+  │  Vision)┌────┴────┐                 │
+  │         │  MVI    │                 │
+  │         │  Edge   │                 │
+  │         │  Server │                 │
+  │         │         │                 │
+  │         │ GPU     │                 │
+  │         │ Models  │                 │
+  │         │ Queue   │                 │
+  │         └────┬────┘                 │
+  │              │                      │
+  │         Local Action                │
+  │         (Alert / PLC / Display)     │
+  │              │                      │
+  │         MQTT Alert ──> Monitor      │
+  │         Twilio SMS ──> Operator     │
+  └──────────────┬──────────────────────┘
+                 │
+            When Connected
+                 │
+  ┌──────────────┴──────────────────────┐
+  │  MVI SERVER (Central)               │
+  │  - Model updates pushed to edge     │
+  │  - Results synced for reporting     │
+  │  - Retraining data collected        │
+  │  - Centralized monitoring           │
+  │  - Edge diagnostics dashboard       │
+  │    (MAS 9.0+)                       │
+  └─────────────────────────────────────┘
+```
+
+### MQTT Alert Pipeline (MVI Edge to Monitor)
+
+MAS 9.0 introduced a significantly enhanced alert pipeline from MVI Edge to Maximo Monitor.
+
+```
+  MVI EDGE ALERT PIPELINE
+  ========================
+
+  HOW IT WORKS:
+  ────────────
+  1. MVI Edge detects object/defect in image
+  2. Detection triggers configured alert rule
+  3. MVI Edge sends MQTT alert message
+  4. Message received by Maximo Monitor
+  5. Monitor processes alert per rules
+  6. Actions triggered (WO, notification, escalation)
+
+  AUTO-CONFIGURATION:
+  ──────────────────
+  MVI Edge auto-configures:
+  - Generic device type in Monitor
+  - Device gateway for MQTT communication
+  - No manual Monitor setup for basic alerts
+
+  v2 API INTEGRATION (MAS 9.0+):
+  ──────────────────────────────
+  - MQTT messages sent via v2 APIs
+  - Faster alerting pipeline
+  - Enhanced message payload with image data
+  - Improved reliability and error handling
+
+  ALERT MESSAGE TEMPLATES (MAS 9.0+):
+  ───────────────────────────────────
+  Admins can create MULTIPLE reusable templates
+  defining the structure of:
+  - MQTT messages (to Monitor)
+  - Twilio SMS messages (to operators)
+
+  Each template defines:
+  - Message format and fields
+  - Which detection data to include
+  - Routing information
+  - Severity mapping
+
+  RULE-BASED ALERTS:
+  ─────────────────
+  Users configure rules PER INSPECTION:
+  - Rule 1: "If crack detected" → MQTT critical alert
+  - Rule 2: "If corrosion detected" → MQTT warning
+  - Rule 3: "If PPE missing" → Twilio SMS to supervisor
+
+  Different inspections can use different rules
+  and different templates.
+```
+
+### Edge Device Diagnostics (MAS 9.0+)
+
+```
+  EDGE DIAGNOSTICS DASHBOARD
+  ==========================
+
+  MAS 9.0 introduced centralized monitoring
+  of edge device health:
+
+  Per Device:
+  - Online/offline status
+  - Last communication timestamp
+  - GPU utilization
+  - Storage capacity
+  - Model versions deployed
+  - Inference throughput
+  - Error rate
+
+  Fleet View:
+  - All edge devices on single dashboard
+  - Alert when device goes offline
+  - Alert when storage running low
+  - Model version compliance across fleet
+  - Aggregate inference statistics
+```
+
+### Edge Hardware Options
+
+```
+  EDGE HARDWARE SELECTION
+  =======================
+
+  VERIFIED EDGE DEVICE:
+  ────────────────────
+  NVIDIA Jetson Xavier NX
+  - Verified by IBM with nvidia-jetpack 4.5.1-b17
+  - This is the specifically documented edge device
+  - Other Jetson models work but are not formally
+    listed in IBM documentation
+
+  ENTRY LEVEL: NVIDIA Jetson Nano / Orin Nano
+  ────────────────────────────────────────────
+  GPU: 128/1024 CUDA cores
+  Inference: 5-15 images/second
+  Power: 5-15W
+  Cost: $200-500
+  Use: Low-volume, single camera
+  Form factor: Small, fanless options available
+
+  MID RANGE: NVIDIA Jetson Xavier NX / Orin NX
+  ────────────────────────────────────────────
+  GPU: 384/1024 CUDA cores
+  Inference: 15-30 images/second
+  Power: 10-25W
+  Cost: $400-800
+  Use: Multi-camera, moderate volume
+  Form factor: Small, industrial enclosures available
+  NOTE: Xavier NX is IBM-verified platform
+
+  HIGH PERFORMANCE: NVIDIA Jetson AGX Orin
+  ────────────────────────────────────────
+  GPU: 2048 CUDA cores
+  Inference: 30-60 images/second
+  Power: 15-60W
+  Cost: $1,000-2,000
+  Use: High-volume, real-time production line
+  Form factor: Larger, active cooling
+
+  ENTERPRISE: GPU Server at Edge
+  ──────────────────────────────
+  GPU: NVIDIA T4/A2 in server chassis
+  Inference: 50-200 images/second
+  Power: 200-400W
+  Cost: $5,000-15,000
+  Use: Multi-line factory, site-wide deployment
+  Form factor: Rack-mounted or industrial enclosure
+
+  EDGE LICENSING:
+  ──────────────
+  MVI Edge has SEPARATE device-based licensing.
+  Each edge device requires its own license,
+  independent of MAS AppPoint user licensing.
+
+  DECISION FACTORS:
+  - Images per second required
+  - Number of cameras connected
+  - Environmental conditions (heat, dust, vibration)
+  - Power availability
+  - Physical space constraints
+  - Network connectivity pattern
+  - GigE Vision camera compatibility (MAS 9.0+)
+```
+
+### Edge Deployment Patterns
+
+```
+  PATTERN 1: ALWAYS-CONNECTED EDGE
+  ═════════════════════════════════
+
+  Camera ──> Edge Device ──> Local Inference ──> Result
+                                    │
+                             ┌──────┴──────┐
+                             │             │
+                         Local Action   MQTT to Monitor
+                         (real-time)    (near real-time)
+
+  Use when: Reliable network exists but latency matters
+  Example: Factory floor with plant WiFi
+  Alert path: MQTT messages to Monitor via v2 APIs
+
+  PATTERN 2: OCCASIONALLY-CONNECTED EDGE
+  ══════════════════════════════════════
+
+  Camera ──> Edge Device ──> Local Inference ──> Result
+                                    │
+                                Local Storage
+                                (queue results
+                                 + alerts)
+                                    │
+                             When Connected:
+                                    │
+                             Batch Sync to Cloud
+                             + Queued MQTT alerts
+
+  Use when: Network intermittent
+  Example: Remote substation with satellite uplink
+
+  PATTERN 3: AIR-GAPPED EDGE
+  ══════════════════════════
+
+  Camera ──> Edge Device ──> Local Inference ──> Result
+                                    │
+                         Local Action ONLY
+                         (alert, display, PLC)
+
+  Model updates: Physical media (USB)
+  Result export: Physical media or local system
+
+  Use when: No network connectivity at all
+  Example: Classified facility, deep mine, offshore
+```
+
+---
+
+## Drone Integration: Eyes in the Sky
+
+Drones are the most transformative image source for MVI. They reach what inspectors cannot, cover area that fixed cameras miss, and generate the volume of imagery that makes AI worthwhile.
+
+### Drone Integration Patterns
+
+```
+  PATTERN 1: BATCH UPLOAD (Simplest)
+  ══════════════════════════════════
+
+  Step 1: Drone flies inspection route (automated or manual)
+  Step 2: Landing. SD card removed or WiFi transfer
+  Step 3: Images uploaded to MVI server
+  Step 4: MVI processes batch (minutes to hours)
+  Step 5: Results reviewed by inspector
+  Step 6: Work orders generated for findings
+
+  Timeline: Findings available 1-4 hours after flight
+  Best for: Scheduled inspections (monthly/quarterly)
+  Complexity: Low
+
+  PATTERN 2: EDGE STREAMING (Real-Time)
+  ════════════════════════════════════
+
+  Step 1: Drone streams video to ground station
+  Step 2: MVI Edge at ground station processes frames
+  Step 3: Real-time detection overlay on operator display
+  Step 4: Operator marks critical findings
+  Step 5: Drone can re-inspect flagged areas immediately
+  Step 6: Results synced to MVI server post-flight
+
+  Timeline: Findings available during flight
+  Best for: Critical inspection, search operations
+  Complexity: High
+
+  PATTERN 3: HYBRID (Most Common)
+  ═══════════════════════════════
+
+  Step 1: Drone captures high-resolution stills
+          (triggered at waypoints or interval)
+  Step 2: Lower-res preview streamed to ground station
+  Step 3: MVI Edge runs fast screening on preview
+  Step 4: Flagged areas trigger high-res capture
+  Step 5: Full-resolution batch processed post-flight
+  Step 6: Results merged and reviewed
+
+  Timeline: Critical alerts during flight,
+            full analysis 1-2 hours after
+  Best for: Large-area inspection with critical items
+  Complexity: Medium
+```
+
+### Drone Program Requirements
+
+```
+  DRONE INSPECTION PROGRAM CHECKLIST
+  ===================================
+
+  REGULATORY:
+  [ ] Part 107 (US) or equivalent certification
+  [ ] Airspace authorization for inspection areas
+  [ ] Insurance coverage for drone operations
+  [ ] Flight logging and record-keeping system
+
+  HARDWARE:
+  [ ] Drone: DJI Matrice 300/350 or equivalent
+      - Flight time: 40+ minutes
+      - Camera: 20+ MP, optical zoom
+      - RTK GPS for repeatable waypoints
+      - Wind resistance: 25+ mph
+
+  [ ] Ground Station:
+      - MVI Edge device (Jetson AGX or GPU server)
+      - High-brightness monitor for outdoor use
+      - Reliable power (generator or battery)
+
+  [ ] Storage:
+      - High-speed SD cards (V60+ rating)
+      - Portable SSD for transfers
+      - Cloud storage for long-term archive
+
+  FLIGHT OPERATIONS:
+  [ ] Flight routes defined per asset/site
+  [ ] Waypoints set for consistent capture angles
+  [ ] Altitude optimized for defect resolution
+      (Rule: defect must be 20+ pixels in image)
+  [ ] Overlap between images for full coverage
+  [ ] Weather minimums defined (wind, rain, light)
+
+  MVI INTEGRATION:
+  [ ] Models trained on drone imagery (not ground photos)
+  [ ] Camera settings consistent with training images
+  [ ] Batch upload pipeline tested
+  [ ] Naming convention for image-to-asset mapping
+  [ ] Georeferencing for defect location mapping
+  [ ] Alert rules configured for Edge streaming
+```
+
+### Camera-to-Resolution Math
+
+```
+  DEFECT DETECTABILITY CALCULATOR
+  ================================
+
+  Minimum defect size to detect: 20 pixels
+
+  Camera resolution: 20 MP (5472 x 3648)
+  Sensor FOV at distance:
+
+  Altitude    Ground Width    Pixel Size    Min Defect
+  (meters)    (meters)        (mm/pixel)    Detectable
+  ─────────   ────────────    ──────────    ──────────
+  10          8.5             1.6 mm        32 mm
+  20          17.0            3.1 mm        62 mm
+  30          25.5            4.7 mm        94 mm
+  50          42.5            7.8 mm        156 mm
+  100         85.0            15.5 mm       310 mm
+
+  EXAMPLE: To detect a 50mm crack, you need to fly
+  at 15 meters or lower (with a 20MP camera).
+
+  OPTICAL ZOOM CHANGES THE MATH:
+  30x zoom at 100m altitude = equivalent of 3.3m
+  Detectable defect: ~10mm
+
+  RULE: Test with your actual drone + camera + altitude
+  on known defects before committing to flight plans.
+```
+
+---
+
+## Field Deployment Patterns: What Works
+
+### Pattern: The Morning Sync Model
+
+```
+  MORNING SYNC PATTERN
+  ====================
+  (Best for mobile crews with intermittent connectivity)
+
+  06:00  - Crew arrives at dispatch office
+         - Sync iOS devices: latest Core ML models
+         - Download offline assignments
+
+  06:30  - Deploy to field
+  07:00  - Begin inspections
+  to     - MVI Mobile runs offline on iPhones/iPads
+  15:00  - All results stored locally on device
+         - Camera images + MVI analysis + inspector notes
+
+  15:30  - Return to dispatch office
+         - Auto-sync results to MVI server
+         - Work orders generated from day's findings
+         - Override data captured for retraining
+
+  16:00  - Review flagged findings with supervisor
+         - Confirm/reject MVI detections
+         - Priority work orders escalated
+
+  OVERNIGHT:
+  - MVI server processes any additional analysis
+  - Dashboard updates for management review
+  - Retraining data incorporated weekly
+```
+
+### Pattern: The Continuous Monitoring Model
+
+```
+  CONTINUOUS MONITORING PATTERN
+  =============================
+  (Best for fixed cameras with edge devices)
+
+  SETUP:
+  - Fixed cameras at inspection points
+    (including GigE Vision cameras on MAS 9.0+)
+  - MVI Edge device per camera cluster (1-8 cameras)
+  - Network connection to MVI server (can be intermittent)
+  - MQTT alert rules configured per inspection
+
+  OPERATION:
+  - Camera captures image every N minutes
+    (N = 1 to 60 depending on criticality)
+  - MVI Edge analyzes immediately
+  - Results:
+    - Normal: Log locally, batch sync hourly
+    - Anomaly: MQTT alert to Monitor immediately
+    - Critical: MQTT alert + Twilio SMS to operator
+               + auto-create work order
+
+  EXAMPLE: Cooling Tower Monitoring
+  - 4 cameras (2 GigE Vision + 2 IP cameras)
+  - Image capture every 15 minutes
+  - MVI Edge on Jetson Xavier NX
+  - Detects: Excessive drift, structural damage,
+    fill degradation, fan blade issues
+  - Normal: 384 images/day, all processed locally
+  - Alert threshold: 2-3 MQTT alerts per week average
+  - Human review: Morning dashboard check
+  - Edge diagnostics: Monitored from central dashboard
+```
+
+---
+
+## Key Takeaways
+
+1. **MVI Edge enables fixed-camera and real-time inspection** -- Edge devices process images locally with sub-100ms latency. MQTT alert pipelines to Monitor (enhanced with v2 APIs in MAS 9.0) provide automated alerting with configurable alert templates and rule-based routing.
+
+2. **Offline-first design is mandatory for edge** -- Network failures are when, not if. Edge deployments must function without connectivity, queue results locally, and sync gracefully. Edge devices queue MQTT alerts for delivery when connected.
+
+3. **Drone integration transforms large-area inspection** -- Batch upload for scheduled inspections, edge streaming for real-time critical detection. The camera-to-resolution math determines what defects you can detect at what altitude. Do the math before you fly.
+
+4. **Edge hardware selection matches inference requirements** -- NVIDIA Jetson Xavier NX is the IBM-verified edge platform. Jetson Nano for single-camera low-volume. Jetson AGX Orin for multi-camera real-time. GPU server for enterprise-scale edge. MAS 9.0 adds GigE Vision camera support and edge diagnostics dashboards.
+
+5. **Three edge patterns cover all connectivity scenarios** -- Always-connected for factory floors, occasionally-connected for remote sites, and air-gapped for classified or deep-field operations. Choose based on your network reality.
+
+6. **Each edge device requires separate licensing** -- MVI Edge has device-based licensing independent of MAS AppPoint user licensing. Factor this into your edge deployment budget.
+
+---
+
+## What Comes Next
+
+You have models running everywhere: server, mobile (iOS), edge, drones. In Part 9, we connect everything back to the MAS ecosystem. How inspection findings become work orders in Manage, condition scores in Health, alerts in Monitor (via MQTT), and training data for Predict. The closed loop that makes visual inspection operational.
+
+---
+
+**Previous:** [Part 7 - MVI Mobile: AI-Powered Inspection on iOS](/blog/mas-visual-inspection-mobile-ios)
+
+**Next:** [Part 9 - Integration with MAS Applications](/blog/mas-visual-inspection-integration-mas)
+
+**Series:** MAS VISUAL INSPECTION | Part 8 of 12
+
+---
+
+**TheMaximoGuys** | Enterprise Maximo. No fluff. Just results.

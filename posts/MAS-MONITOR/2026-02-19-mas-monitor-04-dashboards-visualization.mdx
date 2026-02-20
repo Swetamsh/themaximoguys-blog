@@ -1,0 +1,432 @@
+---
+title: "Dashboards and Visualization in Maximo Monitor: Building Views That Drive Decisions"
+description: "Design effective Maximo Monitor dashboards with time-series charts, KPI cards, drill-downs, and role-based views that turn IoT data into operational decisions."
+date: "2026-02-19"
+slug: "mas-monitor-dashboards-visualization"
+tags: ["Maximo Monitor", "IoT", "Dashboards", "Data Visualization", "KPIs", "OEE", "MAS"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "IoT & Real-Time Analytics Specialists"]
+coverImage: "./images/mas-monitor-04.png"
+
+faqs:
+  - question: "How many widgets should a Maximo Monitor dashboard have?"
+    answer: "Keep it to 4-8 widgets per dashboard. Executive dashboards need 4-6 summary cards with one trend chart. Operational dashboards can handle 6-8 widgets including real-time charts and alert tables. If you need more, split into multiple dashboards with drill-down navigation."
+  - question: "Can I create custom KPIs like OEE in Maximo Monitor?"
+    answer: "Yes. Monitor supports both dashboard-level calculated expressions and Python-based analytics functions for complex KPIs. OEE (Availability x Performance x Quality) is a common example that combines multiple device metrics into a single actionable score."
+  - question: "How do I optimize dashboard performance for large device fleets?"
+    answer: "Use server-side aggregation instead of raw data queries. Set appropriate time ranges -- hourly aggregates for weekly views, daily for monthly. Limit concurrent real-time widgets to 3-4 per dashboard. Use progressive loading to show critical widgets first."
+
+keyTakeaways:
+  - "Design dashboards for specific audiences -- executives, operators, and analysts need fundamentally different views"
+  - "Summary cards with color-coded thresholds are the fastest path to situational awareness"
+  - "Time-series charts should use appropriate aggregation intervals to balance detail and performance"
+  - "Drill-down navigation from enterprise to site to asset to metric creates an intuitive exploration path"
+  - "Dashboard performance degrades with raw data queries -- always use server-side aggregation for periods over 1 hour"
+
+series:
+  name: "MAS MONITOR"
+  part: 4
+  total: 8
+
+tldr: "This post covers dashboard design for Maximo Monitor: audience-specific layouts, widget selection and configuration, custom KPI creation including OEE, drill-down navigation patterns, filtering strategies, and performance optimization techniques for large-scale deployments."
+seoTitle: "Maximo Monitor Dashboards - Design, KPIs, Visualization Guide | TheMaximoGuys"
+seoDescription: "Design effective IBM Maximo Monitor dashboards with time-series charts, KPIs, drill-downs, and performance optimization for IoT data visualization."
+targetQuestions:
+  - "How do I build dashboards in Maximo Monitor?"
+  - "Can I create OEE dashboards in Maximo Monitor?"
+  - "How do I optimize Maximo Monitor dashboard performance?"
+semanticKeywords:
+  - "Maximo Monitor dashboards"
+  - "IoT data visualization"
+  - "OEE dashboard"
+  - "KPI monitoring"
+  - "time-series visualization"
+  - "operational dashboard design"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Running Monitor environment with data flowing (Parts 2-3)"
+  - "Understanding of your operational KPIs"
+  - "Knowledge of your audience roles and decision needs"
+speakableSections:
+  - "Introduction"
+  - "Dashboard Types"
+  - "Custom KPI Creation"
+relatedSlugs:
+  - "mas-monitor-data-ingestion-devices"
+  - "mas-monitor-analytics-ai"
+  - "mas-monitor-alerts-automation"
+---
+
+## A Dashboard Nobody Uses Is Worse Than No Dashboard
+
+We walked into a manufacturing plant last year. They had Maximo Monitor deployed. Eighteen dashboards built. Gorgeous layouts. Every widget color-coded.
+
+Nobody looked at them.
+
+The operators had a paper checklist taped to the HMI cabinet. They walked the floor every two hours, wrote down temperatures by hand, and radioed the maintenance shop if something looked wrong.
+
+> *"Those dashboards are for the bosses. They don't show us what we need to see."*
+
+That plant had a dashboard problem, not a data problem. The dashboards were designed by IT for IT. The people who actually needed the information -- the operators making minute-by-minute decisions -- were never asked what they needed.
+
+This post is about building dashboards that people use. Not dashboards that impress in a demo. Dashboards that change behavior.
+
+---
+
+> **Who this is for:** Maximo administrators building operational dashboards, reliability engineers designing KPI views, operations managers defining what their teams need to see, and anyone who has built a dashboard that nobody looked at twice.
+
+---
+
+## Three Audiences, Three Dashboard Types
+
+Before you add a single widget, answer one question: **Who will look at this, and what decision will it help them make?**
+
+### Executive Dashboards
+
+**Audience:** Plant managers, VPs, C-suite.
+**Question they answer:** "Are we on track?"
+**Update frequency:** Daily aggregates or real-time roll-ups.
+
+```
+┌──────────────┬──────────────┬──────────────┬──────────────┐
+│   Uptime     │  Maint Cost  │  OEE         │  Safety      │
+│   98.5%      │  -12% YoY    │  85.2%       │  0 incidents │
+├──────────────┴──────────────┴──────────────┴──────────────┤
+│                                                            │
+│   [Multi-Site Performance Comparison - Bar Chart]          │
+│                                                            │
+├────────────────────────────┬───────────────────────────────┤
+│  [Site Ranking Table]      │  [Risk Indicators]            │
+└────────────────────────────┴───────────────────────────────┘
+```
+
+**Rules for executive dashboards:**
+- 4-6 summary cards maximum
+- One comparison chart (sites, months, product lines)
+- Red/yellow/green -- that is the only color language they need
+- No raw sensor data. Ever.
+
+### Operational Dashboards
+
+**Audience:** Shift supervisors, control room operators.
+**Question they answer:** "Is anything wrong right now?"
+**Update frequency:** Real-time (5-30 second refresh).
+
+```
+┌──────────┬──────────┬──────────┬──────────┬──────────────┐
+│ Active   │ Critical │ Devices  │ OEE      │  Production  │
+│ Alerts:3 │ Assets:2 │ Online:  │ Current: │  Today:      │
+│          │          │ 142/150  │ 87.3%    │  1,234 units │
+├──────────┴──────────┴──────────┴──────────┴──────────────┤
+│                                                           │
+│  [Production Line Temperature Trend - Live]               │
+│                                                           │
+├───────────────────────────┬───────────────────────────────┤
+│  [Temperature Heat Map]   │  [Active Alert Table]         │
+│  by zone                  │  Severity | Device | Time     │
+└───────────────────────────┴───────────────────────────────┘
+```
+
+**Rules for operational dashboards:**
+- Alert count is always visible and always at the top
+- Time-series charts show the last 1-4 hours, not last month
+- Alert table is sorted by severity, not chronologically
+- Refresh rate: 10-30 seconds
+
+### Analytical Dashboards
+
+**Audience:** Reliability engineers, data analysts.
+**Question they answer:** "Why is this happening, and will it get worse?"
+**Update frequency:** On-demand.
+
+**Rules for analytical dashboards:**
+- Flexible time range selection (custom date pickers)
+- Multi-metric overlay capability
+- Drill-down from summary to raw data
+- Export functionality for offline analysis
+
+---
+
+## Widget Selection: The Right Tool for the Right Data
+
+### Summary Cards
+
+The workhorse of executive and operational dashboards. One number. One color. One glance.
+
+```json
+{
+  "widget": "summaryCard",
+  "title": "Average Bearing Temperature",
+  "dataSource": {
+    "deviceType": "VibrationSensor",
+    "metric": "bearing_temp",
+    "aggregation": "avg"
+  },
+  "thresholds": [
+    {"value": 60, "color": "green"},
+    {"value": 75, "color": "yellow"},
+    {"value": 85, "color": "red"}
+  ],
+  "timeRange": "last_1_hour",
+  "showTrend": true
+}
+```
+
+> **Key insight:** The threshold values on your summary cards are the most important numbers in your dashboard. Get them from the equipment manufacturer's specs, not from a guess. Wrong thresholds mean wrong colors mean wrong decisions.
+
+### Time-Series Charts
+
+Show how metrics change over time. The bread and butter of monitoring.
+
+**Line charts** for continuous metrics (temperature, pressure, flow). **Area charts** for cumulative metrics (energy consumption, production count). **Bar charts** for periodic comparisons (daily output, weekly downtime hours).
+
+```json
+{
+  "widget": "timeSeriesChart",
+  "title": "Motor Health Indicators",
+  "dataSource": {
+    "deviceType": "Motor",
+    "metrics": [
+      {"name": "bearing_temp", "axis": "left", "color": "#FF5733"},
+      {"name": "vibration_rms", "axis": "right", "color": "#337DFF"}
+    ]
+  },
+  "timeRange": "last_24_hours",
+  "aggregation": "15m",
+  "showMinMax": true
+}
+```
+
+**Aggregation interval guidelines:**
+
+| Viewing Window | Aggregation | Data Points |
+|---------------|-------------|-------------|
+| Last 1 hour | Raw data | ~720 (at 5s intervals) |
+| Last 24 hours | 15 minutes | 96 |
+| Last 7 days | 1 hour | 168 |
+| Last 30 days | 1 day | 30 |
+| Last 1 year | 1 week | 52 |
+
+### Gauges
+
+Current value against a range. Best for metrics with clear operating bands.
+
+```json
+{
+  "widget": "gauge",
+  "title": "Pump Discharge Pressure",
+  "dataSource": {
+    "deviceType": "PressureSensor",
+    "metric": "pressure_psi"
+  },
+  "ranges": [
+    {"min": 0, "max": 40, "color": "red", "label": "Low"},
+    {"min": 40, "max": 80, "color": "green", "label": "Normal"},
+    {"min": 80, "max": 100, "color": "red", "label": "High"}
+  ],
+  "target": 60
+}
+```
+
+### Tables
+
+Detailed data in sortable, filterable rows. Best for alert lists, device inventories, and detailed metric comparisons.
+
+### Maps
+
+Geographic visualization for distributed assets. Fleet tracking, pipeline monitoring, multi-site operations. Markers colored by status with pop-up detail panels.
+
+### Image Overlays
+
+Your production line diagram with live data hotspots. Your building floor plan with temperature readings at each HVAC zone. This is the widget that makes operators say "now I can see what is happening."
+
+---
+
+## Custom KPI Creation
+
+Raw metrics tell you what. KPIs tell you **so what**.
+
+### Overall Equipment Effectiveness (OEE)
+
+The king of manufacturing KPIs. Three components multiplied together:
+
+```
+OEE = Availability x Performance x Quality
+
+Availability = Run Time / Planned Production Time
+Performance  = Actual Output / Theoretical Output
+Quality      = Good Units / Total Units
+```
+
+Implement it as a custom analytics function:
+
+```python
+from iotfunctions.base import BaseTransformer
+
+class CalculateOEE(BaseTransformer):
+    def __init__(self, planned_time, actual_time, target_output,
+                 actual_output, good_output, output_item='oee'):
+        super().__init__()
+        self.planned_time = planned_time
+        self.actual_time = actual_time
+        self.target_output = target_output
+        self.actual_output = actual_output
+        self.good_output = good_output
+        self.output_item = output_item
+
+    def execute(self, df):
+        availability = df[self.actual_time] / df[self.planned_time]
+        performance = df[self.actual_output] / df[self.target_output]
+        quality = df[self.good_output] / df[self.actual_output]
+
+        df[self.output_item] = (availability * performance * quality * 100)
+        df[self.output_item] = df[self.output_item].clip(0, 100).fillna(0)
+
+        return df
+```
+
+Once this function is registered, `oee` appears as a metric you can chart and display on summary cards just like any raw sensor reading.
+
+### Mean Time Between Failures (MTBF)
+
+```
+MTBF = Total Operating Time / Number of Failures
+```
+
+### Energy Efficiency Ratio
+
+```
+Efficiency = Output Produced / Energy Consumed
+```
+
+---
+
+## Drill-Down Navigation: From Forest to Trees
+
+The most effective dashboard strategies are hierarchical. Users start with the big picture and drill into detail only when something demands attention.
+
+```
+Enterprise Overview
+    └── Site Dashboard (click a site)
+        └── Area Dashboard (click an area)
+            └── Asset Dashboard (click an asset)
+                └── Metric Detail (click a metric)
+```
+
+### Linking Dashboards
+
+Connect widgets so clicking a summary card on the enterprise dashboard opens the site-level dashboard, pre-filtered to the selected site.
+
+1. Select the source widget
+2. Click the **Link** icon
+3. Set destination dashboard
+4. Define which parameter passes (site ID, device type, etc.)
+
+### Global Filters
+
+Apply filters across every widget on a dashboard simultaneously:
+
+- **Time range selector** -- Control the viewing window for all charts
+- **Device type filter** -- Show data for one type across all widgets
+- **Site/location filter** -- Limit all widgets to a specific facility
+
+---
+
+## Performance Optimization
+
+A dashboard that takes 30 seconds to load is a dashboard nobody uses.
+
+### The Performance Killers
+
+1. **Raw data on long time ranges** -- Querying 30 days of 5-second data = 518,400 data points per device per metric. Your browser will choke.
+2. **Too many real-time widgets** -- Each real-time widget opens a separate data stream. Ten real-time widgets means ten concurrent connections.
+3. **Large device fleets without filters** -- "Show me temperature for all 5,000 sensors" is not a dashboard request. It is a denial-of-service attack on your own UI.
+
+### The Performance Rules
+
+1. **Use server-side aggregation** for any time range over 1 hour
+2. **Limit real-time widgets to 3-4** per dashboard (the ones that actually need live updates)
+3. **Apply default filters** -- Start filtered, let users expand
+4. **Use tabbed layouts** for secondary content instead of one mega-dashboard
+5. **Set tiered refresh rates** -- Critical alerts: 10s. Charts: 30s. Summary cards: 60s.
+
+```
+WIDGET TYPE        REFRESH RATE     REASON
+────────────────   ──────────────   ─────────────────────
+Alert count        5-10 seconds     Safety-critical awareness
+Live gauges        10-15 seconds    Operational monitoring
+Time-series        30-60 seconds    Trend, not instantaneous
+Summary cards      60 seconds       Aggregated, less volatile
+Tables             Manual/60s       Reference data
+```
+
+---
+
+## Dashboard Design Principles
+
+### Visual Hierarchy
+
+Most important information goes **top-left**. That is where eyes land first in left-to-right cultures. Put your alert count and critical KPIs there. Never bury them in the bottom-right corner.
+
+### Color Discipline
+
+- **Red** means danger. Only danger. Not "this month was worse than last month."
+- **Yellow/amber** means attention needed soon.
+- **Green** means within normal operating range.
+- **Blue** for informational data with no implied status.
+- Consider color-blind users -- add icons or patterns alongside color coding.
+
+### White Space
+
+A cramped dashboard is an unreadable dashboard. Give widgets breathing room. If you need to squint, you need fewer widgets or bigger screens.
+
+### Mobile Responsiveness
+
+More operators carry tablets than sit at desks. Test your dashboards on tablet-sized screens. Prioritize vertical scrolling over side-by-side layouts for mobile use.
+
+---
+
+## The 5 Commandments of Dashboard Design
+
+1. **One audience per dashboard.** If executives and operators need different information, build two dashboards. Hybrid dashboards serve nobody well.
+2. **Threshold colors must come from engineering specs.** Not from "that looks about right." Wrong thresholds are worse than no thresholds.
+3. **Aggregate before you render.** Server-side aggregation, always. Your browser is not a data warehouse.
+4. **Test with real users before publishing.** Put the dashboard in front of an operator. Watch where their eyes go. Watch what confuses them. Iterate.
+5. **Evolve continuously.** The best production dashboards we have seen went through 3-5 revisions in the first 90 days based on user feedback.
+
+---
+
+## What Comes Next
+
+Your dashboards are displaying clean, well-aggregated, audience-appropriate data. But dashboards are reactive -- they require someone to look at them.
+
+In [Part 5: Analytics and AI Integration](/blog/mas-monitor-analytics-ai), we go beyond visualization into intelligence:
+- Built-in statistical functions for trend detection
+- Custom Python analytics for domain-specific calculations
+- Anomaly detection that learns your equipment's normal behavior
+- Machine learning integration for predictive capabilities
+
+---
+
+## Series Navigation
+
+| Part | Title |
+|------|-------|
+| 1 | [Introduction to IBM Maximo Monitor](/blog/mas-monitor-introduction) |
+| 2 | [Getting Started with Maximo Monitor](/blog/mas-monitor-getting-started) |
+| 3 | [Data Ingestion and Device Management](/blog/mas-monitor-data-ingestion-devices) |
+| **4** | **Dashboards and Visualization (You are here)** |
+| 5 | [Analytics and AI Integration](/blog/mas-monitor-analytics-ai) |
+| 6 | [Alerts and Automation](/blog/mas-monitor-alerts-automation) |
+| 7 | [Integration and APIs](/blog/mas-monitor-integration-apis) |
+| 8 | [Best Practices and Case Studies](/blog/mas-monitor-best-practices) |
+
+---
+
+*Built by practitioners. For practitioners. No fluff.*
+
+**TheMaximoGuys** -- Maximo expertise, delivered different.

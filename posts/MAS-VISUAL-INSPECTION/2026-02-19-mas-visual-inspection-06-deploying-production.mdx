@@ -1,0 +1,692 @@
+---
+title: "Deploying MVI Models to Production: From Lab Accuracy to Field Reliability"
+description: "Get your MVI model out of the lab and into the field. Inference pipelines, confidence threshold tuning, false positive management, A/B testing, and production monitoring."
+date: "2026-02-19"
+slug: "mas-visual-inspection-deploying-production"
+tags: ["Maximo Visual Inspection", "MVI", "Model Deployment", "Inference Pipeline", "Confidence Threshold", "Production AI", "False Positives", "Model Monitoring"]
+draft: false
+tier: "developer"
+author: "The Maximo Guys"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "AI & Visual Inspection Specialists"]
+coverImage: "./images/mas-visual-inspection-06.png"
+
+faqs:
+  - question: "What is a confidence threshold and how do I set it?"
+    answer: "The confidence threshold is the minimum confidence score at which MVI treats a prediction as positive. Default is often 50%. For safety-critical inspections, lower it to 30-40% to catch more defects at the cost of more false alarms. For high-volume screening, raise it to 70-80% to reduce false alarm noise."
+  - question: "How do I reduce false positives in MVI production deployments?"
+    answer: "Three strategies: tune the confidence threshold higher, add false positive examples to training data with correct labels, and implement a two-stage pipeline where a fast model screens and a precise model verifies. Most false positives come from lighting, shadows, or surface conditions the model has not seen."
+  - question: "How do I monitor an MVI model in production?"
+    answer: "Track four metrics continuously: inference latency, prediction distribution shifts, human override rate, and accuracy on sampled predictions. Set alerts when any metric deviates more than 10% from baseline. Schedule formal model reviews quarterly and retrain when performance degrades."
+
+keyTakeaways:
+  - "Lab accuracy and field accuracy differ by 5-15% -- plan for it"
+  - "Confidence threshold tuning is the highest-leverage post-deployment adjustment"
+  - "Shadow mode deployment lets you validate without business risk"
+  - "Human override rate is the best real-world accuracy signal"
+  - "Production monitoring is not optional -- models degrade without retraining"
+
+series:
+  name: "MAS VISUAL INSPECTION"
+  part: 6
+  total: 12
+
+tldr: "Deploying MVI models requires confidence threshold tuning, shadow-mode validation, and continuous monitoring. Lab accuracy drops 5-15% in the field. The deployment checklist, two-stage inference pipeline, and monitoring framework in this guide close that gap and keep models reliable."
+seoTitle: "Deploying MVI Models to Production: Inference Pipelines and Monitoring | TheMaximoGuys"
+seoDescription: "Deploy Maximo Visual Inspection models to production. Confidence thresholds, shadow mode, false positive reduction, and monitoring frameworks."
+targetQuestions:
+  - "How do I deploy an MVI model to production?"
+  - "How do I tune confidence thresholds in MVI?"
+  - "How do I reduce false positives in visual inspection AI?"
+  - "How do I monitor MVI model performance?"
+semanticKeywords:
+  - "MVI model deployment"
+  - "confidence threshold tuning"
+  - "production visual inspection AI"
+  - "inference pipeline design"
+  - "false positive reduction"
+  - "model monitoring MVI"
+  - "shadow mode deployment"
+  - "A/B testing visual inspection"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Trained and validated MVI model meeting production readiness criteria (Part 5)"
+  - "MVI environment with deployment capabilities (Part 4)"
+  - "Understanding of precision/recall trade-offs (Part 2)"
+speakableSections:
+  - "Introduction"
+  - "The Deployment Checklist"
+  - "Confidence Threshold Tuning"
+  - "Production Monitoring"
+relatedSlugs:
+  - "mas-visual-inspection-building-first-model"
+  - "mas-visual-inspection-mobile-ios"
+  - "mas-visual-inspection-edge-drones-field"
+  - "mas-visual-inspection-integration-mas"
+---
+
+> **Who this is for:** Engineers deploying MVI models to real inspection workflows, IT teams managing inference infrastructure, and project leads who need to understand the gap between "model trained" and "model trusted in production." The lab is easy. The field is where it counts.
+
+**Read Time:** 20-22 minutes
+
+---
+
+## The 15-Point Accuracy Drop Nobody Warns You About
+
+Your model scores 96% in testing. You deploy it. Field accuracy: 81%.
+
+You are not the first. You will not be the last. **Every visual inspection model loses accuracy when it moves from lab to field.** The question is whether you planned for it.
+
+A packaging company trained an MVI model to detect seal defects on food containers. Lab performance: 97.3% accuracy. Production line performance, day one: 82.1%. The quality manager pulled the plug.
+
+Six weeks later, after adding production-line images to the training set, tuning the confidence threshold, and implementing a two-stage pipeline:
+
+**Production accuracy: 95.8%. False alarm rate: 2.3%.** The quality manager became the model's biggest advocate.
+
+The difference was not a better algorithm. It was a better deployment strategy.
+
+---
+
+## The Deployment Checklist
+
+Do not deploy without completing every item. This is the checklist the packaging company wished they had on day one.
+
+```
+  MVI PRODUCTION DEPLOYMENT CHECKLIST
+  ====================================
+
+  PRE-DEPLOYMENT
+  ──────────────
+  [ ] Model tested on images from production camera/source
+      (Not lab images. Not stock photos. YOUR images.)
+
+  [ ] Accuracy metrics calculated on held-out test set
+      - Precision per class: ______
+      - Recall per class: ______
+      - F1 per class: ______
+      - mAP (if detection): ______
+
+  [ ] Confidence threshold determined
+      (See tuning section below)
+
+  [ ] Inference latency measured
+      - Average: ______ ms
+      - P99: ______ ms
+      - Acceptable for use case? [ ]
+
+  [ ] Human review workflow defined
+      - Who reviews flagged detections?
+      - What is the review SLA?
+      - How are overrides recorded?
+
+  [ ] Rollback plan documented
+      - How to revert to previous model?
+      - How to disable AI and fall back to manual?
+      - Who has authority to roll back?
+
+  DEPLOYMENT
+  ──────────
+  [ ] Shadow mode enabled (AI runs, no business action)
+  [ ] Shadow mode duration: ______ days/weeks
+  [ ] Human inspector validates shadow results daily
+  [ ] Accuracy tracking dashboard configured
+  [ ] Alerting thresholds set for performance drops
+
+  POST-DEPLOYMENT
+  ───────────────
+  [ ] Shadow mode results reviewed
+  [ ] Go/no-go decision documented
+  [ ] Transition to production mode authorized
+  [ ] Monitoring dashboard live
+  [ ] Retraining schedule established
+  [ ] First retraining data collection started
+```
+
+---
+
+## Shadow Mode: Prove It Before You Trust It
+
+Shadow mode is the single most important deployment concept. It is the difference between a model that earns trust and a model that gets unplugged.
+
+### How Shadow Mode Works
+
+```
+  SHADOW MODE ARCHITECTURE
+  ========================
+
+  Image Captured
+       │
+       ├──> Human Inspector reviews (NORMAL PROCESS)
+       │    Records findings
+       │    Creates work orders
+       │
+       └──> MVI Model analyzes (SHADOW PROCESS)
+            Records predictions
+            NO business action taken
+            NO work orders created
+
+  After N days:
+  ┌──────────────────────────────────┐
+  │ COMPARE:                         │
+  │ Human findings vs MVI findings   │
+  │                                  │
+  │ MVI caught everything human did  │
+  │ + MVI caught 12 more defects     │
+  │ + MVI had 8 false positives      │
+  │                                  │
+  │ DECISION: Deploy to production   │
+  │ with human verification tier     │
+  └──────────────────────────────────┘
+```
+
+### Shadow Mode Duration
+
+```
+  SHADOW MODE TIMELINE
+  ====================
+
+  MINIMUM: 2 weeks
+  - Captures weekday and weekend variation
+  - Enough volume for statistical confidence
+
+  RECOMMENDED: 4 weeks
+  - Captures monthly patterns
+  - Includes maintenance events
+  - Broader condition diversity
+
+  EXTENDED: 8 weeks
+  - For safety-critical applications
+  - Captures seasonal variation (if applicable)
+  - Regulatory compliance evidence
+
+  EXIT CRITERIA:
+  - MVI recall >= human recall
+  - MVI false positive rate < agreed threshold
+  - Stakeholder sign-off on results
+  - Human review process validated
+```
+
+---
+
+## Confidence Threshold Tuning: The Highest-Leverage Lever
+
+When MVI analyzes an image, it returns a confidence score between 0% and 100%. The confidence threshold is where you draw the line between "detection" and "ignore."
+
+### Understanding the Trade-off
+
+```
+  CONFIDENCE THRESHOLD IMPACT
+  ===========================
+
+  THRESHOLD = 30% (Low / Aggressive)
+  ──────────────────────────────────
+  - Catches almost every defect
+  - Many false positives
+  - Human reviewers overwhelmed
+  - Use for: Safety-critical inspection
+
+  THRESHOLD = 50% (Default)
+  ─────────────────────────
+  - Balanced detection and false alarms
+  - Reasonable human review volume
+  - Some misses on ambiguous cases
+  - Use for: General inspection
+
+  THRESHOLD = 80% (High / Conservative)
+  ─────────────────────────────────────
+  - Very few false positives
+  - Misses borderline defects
+  - Low human review burden
+  - Use for: High-volume screening
+
+  THRESHOLD = 95% (Very High)
+  ───────────────────────────
+  - Only high-confidence detections
+  - Many real defects missed
+  - Minimal false alarms
+  - Use for: Automated actions only
+```
+
+### How to Tune: The Precision-Recall Curve Method
+
+```
+  THRESHOLD TUNING PROCESS
+  ========================
+
+  STEP 1: Collect predictions on validation set
+  ─────────────────────────────────────────────
+  Run model on 200+ labeled images.
+  Record: predicted class, confidence score, actual class.
+
+  STEP 2: Calculate metrics at multiple thresholds
+  ────────────────────────────────────────────────
+  Threshold  Precision  Recall   F1     False Pos  Missed
+  ─────────  ─────────  ──────   ────   ─────────  ──────
+  0.30       0.72       0.98     0.83   56         2
+  0.40       0.81       0.96     0.88   38         4
+  0.50       0.88       0.93     0.90   24         7
+  0.60       0.92       0.89     0.90   16         11
+  0.70       0.95       0.84     0.89   10         16
+  0.80       0.97       0.76     0.85   6          24
+  0.90       0.99       0.61     0.76   2          39
+
+  STEP 3: Choose based on your cost of errors
+  ───────────────────────────────────────────
+  If missed defect cost >> false alarm cost:
+    Choose lower threshold (0.40-0.50)
+
+  If false alarm cost >> missed defect cost:
+    Choose higher threshold (0.70-0.80)
+
+  If costs are balanced:
+    Choose maximum F1 score threshold (0.50-0.60)
+
+  STEP 4: Validate on separate test set
+  ─────────────────────────────────────
+  Confirm metrics hold on images NOT used for tuning.
+
+  STEP 5: Document and deploy
+  ──────────────────────────
+  Record chosen threshold, justification, and
+  expected performance metrics.
+```
+
+### Different Thresholds for Different Classes
+
+One threshold does not fit all defect types.
+
+```
+  CLASS-SPECIFIC THRESHOLDS
+  =========================
+
+  Class                 Threshold   Rationale
+  ───────────────────   ─────────   ──────────────────────
+  Severe corrosion      0.35        Safety-critical. Miss
+                                    nothing. Accept alarms.
+
+  Moderate corrosion    0.55        Balance detection and
+                                    review workload.
+
+  Minor surface wear    0.75        Low priority. Only flag
+                                    when highly confident.
+
+  Vegetation contact    0.60        Schedule-driven. Balance
+                                    detection and volume.
+
+  This means your model runs ONCE but applies
+  DIFFERENT decision logic per defect type.
+```
+
+---
+
+## Inference Pipeline Design
+
+The inference pipeline is how images flow from capture to decision.
+
+### Basic Pipeline: Single-Stage
+
+```
+  BASIC INFERENCE PIPELINE
+  ========================
+
+  Image ──> MVI Model ──> Prediction + Confidence
+                              │
+                   ┌──────────┴──────────┐
+                   │                     │
+             Confidence >=           Confidence <
+             Threshold               Threshold
+                   │                     │
+                   v                     v
+           Flag for Review         Pass (No Action)
+                   │
+                   v
+           Human Verifies
+                   │
+            ┌──────┴──────┐
+            │             │
+         Confirmed      Rejected
+            │          (False Pos)
+            v             │
+       Create WO      Log as FP
+       or Alert        (retrain)
+```
+
+### Advanced Pipeline: Two-Stage
+
+For high-volume environments where false positives are expensive.
+
+```
+  TWO-STAGE INFERENCE PIPELINE
+  ============================
+
+  STAGE 1: SCREENING (Fast, Aggressive)
+  ──────────────────────────────────────
+  Image ──> Fast Model (Classification)
+            Threshold: 0.30 (catch everything)
+                 │
+          ┌──────┴──────┐
+          │             │
+       "Possible       "Clear"
+        Defect"           │
+          │               v
+          │           No Action
+          v           (95% of images
+                       eliminated here)
+
+  STAGE 2: VERIFICATION (Precise)
+  ───────────────────────────────
+  "Possible Defect" ──> Detailed Model (Detection)
+                        Threshold: 0.70 (high precision)
+                             │
+                      ┌──────┴──────┐
+                      │             │
+                   Confirmed      Below
+                   Defect         Threshold
+                      │              │
+                      v              v
+                 Human Review    Archive
+                 + Work Order    (review
+                                  weekly)
+
+  ADVANTAGE:
+  - Stage 1 processes ALL images fast (CPU OK)
+  - Stage 2 processes only 5% of images precisely
+  - False positive rate drops 80%+ vs single stage
+  - Human review volume manageable
+```
+
+### Inference Performance Targets
+
+```
+  INFERENCE LATENCY TARGETS
+  =========================
+
+  Use Case                    Target Latency    Hardware
+  ────────────────────────    ──────────────    ────────
+  Real-time production line   < 100ms           GPU
+  Batch inspection review     < 500ms           GPU/CPU
+  Drone image processing      < 2 seconds       GPU
+  Mobile field inspection     < 3 seconds       Edge GPU
+  Overnight batch analysis    N/A (throughput)   CPU OK
+
+  THROUGHPUT TARGETS:
+  - GPU (V100): 20-50 images/second
+  - GPU (T4): 10-25 images/second
+  - CPU: 1-5 images/second
+  - Edge (Jetson): 5-15 images/second
+```
+
+---
+
+## Handling Edge Cases
+
+Edge cases are predictions the model gets wrong in ways that matter. They appear after deployment, never during testing.
+
+### The Top 5 Edge Cases and Fixes
+
+```
+  EDGE CASE 1: Shadow Misclassification
+  ──────────────────────────────────────
+  Problem: Shadows on metal surfaces flagged as cracks.
+  Frequency: 15-25% of false positives.
+  Fix: Add 100+ shadow images labeled "no defect."
+  Prevention: Capture training data at different times of day.
+
+  EDGE CASE 2: Water/Moisture Confusion
+  ─────────────────────────────────────
+  Problem: Water droplets or condensation flagged as defects.
+  Frequency: Common in outdoor and cold environments.
+  Fix: Add wet/condensation images to training set.
+  Prevention: Include weather-varied images in initial collection.
+
+  EDGE CASE 3: Camera Angle Sensitivity
+  ─────────────────────────────────────
+  Problem: Model works at 45 degrees but fails at 60 degrees.
+  Frequency: Common with fixed camera deployments after adjustment.
+  Fix: Augment with rotated/perspective-shifted images.
+  Prevention: Train with images from the full range of expected angles.
+
+  EDGE CASE 4: Background Change
+  ──────────────────────────────
+  Problem: New equipment installed behind inspection point
+  changes background. Model accuracy drops.
+  Frequency: Occurs with any environmental change.
+  Fix: Retrain with images showing new background.
+  Prevention: Include varied backgrounds in training data.
+
+  EDGE CASE 5: Progressive Defect States
+  ──────────────────────────────────────
+  Problem: Model trained on "good" and "severe" but a defect
+  is currently "moderate." Model oscillates between predictions.
+  Frequency: Common with binary classifiers on continuous conditions.
+  Fix: Add intermediate classes (Grade 1, 2, 3, 4, 5).
+  Prevention: Model the full condition spectrum from the start.
+```
+
+---
+
+## Production Monitoring Framework
+
+A deployed model without monitoring is a ticking time bomb. Models degrade. Cameras shift. Conditions change. You need to know before your inspectors tell you.
+
+### The Four Monitoring Pillars
+
+```
+  PILLAR 1: INFERENCE HEALTH
+  ──────────────────────────
+  Metrics:
+  - Inference latency (avg, P95, P99)
+  - Throughput (images/second)
+  - Error rate (failed inferences)
+  - Queue depth (if batched)
+
+  Alerts:
+  - Latency > 2x baseline
+  - Error rate > 1%
+  - Queue depth growing
+
+  PILLAR 2: PREDICTION DISTRIBUTION
+  ─────────────────────────────────
+  Metrics:
+  - Prediction class distribution (% per class)
+  - Average confidence score per class
+  - Confidence score distribution
+
+  Alerts:
+  - Class distribution shifts > 15% from baseline
+  - Average confidence drops > 10%
+  - Spike in low-confidence predictions
+
+  WHY: If the model suddenly predicts 80% defective
+  when baseline is 5%, something changed. Camera
+  problem? Lighting change? Actual defect surge?
+
+  PILLAR 3: HUMAN OVERRIDE RATE
+  ─────────────────────────────
+  Metrics:
+  - % of predictions overridden by humans
+  - Override direction (FP corrections vs FN catches)
+  - Override rate by class
+  - Override rate by confidence band
+
+  Alerts:
+  - Override rate > 15% (overall)
+  - Override rate > 25% (any single class)
+
+  THIS IS YOUR BEST REAL-WORLD ACCURACY METRIC.
+  If humans override 20% of predictions, your
+  real-world accuracy is approximately 80%.
+
+  PILLAR 4: BUSINESS IMPACT
+  ─────────────────────────
+  Metrics:
+  - Work orders created from MVI detections
+  - Defects caught by MVI that humans missed
+  - False alarm investigation time
+  - Inspection throughput improvement
+
+  Alerts:
+  - Work order creation rate outside expected range
+  - Investigation time per false alarm increasing
+```
+
+### Monitoring Dashboard Template
+
+```
+  MVI PRODUCTION DASHBOARD
+  ========================
+
+  REAL-TIME PANEL
+  ┌──────────────────────────────────────┐
+  │ Last 24 Hours                        │
+  │ Images processed:  2,847             │
+  │ Detections:        142               │
+  │ Detection rate:    5.0%              │
+  │ Avg confidence:    78.3%             │
+  │ Human overrides:   11 (7.7%)         │
+  │ Inference latency: 127ms (avg)       │
+  └──────────────────────────────────────┘
+
+  TREND PANEL (30-Day)
+  ┌──────────────────────────────────────┐
+  │ Detection Rate   [GRAPH]  Stable     │
+  │ Override Rate    [GRAPH]  Declining   │
+  │ Confidence       [GRAPH]  Stable     │
+  │ Latency          [GRAPH]  Stable     │
+  └──────────────────────────────────────┘
+
+  ALERT PANEL
+  ┌──────────────────────────────────────┐
+  │ Active Alerts: 0                     │
+  │ Last Alert: 12 days ago              │
+  │ "Confidence drop in corrosion class" │
+  │ Resolution: Retrained with new data  │
+  └──────────────────────────────────────┘
+```
+
+---
+
+## Model Export Formats
+
+Before versioning and rollback, understand what formats MVI can export your models in. This determines where your model can run.
+
+```
+  MVI MODEL EXPORT FORMATS
+  ========================
+
+  FORMAT 1: TensorRT
+  ──────────────────
+  Optimized for NVIDIA GPU inference.
+  Supported models:
+  - GoogLeNet (Classification)
+  - Faster R-CNN
+  - YOLO v3
+  - Tiny YOLO v3
+  - SSD
+
+  NOT supported:
+  - Detectron2
+  - High Resolution
+  - SSN (Action Detection)
+  - Anomaly Optimized
+
+  Use for: Server and edge GPU deployment
+  (fastest inference on NVIDIA hardware)
+
+  FORMAT 2: Core ML
+  ─────────────────
+  Optimized for Apple Neural Engine.
+  Supported models (ONLY THREE):
+  - GoogLeNet (Classification)
+  - YOLO v3
+  - Tiny YOLO v3
+
+  That is it. No other MVI model types
+  export to Core ML.
+
+  Use for: MVI Mobile on iOS/iPadOS
+  (on-device inference without network)
+
+  FORMAT 3: Edge Deployment
+  ─────────────────────────
+  Standard deployment to MVI Edge devices.
+  Supported: Most model types
+
+  Use for: MVI Edge on Jetson and edge servers
+```
+
+> **Key insight:** If you plan to deploy on MVI Mobile (iOS only), you MUST use GoogLeNet, YOLO v3, or Tiny YOLO v3. No other architecture exports to Core ML. This is a critical constraint to know BEFORE you start training -- not after you have invested weeks building a Faster R-CNN model you cannot deploy to mobile.
+
+---
+
+## Model Versioning and Rollback
+
+Treat models like software releases.
+
+```
+  MODEL VERSION MANAGEMENT
+  ========================
+
+  Naming Convention:
+  {project}-{defect-type}-v{major}.{minor}
+
+  Example:
+  heatexchanger-corrosion-v2.3
+
+  Version History:
+  v1.0  Initial model (500 images, 87% F1)
+  v1.1  Added shadow images (500+100, 89% F1)
+  v2.0  Rebalanced classes (800 total, 92% F1)
+  v2.1  Added winter images (900 total, 91% F1)
+  v2.2  Threshold tuned (same model, better ops)
+  v2.3  Edge case fixes (1,100 total, 94% F1)
+
+  ROLLBACK PROCEDURE:
+  1. Detect performance degradation
+  2. Confirm via monitoring dashboard
+  3. Switch inference to previous version
+     (MVI supports multiple deployed versions)
+  4. Investigate root cause
+  5. Fix and retrain
+  6. Deploy new version through shadow mode
+
+  KEEP LAST 3 VERSIONS DEPLOYED AND READY.
+  Rollback should take minutes, not hours.
+```
+
+---
+
+## Key Takeaways
+
+1. **Expect 5-15% accuracy drop from lab to field** -- Every model loses accuracy in production due to lighting, angles, and conditions not in training data. Plan for it with shadow mode and iterative field data collection.
+
+2. **Shadow mode is non-negotiable** -- Run your model alongside human inspectors for 2-4 weeks minimum. Compare results. Build trust with data, not promises. Never deploy directly to production actions.
+
+3. **Confidence threshold tuning is your highest-leverage adjustment** -- Different thresholds for different defect severities. Safety-critical defects get low thresholds (catch everything). Low-priority wear gets high thresholds (minimize noise).
+
+4. **Two-stage pipelines cut false positives by 80%** -- Fast screening model eliminates 95% of images. Precise verification model analyzes only flagged candidates. Humans review only confirmed detections. Scalable and trustworthy.
+
+5. **Human override rate is your real-world accuracy metric** -- If inspectors override 15% of predictions, your production accuracy is 85%. Track this daily. Alert when it climbs. It is the metric that matters.
+
+6. **Monitor four pillars continuously** -- Inference health, prediction distribution, human override rate, and business impact. A model without monitoring degrades silently until someone gets hurt or a defect gets missed.
+
+7. **Version your models like software** -- Named versions, documented changes, rollback capability. Keep three versions ready. Rollback should take minutes. Treat model deployment with the same rigor as code deployment.
+
+---
+
+## What Comes Next
+
+Your model is in production on the server. In Part 7, we take it to the field. MVI Mobile for inspectors on iOS/iPadOS, with Core ML on-device inference. Then Part 8 covers MVI Edge for disconnected environments, drone integration, and field deployment patterns when WiFi does not reach.
+
+---
+
+**Previous:** [Part 5 - Building Your First Inspection Model](/blog/mas-visual-inspection-building-first-model)
+
+**Next:** [Part 7 - MVI Mobile: AI-Powered Inspection on iOS](/blog/mas-visual-inspection-mobile-ios)
+
+**Series:** MAS VISUAL INSPECTION | Part 6 of 12
+
+---
+
+**TheMaximoGuys** | Enterprise Maximo. No fluff. Just results.
