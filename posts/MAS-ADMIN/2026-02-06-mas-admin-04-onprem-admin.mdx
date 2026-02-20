@@ -1,6 +1,6 @@
 ---
 title: "How the SysAdmin Role Changes in MAS On-Prem"
-description: "The MAS on-prem sysadmin role retains more technical depth than SaaS, but the daily reality is dramatically different. From WebSphere and DB triggers to OpenShift operators, pod health, and certificate management -- here's what the new job actually looks like."
+description: "The MAS on-prem sysadmin role retains more technical depth than SaaS, but the daily reality is dramatically different. From WebSphere and DB triggers to OpenShift operators, pod health, certificate management, and multi-environment architecture across dev, test, UAT, and production -- here's what the new job actually looks like."
 date: "2026-02-06"
 slug: "sysadmin-role-mas-onprem"
 tags: ["MAS Admin", "On-Prem", "OpenShift", "Kubernetes", "SysAdmin", "Operators", "Certificate Management", "Platform Engineering"]
@@ -28,6 +28,8 @@ keyTakeaways:
   - "The shared responsibility model means MAS admins must collaborate with DBA, security, network, and platform teams"
   - "Legacy skills like custom MBOs, EAR deployments, and DB triggers are no longer part of the admin workflow"
   - "The modern MAS on-prem admin role resembles an SRE or platform engineer more than a traditional sysadmin"
+  - "Multi-environment architecture (dev/test/UAT/prod) requires careful namespace isolation, resource quotas, and promotion workflows"
+  - "Four topology patterns exist — from single-cluster multi-instance (lowest cost) to hub-spoke GitOps (enterprise scale)"
 
 series:
   name: "MAS ADMIN"
@@ -54,6 +56,11 @@ semanticKeywords:
   - "MAS shared responsibility model"
   - "OpenShift cluster administration"
   - "SRE Maximo admin"
+  - "MAS multi-environment architecture"
+  - "dev test UAT production MAS"
+  - "MAS namespace isolation"
+  - "GitOps MAS deployment"
+  - "MAS environment promotion"
 proficiencyLevel: "advanced"
 dependencies:
   - "Understanding of MAS architecture and admin responsibilities (Part 2)"
@@ -617,22 +624,283 @@ This is not a demotion. It is an evolution. The modern MAS admin needs broader s
 
 ---
 
-## Checklist: Are You Ready for MAS On-Prem Administration?
+## Multi-Environment Architecture: Distributing Dev, Test, UAT, and Production
 
-Use this self-assessment to gauge your readiness:
+One of the most critical design decisions for MAS on-prem is how to distribute your environments — development, test, UAT, gold (pre-production), and production — across your OpenShift infrastructure. This section covers the topology patterns, namespace architecture, sizing, and promotion workflows that make multi-environment MAS work.
 
-- [ ] I can navigate the OpenShift web console and use the `oc` CLI
-- [ ] I understand pods, deployments, services, and routes
-- [ ] I can read and write basic YAML for Kubernetes resources
-- [ ] I understand how operators and Custom Resources work
-- [ ] I can check certificate expiration and understand TLS trust chains
-- [ ] I know what storage classes, PVCs, and PVs are
-- [ ] I can read pod logs and events to troubleshoot issues
-- [ ] I understand the difference between stateful and stateless workloads
-- [ ] I know how to back up and restore etcd, MongoDB, and application CRs
-- [ ] I can communicate effectively with platform, DBA, security, and network teams
+### Why Multiple Environments Matter
 
-If you checked fewer than 5, start with the learning path in Part 5 of this series. If you checked 5 to 8, you are in good shape but need targeted skill-building. If you checked all 10, you are ready to operate.
+In legacy Maximo, environments were often separate servers — a dev database and app server, a test pair, and production. Spinning up a new environment meant provisioning new VMs and running through a multi-day installation.
+
+In MAS on OpenShift, each environment is a **MAS instance** identified by a unique `mas_instance_id` (lowercase alphanumeric, 3-12 characters, starting with a letter). Examples: `dev01`, `test`, `uat`, `gold`, `prod`. Each instance gets its own set of namespaces, databases, and configuration — but can share infrastructure like operators, MongoDB, and licensing.
+
+> **Critical constraint:** The instance ID is **immutable** after installation. It cannot be changed without a complete reinstallation. Choose your naming convention carefully before deploying.
+
+### Four Topology Patterns for Environment Distribution
+
+Organizations deploying MAS choose from four patterns based on their isolation requirements, budget, and operational maturity:
+
+#### Pattern 1: Single Cluster, Multiple Instances
+
+All environments run on one OpenShift cluster as separate MAS instances.
+
+| Aspect | Detail |
+|--------|--------|
+| **Architecture** | One cluster with `dev01`, `test`, `uat`, `prod` as separate MAS instances |
+| **Namespace isolation** | Each instance gets `mas-dev01-core`, `mas-test-core`, `mas-prod-core`, etc. |
+| **Shared infrastructure** | MongoDB, SLS licensing, cert-manager, operator catalog |
+| **Per-instance infrastructure** | Separate DB2 databases, separate Kafka clusters per instance |
+| **Version constraint** | All instances must be within 1 minor version of each other |
+| **Best for** | Small organizations, PoCs, cost-constrained deployments |
+
+**Pros:** Lowest cost (shared control plane, operators, MongoDB). Simpler operations. Shared AppPoints licensing pool.
+
+**Cons:** Noisy neighbor risk — non-prod workloads can impact production. Single blast radius at the cluster level. Operator upgrades affect all instances simultaneously.
+
+#### Pattern 2: Two-Cluster Split (Non-Prod / Production)
+
+Non-production environments share one cluster; production runs on its own dedicated cluster.
+
+| Aspect | Detail |
+|--------|--------|
+| **Non-prod cluster** | Hosts `dev01`, `test`, `uat` instances on smaller nodes |
+| **Production cluster** | Hosts `prod` instance with full HA and dedicated resources |
+| **Isolation** | Production is completely isolated from non-prod workloads |
+| **Upgrade testing** | Test operator upgrades on non-prod cluster before production |
+| **Best for** | Mid-size organizations, regulatory environments, most enterprise deployments |
+
+**Pros:** Production isolation. Independent upgrade paths. Can right-size non-prod cluster (smaller nodes, fewer replicas). Separate blast radius.
+
+**Cons:** Two clusters to manage. Configuration drift risk between clusters. Need automation to keep environments consistent.
+
+> **This is the most common pattern** we see in enterprise MAS deployments. It balances cost with the safety of production isolation.
+
+#### Pattern 3: Per-Tier Multi-Cluster
+
+Each environment tier gets its own dedicated OpenShift cluster.
+
+| Environment | Cluster Type | Nodes | HA Level |
+|------------|-------------|-------|----------|
+| **Development** | Single Node OpenShift (SNO) | 1 (16 vCPU / 64 GB) | None |
+| **Test** | Minimal multi-node | 3 masters + 3 workers (8 vCPU each) | Basic |
+| **UAT** | Production-like | 3 masters + 4-5 workers (16 vCPU each) | Full |
+| **Production** | Full HA | 3 masters + 6+ workers (16 vCPU each) | Full + DR |
+
+**Pros:** Maximum isolation. Independent scaling, upgrades, and maintenance windows per tier. No version coupling between environments.
+
+**Cons:** Highest infrastructure cost. Most complex operations. Requires strong automation (GitOps/Ansible) to maintain consistency.
+
+**Best for:** Large enterprises, heavily regulated industries, organizations with strict change management requirements.
+
+#### Pattern 4: Hub-Spoke with GitOps (IBM Recommended for Enterprise)
+
+A central management cluster runs Red Hat Advanced Cluster Management (RHACM) and ArgoCD to orchestrate deployments across spoke clusters.
+
+| Component | Role |
+|-----------|------|
+| **Management Hub** | Runs RHACM + ArgoCD. Does not run MAS workloads. |
+| **Config Repository (Git)** | Single source of truth for all cluster and instance configurations |
+| **Spoke clusters** | Each runs one or more MAS instances, managed by ArgoCD applications |
+| **Sync mechanism** | ArgoCD polls the Config Repository every 3 minutes, self-heals drift |
+
+**GitOps Config Repository structure:**
+
+```
+config-repo/
+├── account-1/
+│   ├── dev-cluster/
+│   │   ├── ibm-mas-cluster-base.yaml
+│   │   ├── ibm-operator-catalog.yaml
+│   │   └── dev01/
+│   │       ├── ibm-mas-instance-base.yaml
+│   │       └── ibm-mas-suite.yaml
+│   ├── test-cluster/
+│   │   └── test/
+│   │       └── ...
+│   └── prod-cluster/
+│       └── prod/
+│           └── ...
+```
+
+**Pros:** Centralized visibility across all environments. Git as the source of truth with full audit trail. Automated deployment with sync waves and health checks. Scalable to many clusters.
+
+**Cons:** Additional management cluster cost. RHACM licensing. Most complex initial setup. Requires GitOps expertise.
+
+### Namespace Architecture for Multi-Environment
+
+When you run multiple MAS instances on a single cluster, the namespace layout looks like this:
+
+**Shared namespaces** (cluster-wide, used by all instances):
+
+| Namespace | Purpose |
+|-----------|---------|
+| `openshift-marketplace` | IBM Operator Catalog |
+| `ibm-common-services` | IBM Common Services, IAM, cert-manager |
+| `ibm-sls` | Suite License Service (shared AppPoints pool) |
+| `mongoce` | MongoDB Community (shared cluster, per-instance databases) |
+
+**Per-instance namespaces** (repeated for each environment):
+
+| Dev Instance | Test Instance | UAT Instance | Prod Instance |
+|-------------|--------------|-------------|---------------|
+| `mas-dev01-core` | `mas-test-core` | `mas-uat-core` | `mas-prod-core` |
+| `mas-dev01-manage` | `mas-test-manage` | `mas-uat-manage` | `mas-prod-manage` |
+| `mas-dev01-pipelines` | `mas-test-pipelines` | `mas-uat-pipelines` | `mas-prod-pipelines` |
+
+```bash
+# List all namespaces for a specific instance
+oc get namespaces | grep "mas-dev01"
+
+# Compare pod counts across environments
+echo "Dev:  $(oc get pods -n mas-dev01-core --no-headers 2>/dev/null | wc -l) pods"
+echo "Test: $(oc get pods -n mas-test-core --no-headers 2>/dev/null | wc -l) pods"
+echo "Prod: $(oc get pods -n mas-prod-core --no-headers 2>/dev/null | wc -l) pods"
+```
+
+### Resource Sizing Per Environment Tier
+
+Each environment tier should be sized according to its purpose. Over-provisioning non-prod environments wastes budget; under-provisioning production causes outages.
+
+| Resource | Dev (SNO) | Test | UAT | Production |
+|----------|-----------|------|-----|------------|
+| **Master Nodes** | Combined (SNO) | 3 x (4 vCPU / 16 GB) | 3 x (8 vCPU / 32 GB) | 3 x (8 vCPU / 32 GB) |
+| **Worker Nodes** | Combined (SNO) | 3 x (16 vCPU / 64 GB) | 4-5 x (16 vCPU / 64 GB) | 6+ x (16 vCPU / 64 GB) |
+| **Storage per Worker** | 2 SSDs (LVM) | 300 GB | 300+ GB | 300+ GB (ZRS) |
+| **Concurrent Users** | Up to 70 | 25-50 | Match production load | Full production load |
+| **HA Level** | None (single point of failure) | Basic (3 zones) | Full | Full + DR |
+| **Applications** | Core + Manage (limited) | Match production set | Identical to production | Full MAS suite |
+| **Cost vs. Prod** | ~15-25% | ~40-50% | ~60-75% | 100% (baseline) |
+
+> **IBM recommendation:** Single Node OpenShift (SNO) at 16 vCPU / 64 GB serves as a cost-effective non-production option, supporting up to 70 concurrent users without high availability. Use it for dev environments, demos, and PoCs.
+
+### Resource Quotas: Protecting Environments from Each Other
+
+When running multiple instances on a single cluster, use OpenShift ResourceQuota objects to prevent one environment from consuming resources needed by another:
+
+| Resource | Dev Quota | Test Quota | UAT Quota | Prod Quota |
+|----------|-----------|-----------|-----------|-----------|
+| CPU Requests | 16 cores | 32 cores | 48 cores | 96+ cores |
+| CPU Limits | 24 cores | 48 cores | 64 cores | 128+ cores |
+| Memory Requests | 64 Gi | 128 Gi | 192 Gi | 384+ Gi |
+| Memory Limits | 96 Gi | 192 Gi | 256 Gi | 512+ Gi |
+| PVCs | 20 | 30 | 40 | 60+ |
+| Max Pods | 100 | 200 | 300 | 500+ |
+
+```yaml
+# Example: Resource Quota for the dev environment core namespace
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: mas-dev-quota
+  namespace: mas-dev01-core
+spec:
+  hard:
+    requests.cpu: "16"
+    requests.memory: "64Gi"
+    limits.cpu: "24"
+    limits.memory: "96Gi"
+    persistentvolumeclaims: "20"
+    pods: "100"
+```
+
+### Network Isolation Between Environments
+
+When environments share a cluster, use NetworkPolicy objects to prevent cross-environment traffic while allowing intra-environment communication:
+
+| Traffic Path | Policy |
+|-------------|--------|
+| `mas-prod-core` ↔ `mas-prod-manage` | **Allow** — same environment |
+| `mas-dev01-core` → `mas-prod-core` | **Deny** — cross-environment |
+| All environments → `mongoce` | **Allow** — shared infrastructure |
+| All environments → `ibm-sls` | **Allow** — shared licensing |
+
+### RBAC Per Environment
+
+Control who can access and modify each environment using OpenShift role bindings mapped to corporate LDAP/AD groups:
+
+| Role | Dev | Test | UAT | Prod |
+|------|-----|------|-----|------|
+| **Cluster Admin** | Platform Team | Platform Team | Platform Team | Platform Team |
+| **Namespace Admin** | Dev Lead | Test Lead | UAT Lead | Prod Lead (restricted) |
+| **Edit (deploy)** | All Developers | Test Team | UAT Team | Change Management only |
+| **View (read-only)** | All Team | All Team | All Team | Ops + Management |
+| **MAS Admin UI** | Dev Admin | Test Admin | UAT Admin | Prod Admin (restricted) |
+
+### Promotion Workflows: Moving Changes Between Environments
+
+MAS uses two complementary promotion mechanisms:
+
+**1. Application Configuration — via Migration Manager**
+
+Migration Manager is Maximo's built-in tool for promoting application-level configuration content between environments.
+
+| What Gets Promoted | How |
+|-------------------|-----|
+| Workflow definitions | Export from source environment as package file |
+| Actions, roles, communication templates | Package includes all dependent objects |
+| Inspection forms | Versioned through source control |
+| Custom configuration data | Imported into target environment |
+
+**Promotion flow:** Dev → Test → UAT → Production, with each tier requiring validation before the next promotion.
+
+**2. Infrastructure Configuration — via GitOps or Ansible**
+
+Platform-level configuration (operator versions, cluster settings, resource quotas) is promoted through Git-based workflows:
+
+| Promotion Stage | Mechanism | Approval Gate |
+|----------------|-----------|---------------|
+| Dev → Test | Git commit to test cluster config | Automated (CI pipeline) |
+| Test → UAT | Pull Request to UAT cluster config | Technical review + Test lead sign-off |
+| UAT → Production | Pull Request to prod cluster config | Change Advisory Board + Business sign-off |
+
+### Testing Gates Between Environments
+
+Each promotion should pass through defined validation gates:
+
+| Gate | From → To | Validation Required |
+|------|-----------|-------------------|
+| **Dev Gate** | Dev → Test | Unit tests pass, code review approved, no critical defects |
+| **Test Gate** | Test → UAT | Integration tests pass, performance baseline met, regression suite green |
+| **UAT Gate** | UAT → Prod | Business acceptance sign-off, security scan clean, performance test at scale |
+| **Change Advisory Board** | UAT → Prod | ITIL change management approval, rollback plan documented, communication plan ready |
+
+### DNS and Routing Per Environment
+
+Each environment needs its own DNS subdomain for MAS routes:
+
+| Environment | Domain Pattern | Example |
+|------------|---------------|---------|
+| Dev | `*.dev.mas.example.com` | `admin.dev.mas.example.com` |
+| Test | `*.test.mas.example.com` | `manage.test.mas.example.com` |
+| UAT | `*.uat.mas.example.com` | `api.uat.mas.example.com` |
+| Production | `*.mas.example.com` | `manage.mas.example.com` |
+
+Each environment's cert-manager instance (or shared cert-manager) handles TLS certificate issuance for its domain, with separate identity provider configurations if needed.
+
+---
+
+## Readiness Assessment: MAS On-Prem Administration
+
+Use this self-assessment to gauge your readiness. Rate each skill honestly.
+
+| Skill Area | Competency | Not Yet | Learning | Confident |
+|------------|-----------|---------|----------|-----------|
+| **OpenShift Navigation** | Navigate the web console and use the `oc` CLI | | | |
+| **K8s Primitives** | Understand pods, deployments, services, and routes | | | |
+| **YAML** | Read and write basic YAML for Kubernetes resources | | | |
+| **Operators** | Understand how operators and Custom Resources work | | | |
+| **Certificates** | Check certificate expiration and understand TLS trust chains | | | |
+| **Storage** | Know what storage classes, PVCs, and PVs are | | | |
+| **Troubleshooting** | Read pod logs and events to diagnose issues | | | |
+| **Stateful vs Stateless** | Understand the difference between stateful and stateless workloads | | | |
+| **Backup/Restore** | Know how to back up and restore etcd, MongoDB, and CRs | | | |
+| **Cross-Team Collaboration** | Communicate effectively with platform, DBA, security, and network teams | | | |
+
+**Scoring:**
+
+- **0-4 "Confident" ratings** -- Start with the structured learning path in Part 5 of this series. Focus on foundational skills first.
+- **5-7 "Confident" ratings** -- You are in good shape but need targeted skill-building in your gap areas.
+- **8-10 "Confident" ratings** -- You are ready to operate MAS on-prem. Focus on advanced topics and team leadership.
 
 ---
 
@@ -647,6 +915,10 @@ If you checked fewer than 5, start with the learning path in Part 5 of this seri
 4. **Backup is multi-layered.** You must back up etcd, MongoDB, CRs, secrets, and persistent volumes -- and test restores regularly.
 
 5. **Collaboration is the new superpower.** The shared responsibility model requires clear communication across platform, DBA, security, network, and integration teams.
+
+6. **Multi-environment architecture requires upfront planning.** Choose your topology pattern (single-cluster, two-cluster, per-tier, or hub-spoke) based on isolation requirements and budget. Plan namespace naming, resource quotas, and promotion workflows before your first deployment.
+
+7. **Environment isolation is built into the platform.** MAS namespaces, resource quotas, network policies, and RBAC provide enterprise-grade isolation between dev, test, UAT, and production — whether on one cluster or many.
 
 ---
 
