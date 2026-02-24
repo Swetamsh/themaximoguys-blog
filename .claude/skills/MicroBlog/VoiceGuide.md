@@ -1,77 +1,93 @@
 ---
 name: VoiceGuide
-description: Social media voice adaptation of TheMaximoGuys Empathetic Expert
+description: Social media voice adaptation — mirrors the actual blog tone, not corporate speak
 ---
 
 # MicroBlog Voice Guide
 
-Adapted from MaximoBlog's Empathetic Expert voice for social media brevity.
+This voice guide is built from how the blogs actually sound — not how a marketing team would write LinkedIn posts. The blogs are conversational, empathetic, occasionally funny, and always thought-provoking without being preachy.
 
-## Core Principle
+Brand-specific overrides: `~/.claude/skills/PAI/USER/SKILLCUSTOMIZATIONS/MicroBlog/`
 
-**Blog = comprehensive education. Social = single punch that makes them stop scrolling.**
+## The Actual Blog Voice (What We're Matching)
 
-The same voice, compressed. The empathy stays. The boldness intensifies. The length shrinks dramatically.
+The blogs sound like a smart colleague explaining something over coffee. They:
 
-## Voice Rules for Social
+- **Open with stories, not declarations** — "5:47 AM on a Tuesday. The phone buzzes on the nightstand." Not "In today's rapidly evolving landscape..."
+- **Acknowledge before challenging** — "That statement stings. If you've spent years becoming an expert, the idea of 'forgetting' anything feels like an insult. But here's the truth..."
+- **Use "Your fears / The reality" patterns** — they name what the reader is actually worried about, then give honest answers without sugarcoating
+- **Sprinkle quiet humor** — "more SOAP web services than you'd like to admit" / "the one thing that broke that wasn't in the release notes"
+- **Respect what came before** — "for almost two decades, it was a deeply satisfying role" — never dismissive of legacy knowledge
+- **Make technical things feel personal** — "That -Xmx8192m wasn't arbitrary. It represented weeks of load testing."
 
-| Rule | Blog Version | Social Adaptation |
+## Core Tone: Casual, Honest, Thought-Provoking
+
+| Trait | What It Sounds Like | What It Doesn't Sound Like |
 |---|---|---|
-| **Second-person direct** | "You've spent 10+ years becoming a Maximo expert." | Same — even more direct: "You know Maximo 7.6 cold. MAS 9? Different animal." |
-| **Empathetic hook** | Full paragraph of validation | One sentence: "I get it. The shift feels like starting over." |
-| **Bold statements** | "No. Absolutely not." | Even bolder: "Stop. MAS 9 is not Maximo 7.6 in the cloud. Period." |
-| **Old vs New** | Full comparison table | Single contrast: "7.6: Direct SQL. MAS: GraphQL API. No exceptions." |
-| **Rhetorical questions** | Used within longer sections | Lead with them: "What if everything you knew about Maximo was wrong?" |
-| **Active voice** | Standard throughout | Imperative: "Learn APIs. Drop the SQL habit. Ship faster." |
+| **Casual** | "Here's the thing..." / "Let's be honest..." | "It is imperative that..." / "Organizations must..." |
+| **Empathetic** | "That's a fair worry." / "We've all been there." | "Stop doing X." / "You need to..." |
+| **Thought-provoking** | "What if the problem isn't what you think?" | "BREAKING: 5 things you MUST know" |
+| **Confident without ego** | "The reality is..." / "From what we've seen..." | "After 15+ years of leadership..." / "As experts..." |
+| **Subtle humor** | "You could navigate the WAS console with your eyes closed — because you practically had to at 2 AM" | Forced jokes, emoji storms, "Am I right??" |
+| **Honest** | "Yes, it'll take 3x longer. And work 3x better." | Overselling, hype, "it's easy!" |
 
-## Platform-Specific Adaptations
+## How Blog Voice Compresses for Social
 
-### LinkedIn (Professional Thought Leadership)
+The blogs have space for full stories and detailed comparisons. Social doesn't. But the *feeling* stays the same.
 
-- **Length**: 150-300 words per post, 1300 char max per carousel slide
-- **Tone**: Authoritative peer, slightly more formal than X
-- **Structure**: Hook line → 3-5 key points → Call to reflection → CTA
-- **Open with**: Bold claim or contrarian take
-- **Close with**: Question that invites comments OR "Follow for more MAS insights"
-- **Formatting**: Use line breaks liberally. One idea per line. Short paragraphs.
+| Blog Pattern | Social Compression | Example |
+|---|---|---|
+| Story opening ("5:47 AM on a Tuesday...") | **One vivid sentence** | "Your phone buzzes at 5:47 AM. You already know which system it is." |
+| Your fears / The reality | **Fear → honest one-liner** | "Will my skills become obsolete? No. But how you use them? That changes completely." |
+| Comparison tables (From/To) | **Quick contrast pairs** | "7.6: Direct SQL when things break. MAS: Pod logs, distributed traces, and no database access." |
+| Gentle challenge with empathy | **Acknowledge-then-pivot** | "You've spent a decade mastering this. Now the rules change — but your knowledge doesn't go to waste." |
+| Quiet humor | **Same energy, shorter** | "You've configured more SOAP services than anyone should have to." |
+| "The reality is..." honest take | **Direct without preaching** | "MIF still exists. It's just not the center of the universe anymore." |
 
-### X / Twitter (Punchy, Conversational)
+## What NOT to Do
 
-- **Length**: 280 chars per tweet, 5-12 tweets per thread
-- **Tone**: Casual expert, conversational, slightly provocative
-- **Structure**: Tweet 1 = hook, middle = content, last = CTA + link
-- **Open with**: Hot take or question
-- **Close with**: "Full deep dive: [link] | Follow @TheMaximoGuys"
-- **Formatting**: No bullet points. Short sentences. Line breaks between thoughts.
+These are the anti-patterns that would make the social posts sound nothing like the blogs:
 
-### Instagram (Visual-First, Caption Supporting)
+| Anti-Pattern | Why It's Wrong | Instead |
+|---|---|---|
+| "STOP doing X!!" | The blogs never yell. They guide. | "Here's why that pattern doesn't work anymore..." |
+| "Let me be clear:" | Corporate authority posturing | Just say the thing clearly |
+| "After 15+ years..." | Credential-dropping. The blogs earn trust through insight, not resume. | Show the insight directly |
+| "Follow for more!" / "Drop your take below!" | Forced engagement bait | End with a genuine question if it fits, or just let the thought land |
+| "In today's rapidly evolving landscape..." | LinkedIn-brain opener | Start with something specific and real |
+| "MUST", "NEED TO", "CRITICAL" | Urgency-manufacturing | The blogs make you *want* to learn, not *fear* not learning |
+| "Thought leader" / "Disrupt" / "Leverage" | Corporate buzzword contamination | Plain language. Always. |
+| Emoji-heavy formatting | The blogs use almost zero emoji | Let the words do the work |
 
-- **Length**: 100-200 words caption, content lives in visual
-- **Tone**: Approachable, educational, slightly motivational
-- **Structure**: Context line → Key insight → "Save this for later" / "Share with a Maximo dev"
-- **Formatting**: Emoji-light (max 2-3), hashtags at end
+## Platform Adaptation Notes
 
-## Emotional Compression
+The tone stays the same everywhere. Only the length changes.
 
-The MaximoBlog 7-stage emotional arc compressed for social:
+| Platform | Length Target | Adaptation |
+|---|---|---|
+| **LinkedIn** | 150-250 words | Slightly more structured (line breaks, spacing). Can use the full "fear/reality" pattern. |
+| **X / Twitter** | 280 chars/tweet, 5-10 per thread | Punchier. One thought per tweet. Humor lands harder in short form. |
+| **Instagram** | 80-150 words caption | Most conversational. The visual carries weight, caption adds context. |
+| **Generic** | 120-200 words | Default. Works anywhere. |
 
-| Blog Stage | Social Equivalent |
-|---|---|
-| Empathy + Tension | **Hook** (1-2 sentences that validate AND challenge) |
-| Myth-busting + Education | **Core Content** (the single insight or contrast) |
-| Practical tools + Optimism | **Takeaway** (one actionable thing) |
-| Action | **CTA** (follow, read more, comment) |
+## The Emotional Arc (Compressed)
 
-## Words to Use
+The blogs build through: Empathy → Challenge → Honest Reality → Practical Path Forward
 
-- "Stop", "Listen", "Here's the truth", "Let me be clear"
-- "I've seen this before", "After 15+ years in Maximo"
-- "The real question is...", "What nobody tells you..."
-- "Old way vs New way", "7.6 thinking vs MAS thinking"
+For social, that compresses to:
 
-## Words to Avoid
+| Beat | Purpose | Feel |
+|---|---|---|
+| **Hook** | Make them feel seen | "You know that feeling when..." / A vivid specific moment |
+| **Pivot** | The thought-provoking part | "But what if..." / "Here's what actually changed..." |
+| **Landing** | Leave them thinking | A question, a clean contrast, or a quiet truth — NOT a CTA |
 
-- "Maybe", "might", "sort of", "consider" (no hedging)
-- "Synergy", "paradigm" (in social — too corporate)
-- "Easy", "simple", "just" (dismisses the reader's struggle)
-- Marketing buzzwords without substance
+## Quick Voice Checks
+
+Before publishing any micro-content, ask:
+
+1. **Does this sound like a person talking, or a brand posting?** — If it sounds like a brand, rewrite.
+2. **Would you say this to a colleague at lunch?** — If it feels too formal, loosen it up.
+3. **Is there empathy before any challenge?** — The blogs always acknowledge before pushing.
+4. **Does the ending let the thought breathe?** — Don't force an engagement CTA. If the thought is good, people will respond.
+5. **Zero emoji?** — Good. The blogs don't use them, the social shouldn't either.
