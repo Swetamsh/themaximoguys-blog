@@ -1,0 +1,516 @@
+---
+title: "Automation Scripts, AI Features & Reliability Strategies: The Customization Trinity in MAS 9"
+description: "How automation scripts survive Java 17, the free Reliability Strategies Library with 800+ equipment types, AI-powered natural language queries in Manage 9.1, and enhanced qualifications management. The tools that make MAS 9 yours."
+date: "2026-03-17"
+slug: "mas-features-scripts-ai-reliability"
+tags: ["Maximo", "MAS 9", "MAS Features", "Automation Scripts", "AI", "Reliability Strategies", "Java 17", "Jython", "Qualifications", "FMEA"]
+draft: false
+tier: "free"
+author: "Posam Lakshminarayana"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-features-scripts-ai-reliability.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+faqs:
+  - question: "Do automation scripts still work in MAS 9?"
+    answer: "Yes. Automation Scripts remain the primary customization mechanism. Both Jython and JavaScript are supported. However, Java 17 module restrictions may break scripts that use reflective access or deprecated APIs — test ALL scripts in a sandbox before upgrade."
+  - question: "What is the Reliability Strategies Library?"
+    answer: "A free library included in MAS 9 with 800+ equipment types, 58,000+ failure modes, and 5,000+ preventive maintenance activities. It provides industry-standard FMEA data that can generate PMs and Job Plans. No additional AppPoints required."
+  - question: "What AI features are built into Manage 9.1?"
+    answer: "Manage 9.1 includes natural language query interface (nl2oslc), field value recommendations based on historical patterns, and similar record detection with similarity scoring. These require Maximo AI Service (10 AppPoints)."
+keyTakeaways:
+  - "Automation Scripts survive MAS 9 but Java 17 module restrictions require testing all scripts — IBM recommends converting custom Java to scripts"
+  - "Reliability Strategies Library is FREE — 800+ equipment types and 58,000+ failure modes ready to generate PMs and Job Plans"
+  - "AI-Assisted Strategy Building in MAS 9.1 uses AI to suggest failure mechanisms and boundary conditions"
+  - "Manage 9.1 AI features include natural language queries, field value recommendations, and similar record detection"
+  - "Maximo AI Service is required for AI features — 10 AppPoints, Watson LLM, monthly usage limits"
+series:
+  name: "MAS FEATURES"
+  part: 8
+  total: 25
+tldr: "Automation Scripts survive in MAS 9 (test for Java 17 issues). The Reliability Strategies Library gives you 800+ equipment types and 58K failure modes for free. Manage 9.1 adds native AI — natural language queries, field recommendations, and similar record detection."
+seoTitle: "MAS 9 Automation Scripts, AI Features & Reliability Strategies"
+seoDescription: "Complete guide to MAS 9 customization — automation scripts on Java 17, free Reliability Strategies Library, AI-powered natural language queries, and enhanced qualifications management."
+proficiencyLevel: "intermediate"
+pillarSlug: "mas-features-series-index"
+relatedSlugs:
+  - "mas-features-integration-reporting"
+  - "mas-features-suite-architecture-pipeline"
+---
+
+# Automation Scripts, AI Features & Reliability Strategies: The Customization Trinity in MAS 9
+
+> **Who this is for:** Maximo developers, reliability engineers, and administrators who need to understand how automation scripts survive Java 17, what the free Reliability Strategies Library offers, and how AI features in Manage 9.1 change data entry and querying. This is the customization trinity — the three pillars that make MAS 9 yours.
+
+**Estimated read time: 10 minutes**
+
+---
+
+## The Script That Broke at 2 PM on a Wednesday
+
+You have been running MAS 9 in a sandbox for three weeks. Everything looks solid. The UI is different but functional. The dashboards are configured. Your team is cautiously optimistic.
+
+Then the planner creates a work order against a rotating asset and the system throws an error nobody has seen before. You open the automation script log. The Jython script that auto-populates the failure class — the one your team wrote four years ago, the one that touches every single work order — is throwing a `java.lang.reflect.InaccessibleObjectException`.
+
+You stare at the stack trace. The script has been working perfectly for four years. Nothing in the script changed. But the Java runtime underneath it changed from Java 8 to Java 17, and that changes everything.
+
+This is the moment you realize that "automation scripts still work in MAS 9" comes with a very large asterisk.
+
+> **Hallway truth:** "Ninety percent of our scripts worked fine. The ten percent that didn't were the ten percent that touched every transaction." — A Maximo developer at a manufacturing company, describing their Java 17 script audit results.
+
+---
+
+## 📜 Automation Scripts: Still Primary, But Java 17 Changes the Rules
+
+Let's start with the good news. Automation Scripts remain the **primary customization mechanism** in MAS 9. IBM has not replaced them, deprecated them, or introduced an alternative that supersedes them. Both **Jython** (Python on JVM) and **JavaScript** are still fully supported languages.
+
+Everything you know about script triggers still applies:
+
+- **Object Events** — Init, Validate, Save, Add, Delete
+- **Action Launch Points** — triggered by workflow or escalation actions
+- **Attribute Launch Points** — triggered by field value changes
+- **Library Scripts** — shared code modules referenced by other scripts
+- **Script versioning** and debugging tools — still present
+
+If your scripts stay within the Maximo API layer and do not reach into the Java internals, you are probably fine. The problem is that many production scripts do reach into the Java internals — because they had to, or because it was the fastest way to solve a problem at 3 AM.
+
+---
+
+## ⚠️ Java 17 Impact: What Breaks and Why
+
+Java 17 is mandatory as of MAS 9.1 (March 2025 feature release). This is not optional. There is no compatibility flag. Your scripts either work on Java 17 or they do not.
+
+Here is the complete breakdown of what changed:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│           JAVA 17 IMPACT ON AUTOMATION SCRIPTS               │
+├──────────────────────┬───────────────────────────────────────┤
+│  Change              │  Impact                               │
+├──────────────────────┼───────────────────────────────────────┤
+│  Module System       │  Reflective access to internal JDK    │
+│  (JPMS)              │  classes BLOCKED — scripts using       │
+│                      │  java.lang.reflect on internal APIs    │
+│                      │  will throw InaccessibleObjectException│
+├──────────────────────┼───────────────────────────────────────┤
+│  Deprecated API      │  Methods deprecated in Java 8/11 are  │
+│  Removal             │  REMOVED — ClassNotFoundException or   │
+│                      │  NoSuchMethodException at runtime      │
+├──────────────────────┼───────────────────────────────────────┤
+│  javax → jakarta     │  Some javax.* namespace packages are   │
+│  Namespace           │  migrating to jakarta.* — import       │
+│                      │  statements must be updated            │
+├──────────────────────┼───────────────────────────────────────┤
+│  Stricter Type       │  Implicit type conversions that worked │
+│  Checking            │  in Java 8 may fail — explicit casting │
+│                      │  required                              │
+├──────────────────────┼───────────────────────────────────────┤
+│  Stricter SSL/TLS    │  Default cipher suites tightened —     │
+│  Defaults            │  scripts making HTTPS calls may fail   │
+│                      │  handshake with older endpoints        │
+├──────────────────────┼───────────────────────────────────────┤
+│  Security Manager    │  java.security.Manager REMOVED —       │
+│  Removal             │  any scripts referencing Security      │
+│                      │  Manager will fail                     │
+└──────────────────────┴───────────────────────────────────────┘
+```
+
+The module system (JPMS) is the biggest breaker. In Java 8, you could use reflection to access any internal JDK class — and many Maximo scripts did exactly that for parsing, encryption, or low-level data manipulation. Java 17 seals those modules. Your scripts cannot open them.
+
+> **Key insight:** The scripts that are most likely to break are the ones that were most cleverly written. Scripts that reached past the Maximo API layer to solve complex problems using Java internals — those are your highest-risk assets. The simple scripts that use `mbo.getString()` and `mbo.setValue()` will be fine.
+
+---
+
+## 🔧 Best Practices: Surviving the Java 17 Transition
+
+IBM is clear on this. Here are the six best practices for automation scripts in MAS 9:
+
+**1. Convert Java customizations to Automation Scripts.** This is IBM's strong recommendation. If you have custom Java classes (MBOs, services, or utility classes), convert them to Jython or JavaScript automation scripts. Java classes compiled against Java 8 will not run on Java 17 without recompilation — and some will not run at all if they use removed APIs.
+
+**2. Test ALL existing scripts in a MAS 9 sandbox before production upgrade.** Not some. Not the ones you think might have issues. All of them. Create a script inventory, run every script through its trigger scenarios, and document the results.
+
+**3. Prefer Jython for complex logic.** Jython has better Java interop than JavaScript in the Maximo context. When your script needs to interact with Maximo business objects and Java APIs, Jython gives you cleaner access through the Maximo API layer.
+
+**4. Avoid direct Java class references where Maximo API alternatives exist.** If you are importing `java.util.HashMap` just to build a data structure, check whether the Maximo API or native Python/Jython provides an equivalent. The fewer direct Java class references in your scripts, the less exposure to Java version changes.
+
+**5. Use `service.log_*` methods for logging.** Do not use Java logging frameworks (like `java.util.logging` or Log4j). The Maximo `service.log_info()`, `service.log_warn()`, and `service.log_error()` methods route through the Maximo logging infrastructure and survive runtime changes.
+
+**6. Review every import statement in every script.** This is the line-by-line audit that nobody wants to do but everybody needs to do. Look for `javax.*` imports that may need `jakarta.*` equivalents. Look for classes that were deprecated in Java 8/11 and removed in Java 17. Look for reflection-based access patterns.
+
+```python
+# BEFORE: Script that may break on Java 17
+from java.lang.reflect import Method
+from javax.xml.bind import JAXBContext
+
+# The reflection-based approach worked in Java 8
+# but JPMS blocks reflective access to internal classes in Java 17
+
+method = clazz.getDeclaredMethod("internalMethod")
+method.setAccessible(True)  # This line FAILS on Java 17
+result = method.invoke(instance)
+
+
+# AFTER: Script using Maximo API layer (Java 17 safe)
+from psdi.server import MXServer
+
+# Use Maximo's own API — it handles the Java internals for you
+server = MXServer.getMXServer()
+service.log_info("Processing asset: " + mbo.getString("ASSETNUM"))
+
+# Let the MBO framework do the heavy lifting
+mbo.setValue("FAILURECODE", newValue, MboConstants.NOACCESSCHECK)
+```
+
+> **Hallway truth:** "Our script audit found 340 scripts. Twelve had Java reflection. Eight used deprecated XML parsing. Three used javax.xml.bind. Those 23 scripts took longer to fix than the other 317 combined." — A Maximo developer describing their pre-upgrade script review.
+
+---
+
+## 📚 Reliability Strategies Library: 58,000 Failure Modes for Free
+
+Now we shift from customization to something entirely new — and genuinely impressive.
+
+The Reliability Strategies Library is an **industry-leading FMEA resource** that was previously only available through expensive consulting engagements. Starting in MAS 8.11, it is included with your MAS license at no additional AppPoints cost.
+
+Here is what you get:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│             RELIABILITY STRATEGIES LIBRARY                    │
+│                    (Included Free)                            │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│   800+  Equipment/asset types across industries              │
+│                                                              │
+│   58,000+  Failure modes across all operating contexts       │
+│                                                              │
+│   5,000+  Preventive maintenance activities with             │
+│           step-by-step task guidance                         │
+│                                                              │
+│   Coverage:                                                  │
+│   ├── Rotating equipment (pumps, motors, compressors)        │
+│   ├── Electrical systems (transformers, switchgear)          │
+│   ├── Instrumentation (sensors, analyzers, controls)         │
+│   ├── Structural (tanks, vessels, foundations)               │
+│   ├── Piping (valves, heat exchangers, pipelines)            │
+│   └── HVAC (chillers, air handlers, cooling towers)          │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+If you have ever spent three months in a conference room building an FMEA from scratch for a centrifugal pump, you know why this matters. That data already exists. IBM compiled it. And now it ships with your license.
+
+---
+
+## 🔄 The Reliability Strategies Workflow
+
+The library is not just a reference document you browse. It is an active workflow that generates real Maximo records:
+
+**Step 1 — Browse the Library.** Select your equipment type and operating context from the catalog. Looking at centrifugal pumps in a chemical processing environment? The library has that. Cooling towers in a data center? That too.
+
+**Step 2 — FMEA Viewer.** Review potential failure modes, failure effects, and recommended mitigation activities for your selected equipment. This is industry-standard FMEA data — the kind of analysis that consulting firms charge six figures to produce.
+
+**Step 3 — Strategy Selection.** Choose which failure modes and mitigations are relevant to your specific operating context. Not every failure mode applies to every installation. You filter to what matters.
+
+**Step 4 — Composer.** This is where it becomes operational. The Composer generates **suggested PM records and Job Plan tasks** from your selected strategies. Real Maximo records with task descriptions, frequencies, and procedures.
+
+**Step 5 — Implementation.** Review, customize, and implement the generated PM and Job Plan records into your production environment.
+
+> **Key insight:** The Reliability Strategies Library does not replace your reliability engineers. It gives them a massive head start. Instead of spending months building failure mode analysis from scratch, they start with industry-standard data and customize it to your operating context. That is the difference between a six-month FMEA project and a six-week one.
+
+---
+
+## 🆕 Custom Strategies and AI-Assisted Building
+
+The library has evolved significantly across MAS versions:
+
+| Feature | MAS 8.11 | MAS 9.0 | MAS 9.1 |
+|---------|----------|---------|---------|
+| Browse library | Yes | Yes | Yes |
+| View failure modes | Yes | Yes | Yes |
+| Generate PMs/Job Plans | Yes | Yes | Yes |
+| **Custom strategies** | No | **YES** | Yes |
+| **AI-suggested boundary conditions** | No | No | **YES** |
+| **Database-stored custom strategies** | No | No | **YES** |
+| **AI-generated components/failure mechanisms** | No | No | **YES** |
+
+### Custom Strategies (MAS 9.0+)
+
+Starting in MAS 9.0, you can create **organization-specific strategies** that reflect your unique assets and maintenance practices:
+
+- Define custom equipment types that are not in the IBM library
+- Define custom failure modes based on your operational experience
+- Define custom mitigation activities with your specific procedures
+- In MAS 9.1, custom strategies are stored in the **Maximo database** — previously they were only in the cloud-hosted library
+
+This means your hard-won reliability knowledge becomes a reusable asset. When your reliability engineer documents that your specific model of centrifugal pump fails in a way that the IBM library does not capture, that knowledge is preserved and available to every planner in your organization.
+
+### AI-Assisted Strategy Building (MAS 9.1)
+
+MAS 9.1 takes this further with AI:
+
+- **AI suggests boundary conditions** based on your operating context — the environmental and operational factors that influence failure behavior
+- **AI generates suggested components, failure mechanisms, and influences** — reducing the blank-page problem when building custom strategies
+- Requires **Maximo AI Service** deployment (more on this below)
+
+The AI does not replace the reliability engineer's judgment. It accelerates the brainstorming phase. Instead of starting from zero, you start from an AI-generated draft and refine it with human expertise.
+
+---
+
+## 🔐 Reliability Strategies Security and Requirements
+
+Four security roles control access:
+
+| Security Role | Capability |
+|--------------|-----------|
+| **RELIABILITYSTRATEGIES** | View-only access to the library |
+| **STRATEGYBUILDER** | Create and edit strategies |
+| **STRATEGYIMPLEMENTER** | Implement strategies (generate PM/Job Plans) without creation rights |
+| **STRATEGYVIEWER** | View completed strategies |
+
+**Requirements to keep in mind:**
+
+- **Cloud connectivity required** — the library is hosted by IBM, not stored locally
+- **API Key authentication** to access the library service
+- **Maximo AI Service** required for AI-assisted features (MAS 9.1 only)
+- **No additional AppPoints** consumed for basic library access — it is included
+
+> **Hallway truth:** "We used to hire consultants for $150K to build FMEA data for one facility. Now the library gives us a starting point for every equipment type we have, and we customize from there. The ROI conversation is over before it starts." — A reliability engineering manager at an oil and gas company.
+
+---
+
+## 🤖 AI Features in Manage 9.1: Maximo Learns to Talk
+
+MAS 9.1 introduces AI capabilities **directly into Maximo Manage**. These are not the same as Health, Predict, or Monitor AI. These are Manage-native features that change how your users interact with data every day.
+
+### AI Assistant (Maximo Collaborate)
+
+The headline feature is a **natural language query interface**. Users can ask questions in plain English and get answers from real Maximo data.
+
+Under the hood, a model called **nl2oslc** converts natural language to OSLC API queries. You type a question. The model translates it into an API call. Maximo returns the data. The assistant presents the answer.
+
+**Example queries your users can ask:**
+
+- "Which work orders are due in the next 30 days?"
+- "Show me assets that are missing data for ASSETTYPE"
+- "How many open service requests are there for Building A?"
+- "What is the PM compliance rate for this month?"
+
+**Quick Starters** are pre-configured suggested questions that appear when users open the assistant. Think of them as bookmarks for the questions your organization asks most often. Your administrator configures these — they are not hardcoded.
+
+**Scope in MAS 9.1:** The assistant can answer questions about Assets, Work Orders, and Service Requests. It is expandable to other data types through configuration. Answers come from real Maximo data — these are not pre-canned responses.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                  AI ASSISTANT FLOW                            │
+│                                                              │
+│   User types:                                                │
+│   "Which WOs are overdue for Building A?"                    │
+│                    │                                         │
+│                    ▼                                         │
+│   ┌─────────────────────────┐                                │
+│   │   nl2oslc Model         │  Converts plain English        │
+│   │   (Watson LLM)          │  to OSLC API query             │
+│   └────────────┬────────────┘                                │
+│                │                                             │
+│                ▼                                             │
+│   GET /api/os/mxwodetail?lean=1                              │
+│       &oslc.where=status="APPR"                              │
+│       AND targstartdate<"2026-03-17"                         │
+│       AND location="BLDG-A"                                  │
+│                │                                             │
+│                ▼                                             │
+│   ┌─────────────────────────┐                                │
+│   │   Maximo Returns        │  Real data, real records       │
+│   │   Actual Results        │  Not pre-canned answers        │
+│   └────────────┬────────────┘                                │
+│                │                                             │
+│                ▼                                             │
+│   Assistant presents: "There are 14 overdue work orders      │
+│   for Building A. Here are the details..."                   │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### AI-Driven Field Value Recommendations
+
+When your users enter data in certain fields, AI **suggests likely values based on historical patterns**. This is not a static dropdown. It is a dynamic recommendation that learns from your organization's data.
+
+Example: When a planner creates a work order for a specific asset, the AI suggests the most likely failure class based on past work orders for that asset type. If every work order against centrifugal pump P-1042 in the last two years was classified as "Bearing Failure," the AI learns that pattern and suggests "Bearing Failure" when the next work order is created for that pump.
+
+- Configurable per field and per application
+- Reduces data entry time
+- Improves data quality by steering users toward consistent values
+
+### Similar Record Detection
+
+When creating new records — work orders, service requests — the AI identifies **potentially similar existing records**:
+
+- Calculates a **similarity score** based on key matching attributes
+- Shows the similar records with the score and what matched
+- User can view the similar record, link to it, or proceed with creating a new one
+- Reduces duplicate work order creation — the silent productivity killer
+
+> **Key insight:** Similar record detection solves a problem that every Maximo environment has but few measure — duplicate records. When three technicians report the same leaking valve as three separate service requests, you end up with three work orders, three planning cycles, and confusion in the field. The AI catches this before the duplicates are created.
+
+---
+
+## ⚙️ Maximo AI Service: The Engine Behind the Features
+
+Every AI feature in Manage requires **Maximo AI Service**, which is a separately deployed component:
+
+| Aspect | Detail |
+|--------|--------|
+| **Licensing** | 10 AppPoints when installed |
+| **Technology** | Watson LLM (Large Language Model) |
+| **Deployment** | Operator on OpenShift alongside MAS |
+| **Usage Limits** | Monthly caps before additional Watson licensing is needed |
+| **Scope** | Powers AI Assistant, field recommendations, similar record detection, and AI-assisted strategy building |
+
+This is not a free add-on. The 10 AppPoints are real consumption against your license. And the monthly usage limits mean you need to monitor how heavily your users adopt the AI features.
+
+### AI Configuration Application
+
+Administrators manage all AI features through a dedicated configuration application:
+
+| Configuration | What It Controls |
+|--------------|------------------|
+| Enable/Disable AI Assistant | Turn the chat assistant on or off globally |
+| Quick Starters | Define suggested questions for the assistant |
+| Prompt Tuning | Customize assistant behavior for organization-specific terminology |
+| Field Recommendations | Enable/disable AI field value suggestions per application |
+| Similar Record Detection | Configure similarity thresholds and matching attributes |
+| Usage Monitoring | Track AI usage against monthly limits for license compliance |
+
+The Prompt Tuning capability is particularly important. Your organization has terminology that Watson does not know out of the box. "Building A" might mean something specific in your asset hierarchy. "Priority 1" might have a different urgency connotation in your culture. Prompt tuning lets you teach the AI how your organization talks about its assets and work.
+
+---
+
+## 👷 Qualifications and Skills Management: The Unsung Enhancement
+
+While automation scripts and AI get the headlines, the enhanced qualifications management in MAS 9 solves a real operational problem — ensuring the right person does the right work.
+
+### Qualifications in Job Plans and Work Orders
+
+This is new. In legacy Maximo, qualifications existed but were disconnected from the work planning process. MAS 9 connects them:
+
+- **Job Plans can now specify required qualifications** for work execution
+- When work orders are generated from those Job Plans, **qualification requirements flow to the work order**
+- **Work Order Tracking displays required qualifications** so planners and dispatchers see what skills are needed
+- **Dispatching tools filter available technicians** by qualification match
+- **Gap analysis** shows which qualifications are missing for a given assignment
+
+This means you stop assigning a technician to a high-voltage switching job only to discover at the worksite that they lack the required electrical certification.
+
+### Crew Qualifications (MAS 9.1)
+
+MAS 9.1 extends this to crews:
+
+- Crews can have qualification requirements defined at the crew level
+- The system validates that the crew **collectively** meets all qualification requirements
+- Individual crew member qualifications are **aggregated** to determine crew capability
+- Useful for complex work requiring multiple specialized skills on the same crew
+
+### Certificate-Required Qualifications
+
+Qualifications can require associated certificates — welding certification, electrical license, confined space entry permit:
+
+- **Certificate expiration tracking** with advance warning
+- **Expired certificates automatically invalidate** the associated qualification
+- Integration with training management for re-certification workflows
+- No more discovering at audit time that a technician's certification lapsed six months ago
+
+### Skill-Based Resource Filtering
+
+The Graphical Assignment and Dispatching Dashboard leverages qualifications for smarter resource assignment:
+
+- Filter resources by qualification match
+- **"Best fit" assignment recommendations** based on qualification match percentage
+- **Skills gap reporting** for workforce planning
+- Integration with Maximo Optimizer for skills-constrained scheduling
+
+> **Hallway truth:** "We had a near-miss because a technician without the right certification was assigned to a confined space entry. The planner did not check — there was no system prompt to check. In MAS 9, the qualification requirement is right there on the work order. The dispatching dashboard shows who is qualified. The system does the checking for you." — A safety manager at a water utility.
+
+---
+
+## 🧩 Putting the Trinity Together
+
+These four capabilities — automation scripts, reliability strategies, AI features, and qualifications management — are not isolated modules. They form an interconnected customization and intelligence layer:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│              THE CUSTOMIZATION TRINITY + QUALS                │
+│                                                              │
+│  ┌─────────────────┐    ┌──────────────────────┐            │
+│  │  Automation      │    │  Reliability          │            │
+│  │  Scripts         │    │  Strategies Library    │            │
+│  │                  │    │                        │            │
+│  │  Custom logic    │    │  800+ equipment types  │            │
+│  │  for YOUR        │───▶│  58K failure modes     │            │
+│  │  business rules  │    │  5K PM activities      │            │
+│  │                  │    │  → Generates PMs &     │            │
+│  │  Jython + JS     │    │    Job Plans           │            │
+│  └────────┬─────────┘    └──────────┬────────────┘            │
+│           │                         │                        │
+│           ▼                         ▼                        │
+│  ┌──────────────────────────────────────────────┐            │
+│  │           AI Features (MAS 9.1)               │            │
+│  │                                                │            │
+│  │  Natural language queries (nl2oslc)            │            │
+│  │  Field value recommendations                   │            │
+│  │  Similar record detection                      │            │
+│  │  AI-assisted strategy building                 │            │
+│  └──────────────────────┬────────────────────────┘            │
+│                         │                                    │
+│                         ▼                                    │
+│  ┌──────────────────────────────────────────────┐            │
+│  │      Qualifications & Skills Management       │            │
+│  │                                                │            │
+│  │  Job Plan → WO qualification requirements      │            │
+│  │  Skill-based dispatching and filtering         │            │
+│  │  Certificate tracking and auto-invalidation    │            │
+│  │  Crew-level qualification aggregation          │            │
+│  └──────────────────────────────────────────────┘            │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Your automation scripts enforce business rules. The Reliability Strategies Library generates the PMs and Job Plans. AI helps users query and create records faster. Qualifications ensure the right people execute the work. Each layer builds on the others.
+
+---
+
+## Key Takeaways
+
+- **Automation Scripts survive MAS 9** — both Jython and JavaScript remain supported, but Java 17 module restrictions (JPMS), deprecated API removal, javax-to-jakarta namespace changes, stricter type checking, and tightened SSL/TLS defaults can break scripts that reach past the Maximo API layer
+- **Test every script in a sandbox** — IBM recommends converting custom Java classes to automation scripts and reviewing every import statement for Java 17 compatibility
+- **The Reliability Strategies Library is free** — 800+ equipment types, 58,000+ failure modes, and 5,000+ PM activities included with your MAS license, with a workflow that generates real PM and Job Plan records
+- **Custom Strategies (MAS 9.0+) and AI-Assisted Building (MAS 9.1)** let you create organization-specific reliability strategies and use AI to suggest boundary conditions, components, and failure mechanisms
+- **Manage 9.1 AI features are Manage-native** — natural language queries via nl2oslc, field value recommendations from historical patterns, and similar record detection with similarity scoring, all powered by Maximo AI Service (10 AppPoints, Watson LLM, monthly usage limits)
+- **Qualifications management connects skills to work** — Job Plans specify required qualifications, work orders display them, dispatching tools filter by match, and certificate expiration auto-invalidates qualifications
+
+---
+
+## References
+
+- [IBM Maximo Automation Scripts Documentation](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=administering-automation-scripts)
+- [IBM Maximo Reliability Strategies Module](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=module-reliability-strategies)
+- [IBM Maximo AI Assistant Configuration](https://www.ibm.com/docs/en/masv-and-l/cd?topic=configurations-ai-assistant)
+- [IBM Maximo Java 17 Transition Support](https://www.ibm.com/support/pages/ibm-maximo-manage-transition-java-17-maximo-application-suite-91-support-announcement)
+- [MAS 9.1 What's New — Manage](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=manage-whats-new-in-maximo-91)
+
+---
+
+**Series Navigation:**
+
+**Previous:** [Part 7 — Security Model and Map Features](/blog/mas-features-security-maps)
+**Next:** [Part 9 — Integration Framework and Reporting Changes](/blog/mas-features-integration-reporting)
+
+[View the full MAS FEATURES series index](/blog/mas-features-series-index)
+
+---
+
+*Part 8 of the "MAS FEATURES" series | Published by TheMaximoGuys*
+
+*Your automation scripts are not dead — but they need a checkup. The Reliability Strategies Library is the best free resource most Maximo teams have never used. And AI in Manage 9.1 is not a gimmick — it is a genuine productivity multiplier for planners and dispatchers. The customization trinity is ready. The question is whether your scripts are.*

@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'input=$(cat); file=$(echo \"$input\" | python3 -c \"import json,sys; print(json.load(sys.stdin).get(\\\"file_path\\\",\\\"\\\"))\" 2>/dev/null); if [ -n \"$file\" ]; then content=$(echo \"$input\" | python3 -c \"import json,sys; print(json.load(sys.stdin).get(\\\"content\\\",\\\"\\\"))\" 2>/dev/null); if echo \"$content\" | grep -qiE \"(api[_-]?key|password|secret|token|bearer)\\s*[=:]\\s*[\\x27\\\"][^\\x27\\\"]{8,}\" 2>/dev/null; then echo \"BLOCKED: Potential secret detected in file write to $file\" >&2; exit 2; fi; fi'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'input=$(cat); file=$(echo \"$input\" | python3 -c \"import json,sys; d=json.load(sys.stdin); print(d.get(\\\"file_path\\\",d.get(\\\"filePath\\\",\\\"\\\")))\" 2>/dev/null); if [[ \"$file\" == *.mdx ]]; then head -1 \"$file\" 2>/dev/null | grep -q \"^---\" || echo \"WARNING: MDX file missing frontmatter: $file\"; fi'"
+          }
+        ]
+      }
+    ]
+  }
+}

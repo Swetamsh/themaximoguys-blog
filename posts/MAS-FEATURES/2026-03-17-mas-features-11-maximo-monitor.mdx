@@ -1,0 +1,551 @@
+---
+title: "Maximo Monitor: The IoT Platform That Gives Your Assets a Voice"
+description: "Complete guide to Maximo Monitor — the IoT platform for real-time asset monitoring with MQTT/REST ingestion, custom dashboards, anomaly detection, Python streaming analytics, edge data collection, and automated work order generation. Your assets have been trying to tell you something."
+date: "2026-03-17"
+slug: "mas-features-maximo-monitor"
+tags: ["Maximo", "MAS 9", "MAS Features", "Maximo Monitor", "IoT", "Sensors", "Anomaly Detection", "Edge Computing", "MQTT", "Dashboards"]
+draft: false
+tier: "free"
+author: "Posam Lakshminarayana"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-features-maximo-monitor.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+faqs:
+  - question: "What protocols does Maximo Monitor support for sensor data?"
+    answer: "Monitor supports MQTT (high-volume real-time), REST API (batch or on-demand), CSV file upload, Edge Data Collector (OPC-UA, Modbus, MQTT, REST), and Kafka Connect for enterprise streaming."
+  - question: "Can I write custom analytics in Maximo Monitor?"
+    answer: "Yes. Monitor supports custom Python functions for streaming analytics — rolling averages, derived metrics, custom ML models, and domain-specific calculations. These run as part of the analytics pipeline."
+  - question: "Does Monitor work without internet connectivity?"
+    answer: "The Edge Data Collector provides store-and-forward capability for sites with intermittent connectivity. Data is collected locally and synced to Monitor when connection is available."
+keyTakeaways:
+  - "Monitor ingests sensor data via MQTT, REST, CSV, Edge Data Collector, and Kafka Connect"
+  - "Three dashboard types: Summary (fleet-level), Entity (single device), and Custom (user-designed)"
+  - "Anomaly detection includes threshold, statistical, spectral analysis, and custom Python functions"
+  - "Alerts can auto-generate work orders, service requests, emails, webhooks, and Kafka events"
+  - "Edge Data Collector enables monitoring at remote sites with store-and-forward for intermittent connectivity"
+series:
+  name: "MAS FEATURES"
+  part: 11
+  total: 25
+tldr: "Maximo Monitor is a full IoT platform — ingest sensor data via MQTT/REST/Edge, visualize on real-time dashboards, detect anomalies with statistical and custom Python models, and auto-generate work orders when thresholds breach. Your assets have been trying to tell you something."
+seoTitle: "Maximo Monitor: IoT Platform, Dashboards, Anomaly Detection Guide"
+seoDescription: "Complete guide to Maximo Monitor — IoT ingestion, real-time dashboards, anomaly detection, custom Python analytics, edge computing, and automated work order generation."
+proficiencyLevel: "intermediate"
+pillarSlug: "mas-features-series-index"
+relatedSlugs:
+  - "mas-features-maximo-health"
+  - "mas-features-maximo-predict"
+---
+
+# Maximo Monitor: The IoT Platform That Gives Your Assets a Voice
+
+> **Who this is for:** Reliability engineers, IoT architects, maintenance managers, and operations teams who need to understand what Maximo Monitor actually does, how sensor data flows from the plant floor to automated work orders, and what it takes to stand up a pilot. Your assets have been screaming into the void. Monitor gives them a microphone.
+
+**Estimated read time: 10 minutes**
+
+---
+
+## The Pump That Tried to Warn You
+
+Pump P-2047 has been running for 11 years in Building C. It has been a reliable workhorse. Nobody worries about P-2047.
+
+Except P-2047 has been trying to tell you something for the last three weeks. Its vibration amplitude on the X-axis has crept from 2.1 mm/s to 4.8 mm/s. Its bearing temperature is running 12 degrees hotter than it did six months ago. Its flow rate has dropped 8% even though the setpoint has not changed.
+
+Nobody noticed. The vibration sensor is connected to a local HMI that a technician checks once per shift — if they remember. The temperature trend is buried in a historian that nobody queries unless something breaks. The flow anomaly is invisible because nobody is comparing today's readings to last quarter's baseline.
+
+Six weeks from now, P-2047 seizes. The bearing fails catastrophically. The impeller contacts the casing. The unplanned downtime costs $47,000 in lost production, plus $12,000 in emergency repair parts, plus the overtime labor.
+
+The data was there. The warning was there. Nobody was listening.
+
+Maximo Monitor exists to listen.
+
+---
+
+## 🔌 What Monitor Actually Is
+
+Monitor is the **IoT data platform** for MAS. It bridges the gap between your physical operational technology world and your IT-based asset management world. In concrete terms, it does six things:
+
+1. **Ingests** sensor data from thousands of devices across multiple protocols
+2. **Stores** time-series data at scale in a data lake
+3. **Analyzes** data in real time for anomalies and threshold breaches
+4. **Visualizes** asset conditions on real-time dashboards
+5. **Alerts** when conditions exceed thresholds — and takes automated action
+6. **Feeds** data to Health and Predict for advanced analytics
+
+Think of Monitor as the sensory nervous system for your entire asset fleet. Health is the brain that scores condition. Predict is the brain that forecasts failure. But without Monitor collecting and streaming the raw signals, neither Health nor Predict has anything to work with.
+
+---
+
+## 🏗️ Device Types and Device Instances: The Schema Layer
+
+Monitor organizes IoT data using a **device type / device instance** hierarchy. This is the foundation everything else builds on.
+
+A **Device Type** is a template. It defines what metrics a class of devices reports. A **Device Instance** is a specific physical device mapped to a Manage asset.
+
+```
+Device Type: Centrifugal_Pump
+  |
+  |-- Metrics: vibration_x, vibration_y, temperature, flow_rate, pressure, rpm
+  |-- Dimensions: manufacturer, model, location, criticality
+  |
+  |-- Device: PUMP-1001 (maps to Asset PUMP-1001 in Manage)
+  |-- Device: PUMP-1002 (maps to Asset PUMP-1002 in Manage)
+  |-- Device: PUMP-1003 (maps to Asset PUMP-1003 in Manage)
+  |-- ... (hundreds or thousands of instances)
+```
+
+You define the device type once. Every pump of that class inherits the same metric schema, the same dashboards, and the same anomaly detection rules. When you add pump number 500, it automatically picks up everything you already configured.
+
+This is a template-based architecture. You are not configuring sensors one at a time. You are defining classes of assets and then registering individual devices into those classes.
+
+> **Key insight:** The device type schema is the single most important decision you make in Monitor. Get it right and everything downstream — dashboards, anomaly detection, alerts, custom functions — works cleanly. Get it wrong and you are re-mapping metrics six months later. Spend the time on schema design. It pays for itself a hundred times over.
+
+---
+
+## 📡 Metric Ingestion: Five Ways In
+
+Monitor does not care how your data arrives. It cares that it arrives. You have five ingestion methods, each suited to a different operational reality:
+
+```
+┌─────────────────────┬──────────────────────┬─────────────────────────────────────┬──────────┐
+│ Method              │ Protocol             │ Use Case                            │ Volume   │
+├─────────────────────┼──────────────────────┼─────────────────────────────────────┼──────────┤
+│ MQTT                │ MQTT 3.1.1 / 5.0     │ Real-time sensor data from gateways │ High     │
+├─────────────────────┼──────────────────────┼─────────────────────────────────────┼──────────┤
+│ REST API            │ HTTPS POST           │ Batch uploads, historian integration│ Medium   │
+├─────────────────────┼──────────────────────┼─────────────────────────────────────┼──────────┤
+│ CSV Upload          │ File upload          │ Historical backfill, manual data    │ Low      │
+├─────────────────────┼──────────────────────┼─────────────────────────────────────┼──────────┤
+│ Edge Data Collector │ Agent-based          │ Direct PLC / OPC-UA / Modbus        │ High     │
+├─────────────────────┼──────────────────────┼─────────────────────────────────────┼──────────┤
+│ Kafka Connect       │ Kafka                │ Existing enterprise event streams   │ High     │
+└─────────────────────┴──────────────────────┴─────────────────────────────────────┴──────────┘
+```
+
+### MQTT: The High-Volume Workhorse
+
+MQTT is the primary ingestion path for real-time sensor data. It handles millions of messages per day from IoT gateways and edge devices. The topic structure follows a standard pattern:
+
+```
+iot-2/type/{deviceType}/id/{deviceId}/evt/{eventId}/fmt/json
+```
+
+A sample payload from a centrifugal pump looks like this:
+
+```json
+{
+  "d": {
+    "vibration_x": 4.2,
+    "vibration_y": 3.8,
+    "temperature": 185.3,
+    "flow_rate": 120.5,
+    "pressure": 45.2,
+    "rpm": 1780
+  },
+  "timestamp": "2026-03-02T14:30:00Z"
+}
+```
+
+That `"d"` wrapper is the IoT Platform convention. Every metric defined in your device type schema appears as a key. The timestamp tells Monitor exactly when the reading was taken — not when it arrived, but when it was measured. This matters when you are dealing with edge devices that buffer data during connectivity gaps.
+
+### REST API: Batch and On-Demand
+
+For systems that already have data in a historian or SCADA archive, the REST API lets you push data in batches via HTTPS POST. This is your path for integrating with existing data infrastructure without re-plumbing your OT network.
+
+### CSV Upload: Historical Backfill
+
+When you stand up Monitor for the first time, you often have months or years of historical data sitting in spreadsheets, historians, or flat files. CSV upload lets you backfill that history so your anomaly detection algorithms have a baseline from day one rather than waiting weeks to accumulate enough data.
+
+### Kafka Connect: Enterprise Streaming
+
+If your organization already runs Kafka for event streaming, Kafka Connect lets you tap into existing topics and route data into Monitor without duplicating infrastructure. This is the enterprise integration path.
+
+---
+
+## 📊 Real-Time Dashboards: Three Views of Truth
+
+Monitor provides three types of dashboards, each serving a different user and a different question.
+
+### Summary Dashboard: The Fleet View
+
+The Summary Dashboard answers: "How is my entire fleet of this asset class performing right now?"
+
+- KPI cards showing count of active alerts, average health, total anomalies
+- Map visualization showing device locations with color-coded status
+- Trend charts showing fleet-wide metric averages over time
+- Filterable by location, criticality, manufacturer, or any dimension
+
+This is what your operations manager looks at on a Monday morning. One screen tells them which asset class has the most problems, which locations are trending badly, and where to focus the maintenance crew.
+
+### Entity Dashboard: The Single-Device Deep Dive
+
+The Entity Dashboard answers: "What is happening with this specific asset right now and over time?"
+
+- All metrics displayed as time-series charts with zoom and pan
+- Anomaly markers overlaid directly on the metric charts
+- Alert history for the specific device
+- Direct link to the Manage asset record for work order context
+
+This is what your reliability engineer pulls up when the Summary Dashboard shows a red dot on Building C. They drill from fleet to individual, see the vibration trend climbing, and decide whether it needs immediate attention or monitoring.
+
+### Custom Dashboard: Your Design
+
+The Custom Dashboard answers: "What do I specifically need to see that the standard views do not show?"
+
+- User-designed layouts using a drag-and-drop dashboard builder
+- Widgets: charts, tables, maps, images, KPI cards
+- Configurable data sources and refresh intervals
+- Shareable across users and teams
+
+You might build a custom dashboard that shows all critical assets across three plants on a single screen, or one that compares vibration trends between identical pumps to identify the outlier. The builder gives you the flexibility.
+
+---
+
+## 🔍 Anomaly Detection: Five Layers of Vigilance
+
+This is where Monitor earns its keep. Five types of anomaly detection, from simple to sophisticated:
+
+```
+┌──────────────────────┬──────────────────────────────────────┬──────────────────────────────────┐
+│ Detection Type       │ What It Does                         │ Configuration                    │
+├──────────────────────┼──────────────────────────────────────┼──────────────────────────────────┤
+│ Threshold Alerts     │ Simple high/low bounds               │ Set upper and lower limits       │
+│                      │                                      │ per metric                       │
+├──────────────────────┼──────────────────────────────────────┼──────────────────────────────────┤
+│ Statistical Anomaly  │ Deviation from rolling mean /        │ Configure window size and        │
+│                      │ standard deviation                   │ sigma multiplier                 │
+├──────────────────────┼──────────────────────────────────────┼──────────────────────────────────┤
+│ Spectral Analysis    │ Frequency-domain anomaly detection   │ For vibration analysis use       │
+│                      │                                      │ cases (bearing defect freq)      │
+├──────────────────────┼──────────────────────────────────────┼──────────────────────────────────┤
+│ Custom Functions     │ Python-based anomaly logic you       │ Write and deploy custom          │
+│                      │ write yourself                       │ Python classes                   │
+├──────────────────────┼──────────────────────────────────────┼──────────────────────────────────┤
+│ Generalized Anomaly  │ Multi-metric anomaly scoring         │ Unsupervised ML across           │
+│                      │ using unsupervised ML                │ all metrics simultaneously       │
+└──────────────────────┴──────────────────────────────────────┴──────────────────────────────────┘
+```
+
+**Threshold alerts** are where everyone starts. Vibration above 7.1 mm/s? Alert. Temperature above 200 degrees? Alert. These are your safety nets — coarse but essential.
+
+**Statistical anomaly** detection is where you get smarter. Instead of fixed limits, Monitor tracks the rolling mean and standard deviation of each metric and flags readings that deviate beyond a configurable sigma multiplier. A pump that normally runs at 2.1 mm/s vibration will trigger a statistical anomaly at 4.8 mm/s even though the hard threshold is set at 7.1. The pattern changed. That is the early warning.
+
+**Spectral analysis** is purpose-built for vibration monitoring on rotating equipment. It moves from the time domain to the frequency domain, detecting bearing defect frequencies, gear mesh frequencies, and imbalance signatures that are invisible in simple amplitude trends.
+
+**Custom functions** let you bring your own domain expertise. More on these in the next section.
+
+**Generalized anomaly** detection runs unsupervised ML across all metrics simultaneously, looking for correlations that no single-metric analysis would catch. When vibration goes up and flow goes down and temperature rises — individually they might be within bounds, but together they form a pattern that generalized anomaly scoring will flag.
+
+> **Key insight:** The five detection layers are not alternatives. They are layers. You run all of them simultaneously. Thresholds catch the obvious emergencies. Statistical anomalies catch the slow drifts. Spectral analysis catches the vibration signatures. Custom functions catch the domain-specific patterns. Generalized anomaly catches the multi-metric correlations. Together, they form a detection mesh that very few failure modes can slip through.
+
+---
+
+## ⚡ Alert Rules: From Detection to Action
+
+Detecting an anomaly is only half the value. The other half is what happens next. Monitor alert rules define the automated response when anomalies or threshold breaches occur:
+
+```
+┌──────────────────────────┬───────────────────────────────────────────────────────┐
+│ Alert Action             │ What It Does                                          │
+├──────────────────────────┼───────────────────────────────────────────────────────┤
+│ Dashboard Alert          │ Visual indicator on Monitor dashboards (red dot,      │
+│                          │ banner, status color change)                          │
+├──────────────────────────┼───────────────────────────────────────────────────────┤
+│ Email Notification       │ Send email to defined recipients or distribution      │
+│                          │ lists when thresholds breach                          │
+├──────────────────────────┼───────────────────────────────────────────────────────┤
+│ Manage Service Request   │ Create a service request in Manage for                │
+│                          │ investigation and triage                              │
+├──────────────────────────┼───────────────────────────────────────────────────────┤
+│ Manage Work Order        │ Generate a work order in Manage — the full            │
+│                          │ closed-loop from sensor to wrench                     │
+├──────────────────────────┼───────────────────────────────────────────────────────┤
+│ Webhook                  │ Call an external system API (ServiceNow, Slack,       │
+│                          │ Teams, or any custom endpoint)                        │
+├──────────────────────────┼───────────────────────────────────────────────────────┤
+│ Kafka Event              │ Publish an event to a Kafka topic for downstream      │
+│                          │ consumption by other systems                          │
+└──────────────────────────┴───────────────────────────────────────────────────────┘
+```
+
+The **Manage work order** action is the crown jewel. Sensor detects vibration anomaly. Monitor flags it. Alert rule fires. Work order appears in a planner's queue in Manage with the asset ID, the anomaly details, and the recommended action. The technician shows up with the right parts because the work order was generated while the pump was still running — not after it seized.
+
+This is the closed loop: sensor to signal to detection to action to wrench. No human had to watch a dashboard. No one had to remember to check the historian. The system listened, detected, and acted.
+
+---
+
+## 🐍 Custom Functions: Python-Based Streaming Analytics
+
+Monitor's built-in anomaly detection covers the common patterns. But your operation has domain-specific logic that no generic algorithm can replicate. That is where custom functions come in.
+
+Custom functions are Python classes that run on the Monitor analytics pipeline. They process streaming data and produce derived metrics, custom anomaly flags, or enriched outputs.
+
+```python
+# Example: Custom rolling average function
+class RollingAverage(BaseTransformer):
+    def __init__(self, input_metric, window_size=24):
+        self.input_metric = input_metric
+        self.window_size = window_size
+
+    def execute(self, df):
+        df['rolling_avg'] = df[self.input_metric].rolling(
+            window=self.window_size
+        ).mean()
+        return df
+```
+
+That is a simple example. Here is what custom functions can actually do in production:
+
+- **Calculate derived metrics** — rolling averages, rates of change, ratios between metrics, efficiency calculations
+- **Implement domain-specific anomaly detection** — bearing defect frequency calculations, thermal model comparisons, process efficiency degradation curves
+- **Enrich data with external lookups** — pull in weather data, production schedules, or operating context
+- **Apply ML models to streaming data** — run a trained scikit-learn or TensorFlow model against every incoming data point
+- **Aggregate data across multiple devices** — compare one pump to the fleet average, flag outliers in real time
+
+Custom functions are not a reporting tool. They run in the streaming pipeline. Every time new data arrives, your function executes. The results flow into the data lake, appear on dashboards, and can trigger alert rules — just like built-in metrics.
+
+> **Key insight:** Custom functions are what turn Monitor from a generic IoT platform into your organization's domain-specific monitoring engine. The built-in anomaly detection gets you 80% of the value. Custom functions deliver the remaining 20% — the part that is specific to your equipment, your process, and your failure modes. Budget 8 to 16 hours for your first custom function. Budget days to weeks for a production-grade analytics library.
+
+---
+
+## 🏭 Edge Data Collector: Monitoring Without the Cloud
+
+Not every asset sits on a network with a clean path to the cloud. Remote pump stations, offshore platforms, underground mines, rural substations — these sites have intermittent connectivity at best. The Edge Data Collector solves this.
+
+The Edge Data Collector is a lightweight agent that runs on edge hardware — industrial PCs, ruggedized gateways, even Raspberry Pi devices. It collects data directly from the plant floor:
+
+- **OPC-UA servers** — the standard protocol for industrial automation
+- **Modbus TCP/RTU devices** — the legacy protocol that still runs most PLCs
+- **MQTT brokers** — local brokers that aggregate sensor data on-site
+- **REST APIs** — local historian or SCADA system endpoints
+- **CSV/flat files** — for systems that export data to disk
+
+The collector does three critical things at the edge:
+
+1. **Pre-processes** — filtering, aggregation, unit conversion before data leaves the site
+2. **Buffers** — store-and-forward capability during connectivity loss
+3. **Transmits** — sends data to Monitor when the connection is available
+
+That store-and-forward capability is the key differentiator. When the satellite link drops on an offshore platform, the collector does not lose data. It buffers locally and syncs when connectivity returns. You get delayed data instead of lost data.
+
+---
+
+## 🧬 Digital Twin: Physical Meets Virtual
+
+Monitor supports a device twin / digital twin approach that goes beyond simple data collection:
+
+- The **physical device** sends real sensor data — vibration, temperature, flow, pressure
+- The **digital twin** in Monitor maintains current state, historical trends, and calculated attributes
+- The twin can include **simulated values** alongside real data — virtual sensors that calculate what you cannot measure directly
+- Twin data is accessible via API for other applications to consume
+
+The digital twin is not a 3D model. It is a live data model that represents the complete operational state of an asset — what the sensors are reading, what the analytics are calculating, what the anomaly detection is flagging, and what the historical trends look like. It is the single source of truth for "how is this asset doing right now?"
+
+---
+
+## 🔄 Data Architecture: The Full Pipeline
+
+Here is how data flows through Monitor from source to consumer. This is the architecture that connects everything discussed above:
+
+```
++-------------------+     +---------------------------+     +-------------------+
+| Data Sources      |     | Monitor Data Pipeline     |     | Data Consumers    |
+|                   |     |                           |     |                   |
+| MQTT Devices      |---->| IoT Platform              |---->| Health (scoring)  |
+| REST APIs         |---->|   |                       |     |                   |
+| CSV Uploads       |---->|   v                       |     | Predict (ML)      |
+| Edge Collectors   |---->| Kafka Event Stream        |     |                   |
+| Historians        |---->|   |                       |     | Custom Apps       |
+|                   |     |   v                       |     |                   |
+|                   |     | Analytics Pipeline        |     | Data Lake Export  |
+|                   |     |  (Custom Functions)       |     |                   |
+|                   |     |   |                       |     | Dashboards        |
+|                   |     |   v                       |     |                   |
+|                   |     | Data Lake (Db2/COS)       |---->| APIs              |
+|                   |     |                           |     |                   |
++-------------------+     +---------------------------+     +-------------------+
+```
+
+The flow is: IoT sources push data into the Monitor ingestion layer. That data hits Kafka as an event stream. The analytics pipeline — including your custom Python functions — processes the stream. Results land in the data lake (Db2 or Cloud Object Storage). From there, Health reads anomaly counts and metric averages for scoring. Predict pulls full time-series history for ML training. Dashboards query the lake for visualization. APIs expose the data to custom applications.
+
+This is not a batch architecture. Data flows through continuously. When a sensor reading arrives at Monitor, it can trigger an anomaly detection, fire an alert rule, generate a work order in Manage, and appear on a dashboard — all within seconds.
+
+### Integration with Health and Predict
+
+```
+┌──────────────────────┬──────────────────────────────────────┬──────────────────────────────────┐
+│ Integration          │ What Flows                           │ How                              │
+├──────────────────────┼──────────────────────────────────────┼──────────────────────────────────┤
+│ Monitor -> Health    │ Anomaly counts, metric averages,     │ Health scoring contributors      │
+│                      │ threshold breach counts              │ read Monitor data lake            │
+├──────────────────────┼──────────────────────────────────────┼──────────────────────────────────┤
+│ Monitor -> Predict   │ Full time-series metric history,     │ Predict training data extraction │
+│                      │ anomaly flags                        │ pulls from Monitor data lake      │
+├──────────────────────┼──────────────────────────────────────┼──────────────────────────────────┤
+│ Monitor -> Manage    │ Alerts, service requests,            │ Alert rules trigger Manage       │
+│                      │ work orders                          │ actions via API                   │
+└──────────────────────┴──────────────────────────────────────┴──────────────────────────────────┘
+```
+
+Monitor is the data foundation. Health and Predict are the intelligence layers that consume it. Without Monitor feeding clean, continuous, structured sensor data, Health scores are less accurate and Predict models have less to train on.
+
+---
+
+## 🛠️ Use Cases: Where Monitor Proves Its Value
+
+### Vibration Monitoring — Rotating Equipment
+
+- **Devices:** Accelerometers on pumps, motors, fans, compressors
+- **Metrics:** Vibration amplitude (X, Y, Z), frequency spectrum, bearing temperature
+- **Analytics:** RMS trending, spectral analysis, bearing defect frequency monitoring
+- **Alerts:** Vibration exceeds ISO 10816 thresholds, sudden amplitude spike
+- **Value:** Detect bearing failure 2 to 6 weeks before catastrophic failure
+
+This is the flagship use case. Rotating equipment is the largest category of industrial assets, and vibration monitoring has the most proven ROI. One prevented catastrophic failure on a large motor or compressor can pay for the entire Monitor deployment.
+
+### Temperature Monitoring — Electrical Equipment
+
+- **Devices:** Temperature sensors on transformers, switchgear, cable terminations
+- **Metrics:** Winding temperature, oil temperature, ambient temperature, load current
+- **Analytics:** Temperature rise rate, thermal model comparison, hot spot detection
+- **Alerts:** Temperature exceeds rated limits, abnormal temperature rise under load
+- **Value:** Prevent thermal failures, optimize loading to extend equipment life
+
+### Flow Monitoring — Process Equipment
+
+- **Devices:** Flow meters, pressure transmitters, level sensors
+- **Metrics:** Flow rate, differential pressure, tank level, valve position
+- **Analytics:** Flow degradation trend, leak detection, efficiency calculation
+- **Alerts:** Flow below minimum, sudden flow change, unexpected pressure drop
+- **Value:** Detect leaks early, optimize process efficiency, prevent dry running damage
+
+### Energy Management
+
+- **Devices:** Power meters, sub-meters, smart breakers
+- **Metrics:** kW, kWh, power factor, voltage, current, harmonics
+- **Analytics:** Energy baseline comparison, peak demand tracking, anomaly detection
+- **Alerts:** Energy consumption exceeds baseline, poor power factor, voltage sag
+- **Value:** Reduce energy costs, identify waste, support ESG reporting
+
+---
+
+## 📋 Pilot Planning: 56 to 104 Hours
+
+A Monitor pilot is not a science project. It is a structured deployment with clear milestones. Here is the task breakdown with realistic effort estimates:
+
+```
+┌────────┬──────────────────────────────────────────────────────┬─────────────┬───────────────────────────┐
+│ Task   │ Description                                          │ Effort      │ Prerequisites             │
+├────────┼──────────────────────────────────────────────────────┼─────────────┼───────────────────────────┤
+│ M-1    │ Identify pilot device type (5-10 assets with         │ 4-8 hrs     │ Sensor infrastructure     │
+│        │ existing sensors)                                    │             │ exists                    │
+├────────┼──────────────────────────────────────────────────────┼─────────────┼───────────────────────────┤
+│ M-2    │ Define device type schema (metrics, dimensions,      │ 2-4 hrs     │ M-1 complete              │
+│        │ metadata)                                            │             │                           │
+├────────┼──────────────────────────────────────────────────────┼─────────────┼───────────────────────────┤
+│ M-3    │ Register pilot devices and map to Manage assets      │ 2-4 hrs     │ M-2 complete, Manage      │
+│        │                                                      │             │ assets exist              │
+├────────┼──────────────────────────────────────────────────────┼─────────────┼───────────────────────────┤
+│ M-4    │ Establish connectivity and ingest first data          │ 8-16 hrs    │ M-3 complete, network     │
+│        │ (MQTT or CSV)                                        │             │ access                    │
+├────────┼──────────────────────────────────────────────────────┼─────────────┼───────────────────────────┤
+│ M-5    │ Create summary dashboard for pilot device type       │ 4-8 hrs     │ M-4 complete, data        │
+│        │                                                      │             │ flowing                   │
+├────────┼──────────────────────────────────────────────────────┼─────────────┼───────────────────────────┤
+│ M-6    │ Create entity dashboard for individual device        │ 4-8 hrs     │ M-4 complete              │
+│        │ drill-down                                           │             │                           │
+├────────┼──────────────────────────────────────────────────────┼─────────────┼───────────────────────────┤
+│ M-7    │ Configure anomaly detection (threshold +             │ 4-8 hrs     │ M-4 complete, baseline    │
+│        │ statistical)                                         │             │ data                      │
+├────────┼──────────────────────────────────────────────────────┼─────────────┼───────────────────────────┤
+│ M-8    │ Set up alert rules with Manage work order creation   │ 4-8 hrs     │ M-7 complete, Manage      │
+│        │                                                      │             │ integration               │
+├────────┼──────────────────────────────────────────────────────┼─────────────┼───────────────────────────┤
+│ M-9    │ Develop one custom Python function (e.g., rolling    │ 8-16 hrs    │ M-4 complete, Python      │
+│        │ average)                                             │             │ skills                    │
+├────────┼──────────────────────────────────────────────────────┼─────────────┼───────────────────────────┤
+│ M-10   │ Evaluate Edge Data Collector for direct PLC          │ 16-24 hrs   │ Edge hardware available   │
+│        │ connectivity                                         │             │                           │
+└────────┴──────────────────────────────────────────────────────┴─────────────┴───────────────────────────┘
+```
+
+**Total estimated effort: 56 to 104 hours. 2 to 4 people. 2 to 3 weeks elapsed time.**
+
+Tasks M-1 through M-8 are your core pilot — the minimum viable Monitor deployment. M-9 and M-10 are enhancements you can add once data is flowing and stakeholders can see the value.
+
+> **Key insight:** The biggest variable in a Monitor pilot is not configuration or dashboards. It is connectivity — M-4. Getting sensor data from the plant floor into Monitor requires navigating OT/IT network boundaries, firewall rules, protocol conversions, and security policies. Budget generously for this step. Everything else is configuration.
+
+---
+
+## 🆕 What Changed in MAS 9
+
+MAS 9 brings meaningful improvements to Monitor across the board:
+
+- **Higher ingestion throughput** — better handling of late-arriving data and burst traffic
+- **Enhanced dashboards** — more visualization options, improved rendering performance
+- **Better anomaly detection** — improved built-in algorithms with lower false positive rates
+- **Edge Data Collector improvements** — expanded protocol support, more robust store-and-forward
+- **Simplified device management** — bulk registration operations, improved device lifecycle management
+- **Smoother Monitor-to-Manage integration** — streamlined alert-to-work-order flow with richer context
+
+The theme across all improvements is operational maturity. MAS 9 Monitor is not fundamentally different from MAS 8 Monitor — it is the same architecture, refined. If you deployed Monitor on MAS 8, the upgrade gives you better performance and fewer rough edges. If you are deploying for the first time, you get the benefit of those refinements out of the box.
+
+---
+
+## The Closed Loop: Sensor to Wrench
+
+Let us go back to Pump P-2047. Same pump, same bearing degradation — but this time with Monitor deployed.
+
+**Week 1:** The accelerometer on P-2047 reports vibration at 2.1 mm/s. Normal. Monitor stores the reading, updates the digital twin, and the Summary Dashboard shows a green dot.
+
+**Week 2:** Vibration creeps to 3.4 mm/s. The statistical anomaly detector flags this — it is 1.8 sigma above the rolling mean. The Entity Dashboard shows an amber anomaly marker on the vibration chart. No alert fires yet. Monitor is watching.
+
+**Week 3:** Vibration hits 4.8 mm/s. The threshold alert fires at 4.5 mm/s. The alert rule generates a work order in Manage: "Investigate vibration anomaly on PUMP-2047, Building C. Vibration X-axis trending from 2.1 to 4.8 mm/s over 21 days. Recommend bearing inspection."
+
+**Week 3, Day 4:** The technician inspects. Bearing shows early-stage spalling. They order the replacement parts. The planner schedules the repair for the next weekend shutdown.
+
+**Week 4:** Bearing replaced during planned downtime. Total cost: $2,400 in parts and 4 hours of labor. No lost production. No emergency. No 3 AM phone call.
+
+**The math:** $2,400 planned repair versus $59,000 unplanned failure. That is a 24:1 return on a single event. Multiply by the number of rotating assets in your fleet.
+
+Your assets have been trying to tell you something. Monitor lets you hear them.
+
+---
+
+## Key Takeaways
+
+- **Monitor is the IoT data platform for MAS** — it connects your physical assets to the digital world through five ingestion methods (MQTT, REST, CSV, Edge Data Collector, Kafka Connect)
+- **Device type schemas are template-based** — define once, register hundreds of instances, inherit dashboards and anomaly detection automatically
+- **Three dashboard types serve three audiences** — Summary for fleet-level operations, Entity for single-device deep dives, Custom for your specific needs
+- **Five layers of anomaly detection** run simultaneously — thresholds, statistical, spectral, custom Python, and generalized ML
+- **Alert rules close the loop** — from sensor anomaly to work order in Manage without human intervention
+- **Custom Python functions** turn generic IoT into domain-specific monitoring — rolling averages, ML models, and anything your operation needs
+- **Edge Data Collector** extends monitoring to remote sites with store-and-forward for intermittent connectivity
+- **Pilot effort is 56 to 104 hours** — the biggest variable is OT/IT network connectivity, not Monitor configuration
+
+---
+
+## References
+
+- [IBM Maximo Monitor Documentation](https://www.ibm.com/docs/en/maximo-monitor)
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas)
+- [MQTT Protocol Specification](https://mqtt.org/mqtt-specification/)
+- [OPC Foundation - OPC-UA](https://opcfoundation.org/about/opc-technologies/opc-ua/)
+- [ISO 10816 - Vibration Severity Standards](https://www.iso.org/standard/21477.html)
+
+---
+
+**Series Navigation:**
+
+**Previous:** [Part 10 — Maximo Health: How AI Scores Your Assets from 0 to 100](/blog/mas-features-maximo-health)
+**Next:** Part 12 — Maximo Predict (coming soon)
+
+[View the full MAS FEATURES series index](/blog/mas-features-series-index)
+
+---
+
+*Part 11 of the "MAS FEATURES" series | Published by TheMaximoGuys*
+
+*Your assets have been generating data for years. Temperature readings, vibration measurements, flow rates, pressure levels — all streaming from sensors on the plant floor. Most of it disappears into historians that nobody queries. Monitor catches every signal, analyzes it in real time, and turns the patterns into action. The question is not whether your assets are talking. The question is whether you are listening.*

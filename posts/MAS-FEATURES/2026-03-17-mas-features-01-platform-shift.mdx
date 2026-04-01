@@ -1,0 +1,421 @@
+---
+title: "The Platform Shift: From WebSphere Monolith to OpenShift Microservices"
+description: "Everything that changed under the hood in MAS 9 — the architecture shift from WebSphere to OpenShift, Java 17 migration impact, sealed databases, containerized deployment, and what your infrastructure team needs to learn. The technical foundation every upgrade team must understand."
+date: "2026-03-17"
+slug: "mas-features-platform-shift"
+tags: ["Maximo", "MAS 9", "MAS Features", "Architecture", "OpenShift", "Java 17", "Kubernetes", "Containers", "WebSphere", "Infrastructure"]
+draft: false
+tier: "free"
+author: "Posam Lakshminarayana"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-features-platform-shift.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+faqs:
+  - question: "Does MAS 9 still run on WebSphere?"
+    answer: "No. MAS 9 runs on WebSphere Liberty (not WebSphere ND) inside containers on Red Hat OpenShift. The monolithic EAR deployment model is gone, replaced by containerized pods managed by Kubernetes operators."
+  - question: "Will my custom Java code work in MAS 9?"
+    answer: "Almost certainly not without changes. Java 17's strict module system blocks reflective access to internal classes, and many deprecated APIs were removed. IBM recommends converting all custom Java to Automation Scripts (Jython/JavaScript)."
+  - question: "Can I still access the database directly in MAS 9?"
+    answer: "In managed/SaaS deployments, the database is sealed — no direct SQL access. All data operations must go through supported APIs and the application layer. On-premise deployments may allow database access but it is discouraged."
+keyTakeaways:
+  - "MAS 9 moves from monolithic WebSphere EAR to containerized microservices on Red Hat OpenShift"
+  - "Java 17 is mandatory and will break most custom Java code — IBM recommends converting to Automation Scripts"
+  - "The database is sealed in managed deployments — no direct SQL, all access via APIs"
+  - "Infrastructure teams need Kubernetes, OpenShift, and container networking skills"
+  - "Core business objects, Application Designer, Automation Scripts, and MBO framework remain unchanged"
+series:
+  name: "MAS FEATURES"
+  part: 1
+  total: 25
+tldr: "MAS 9 replaces the monolithic WebSphere architecture with containerized microservices on OpenShift, mandates Java 17 (breaking most custom code), and seals the database in managed deployments. The business logic stayed — the entire infrastructure changed."
+seoTitle: "MAS 9 Architecture: WebSphere to OpenShift Migration Guide"
+seoDescription: "Complete breakdown of MAS 9 architecture changes — WebSphere to OpenShift, Java 17 migration, sealed database, containerized deployment, and infrastructure skills needed."
+proficiencyLevel: "intermediate"
+pillarSlug: "mas-features-series-index"
+relatedSlugs:
+  - "mas-features-carbon-design-ui"
+  - "mas-features-work-centers-rbas"
+  - "mas-admin-series-index"
+---
+
+# The Platform Shift: From WebSphere Monolith to OpenShift Microservices
+
+> **Who this is for:** Maximo technical teams preparing for the MAS 9 upgrade -- architects, administrators, developers, and infrastructure engineers who need to understand what changed underneath the application before they plan a single sprint.
+
+**Estimated read time: 10 minutes**
+
+---
+
+> *"So we just upgrade the EAR file and redeploy, right?"*
+
+If someone on your team said that in a planning meeting, this post is for them. If *you* said that, no judgment -- but keep reading, because the answer is going to reshape how your entire team thinks about Maximo infrastructure.
+
+---
+
+## This Is Not a Version Upgrade
+
+Let's get the most important thing out of the way first.
+
+The upgrade from Maximo 7.6 to MAS 9 Manage is **NOT** a typical version upgrade. It is a complete platform transformation that touches every layer of the system. This is not "Maximo with a new coat of paint." This is a fundamentally different platform that happens to run the same business logic underneath.
+
+Every single layer changed:
+
+- **Architecture:** Monolithic WebSphere EAR deployment transforms into containerized microservices on Red Hat OpenShift
+- **Runtime:** Java 8/11 moves to Java 17 with strict module enforcement
+- **User Interface:** Traditional Maximo skin system replaced entirely by IBM Carbon Design System
+- **Navigation:** Work Centers removed entirely starting in MAS 8.9, fully eliminated in MAS 9.x
+- **Mobile:** Maximo Anywhere is dead, replaced by Maximo Mobile built on React.js/MAF
+- **Integration:** RMI deprecated, REST/JSON API is the primary integration mechanism
+- **Reporting:** BIRT phased out in favor of Cognos Analytics
+- **Licensing:** Per-module licensing replaced by AppPoints consumption model
+- **Security:** Standalone authentication replaced by SAML/OIDC/LDAP via Suite-level SSO
+- **Database:** Still DB2/Oracle/SQL Server, but now "sealed" in managed deployments -- no direct SQL access
+- **Maps:** Google Maps and Bing Maps deprecated -- OpenMap with ArcGIS is the standard
+
+That is not a version bump. That is a platform migration.
+
+The old muscle memory from 7.6 will help with business process understanding, but the mechanics of how you configure, customize, integrate, and operate the system have changed substantially. Every team member needs to understand the areas relevant to their role.
+
+---
+
+## The Architecture Comparison: Old World vs. MAS World
+
+Here is the full side-by-side. Study this table. Print it out. Tape it to the wall in your project room. Every row represents a skill your team either already has or needs to build.
+
+```
+ MAXIMO 7.6                          MAS 9 MANAGE
+ ══════════════════════════════════   ══════════════════════════════════
+ ┌────────────────────────────────┐   ┌────────────────────────────────┐
+ │  WebSphere Application Server  │   │  WebSphere Liberty on          │
+ │  ND 8.5/9.0 or WebLogic       │   │  OpenShift Containers          │
+ ├────────────────────────────────┤   ├────────────────────────────────┤
+ │  Java 8 (some orgs Java 11)   │   │  Java 17 (mandatory as of      │
+ │                                │   │  MAS 9.1 March 2025)           │
+ ├────────────────────────────────┤   ├────────────────────────────────┤
+ │  Monolithic EAR file deployed  │   │  Containerized pods managed    │
+ │  to application server         │   │  by Kubernetes operators       │
+ ├────────────────────────────────┤   ├────────────────────────────────┤
+ │  IBM Installation Manager      │   │  MAS CLI + Ansible playbooks   │
+ │  + manual EAR deployment       │   │  + OpenShift operators         │
+ ├────────────────────────────────┤   ├────────────────────────────────┤
+ │  Vertical scaling              │   │  Horizontal pod autoscaling    │
+ │  (bigger server + cluster)     │   │  (operator-managed)            │
+ ├────────────────────────────────┤   ├────────────────────────────────┤
+ │  Manual HA (WebSphere ND       │   │  Kubernetes-native HA          │
+ │  clustering, manual failover)  │   │  (auto pod restart, rolling    │
+ │                                │   │  updates)                      │
+ ├────────────────────────────────┤   ├────────────────────────────────┤
+ │  Manual certificate mgmt       │   │  Cert-Manager operator         │
+ │                                │   │  (automatic rotation)          │
+ ├────────────────────────────────┤   ├────────────────────────────────┤
+ │  Application log files on disk │   │  Container stdout/stderr       │
+ │                                │   │  + centralized logging         │
+ │                                │   │  (EFK/Loki)                    │
+ ├────────────────────────────────┤   ├────────────────────────────────┤
+ │  Custom monitoring (ITM/IPM)   │   │  Prometheus/Grafana via        │
+ │                                │   │  OpenShift monitoring stack    │
+ ├────────────────────────────────┤   ├────────────────────────────────┤
+ │  Windows Server, AIX, Linux    │   │  Red Hat CoreOS               │
+ │                                │   │  (via OpenShift)               │
+ ├────────────────────────────────┤   ├────────────────────────────────┤
+ │  LDAP, local users,            │   │  MongoDB for user mgmt +      │
+ │  app server auth               │   │  LDAP/SAML/OIDC federation    │
+ ├────────────────────────────────┤   ├────────────────────────────────┤
+ │  DB2/Oracle/SQL Server         │   │  DB2/Oracle/SQL Server         │
+ │  (direct SQL access)           │   │  (sealed -- API-only access    │
+ │                                │   │  in managed deployments)       │
+ └────────────────────────────────┘   └────────────────────────────────┘
+```
+
+Every row in that diagram is a conversation your team needs to have. The person who managed WebSphere connection pools needs to understand pod resource limits. The DBA who tuned database parameters needs to understand that the platform manages those now. The admin who renewed SSL certificates manually needs to understand cert-manager.
+
+<aside>
+**Key insight:** This is not a shift you absorb passively by reading release notes. This is a shift that requires deliberate skill-building across your entire infrastructure team. The application logic is familiar. Everything that surrounds it is new.
+</aside>
+
+---
+
+## Java 17: The Silent Code Breaker
+
+You have spent years writing custom MBO classes, compiling them against Java 8, packaging them into the EAR, and deploying them to production. Maybe you have a handful. Maybe you have hundreds. Either way, Java 17 is going to break them.
+
+This is not a theoretical risk. This is a certainty.
+
+### What Breaks
+
+**Custom MBO classes compiled against Java 8 will NOT run on Java 17 without recompilation.** Full stop. The bytecode compatibility alone requires a recompile, but that is the easy part.
+
+Here is the full list of breaking changes your custom Java code will hit:
+
+- **Deprecated Java APIs removed:** Methods and classes that were deprecated in Java 8 and merely generated warnings have been fully removed in Java 17. Your code will throw `ClassNotFoundException` or `NoSuchMethodException` at runtime -- not at compile time, at *runtime*, in production, when a user triggers the code path.
+
+- **`javax.*` to `jakarta.*` namespace migration:** Any code using Java EE APIs directly -- servlets, JPA, JAX-RS -- needs the namespace updated. This is not a find-and-replace job. The `jakarta.*` APIs have behavioral differences in some cases.
+
+- **`sun.misc.Unsafe` restrictions:** If your custom code (or any library it depends on) uses `sun.misc.Unsafe` for direct memory access or concurrency tricks, Java 17's module system will block it. This was never a supported API, but many libraries used it silently.
+
+- **Module system (JPMS) blocks reflective access:** Java 17 enforces the Java Platform Module System. Reflective access to internal JDK classes that worked silently in Java 8 -- `setAccessible(true)` on private fields, accessing `sun.*` or `com.sun.*` packages -- will throw `IllegalAccessError`. This is the most common source of failures.
+
+- **Stricter type checking:** Some implicit type conversions and generic type erasure behaviors that Java 8 tolerated have been tightened. Code that compiled cleanly on Java 8 may produce compilation errors on Java 17.
+
+- **JDBC driver compatibility:** JDBC drivers built for older Java versions may fail SSL handshakes due to tightened security defaults in Java 17. If your custom integrations use direct JDBC connections, the drivers need updating.
+
+- **SOAP client breakage:** SOAP clients relying on legacy Java EE security configurations need updates for Java 17 compatibility.
+
+### What To Do About It
+
+IBM's recommendation is unambiguous: **convert custom Java to Automation Scripts wherever possible.** Java customization is considered an anti-pattern in cloud-native MAS architecture.
+
+Here is the practical migration path:
+
+1. **Inventory ALL custom Java classes** in your 7.6 environment. Every `.java` file in your customization directories. Every custom MBO, every custom field class, every custom service class.
+
+2. **Set up a Java 17 compilation environment** and attempt to compile each class. Document every error.
+
+3. **Fix all compilation errors** -- deprecated API replacements, namespace changes, module access declarations.
+
+4. **Test under load.** Some issues only surface under concurrent access. A class that compiles cleanly may still fail when two threads hit it simultaneously because of stricter memory model enforcement.
+
+5. **Convert to Automation Scripts** where possible. IBM recommends Jython or JavaScript Automation Scripts as the primary customization mechanism in MAS. Scripts do not need recompilation. Scripts survive platform upgrades cleanly. Scripts are the future.
+
+<aside>
+**Key insight:** The Java 17 migration is not optional, and it is not something you do during the upgrade weekend. It is a project within the project. Organizations with 50+ custom Java classes should budget weeks of dedicated developer time for inventory, recompilation, testing, and conversion.
+</aside>
+
+---
+
+## The Sealed Database: A Philosophical Shift
+
+> *"I'll just fix it with a direct UPDATE statement."*
+
+Every experienced Maximo admin has said this at 3 AM. A work order stuck in a bad status. A MIF queue clogged with orphaned records. A data inconsistency that the application layer cannot resolve. You open your SQL client, write a careful UPDATE, run it, and the problem disappears.
+
+In MAS managed deployments, that escape hatch is gone.
+
+### What "Sealed" Means
+
+In MAS managed deployments -- especially SaaS -- direct database access via SQL clients is **restricted or prohibited**. This is not a bug. This is a deliberate architectural decision.
+
+- All data access must go through documented APIs: REST/JSON API, Object Structures, the application layer
+- Custom database triggers from your 7.6 environment will NOT work
+- Stored procedures will NOT work
+- Direct SQL scripts that your team has accumulated over the years will NOT work
+- Database tuning parameters are managed by the platform, not by your DBAs directly
+
+The relational database itself is still there -- DB2, Oracle, or SQL Server. Maximo business data still lives in tables you recognize: `WORKORDER`, `ASSET`, `LOCATIONS`, `MATUSETRANS`. But you cannot touch them directly.
+
+On-premise deployments may still allow database access, but IBM discourages it. The direction is clear: the database is an implementation detail of the platform, not an interface for administrators.
+
+### Why IBM Did This
+
+This is not arbitrary restriction. Sealed databases solve real problems:
+
+- **Data integrity guarantees.** When all writes go through the application layer, the platform can enforce business rules, audit trails, and validation consistently. A direct SQL UPDATE bypasses all of that.
+- **Upgrade safety.** IBM can change internal table structures between releases without worrying about customer SQL scripts that depend on specific column names or data types.
+- **Multi-tenancy.** In SaaS deployments, direct database access from one tenant is a security risk to all tenants.
+
+<aside>
+**Key insight:** The sealed database is not about taking power away from admins. It is about guaranteeing that the data layer behaves predictably so that the platform can be managed, upgraded, and scaled without breaking customer environments. It is the same reason you do not edit `/etc/passwd` directly on a managed Linux server.
+</aside>
+
+---
+
+## MongoDB Enters the Picture
+
+MAS introduces MongoDB at the Suite level. This is not a replacement for the relational database -- it serves a different purpose entirely.
+
+MongoDB handles:
+- **User management** -- user profiles, preferences, and account data
+- **Authentication tokens** -- session state for SSO
+- **SSO session handling** -- token lifecycle management across the Suite
+
+Maximo business data -- work orders, assets, locations, PMs, inventory, purchasing -- still lives in DB2, Oracle, or SQL Server. MongoDB is infrastructure plumbing for the Suite's identity and access management layer.
+
+Your DBAs need to know MongoDB exists. They do not need to become MongoDB experts. The platform manages it.
+
+---
+
+## Performance Tuning: Everything Moved
+
+You have spent years building intuition about Maximo performance. You know that the JVM heap needs to be bigger during month-end reporting. You know that the connection pool needs headroom for Monday morning login surges. You know which database indexes make the difference between a 2-second query and a 45-second query.
+
+That intuition still matters. But the levers you pull have completely changed.
+
+### Old World Tuning
+
+```properties
+# JVM heap (WebSphere admin console)
+-Xms4096m -Xmx8192m -XX:+UseG1GC
+
+# Connection pool (WebSphere data source)
+Maximum connections: 75
+Connection timeout: 180 seconds
+
+# Database (DBA tuning)
+Buffer pool sizes, query optimizer statistics,
+index strategies, tablespace configuration
+```
+
+### MAS World Tuning
+
+```yaml
+# Container resource limits (Kubernetes)
+resources:
+  requests:
+    memory: "4Gi"
+    cpu: "2"
+  limits:
+    memory: "8Gi"
+    cpu: "4"
+
+# Liberty server.xml (application runtime)
+<connectionManager maxPoolSize="75"
+                   connectionTimeout="180s"/>
+
+# Horizontal Pod Autoscaler (scaling)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+spec:
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+```
+
+The mental model shifted from "make the one big server bigger" to "add more small containers and let Kubernetes distribute the load." Vertical scaling (bigger server) is replaced by horizontal pod autoscaling (more pods). Manual failover is replaced by Kubernetes-native self-healing -- if a pod dies, the platform replaces it automatically.
+
+Liberty `server.xml` replaces WebSphere admin console configurations. Container resource limits replace JVM arguments. Prometheus and Grafana replace custom monitoring tools and IBM Tivoli.
+
+Your performance intuition transfers. The knobs you turn are different.
+
+---
+
+## AppPoints: The New Licensing Reality
+
+The licensing model changed from per-module to consumption-based. This matters for upgrade planning because it affects budgets and user access design.
+
+### Old Model (Maximo 7.6)
+
+- License per module: Scheduler, Calibration, Linear, and so on
+- Separate license for each add-on
+- User-count based pricing
+
+### New Model (MAS 9)
+
+A single **AppPoints** pool covers ALL MAS products. Points are consumed based on user tier and access pattern:
+
+```
+ User Type       Access Level                  Concurrent  Authorized
+ ═══════════════ ═══════════════════════════    ══════════  ══════════
+ Limited         Up to 3 modules                    5          2
+ Base            Standard access                   10          5
+ Premium         Full access + advanced             15         10
+ Administrative  System config only                 --          3
+ Administrative  System config (w/ industry)        --          5
+ Self-Service    Limited self-service              FREE       FREE
+```
+
+**Authorized Users** consume points continuously whether logged in or not -- best for power users who live in the system daily. **Concurrent Users** consume points only during active sessions -- best for occasional users who log in a few times per week.
+
+The **Data Reporter Operator (DRO)** replaces the deprecated User Data Services and collects usage metrics for compliance reporting.
+
+**What is included without extra AppPoints:** Maximo Manage (core), Maximo Mobile, Maximo Scheduler (was a separate license in 7.6), Reliability Strategies Library, and all Role-Based Applications.
+
+**What consumes additional AppPoints:** Maximo Health, Monitor, Predict, Visual Inspection (Suite add-ons), Maximo AI Service (10 AppPoints in 9.1), and Maximo Optimizer.
+
+<aside>
+**Key insight:** Analyze login patterns from your 7.6 environment before the upgrade. Identify power users (Authorized) versus occasional users (Concurrent). Organizations that shift 10-15% of premium users from Concurrent to Authorized licensing can save 100+ AppPoints. This analysis pays for itself.
+</aside>
+
+---
+
+## What Did NOT Change (The Comfort Section)
+
+After all of that disruption, here is the stabilizing truth: the core of Maximo -- the part that runs your maintenance operations -- survived intact.
+
+- **Core business objects** remain the same. Work Orders, Assets, Locations, PMs, Job Plans, Inventory, Purchasing -- same data model, same relationships, same business rules.
+- **Application Designer** still exists for classic application customization. You can still modify screens, add fields, rearrange tabs.
+- **Automation Scripts** (Jython/JavaScript) are still the primary customization mechanism. In fact, they are now the *preferred* mechanism over custom Java.
+- **MIF (Maximo Integration Framework)** still works. Existing integrations using Object Structures, Enterprise Services, and Publish Channels carry forward.
+- **Start Centers** still function. They are strategically being replaced by Operational Dashboard, but existing configurations carry forward during upgrade.
+- **Escalations, Workflows, Communication Templates, Cron Tasks** -- all still work.
+- **The MBO (Maximo Business Object) framework** remains. The programmatic model for interacting with Maximo data objects is the same.
+
+This is genuinely important. The infrastructure team has a mountain of new skills to build. But the functional team -- the people who configure workflows, write automation scripts, design integrations, and manage business processes -- will find most of their knowledge intact.
+
+The platform changed. The business logic stayed.
+
+---
+
+## Team Skills: What You Need to Learn
+
+Here is the honest assessment of what your infrastructure team needs to add to their skill set. This is not optional learning. This is required for operating MAS 9.
+
+### Required Skills
+
+| Skill Area | Why It Matters | Starting Point |
+|------------|---------------|----------------|
+| **Kubernetes/OpenShift administration** | MAS runs on OpenShift. Period. You need to read pod logs, check deployments, understand namespaces, and troubleshoot scheduling failures. | Red Hat OpenShift learning portal, `oc` CLI basics |
+| **Container networking** | Services communicate over overlay networks. DNS resolution, ingress routes, and network policies replace traditional firewall rules and load balancer configs. | Kubernetes networking fundamentals |
+| **PersistentVolumeClaims and storage** | Maximo needs persistent storage for attachments, logs, and configuration. Understanding storage classes and PVC lifecycle is essential. | OpenShift storage documentation |
+| **Linux command line proficiency** | No more Windows Server for Maximo. Red Hat CoreOS is the OS. `oc`, `kubectl`, and standard Linux tools are your daily interface. | Linux CLI fundamentals |
+| **Certificate management (cert-manager)** | Cert-manager automates certificate issuance and renewal. You need to understand certificate lifecycle, issuers, and how to troubleshoot rotation failures. | cert-manager documentation |
+| **YAML/JSON configuration** | Everything in Kubernetes is declarative YAML. Custom Resource Definitions, Helm values, operator configurations -- all YAML. | Practice reading and writing Kubernetes manifests |
+| **Helm charts and operator lifecycle** | MAS components are deployed via operators. Understanding the operator pattern, CRDs, and reconciliation loops is fundamental. | Kubernetes Operator pattern documentation |
+
+### Deployment Tooling
+
+The old deployment workflow -- IBM Installation Manager, `buildmaximoear.sh`, `wsadmin` scripting -- is replaced by:
+
+- **MAS CLI:** The primary tool for installing, configuring, and managing MAS. Key commands: `mas install`, `mas configure`, `mas update`, `mas status`. Supports both interactive and scripted operations.
+- **Ansible playbooks:** IBM provides official Ansible playbooks for MAS deployment. Repeatable, version-controlled infrastructure-as-code. Covers the full lifecycle: install, configure, update, backup, restore.
+- **OpenShift operators:** MAS components are managed by Kubernetes operators that handle upgrades, scaling, health checks, and configuration through Custom Resource Definitions (CRDs). The operator reconciles actual state with desired state automatically.
+
+<aside>
+**Key insight:** If your infrastructure team has zero Kubernetes experience today, budget 4-6 weeks of dedicated learning time before the upgrade project begins. This is not something you pick up during the upgrade. This is a prerequisite.
+</aside>
+
+---
+
+## Key Takeaways
+
+- **MAS 9 is a platform migration, not a version upgrade.** Every infrastructure layer changed. Treat it as a migration project, not a patch weekend.
+- **Java 17 will break your custom Java code.** Inventory it now. Recompile it now. Convert to Automation Scripts where possible. Do not wait until the upgrade window.
+- **The database is sealed in managed deployments.** Your SQL scripts, triggers, and stored procedures will not work. All data access goes through APIs.
+- **MongoDB handles Suite-level user management.** It does not replace the relational database.
+- **Performance tuning moved from JVM/DB tuning to container resource limits, Liberty server.xml, and Kubernetes HPA.**
+- **AppPoints replace per-module licensing.** Analyze your 7.6 login patterns before the upgrade.
+- **Core business logic survived.** Work Orders, Assets, MBO framework, Automation Scripts, MIF, workflows -- all intact.
+- **Your infrastructure team needs Kubernetes, OpenShift, container networking, Linux CLI, and certificate management skills.** Budget learning time.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite 9 Documentation](https://www.ibm.com/docs/en/mas)
+- [IBM Maximo 7.6 to MAS Migration Guide](https://www.ibm.com/docs/en/mas-cd/maximo-manage/continuous-delivery)
+- [Red Hat OpenShift Container Platform Documentation](https://docs.openshift.com/container-platform/latest/welcome/index.html)
+- [Java 17 Migration Guide (Oracle)](https://docs.oracle.com/en/java/javase/17/migrate/getting-started.html)
+- [Kubernetes Operators Explained](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/)
+- [IBM MAS CLI Documentation](https://ibm-mas.github.io/cli/)
+
+---
+
+**Series Navigation:**
+
+**Previous:** [MAS FEATURES Series Index](/blog/mas-features-series-index)
+**Next:** [Part 2 -- Carbon Design System: The New Face of Maximo](/blog/mas-features-carbon-design-ui)
+
+[View the full MAS FEATURES series index -->](/blog/mas-features-series-index)
+
+---
+
+*Part 1 of 25 in the "MAS FEATURES" series | Published by TheMaximoGuys*
+
+*The platform shift is the foundation everything else in this series builds on. If you understand what changed underneath -- and more importantly, what did not -- you can approach every other MAS 9 topic with the right mental model. In Part 2, we will cover the Carbon Design System and what it means for every screen your users interact with daily.*

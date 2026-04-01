@@ -1,0 +1,473 @@
+---
+title: "Integration & Reporting: REST APIs, Kafka, and the End of BIRT in MAS 9"
+description: "How MAS 9 transforms integration with JSON API as primary, Kafka for event streaming, and RMI deprecated. Plus the painful BIRT-to-Cognos reporting migration — no automatic conversion, every report recreated from scratch."
+date: "2026-03-17"
+slug: "mas-features-integration-reporting"
+tags: ["Maximo", "MAS 9", "MAS Features", "REST API", "Kafka", "Integration", "BIRT", "Cognos", "Reporting", "JSON API", "MIF"]
+draft: false
+tier: "free"
+author: "Posam Lakshminarayana"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-features-integration-reporting.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+faqs:
+  - question: "Does MIF still work in MAS 9?"
+    answer: "Yes. Publish Channels, Enterprise Services, Object Structures, External Systems, and Interface Tables still function. However, the JSON API (/api) is the recommended integration mechanism for all new work."
+  - question: "Can I migrate BIRT reports to Cognos automatically?"
+    answer: "No. There is no automatic migration tool. BIRT XML is incompatible with Cognos. Every report must be manually recreated in Cognos Analytics, or replaced by Operational Dashboard KPI cards where appropriate."
+  - question: "Should I use RMI for integrations in MAS 9?"
+    answer: "No. RMI is deprecated and should not be used for any new integrations. Existing RMI integrations should be rewritten to use the REST/JSON API."
+keyTakeaways:
+  - "JSON API (/api) with lean=1 is the primary integration mechanism — replaces /maxrest/rest and OSLC"
+  - "RMI is deprecated — rewrite all existing RMI integrations to REST API"
+  - "Kafka replaces JMS for event-driven integration — native OpenShift support via Strimzi"
+  - "BIRT is being phased out for Cognos Analytics — NO automatic migration, every report recreated from scratch"
+  - "Simple BIRT reports can often be replaced by Operational Dashboard KPI cards instead of Cognos"
+series:
+  name: "MAS FEATURES"
+  part: 7
+  total: 25
+tldr: "MAS 9 makes JSON API the primary integration path, adds Kafka for event streaming, and deprecates RMI. BIRT reporting is replaced by Cognos Analytics with zero automatic migration — every report must be manually recreated or replaced by dashboard KPIs."
+seoTitle: "MAS 9 Integration & Reporting: REST API, Kafka, BIRT to Cognos"
+seoDescription: "Complete guide to MAS 9 integration changes — JSON API, Kafka, RMI deprecation, MIF continuity — and the BIRT-to-Cognos reporting migration with no automatic conversion."
+proficiencyLevel: "intermediate"
+pillarSlug: "mas-features-series-index"
+relatedSlugs:
+  - "mas-features-security-maps"
+  - "mas-features-scripts-ai-reliability"
+---
+
+# Integration & Reporting: REST APIs, Kafka, and the End of BIRT in MAS 9
+
+> **Who this is for:** Maximo integration developers, report authors, and technical leads who need to understand the new integration architecture in MAS 9 — and brace themselves for the BIRT-to-Cognos migration that nobody is looking forward to.
+
+**Estimated read time: 10 minutes**
+
+---
+
+## The Call That Changes Your Architecture
+
+It is Wednesday morning. Your ERP integration lead pings you on Teams. The nightly SAP interface failed again. You log into Maximo, navigate to the External Systems application, and check the inbound queue. Three thousand records stuck in `MAXIFACEINQUEUE`. The JMS queue consumer thread died at 2 AM because the WebSphere connection pool hit its ceiling during a bulk PO sync.
+
+You restart the cron task. You bump the thread count. You clear the errors manually. By lunch, the backlog is processed. You document the incident and file it alongside the last six identical ones.
+
+Now imagine a different world. Kafka topics stream those same PO events in real time. No queue table bottleneck. No JMS consumer thread to die. No restart ritual. Events arrive, external systems consume them at their own pace, and the backlog concept barely exists.
+
+That is the integration story of MAS 9. And the reporting side? That is a different conversation entirely — one that starts with the words "every BIRT report must be recreated from scratch."
+
+Let's walk through both.
+
+---
+
+## 🔀 The Architecture Evolution: What Changed and Why
+
+The integration layer in MAS 9 is not a tweak. It is a rearchitecture. Here is the shift at a glance:
+
+```
+┌─────────────────────┬──────────────────────────────┬──────────────────────────────────┐
+│ Integration Aspect   │ Maximo 7.6                   │ MAS 9                            │
+├─────────────────────┼──────────────────────────────┼──────────────────────────────────┤
+│ Primary API          │ MIF (SOAP/XML),              │ JSON API (/api),                 │
+│                      │ legacy REST (/maxrest/rest)   │ OSLC (/oslc)                     │
+├─────────────────────┼──────────────────────────────┼──────────────────────────────────┤
+│ Authentication       │ Basic auth, LTPA tokens,     │ API Keys, OAuth tokens           │
+│                      │ app server security           │                                  │
+├─────────────────────┼──────────────────────────────┼──────────────────────────────────┤
+│ Messaging            │ JMS queues                   │ Apache Kafka event streaming     │
+├─────────────────────┼──────────────────────────────┼──────────────────────────────────┤
+│ RMI                  │ Supported for remote         │ DEPRECATED — will be removed     │
+│                      │ MBO access                   │                                  │
+├─────────────────────┼──────────────────────────────┼──────────────────────────────────┤
+│ File Integration     │ Flat file with               │ REST API data import/export      │
+│                      │ Interface Tables             │ (CSV, JSON, XML)                 │
+├─────────────────────┼──────────────────────────────┼──────────────────────────────────┤
+│ Real-time Events     │ Publish Channels via JMS     │ Kafka topics + Publish Channels  │
+└─────────────────────┴──────────────────────────────┴──────────────────────────────────┘
+```
+
+Three words summarize the direction: **JSON, Kafka, API Keys**.
+
+The old `/maxrest/rest` endpoint with basic auth? Replaced by `/api` with API Key authentication. JMS queue-based messaging? Supplemented — and increasingly replaced — by Kafka event streaming. RMI for direct remote MBO access? Deprecated outright, expected to be removed in a future release.
+
+> **Key insight:** This is not IBM removing options to simplify the product. This is IBM aligning Maximo's integration layer with how modern enterprise systems actually communicate. JSON APIs with bearer tokens and event streams are the lingua franca of 2026 integration. If your current architecture still relies on SOAP/XML and JMS, MAS 9 is going to force a conversation you should have had five years ago.
+
+---
+
+## 🛠️ REST API / JSON API: The Primary Integration Path
+
+The JSON API is the recommended integration mechanism for **all new work** in MAS 9. If you build one integration skill for the upgrade, make it this one.
+
+**Endpoint pattern:** `https://<host>/api/os/<objectstructure>`
+
+### What Makes It Better
+
+- **Clean JSON payloads** — use the `lean=1` parameter to strip OSLC namespace complexity and get pure, readable JSON
+- **Full CRUD operations** on all Object Structures — create, read, update, delete with standard HTTP verbs
+- **Bulk operations** for mass data changes — process hundreds of records in a single request
+- **Attachment handling** — upload and download attachments directly through the API
+- **Saved queries as API endpoints** — expose your pre-built queries as callable REST resources
+- **Pagination support** for large result sets — no more pulling the entire dataset
+- **Field selection** — return only the fields you need, reducing payload size dramatically
+
+### Real Examples
+
+**Query approved work orders with specific fields:**
+
+```
+GET /api/os/mxwodetail?lean=1&oslc.where=status="APPR"&oslc.select=wonum,description,status
+```
+
+That is it. Clean URL, clean response. No XML namespaces. No SOAP envelope. No `spi:` prefixes.
+
+**Create a work order:**
+
+```
+POST /api/os/mxwodetail?lean=1
+Content-Type: application/json
+
+{
+  "siteid": "BEDFORD",
+  "description": "New pump installation",
+  "worktype": "PM",
+  "classstructureid": "1234"
+}
+```
+
+Standard HTTP POST with a JSON body. Every modern programming language, every integration platform, every iPaaS tool speaks this natively.
+
+> **Hallway truth:** "We rewrote our SAP interface from MIF Enterprise Services to the JSON API in three weeks. The old one took four months to build originally. That tells you everything about the developer experience difference." — An integration architect at a manufacturing client.
+
+---
+
+## 🏛️ OSLC API: Still Works, But Step Away Slowly
+
+The OSLC (Open Services for Lifecycle Collaboration) API still functions in MAS 9. If you have existing integrations built against `/oslc/os/<objectstructure>`, they will not break.
+
+But you should plan to move away from it.
+
+OSLC was the original REST implementation in Maximo, and it carries baggage. Attribute names use prefixes like `spi:`, `dcterms:`, and `foaf:` — a holdover from the Linked Data standards that OSLC was built on. The payloads are heavier. The learning curve is steeper. The JSON API with `lean=1` gives you everything OSLC does, without the namespace complexity.
+
+**The rule of thumb:** If it works on OSLC today and nobody is touching it, leave it alone. But every new integration should use `/api` with `lean=1`. No exceptions.
+
+---
+
+## 🔧 MIF: The Survivor
+
+Here is the good news for teams with extensive MIF configurations: **MIF still works in MAS 9.**
+
+All of the following continue to function:
+
+- **Publish Channels** still publish outbound data when business objects change
+- **Enterprise Services** still receive inbound data from external systems
+- **Object Structures** are enhanced and remain central to all integration mechanisms
+- **External Systems** configuration still defines your integration endpoints
+- **Interface Tables** still work for database-level integration — where database access is available
+- **Flat file processing** via cron tasks still operates
+
+Your existing MIF integrations will survive the upgrade. That is genuinely important for organizations with dozens of configured interfaces.
+
+**However** — and this is an important however:
+
+- New integrations should use the REST API, not MIF
+- IBM is investing engineering effort in REST API capabilities, not MIF enhancements
+- Kafka-based messaging is replacing JMS queues for event-driven patterns
+- MIF is in maintenance mode — it works, but it is not where the future is heading
+
+> **Key insight:** Think of MIF as the bridge, not the destination. It keeps your existing integrations running during and after the upgrade, giving you time to plan a deliberate migration to REST API and Kafka. Do not rip out working MIF integrations on day one. Do plan to replace them over the next 12 to 18 months.
+
+---
+
+## 📡 Kafka Integration: The Event-Driven Future
+
+This is the genuinely exciting piece of the MAS 9 integration story. Apache Kafka brings event-driven architecture to Maximo for the first time.
+
+### How It Works
+
+- Configure Kafka providers in the External Systems application
+- Maximo publishes events to Kafka topics when business objects change — work order status updates, asset modifications, inventory transactions
+- External systems subscribe to relevant topics and consume events at their own pace
+- Supports both structured messages (Object Structure-based) and custom event payloads
+- Better scalability than JMS for high-volume integrations — Kafka was built for millions of events per second
+- Native support in OpenShift via the **Strimzi operator** — Kafka runs as a first-class citizen on the same platform as MAS
+
+### Why It Matters
+
+JMS worked. It worked reliably for years. But JMS is a point-to-point messaging model at heart. When you have 15 external systems that all need to know when a work order status changes, JMS means 15 separate queue configurations, 15 consumer threads, and 15 potential failure points.
+
+Kafka uses a publish-subscribe model. Maximo publishes one event to one topic. Fifteen systems subscribe. Each consumes at its own pace. If one system goes down for maintenance, the events are still there when it comes back. No messages lost. No queue cleanup. No cron task restarts.
+
+```
+┌─────────────┐
+│   Maximo     │
+│  Work Order  │──── publishes ────► Kafka Topic: wo.status.change
+│  Status Chg  │                          │
+└─────────────┘                           ├──► SAP (consumes at own pace)
+                                          ├──► ServiceNow (consumes at own pace)
+                                          ├──► Data Lake (consumes at own pace)
+                                          ├──► Custom Dashboard (consumes at own pace)
+                                          └──► Audit System (consumes at own pace)
+```
+
+> **Hallway truth:** "We had a JMS queue that backed up every Monday because the downstream ERP took longer to process weekend PMs than the queue retention allowed. Kafka fixed it in one afternoon. The events just sit there until the consumer is ready." — A Maximo technical lead at an energy company.
+
+---
+
+## ⚰️ RMI Deprecation: Rewrite or Regret
+
+Let's be blunt about this one. If you have integrations built on Java RMI (Remote Method Invocation) that directly call MBO methods across the network, you have work to do.
+
+**RMI is deprecated in MAS 9.** It should not be used for any new integrations. IBM has explicitly stated it will be removed in a future release.
+
+Why? RMI was designed for a world where your integration code ran on a JVM that could directly access Maximo's internal Java objects over a network socket. In a containerized environment where pods scale horizontally, restart unpredictably, and sit behind load balancers, RMI simply does not work reliably.
+
+**The migration path is clear:** rewrite all RMI-based integrations to use the REST/JSON API.
+
+This is not optional. This is not "nice to have." Every RMI integration you carry into MAS 9 is a ticking clock. Plan the rewrite. Budget for it. Execute it before IBM removes the capability entirely.
+
+> **Key insight:** RMI integrations were often built because they were "faster" than MIF or REST — they bypassed the HTTP layer and talked directly to MBOs. That performance advantage disappears in a containerized world where the MBO you are calling might be on a different pod than the one you connected to three seconds ago. The REST API with `lean=1` is fast enough. Use it.
+
+---
+
+## 📥 Data Import and Export: Two Paths
+
+MAS 9 provides two distinct patterns for getting data in and out of Maximo through the API.
+
+### Synchronous Import
+
+POST your data directly to the Object Structure endpoint. The response comes back immediately with success or failure. Best for small batches and real-time integrations.
+
+```
+POST /api/os/mxwodetail?lean=1
+Content-Type: application/json
+
+{
+  "siteid": "BEDFORD",
+  "description": "Conveyor belt replacement",
+  "worktype": "CM"
+}
+```
+
+### Asynchronous Import
+
+Upload a CSV, JSON, or XML file. The `APIFILEIMPORT` cron task processes the file in the background. Default processing interval is **every 30 minutes** — configurable to run more frequently if needed.
+
+This is the pattern for bulk loads — importing thousands of assets, migrating historical work orders, loading master data. You upload the file, the cron task picks it up, and you download the error file afterward to see which records had validation failures.
+
+### Export
+
+Asynchronous CSV export from UI tables via the REST API. The system combines paginated data into a single downloadable file. Supports all Object Structure-based data.
+
+---
+
+## 📊 Pre-Built Integration Patterns
+
+MAS 9 provides documented integration patterns and pre-built connectors for common enterprise systems:
+
+```
+┌────────────────────┬──────────────────────────────────────┐
+│ External System     │ Integration Method                   │
+├────────────────────┼──────────────────────────────────────┤
+│ SAP ERP             │ Pre-built connector (ME module)      │
+├────────────────────┼──────────────────────────────────────┤
+│ Oracle ERP          │ REST API integration patterns        │
+├────────────────────┼──────────────────────────────────────┤
+│ Workday             │ REST API integration                 │
+├────────────────────┼──────────────────────────────────────┤
+│ TRIRIGA             │ REST API / Kafka events              │
+├────────────────────┼──────────────────────────────────────┤
+│ Envizi (ESG)        │ REST API integration                 │
+├────────────────────┼──────────────────────────────────────┤
+│ ServiceNow          │ REST API bidirectional sync          │
+├────────────────────┼──────────────────────────────────────┤
+│ Salesforce           │ REST API integration                 │
+└────────────────────┴──────────────────────────────────────┘
+```
+
+---
+
+## 📉 BIRT to Cognos: The Most Painful Migration You Will Face
+
+Now we need to talk about reporting. And we are not going to sugarcoat this.
+
+**The BIRT-to-Cognos transition is one of the most disruptive changes in the entire MAS 9 upgrade.** Not because the technology is bad — Cognos is a capable platform. But because there is **no automatic migration path**. None. Zero. Every single BIRT report your organization has ever built must be manually recreated from scratch.
+
+Let that sink in for a moment. If your organization has 200 custom BIRT reports — and we have seen organizations with more — every one of them needs to be redesigned, rebuilt, tested, and validated in Cognos Analytics. The BIRT `.rptdesign` XML files are not compatible with Cognos. There is no converter. There is no import tool. There is no "good enough" automated approximation.
+
+> **Hallway truth:** "We had 347 BIRT reports. When we heard there was no migration tool, the room went silent for about thirty seconds. Then the reporting team lead asked if she could take the rest of the day off." — A project manager at a healthcare organization, describing the MAS 9 discovery workshop.
+
+### The Comparison That Hurts
+
+```
+┌─────────────────────┬──────────────────────────────┬──────────────────────────────────┐
+│ Reporting Aspect     │ Maximo 7.6                   │ MAS 9                            │
+├─────────────────────┼──────────────────────────────┼──────────────────────────────────┤
+│ Report Engine        │ BIRT (built-in)              │ Cognos Analytics (external)      │
+├─────────────────────┼──────────────────────────────┼──────────────────────────────────┤
+│ Report Designer      │ BIRT Report Designer         │ Cognos Analytics report          │
+│                      │ (Eclipse-based)              │ authoring environment            │
+├─────────────────────┼──────────────────────────────┼──────────────────────────────────┤
+│ Report Migration     │ N/A                          │ NO automatic migration —         │
+│                      │                              │ recreate from scratch            │
+├─────────────────────┼──────────────────────────────┼──────────────────────────────────┤
+│ Ad-hoc Reporting     │ Limited BIRT ad-hoc          │ Cognos ad-hoc query and          │
+│                      │                              │ reporting                        │
+├─────────────────────┼──────────────────────────────┼──────────────────────────────────┤
+│ Dashboards           │ BIRT portlets on             │ Operational Dashboard +          │
+│                      │ Start Centers                │ Cognos dashboards                │
+└─────────────────────┴──────────────────────────────┴──────────────────────────────────┘
+```
+
+---
+
+## 🗺️ The BIRT Migration Strategy: Five Steps to Survival
+
+If you are facing this migration, here is the approach that works. This is not theoretical — this comes from teams that have been through it.
+
+### Step 1: Inventory Everything
+
+Before you touch Cognos, inventory every BIRT report in your environment. Every one. Not just the ones in the Reports application — the ones deployed directly to the BIRT viewer, the ones embedded in Start Center portlets, the ones that nobody remembers building but accounting runs every quarter.
+
+Document:
+- Report name and purpose
+- Who uses it and how often
+- Data sources and SQL queries
+- Parameters and filtering logic
+- Output format (PDF, Excel, HTML)
+- Scheduling requirements
+
+### Step 2: Prioritize by Criticality and Usage
+
+Not every report is equally important. Classify them:
+
+- **Critical** — Required for regulatory compliance, financial close, safety reporting. Recreate first.
+- **High** — Used daily or weekly by operational teams. Recreate second.
+- **Medium** — Used monthly. Evaluate whether a dashboard alternative works.
+- **Low** — Used rarely or by a single person. Consider eliminating entirely.
+
+### Step 3: Identify Dashboard Replacements
+
+This is where you save the most effort. Many BIRT reports exist because the 7.6 UI did not have good real-time data visualization. The Operational Dashboard in MAS 9 changes that equation entirely.
+
+```
+┌──────────────────────────────────┬──────────────────────────────────┐
+│ BIRT Report Type                  │ KPI / Dashboard Alternative      │
+├──────────────────────────────────┼──────────────────────────────────┤
+│ Simple count/summary reports      │ KPI Value card                   │
+├──────────────────────────────────┼──────────────────────────────────┤
+│ Trend reports (monthly WO         │ KPI Trend card                   │
+│ counts, PM compliance, etc.)      │                                  │
+├──────────────────────────────────┼──────────────────────────────────┤
+│ Comparison reports (site vs.      │ KPI Comparison card              │
+│ site, craft vs. craft, etc.)      │                                  │
+├──────────────────────────────────┼──────────────────────────────────┤
+│ Tabular detail reports            │ Work Queues card + Table card    │
+├──────────────────────────────────┼──────────────────────────────────┤
+│ Complex multi-page reports        │ Cognos Analytics ONLY            │
+│ with charts and subreports        │ (no KPI alternative)             │
+└──────────────────────────────────┴──────────────────────────────────┘
+```
+
+If 40 percent of your BIRT reports are simple counts, trends, and comparisons, you just eliminated 40 percent of your Cognos migration effort. Those reports become KPI cards on the Operational Dashboard — real-time, interactive, and built by administrators without report development skills.
+
+> **Key insight:** The organizations that struggle most with the BIRT-to-Cognos migration are the ones that try to recreate every BIRT report one-for-one in Cognos. The organizations that succeed are the ones that step back and ask: "What did this report actually answer? Can a dashboard card answer the same question better?" Often, the answer is yes.
+
+### Step 4: Recreate Critical Reports in Cognos First
+
+For the reports that genuinely need Cognos — complex multi-page documents with charts, subreports, conditional formatting, and drill-through navigation — build those first.
+
+Cognos Analytics provides:
+- Full report authoring environment with drag-and-drop design
+- Direct connection to the Maximo database for report data
+- Scheduling and email distribution
+- Role-based access integrated with MAS security
+- AI-assisted insights and data exploration
+- Ad-hoc query capabilities for power users
+
+Cognos is deployed on OpenShift alongside MAS, or as a standalone instance connected to your Maximo database. Either way, it connects to the same data — the queries just look different than BIRT.
+
+### Step 5: Phased Approach
+
+Do not try to migrate all reports before go-live. That path leads to delays, burnout, and cut corners.
+
+Instead:
+- **Pre-go-live:** Migrate critical and high-priority reports only
+- **Months 1-3 post-go-live:** Migrate medium-priority reports, build KPI dashboard replacements
+- **Months 3-6 post-go-live:** Evaluate low-priority reports — many will turn out to be unnecessary
+- **Ongoing:** Train report authors on Cognos so the organization can self-serve
+
+---
+
+## 📤 Export Capabilities in the New World
+
+Even outside of formal reports, MAS 9 provides multiple export paths:
+
+**From the Operational Dashboard:**
+- CSV export of table and grid data
+- PNG/JPG export of chart visualizations
+- PDF generation from Cognos reports
+
+**From Role-Based Applications:**
+- Asynchronous CSV export via REST API
+- Pagination combined into a single downloadable file
+- Supports all Object Structure-based data
+
+For many ad-hoc needs — "just give me a list of open work orders for Site A in a spreadsheet" — the CSV export from the REST API or the UI table export is faster than building a report ever was.
+
+---
+
+## 🗓️ Your Integration and Reporting Action Plan
+
+Here is what you should be doing right now, regardless of where you are in the MAS 9 timeline:
+
+**Integration — Start Immediately:**
+1. Inventory all existing integrations — MIF, RMI, custom REST, flat file
+2. Flag every RMI integration for rewrite. No exceptions. No "we will get to it later."
+3. Build your first JSON API integration as a proof of concept. Use `lean=1`. Feel the difference.
+4. Evaluate Kafka for high-volume, event-driven patterns. If you have JMS integrations that back up regularly, Kafka is your answer.
+5. Leave working MIF integrations alone for now — but plan their eventual migration to REST API
+
+**Reporting — Start Even More Immediately:**
+1. Inventory every BIRT report. All of them. This week.
+2. Classify by criticality and usage frequency
+3. Identify which reports can become KPI dashboard cards (you will be surprised how many)
+4. Budget time and resources for Cognos recreation — this is not a weekend project
+5. Train at least two people on Cognos report authoring before go-live
+
+---
+
+## Key Takeaways
+
+- **JSON API with `lean=1` is the primary integration mechanism** — it replaces `/maxrest/rest` and OSLC as the recommended approach for all new integrations
+- **RMI is deprecated and will be removed** — every RMI integration needs a REST API rewrite, planned and budgeted now
+- **Kafka brings event-driven architecture to Maximo** — better scalability than JMS, native OpenShift support via Strimzi, and a publish-subscribe model that handles multiple consumers elegantly
+- **MIF still works** — your existing Publish Channels, Enterprise Services, and Interface Tables survive the upgrade, giving you a bridge to the new architecture
+- **BIRT-to-Cognos has no automatic migration** — every report recreated from scratch, and that effort needs to be in your project plan with realistic timelines
+- **KPI dashboard cards replace many BIRT reports** — counts, trends, comparisons, and tabular data often work better as real-time dashboard cards than as static reports
+
+---
+
+## References
+
+- [IBM Maximo JSON API Documentation](https://www.ibm.com/docs/en/mas-cd/maximo-manage/continuous-delivery?topic=integrating-api)
+- [IBM Maximo Integration Framework Guide](https://www.ibm.com/docs/en/mam/7.6.1?topic=integrating)
+- [Apache Kafka Documentation](https://kafka.apache.org/documentation/)
+- [Strimzi — Apache Kafka on Kubernetes](https://strimzi.io/)
+- [IBM Cognos Analytics Documentation](https://www.ibm.com/docs/en/cognos-analytics)
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas)
+
+---
+
+**Series Navigation:**
+
+**Previous:** [Part 6 — Security & Maps: SAML/OIDC, Security Groups, and ArcGIS](/blog/mas-features-security-maps)
+**Next:** [Part 8 — Automation Scripts, AI Features, and Reliability Strategies](/blog/mas-features-scripts-ai-reliability)
+
+[View the full MAS FEATURES series index -->](/blog/mas-features-series-index)
+
+---
+
+*Part 7 of the "MAS FEATURES" series | Published by TheMaximoGuys*
+
+*Integration in MAS 9 is cleaner, more scalable, and aligned with how the rest of the enterprise world communicates. The reporting migration is painful — but it is finite, and the result is a modern analytics platform that BIRT was never designed to be. Start your inventory now. Your future self will thank you.*

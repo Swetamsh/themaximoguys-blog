@@ -161,6 +161,11 @@ export const blogPost = defineType({
         { type: 'proConList' },
         { type: 'calloutBox' },
         { type: 'citationBlock' },
+        // --- Interactive Content Blocks ---
+        { type: 'accordionBlock' },
+        { type: 'ctaBlock' },
+        { type: 'videoEmbed' },
+        { type: 'timelineBlock' },
       ],
     }),
 

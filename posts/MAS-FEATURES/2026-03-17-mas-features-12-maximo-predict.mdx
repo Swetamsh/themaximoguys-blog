@@ -1,0 +1,474 @@
+---
+title: "Maximo Predict: Machine Learning That Tells You WHEN Your Assets Will Fail"
+description: "How Maximo Predict uses machine learning to predict failure dates, estimate remaining useful life, and detect anomalies — with Cox Proportional Hazards, Weibull survival analysis, and watsonx.ai integration. Data requirements, model pipeline, and why data science skills are mandatory."
+date: "2026-03-17"
+slug: "mas-features-maximo-predict"
+tags: ["Maximo", "MAS 9", "MAS Features", "Maximo Predict", "Machine Learning", "Predictive Maintenance", "watsonx", "Failure Prediction", "RUL", "Data Science"]
+draft: false
+tier: "free"
+author: "Posam Lakshminarayana"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-features-maximo-predict.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+faqs:
+  - question: "What types of predictions does Maximo Predict make?"
+    answer: "Four types: failure probability (will/won't fail in N days), predicted failure date (survival analysis), remaining useful life in days/hours (regression), and multi-variate anomaly detection scoring unusual behavior patterns."
+  - question: "How much failure data does Predict need?"
+    answer: "Minimum 20 failures per failure mode (ideal 100+), 2+ years operational history (ideal 5+), and 6+ months continuous sensor data (ideal 1+ year). Organizations with too few failures face a chicken-and-egg problem."
+  - question: "Do I need data science skills for Maximo Predict?"
+    answer: "Yes. Unlike Visual Inspection, Predict requires data science expertise for model training, feature engineering, and evaluation. Pre-built Jupyter notebooks in watsonx.ai reduce but don't eliminate this requirement."
+keyTakeaways:
+  - "Predict offers four model types: failure probability, predicted failure date, remaining useful life, and anomaly detection"
+  - "Data requirements are strict: 20+ failures per mode, 2+ years history, 6+ months sensor data"
+  - "Data science skills ARE required — unlike Visual Inspection, you can't just click Train"
+  - "watsonx.ai provides pre-built Jupyter notebooks for common scenarios (pumps, motors, transformers)"
+  - "The chicken-and-egg problem: organizations with great PM programs may lack the failure data needed to train models"
+series:
+  name: "MAS FEATURES"
+  part: 12
+  total: 25
+tldr: "Maximo Predict uses Cox/Weibull survival analysis and ML to tell you WHEN assets will fail, estimate remaining useful life, and detect anomalies. It needs 20+ failures per asset class, 2+ years of history, and data science skills. watsonx.ai notebooks help but don't eliminate the expertise requirement."
+seoTitle: "Maximo Predict: ML Failure Prediction, RUL, Data Requirements"
+seoDescription: "Complete guide to Maximo Predict — ML failure prediction, survival analysis, remaining useful life, anomaly detection, watsonx.ai integration, and data requirements."
+proficiencyLevel: "intermediate"
+pillarSlug: "mas-features-series-index"
+relatedSlugs:
+  - "mas-features-maximo-monitor"
+  - "mas-features-visual-inspection"
+---
+
+# Maximo Predict: Machine Learning That Tells You WHEN Your Assets Will Fail
+
+> **Who this is for:** Maximo administrators, reliability engineers, and maintenance leaders evaluating whether Maximo Predict is realistic for their organization — and what it actually takes to go from "we have data" to "the model predicts failure in 47 days."
+
+**Estimated read time: 10 minutes**
+
+---
+
+## The Promise and the Reality
+
+Every vendor in the asset management space talks about predictive maintenance. The pitch is always the same: connect your sensors, press a button, and the AI tells you when things will break. It sounds transformative. And in the right conditions, Maximo Predict genuinely delivers on that promise.
+
+But here is what the pitch decks leave out: Predict is the most data-demanding, skill-intensive application in the entire MAS suite. It is not Visual Inspection, where you photograph defects and click "Train." It is not Health, where scoring formulas run against data you already have. Predict requires failure history you may not possess, sensor data you may not be collecting, and data science skills your team may not have.
+
+We say this not to discourage you. We say it because the organizations that succeed with Predict are the ones that walk in with realistic expectations about data requirements, team skills, and timeline. The ones that fail are the ones who buy the license and then discover they have seven failures in five years across their entire pump fleet.
+
+Let us walk through exactly what Predict does, what it needs, and how to know whether your organization is ready.
+
+---
+
+## What Predict Actually Answers
+
+Maximo Predict addresses four fundamental questions about your assets:
+
+1. **WHEN will this asset fail?** — Not "sometime eventually" but a specific predicted date with a confidence interval.
+2. **WHAT is most likely to cause the failure?** — Which factors (vibration, temperature, runtime hours, age) are driving the prediction.
+3. **WHICH assets are behaving abnormally right now?** — Multi-variate anomaly detection that catches patterns humans miss.
+4. **HOW do we shift from calendar-based to condition-based maintenance?** — Replace "PM every 90 days" with "PM when the model predicts failure within 30 days."
+
+The difference between Predict and traditional preventive maintenance is the difference between changing your car's oil every 5,000 miles and changing it when oil analysis shows degradation has reached a specific threshold. One is calendar-based guesswork. The other is data-driven precision.
+
+---
+
+## The Four Model Types: What Each One Does
+
+Predict does not offer a single "predict failure" button. It offers four distinct model types, each using different algorithms and requiring different data. Understanding which model fits your use case is the first decision you will make.
+
+### Failure Probability Models
+
+**What they predict:** The likelihood that an asset will fail within the next N days (binary classification — will or will not fail).
+
+**Algorithm family:** Classification algorithms including Random Forest and Gradient Boosting.
+
+**How it works:** The model examines historical patterns — what did the sensor readings, meter values, and operating conditions look like in the days and weeks before past failures? It learns those patterns and then evaluates current assets against them. The output is a probability: "There is a 78% chance this pump will fail within the next 30 days."
+
+**Best for:** Assets where you have clear binary fail/no-fail history. The asset was running, then it failed. You have failure codes that distinguish failure types. You have enough historical failures to train on (more on data requirements below).
+
+**What you get:** A percentage probability that feeds into maintenance decision-making. A pump showing 78% failure probability in the next 30 days gets a work order. One showing 12% does not — yet.
+
+### Predicted Failure Date Models
+
+**What they predict:** The specific date when the model expects an asset to fail, along with a confidence interval.
+
+**Algorithm family:** Survival analysis — specifically Cox Proportional Hazards and Weibull distribution models.
+
+**How it works:** Survival analysis comes from medical research, where researchers study how long patients survive after a diagnosis. The same mathematics applies to assets: given the current condition indicators, how much longer will this asset "survive" before failure?
+
+Cox Proportional Hazards models evaluate how different factors (vibration level, temperature, runtime hours, age) affect the "hazard rate" — the instantaneous probability of failure at any given moment. The model learns that a 20% increase in vibration doubles the hazard rate, while a 10-degree temperature increase raises it by 30%.
+
+Weibull models characterize the failure distribution itself — whether failures are more likely early in life (infant mortality), randomly distributed (constant failure rate), or increasingly likely as the asset ages (wear-out). Most industrial equipment exhibits a Weibull shape parameter greater than 1, meaning failure probability increases with age and usage.
+
+**Best for:** Assets where you have time-to-failure data — not just "it failed" but "it ran for 847 days between installation and first failure, then 623 days between repair and second failure."
+
+**What you get:** A predicted failure date with a confidence interval. "This pump is predicted to fail on April 23, plus or minus 15 days. Recommended maintenance date: April 8."
+
+### Remaining Useful Life (RUL) Models
+
+**What they predict:** The number of days or hours remaining before an asset will fail.
+
+**Algorithm family:** Regression models including Linear Regression and Random Forest Regression.
+
+**How it works:** RUL models focus on degradation patterns. Rather than asking "when will it fail?" they ask "how much useful life is left?" The model tracks how sensor readings, meter values, and condition indicators change over time and maps those degradation curves to remaining life.
+
+Think of it like tire tread depth. A new tire has 10mm of tread. You measure it monthly and observe it losing 0.8mm per month under normal driving. At 3mm remaining, the tire needs replacement. RUL models do the same thing across dozens of variables simultaneously — vibration trend, bearing temperature trend, flow rate degradation, efficiency loss.
+
+**Best for:** Assets with measurable degradation patterns. Equipment where you can observe gradual decline before catastrophic failure. Bearings, belts, rotating equipment, pumps, compressors.
+
+**What you get:** A number — "342 hours of useful life remaining" or "47 days until replacement needed." This feeds directly into maintenance planning and procurement.
+
+### Anomaly Detection Models
+
+**What they predict:** Whether an asset's current behavior deviates from established baselines.
+
+**Algorithm family:** Statistical models including Isolation Forest and Gaussian Mixture Models.
+
+**How it works:** Anomaly detection establishes a "normal" operating profile for each asset or asset class, then flags deviations. The key differentiator is that Predict performs multi-variate anomaly detection — it does not just check whether temperature is too high. It evaluates whether the combination of temperature, vibration, flow rate, and pressure is unusual, even if each individual reading falls within acceptable limits.
+
+This matters because many failures announce themselves through subtle multi-variate patterns. A pump's temperature might be normal, its vibration might be normal, and its flow rate might be normal — but that specific combination of temperature plus vibration plus flow rate, at that time of day, for that type of pump, under those operating conditions, might be deeply abnormal.
+
+Predict detects three types of anomalies:
+
+- **Univariate anomalies:** A single metric exceeds expected range. Temperature spikes to 180 degrees when the normal range is 120 to 150.
+- **Multivariate anomalies:** The combination of metrics is unusual even if individual readings look acceptable. High temperature plus low flow plus high vibration simultaneously.
+- **Temporal anomalies:** Current metric patterns differ from historical norms for the same time period. Flow rate at 2 AM is 40% higher than it has been at 2 AM for the past six months.
+
+**Best for:** Assets with continuous sensor data from Maximo Monitor. Equipment where you want early warning of emerging problems before traditional thresholds trigger.
+
+**What you get:** An anomaly score for each asset. Scores above a configured threshold generate alerts, trigger investigation workflows, or feed into Health scoring.
+
+---
+
+## What the Model Actually Outputs
+
+When a trained model scores an active asset, the output is not a single number. For each asset, you receive a structured prediction package:
+
+| Output | Description | Example |
+|--------|-------------|---------|
+| **Predicted failure date** | When the model expects failure | April 23, 2026 |
+| **Confidence interval** | Range around the prediction | Plus or minus 15 days |
+| **Failure probability** | Percentage likelihood before the predicted date | 78% |
+| **Top contributing factors** | Which features drive the prediction | "Vibration trend accounts for 40% of prediction" |
+| **Recommended action date** | When maintenance should happen to prevent failure | April 8, 2026 |
+
+The contributing factors are critical. Predict does not just say "this pump will fail." It tells you why: "Vibration trend is the primary driver at 40%, followed by bearing temperature at 25%, flow rate degradation at 20%, and runtime hours at 15%." This explainability through feature importance means the maintenance team knows what to inspect and what to address.
+
+Over time, you can also track how contributing factors change. If vibration was the top factor six months ago but bearing temperature has risen to become the primary driver, that tells you something important about the degradation mode shifting.
+
+---
+
+## Data Requirements: Where Implementations Succeed or Fail
+
+This section is the most important in this entire post. The quality and quantity of your data directly determines whether Predict will produce useful results or expensive noise.
+
+### Minimum Data Requirements
+
+| Data Type | Minimum Volume | Ideal Volume | Source |
+|-----------|---------------|--------------|--------|
+| **Failure records** | 20+ failures per failure mode per asset class | 100+ failures | Manage work orders with failure codes |
+| **Operational history** | 2+ years | 5+ years | Manage work orders, meter readings |
+| **Sensor data** | 6+ months of continuous data | 1+ year | Monitor IoT metrics |
+| **Asset attributes** | Manufacturer, model, install date, location | Plus operating conditions, environment | Manage asset and classification records |
+| **Meter readings** | Weekly or more frequent | Daily or continuous | Manage meters or Monitor |
+
+Let us be specific about what "20 failures per failure mode" means. If you have a fleet of 50 centrifugal pumps and you want to predict bearing failures, you need at least 20 historical bearing failures across that fleet with proper failure codes, accurate dates, and associated meter/sensor data. Twenty failures across 50 pumps over several years is achievable for many organizations. But if your failure mode is "catastrophic seal failure" and you have had three in the past decade, you do not have enough data to train a meaningful model for that specific failure mode.
+
+### The Data Quality Checklist
+
+Raw volume is necessary but not sufficient. Your data must also be clean and consistent:
+
+- **Failure codes used consistently** — If half your work orders use "BEARING" and the other half use "OTHER" or "GENERAL," the model cannot learn failure patterns. Consistent failure coding discipline is a prerequisite, not a nice-to-have.
+- **Accurate completion dates** — Work orders bulk-closed three months after actual completion destroy the time-to-failure calculations that survival analysis depends on. If your organization has a habit of closing work orders in batches at month-end, your predicted failure dates will be meaningless.
+- **Reliable meter readings** — Stuck meters reporting the same value for months, manual entry errors with extra zeros, meters that reset without documentation — all of these corrupt the degradation curves that RUL models depend on.
+- **Accurate install dates** — Age is a key feature in most failure models. If your asset records show install dates of January 1, 2000 because someone entered a default value during a data migration, age-based predictions will be wrong.
+- **Minimal sensor data gaps** — Less than 10% missing data in your sensor streams. Gaps break temporal pattern recognition.
+- **At least one viable asset class** — You do not need perfect data across your entire fleet. You need one asset class with sufficient failure history to serve as your pilot.
+
+### The Chicken-and-Egg Problem
+
+Here is the uncomfortable truth that nobody at IBM will lead with in a sales meeting: **organizations with the most successful preventive maintenance programs often have the least failure data to train predictive models.**
+
+Think about it. If your PM program is excellent — if you replace bearings on schedule, inspect seals regularly, and catch problems early — you have very few run-to-failure events in your history. Your work orders show "preventive bearing replacement" and "scheduled seal inspection," not "catastrophic bearing failure" and "unplanned seal blowout."
+
+Predict needs failure data. It needs to know what the sensor readings and meter values looked like in the days and weeks before a bearing actually failed, not before you proactively replaced it. If your organization has prevented most failures through diligent PM, you may not have the failure history that Predict requires.
+
+This is genuinely ironic. The organizations that would benefit most from predictive maintenance (those with mature, well-run operations) are often the ones with the least data to train the models.
+
+**Possible workarounds:**
+
+- **Use run-to-failure data from before PM programs matured.** If you implemented your current PM strategy five years ago, the failure data from before that may still be usable.
+- **Pool failure data across similar asset classes.** If one plant has 8 pump bearing failures and another plant has 15, combining them may reach the 20-failure minimum.
+- **Start with asset classes where PM is weakest.** Every organization has equipment that still fails despite PM — those asset classes are your best pilot candidates.
+- **Accept that some failure modes will not be predictable yet.** Deploy Predict where you have data and build the data foundation for future expansion.
+
+---
+
+## The ML Pipeline: From Raw Data to Production Predictions
+
+The machine learning pipeline is a structured, repeatable process. Understanding each stage helps you estimate effort, assign responsibilities, and set expectations.
+
+### Stage 1: Data Extraction
+
+Pull historical data from Manage (work orders, failure codes, meter readings, asset attributes) and Monitor (sensor time-series data, anomaly history). This is not a one-click export. Data extraction involves writing queries, mapping relationships between assets and their failure history, and producing a training dataset that the ML algorithms can consume.
+
+### Stage 2: Feature Engineering
+
+Raw data is rarely useful to ML algorithms directly. Feature engineering transforms raw data into meaningful inputs:
+
+- **Rolling averages:** Average vibration over the past 7 days, 30 days, 90 days
+- **Trends:** Is vibration increasing, stable, or decreasing over the past 30 days?
+- **Ratios:** Current reading divided by baseline reading at installation
+- **Interactions:** Temperature times vibration, flow rate divided by motor current
+- **Temporal features:** Time since last maintenance, time since installation, day of week, season
+
+Feature engineering is where data science expertise matters most. The right features can mean the difference between a model with 60% accuracy and one with 90% accuracy.
+
+### Stage 3: Training and Validation Split
+
+The dataset is divided into training data (typically 80%) and validation data (20%). For time-series data, the split is often time-based — train on data before a cutoff date, validate on data after it. This prevents the model from "peeking" at future data during training.
+
+### Stage 4: Model Training
+
+Multiple algorithms are trained and compared. For failure probability, this might mean training a Random Forest, a Gradient Boosting model, and a Logistic Regression model on the same data and comparing their performance. For predicted failure date, Cox Proportional Hazards and Weibull models are compared.
+
+### Stage 5: Model Evaluation
+
+Each trained model is evaluated using standard ML metrics:
+
+- **Accuracy:** Overall percentage of correct predictions
+- **Precision:** Of the assets predicted to fail, what percentage actually did?
+- **Recall:** Of the assets that actually failed, what percentage did the model catch?
+- **F1 Score:** Harmonic mean of precision and recall — the single best metric for imbalanced datasets
+- **AUC-ROC:** Area under the receiver operating characteristic curve — measures the model's ability to distinguish between failure and non-failure across all probability thresholds
+
+In maintenance contexts, recall is usually more important than precision. Missing a failure that actually happens (low recall) is more costly than generating a false alarm (low precision). A pump that fails unexpectedly causes production downtime. A pump that gets an unnecessary inspection costs a few labor hours.
+
+### Stage 6: Model Deployment
+
+The winning model is deployed into the Predict scoring pipeline, where it runs against active assets on a configured schedule. Production scoring takes current sensor readings, meter values, and asset conditions and produces the prediction outputs described above.
+
+### Stage 7: Model Monitoring
+
+Deployed models degrade over time as operating conditions change, equipment is replaced, and maintenance practices evolve. Model monitoring tracks prediction accuracy against actual outcomes and flags when retraining is needed.
+
+If a model predicted 30 failures in a quarter and only 12 occurred, something has changed — either the model is stale or the maintenance team started intervening based on predictions (which is the goal but also makes the model appear less accurate). Distinguishing between "model drift" and "successful intervention" requires careful analysis.
+
+---
+
+## watsonx.ai Integration: The Training Environment
+
+Predict uses Watson Studio (now watsonx.ai) as its ML training environment. This is not an optional component — it is where model training, evaluation, and deployment happen.
+
+### Pre-Built Jupyter Notebooks
+
+Predict ships with pre-built Jupyter notebooks for common prediction scenarios:
+
+| Notebook | Purpose |
+|----------|---------|
+| **Failure probability scoring** | Classification model for binary failure prediction |
+| **Failure date prediction** | Survival analysis for time-to-failure estimation |
+| **Anomaly detection** | Isolation Forest for sensor anomaly detection |
+| **Custom model template** | Starting point for building your own models |
+
+These notebooks significantly reduce the effort required to train your first model. They handle data extraction from Manage and Monitor, implement standard feature engineering, train multiple algorithms, and produce evaluation metrics. A data scientist with Python and ML experience can run a pre-built notebook against prepared data in a single day.
+
+But "reduce the effort" is not "eliminate the expertise." You still need someone who understands what a confusion matrix means, who can evaluate whether 85% recall is acceptable for your use case, and who can diagnose why a model performs well on training data but poorly on validation data.
+
+### Custom Model Development
+
+For asset types not covered by the pre-built notebooks, data scientists can create custom notebooks that:
+
+- Pull data from Manage and Monitor via APIs
+- Perform custom feature engineering specific to your equipment types
+- Train specialized models using algorithms not included in the standard notebooks
+- Deploy custom models back into the Predict scoring pipeline
+
+### MAS 9 Enhancements
+
+watsonx.ai in MAS 9 brings several improvements:
+
+- **Foundation model integration** for enhanced feature extraction
+- **Improved AutoML capabilities** that reduce (but do not eliminate) data science expertise needed for basic models
+- **Better model lifecycle management** for tracking model versions and performance over time
+- **Enhanced explainability features** for clearer visualization of contributing factors
+- **Model performance dashboard** for tracking prediction accuracy over time
+
+---
+
+## Real-World Examples: What Predict Outputs Look Like
+
+### Pump Failure Prediction
+
+**Inputs from Monitor and Manage:**
+- Vibration readings (continuous, from accelerometer)
+- Bearing temperature (continuous, from thermocouple)
+- Flow rate (continuous, from flow meter)
+- Discharge pressure (continuous, from pressure transducer)
+- Runtime hours (meter reading from Manage)
+- Last maintenance date, failure history, asset age
+
+**Model output:**
+- Predicted failure date: May 12, 2026, plus or minus 12 days
+- Failure probability in next 30 days: 73%
+- Top contributing factors: Vibration trend (40%), bearing temperature trend (25%), flow rate degradation (20%), runtime since last overhaul (15%)
+- Recommended action: Schedule bearing inspection by April 28
+
+**What the maintenance team does:** The planner reviews the prediction, confirms it aligns with the technician's observations ("yeah, that pump has been running rough"), and schedules a bearing inspection during the next available maintenance window. If the inspection confirms degradation, a bearing replacement is planned before the predicted failure date.
+
+### Transformer Monitoring
+
+**Inputs from Monitor and Manage:**
+- Dissolved gas analysis results (periodic lab results)
+- Oil temperature (continuous, from sensor)
+- Load current (continuous, from power monitoring)
+- Ambient temperature (continuous, from weather station)
+- Transformer age and nameplate data
+
+**Model output:**
+- Failure probability in next 90 days: 34%
+- Predicted failure mode: Insulation degradation (based on dissolved gas composition)
+- Top contributing factors: Dissolved hydrogen trend (45%), oil temperature under load (30%), age (15%), load factor (10%)
+- Recommended action: Schedule oil sampling and detailed dissolved gas analysis within 30 days
+
+**What the reliability team does:** The 34% probability does not trigger an emergency response, but the dissolved hydrogen trend driving 45% of the prediction warrants investigation. They schedule accelerated oil sampling and compare results to the model's baseline. If dissolved gases confirm the trend, they plan a transformer inspection during the next scheduled outage.
+
+### Conveyor Belt Analysis
+
+**Inputs from Monitor and Manage:**
+- Belt speed (continuous)
+- Drive motor current (continuous)
+- Vibration at bearings and rollers (continuous)
+- Belt surface temperature (continuous from IR sensor)
+- Splice condition (periodic inspection results)
+- Runtime hours since last belt replacement
+
+**Model output:**
+- Belt failure prediction: 62 days remaining useful life
+- Splice failure prediction: Splice B3 showing degradation, estimated 30 days to failure
+- Recommended replacement date: Within next 25 days to avoid unplanned production stop
+
+### HVAC System Prediction
+
+**Inputs from Monitor and Manage:**
+- Supply and return air temperatures (continuous)
+- Compressor amperage (continuous)
+- Refrigerant pressure (continuous)
+- Runtime hours per cycle (calculated)
+
+**Model output:**
+- Compressor failure date: July 8, 2026, plus or minus 20 days
+- Refrigerant leak probability in next 60 days: 22%
+- Efficiency degradation forecast: 15% reduction from baseline by August
+- Recommended action: Schedule compressor inspection and refrigerant charge check
+
+---
+
+## Integration With the MAS Suite
+
+Predict does not operate in isolation. It sits within a data flow that spans the MAS application suite:
+
+| Integration | Direction | What Flows |
+|-------------|-----------|------------|
+| **Manage to Predict** | Inbound | Work order history, failure codes, meter readings, asset attributes |
+| **Monitor to Predict** | Inbound | Sensor time-series data, anomaly history from IoT devices |
+| **Health to Predict** | Inbound | Health scores used as prediction features |
+| **Predict to Manage** | Outbound | Predicted failure dates displayed on asset records, can trigger work order generation |
+| **Predict to Health** | Outbound | Prediction results contribute to overall health scoring |
+
+The flow matters for planning your deployment sequence. You need Manage deployed and stable first (that is your asset, work order, and meter data). Monitor is recommended if you want sensor-based predictions (otherwise you are limited to meter readings and work order history). Health is recommended because health scores serve as powerful prediction features — a declining health score is often the strongest predictor of impending failure.
+
+---
+
+## Setup Requirements and Pilot Effort
+
+### Prerequisites
+
+| Requirement | Description | Effort |
+|-------------|-------------|--------|
+| Manage deployed and stable | Asset, work order, meter data accessible | Prerequisite |
+| Monitor deployed (optional) | Sensor data flowing for IoT-enabled prediction | 2-4 weeks |
+| Health deployed (recommended) | Health scores available as prediction features | 1-2 weeks |
+| Watson Studio / watsonx.ai | ML training environment provisioned | 1-2 weeks |
+| Training data prepared | Historical data extracted and validated | 2-4 weeks |
+| Data science skills | Team members trained in ML concepts | Ongoing |
+
+### Pilot Effort Breakdown
+
+A realistic Predict pilot requires 60 to 112 hours of effort over 2 to 3 weeks, with 2 to 3 people who have data science skills:
+
+| Task | Effort | Prerequisites |
+|------|--------|---------------|
+| Identify pilot asset class with best failure history (20+ failures) | 4-8 hours | Manage data access |
+| Audit data quality for selected asset class | 8-16 hours | Pilot asset class identified |
+| Extract and prepare training dataset | 16-24 hours | Data audit complete, data science skills |
+| Provision watsonx.ai environment | 4-8 hours | Cloud Pak for Data or SaaS access |
+| Run pre-built failure probability notebook | 8-16 hours | Training data and environment ready |
+| Evaluate model performance (accuracy, precision, recall) | 4-8 hours | Model training complete |
+| Deploy model and validate against known outcomes | 8-16 hours | Model evaluation complete |
+| Create Predict dashboard for pilot assets | 4-8 hours | Model deployed |
+| Present results to maintenance teams | 4-8 hours | Dashboard and validation complete |
+
+Notice that "data science skills" appears as a prerequisite for the most effort-intensive tasks. This is not negotiable. Unlike Visual Inspection, where a maintenance technician can learn to use the tool in a day, Predict requires someone who understands feature engineering, model evaluation metrics, overfitting, and the difference between a Cox Proportional Hazards model and a Random Forest classifier.
+
+If your organization does not have data science skills in-house, plan for either hiring, contracting, or training. IBM and partners offer Predict-specific enablement, but the ongoing model management and retraining will require sustained data science capability.
+
+---
+
+## Honest Assessment: Is Your Organization Ready?
+
+Before investing in Predict licenses and implementation effort, answer these questions honestly:
+
+**Do you have enough failure data?**
+Query your work order history. For your candidate asset class, count the number of distinct failure events with proper failure codes in the past five years. If the answer is fewer than 20, you are not ready for that asset class. Try a different one.
+
+**Is your failure coding consistent?**
+If 40% of your failure work orders use a generic "OTHER" failure code, your model will learn to predict "OTHER" — which is useless. Clean failure coding is a prerequisite, not something you can fix during the Predict pilot.
+
+**Do you have continuous sensor data?**
+If you are relying solely on manual meter readings entered weekly, your anomaly detection and temporal pattern recognition will be limited. Predict works best with continuous sensor data from Monitor. If Monitor is not deployed, your predictions will be based on work order history and meter readings alone — still valuable, but less powerful.
+
+**Do you have data science resources?**
+This is the question most organizations do not want to answer. Predict is not a tool you configure and walk away from. Models need training, evaluation, deployment, monitoring, and periodic retraining. Someone on your team needs to own that lifecycle.
+
+**Is your maintenance team ready to act on predictions?**
+A prediction that no one acts on is wasted computation. Your planners need a workflow for reviewing predictions, validating them against field observations, and scheduling preventive interventions. If your organization already struggles to complete scheduled PMs, adding AI-generated work orders will not help.
+
+---
+
+## Key Takeaways
+
+- **Predict offers four distinct model types** — failure probability (classification), predicted failure date (survival analysis with Cox Proportional Hazards and Weibull), remaining useful life (regression), and anomaly detection (multi-variate statistical analysis). Each serves a different use case and requires different data.
+
+- **Data requirements are the single biggest success factor** — 20 or more failures per failure mode per asset class (ideal 100+), 2 or more years of operational history (ideal 5+), 6 or more months of continuous sensor data (ideal 1+ year), and consistent failure coding across your work order history.
+
+- **Data science skills are mandatory** — Pre-built Jupyter notebooks in watsonx.ai reduce the effort but do not eliminate the expertise requirement. Feature engineering, model evaluation, and ongoing model lifecycle management require sustained data science capability.
+
+- **The chicken-and-egg problem is real** — Organizations with excellent preventive maintenance programs often lack the failure data needed to train predictive models. This is not a paradox you solve with technology. It requires creative data strategies and realistic expectations.
+
+- **A realistic pilot takes 60 to 112 hours with 2 to 3 data-science-skilled people** — This is not a weekend project. It requires data extraction, quality auditing, feature engineering, model training, evaluation, and validation against known outcomes.
+
+---
+
+## References
+
+- [IBM Maximo Predict Documentation](https://www.ibm.com/docs/en/maximo-manage/continuous-delivery?topic=predict)
+- [IBM Maximo Application Suite Overview](https://www.ibm.com/docs/en/mas)
+- [IBM watsonx.ai Documentation](https://www.ibm.com/docs/en/watsonxai)
+- [Cox Proportional Hazards Model — Survival Analysis](https://en.wikipedia.org/wiki/Proportional_hazards_model)
+- [Weibull Distribution in Reliability Engineering](https://en.wikipedia.org/wiki/Weibull_distribution)
+
+---
+
+**Series Navigation:**
+
+**Previous:** [Part 11 — Visual Inspection](/blog/mas-features-visual-inspection)
+**Next:** Part 13 — Maximo Monitor (coming soon)
+
+[View the full MAS FEATURES series index](/blog/mas-features-series-index)
+
+---
+
+*Part 12 of the "MAS FEATURES" series | Published by TheMaximoGuys*
+
+*Maximo Predict is the most powerful and the most demanding application in the MAS suite. It transforms maintenance strategy from calendar-based guesswork to data-driven precision — but only if your organization brings sufficient failure data, clean operational history, and genuine data science capability. Start with a single asset class that has the best data, prove the value, and expand from there.*

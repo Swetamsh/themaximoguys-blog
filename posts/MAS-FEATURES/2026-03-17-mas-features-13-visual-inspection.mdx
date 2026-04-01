@@ -1,0 +1,449 @@
+---
+title: "Maximo Visual Inspection: Computer Vision That Doesn't Need a Data Scientist"
+description: "How Maximo Visual Inspection automates defect detection with image classification, object detection, anomaly detection, and OCR — all without data science skills. Edge deployment on NVIDIA Jetson, Large Vision Models in 9.1, and real-world use cases from manufacturing to utilities."
+date: "2026-03-17"
+slug: "mas-features-visual-inspection"
+tags: ["Maximo", "MAS 9", "MAS Features", "Visual Inspection", "Computer Vision", "AI", "Edge Computing", "NVIDIA", "Defect Detection", "Drone"]
+draft: false
+tier: "free"
+author: "Posam Lakshminarayana"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-features-visual-inspection.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+faqs:
+  - question: "Do I need data science skills for Maximo Visual Inspection?"
+    answer: "No. MVI is designed for maintenance engineers and quality inspectors. You drag-and-drop images, assign labels, and click Train. Transfer learning and data augmentation handle the ML complexity behind the scenes."
+  - question: "Can Visual Inspection run at the edge without cloud connectivity?"
+    answer: "Yes. Trained models can be deployed to NVIDIA Jetson (Nano, Xavier NX) or industrial PCs for local inference. This enables real-time inspection at remote sites without cloud dependency."
+  - question: "How many training images do I need?"
+    answer: "Minimum: 50 per class for classification, 100 annotated for object detection, 100 good images for anomaly detection. Recommended: 200+, 500+, and 500+ respectively for production accuracy."
+keyTakeaways:
+  - "Five capabilities: image classification, object detection, anomaly detection, action detection (video), and OCR"
+  - "NO data science required — drag-drop images, assign labels, click Train"
+  - "Edge deployment on NVIDIA Jetson enables real-time inspection without cloud connectivity"
+  - "MAS 9.1 Large Vision Models reduce training data needs for civil infrastructure"
+  - "Manufacturing use cases: weld defects, surface quality, assembly verification, paint quality"
+series:
+  name: "MAS FEATURES"
+  part: 13
+  total: 25
+tldr: "Maximo Visual Inspection automates defect detection with computer vision — classification, object detection, anomaly detection, action detection, and OCR. No data science required. Edge deployment on NVIDIA Jetson. MAS 9.1 adds Large Vision Models for infrastructure inspection."
+seoTitle: "Maximo Visual Inspection: Computer Vision Without Data Science"
+seoDescription: "Complete guide to Maximo Visual Inspection — image classification, object detection, edge deployment, hardware requirements, training data needs, and manufacturing/utility use cases."
+proficiencyLevel: "intermediate"
+pillarSlug: "mas-features-series-index"
+relatedSlugs:
+  - "mas-features-maximo-predict"
+  - "mas-features-ai-assist-optimizer"
+---
+
+# Maximo Visual Inspection: Computer Vision That Doesn't Need a Data Scientist
+
+> **Who this is for:** Maximo administrators, inspection specialists, reliability engineers, and quality managers evaluating computer vision for automated defect detection -- and anyone who assumed AI-powered inspection required a team of data scientists.
+
+**Estimated read time: 10 minutes**
+
+---
+
+## The Inspection Problem Nobody Talks About
+
+Every manufacturing floor, every utility corridor, every pipeline right-of-way has the same dirty secret: human visual inspection is inconsistent. Inspector A finds three defects on Monday morning. Inspector B finds five on the same asset Friday afternoon. Neither is wrong -- they're human.
+
+Fatigue degrades accuracy after two hours. Bias creeps in when you've inspected a hundred identical welds and they all looked fine. Hazardous environments limit how close an inspector can get. Remote assets -- transmission towers, pipeline sections, bridge decks -- require expensive crew mobilization just to look at something.
+
+Maximo Visual Inspection (MVI) addresses all of this. It brings AI-powered computer vision directly into the MAS platform, automating visual inspections with consistent accuracy, zero fatigue, and the ability to inspect assets through cameras and drones rather than human eyes.
+
+And here is the part that matters most for Maximo teams: **you do not need a data scientist to use it.** Maintenance engineers and inspection specialists train their own models through a drag-and-drop interface. The machine learning complexity is abstracted entirely.
+
+---
+
+## Five Capabilities, One Platform
+
+MVI is not a single trick. It provides five distinct computer vision capabilities, each answering a different inspection question.
+
+### 1. Image Classification: "What Category Does This Belong To?"
+
+Image classification receives an image and returns a category label with a confidence score. The model answers the question: **what am I looking at?**
+
+**Real-world examples:**
+
+| Inspection Target | Classification Labels | What It Replaces |
+|---|---|---|
+| Weld quality | Good / Acceptable / Defective | Manual weld inspection by certified inspector |
+| Corrosion level | None / Light / Moderate / Severe | Subjective visual assessment |
+| Insulator condition | Intact / Cracked / Broken / Missing | Climbing utility poles or binocular inspection |
+| Surface quality | Pass / Fail | Human QC at production line speed |
+
+Classification is the simplest model type. It requires the fewest training images, trains the fastest, and delivers the most immediately interpretable results. If you are starting your MVI journey, start here.
+
+### 2. Object Detection: "Where Are the Defects?"
+
+Object detection goes beyond classification. Instead of labeling the entire image, it draws **bounding boxes** around specific objects within the image, each with its own label and confidence score. The model answers: **where exactly is the problem?**
+
+**Real-world examples:**
+
+- Detect and locate cracks in a concrete surface -- bounding boxes around each crack with severity labels
+- Identify missing bolts on a flange assembly -- box around each empty bolt hole
+- Locate vegetation encroachment near power lines -- boxes around branches approaching conductors
+- Find corrosion spots on pipeline surfaces -- boxes around each corroded area
+
+The model returns structured data for every detection:
+
+```json
+{
+  "detections": [
+    {
+      "label": "crack",
+      "confidence": 0.91,
+      "xmin": 120, "ymin": 80,
+      "xmax": 340, "ymax": 195
+    }
+  ]
+}
+```
+
+Those bounding box coordinates are actionable. They tell a maintenance team not just that a defect exists, but precisely where on the asset to look.
+
+### 3. Anomaly Detection: "Does This Look Normal?"
+
+Anomaly detection takes a fundamentally different approach. Instead of learning what defects look like, it learns what **normal** looks like -- and flags anything that deviates from the learned norm.
+
+This is powerful for situations where:
+
+- You cannot easily define all possible defect types in advance
+- Defects are rare and you do not have enough examples to train a classifier
+- You want to catch unexpected failure modes that were never anticipated
+
+The model trains exclusively on images of assets in good condition. During inference, it highlights the specific regions of an image that deviate from learned normalcy. You do not need to know what the defect is -- only that something is different from what the model expects.
+
+### 4. Action Detection: Video-Based Activity Monitoring
+
+Action detection moves beyond still images into video streams. It identifies specific activities happening in real time:
+
+- **PPE compliance:** Detecting whether workers are wearing required safety equipment -- hard hats, safety vests, goggles
+- **Restricted area monitoring:** Flagging when a person enters a designated restricted zone
+- **Process compliance:** Verifying that workers follow prescribed procedures in the correct sequence
+
+This capability turns any IP camera feed into an automated compliance monitor. Instead of reviewing hours of security footage after an incident, the system alerts in real time.
+
+### 5. OCR: Extracting Text from the Physical World
+
+Optical Character Recognition rounds out the capability set by extracting text from images:
+
+- **Serial numbers and nameplates:** Automatically read equipment identification from photos, eliminating manual transcription errors
+- **Meter readings:** Capture analog gauge values from camera images -- no more dispatching technicians just to read a meter
+- **Asset labels and tags:** Read barcode and text labels on equipment for automated asset identification
+
+OCR bridges the gap between the physical asset and the digital record. A technician photographs a nameplate, and the serial number populates automatically in the work order.
+
+---
+
+## No Data Science Required: The Training Workflow
+
+This is the capability that separates MVI from generic computer vision tools. The entire model training workflow is designed for **maintenance engineers and inspection specialists**, not machine learning engineers.
+
+### Five Steps, Zero Code
+
+1. **Upload images** -- Drag and drop into the MVI web interface. JPEG, PNG, standard image formats. No preprocessing required.
+
+2. **Label images** -- For classification: assign a category label to each image. For object detection: draw bounding boxes around defects. For anomaly detection: no labeling needed at all -- just upload images of normal condition.
+
+3. **Click Train** -- One button. MVI handles the entire machine learning pipeline behind the scenes:
+   - **Transfer learning** from pre-trained models (ResNet, EfficientNet) -- your images fine-tune a model that already understands visual features
+   - **Data augmentation** automatically generates variations (rotation, scaling, flipping, color adjustment) to expand your training dataset
+   - **Hyperparameter tuning** selects optimal training parameters
+
+4. **Review results** -- MVI presents accuracy metrics, precision, recall, and a confusion matrix showing where the model gets it right and where it struggles.
+
+5. **Deploy** -- Single click deploys the trained model to a REST API endpoint. Done.
+
+The person who inspects welds on the manufacturing floor can train a weld inspection model. The utility inspector who assesses pole condition can train a pole classification model. The domain expert is the model builder. No data science intermediary required.
+
+### Minimum Training Data
+
+How many images do you actually need? Less than you think, thanks to transfer learning and augmentation:
+
+| Model Type | Minimum | Recommended | Notes |
+|---|---|---|---|
+| **Classification** | 50 per class | 200+ per class | Balance classes evenly -- 50 "good" and 50 "defective," not 200 "good" and 10 "defective" |
+| **Object Detection** | 100 annotated images | 500+ annotated images | Cover diverse angles, lighting conditions, and defect severities |
+| **Anomaly Detection** | 100 "good" images | 500+ "good" images | Only normal examples needed -- the model learns what "good" looks like |
+
+The minimums get you a working model for proof-of-concept. The recommended numbers get you production-grade accuracy. In practice, teams often start with the minimum, validate the approach, then collect more images to improve performance.
+
+---
+
+## Single-Click API Deployment
+
+Once a model is trained and validated, deployment is one click. MVI exposes the trained model as a **REST API endpoint**:
+
+```
+POST /api/dlapis/{model_id}/predictions
+Content-Type: multipart/form-data
+
+[image file]
+
+Response:
+{
+  "classified": "defective",
+  "confidence": 0.94,
+  "detections": [
+    {
+      "label": "crack",
+      "confidence": 0.91,
+      "xmin": 120, "ymin": 80,
+      "xmax": 340, "ymax": 195
+    }
+  ]
+}
+```
+
+That REST endpoint is callable from any system -- Maximo Manage work orders, custom applications, edge devices, mobile apps, or third-party integration platforms. The model is a service. Send it an image, get back a prediction with confidence scores and bounding box coordinates.
+
+Multiple models can run simultaneously on shared GPU infrastructure. A single NVIDIA T4 can serve several deployed models, so you do not need dedicated hardware per use case.
+
+---
+
+## Edge Deployment: Inference Without the Cloud
+
+Not every inspection happens where cloud connectivity is available. Pipeline rights-of-way, remote substations, offshore platforms, underground tunnels -- these environments need **local inference**.
+
+MVI supports edge deployment to:
+
+- **NVIDIA Jetson Nano** -- compact, low-power edge device for basic inference workloads
+- **NVIDIA Jetson Xavier NX** -- higher-performance edge device for demanding models
+- **Industrial PCs with GPUs** -- ruggedized hardware for harsh environments
+
+Edge deployment means:
+
+- Models run locally with **zero latency to the cloud**
+- Inspections continue even when **network connectivity is lost**
+- Results buffer locally and **sync when connection is restored**
+- Camera feeds can be processed in real time at the point of capture
+
+For a utility running drone inspections along a 200-mile transmission corridor, edge deployment means the drone processes images during flight. By the time it lands, the defect inventory is ready.
+
+---
+
+## Mobile Inspection App
+
+MVI includes a dedicated mobile application available on both **iOS and Android**:
+
+- Integrated camera for real-time inference -- point your phone at an asset and get an immediate prediction
+- Guided inspection workflows that walk inspectors through required photo captures
+- Results uploaded to the MVI server automatically when connectivity is available
+- Direct integration with Manage work orders -- inspection results attach as evidence
+
+The mobile app turns every smartphone into an AI-powered inspection device. A field technician who was previously trained to look for defects now has an AI co-pilot confirming or flagging what the camera sees.
+
+---
+
+## Integration with Manage Work Orders
+
+MVI does not operate in isolation. Inspection results flow directly into Maximo Manage:
+
+- **Inspection tasks reference MVI models** -- a work order task can specify which model to use for each inspection point
+- **Results attach as evidence** -- images with bounding boxes and confidence scores become part of the work order record
+- **Pass/fail determinations drive status** -- an automated inspection that detects a defect can trigger follow-up corrective work
+- **Trend analysis per asset** -- track inspection results over time to identify degradation patterns before failure
+
+This integration closes the loop. The AI detects a defect, creates a visual record, attaches it to the asset history, and triggers the maintenance response -- all within the same platform.
+
+---
+
+## The Training Pipeline: End to End
+
+The complete pipeline from raw images to production inspection follows six stages:
+
+**Stage 1: Data Collection**
+Collect images from field photos, drone captures, camera feeds, or historical archives. Cover diverse lighting conditions, angles, and environmental variations. More diversity in training data produces more robust models.
+
+**Stage 2: Labeling**
+For classification: assign category labels to each image. For object detection: draw bounding boxes around defects and label each box. For anomaly detection: no labeling needed -- simply curate a dataset of "good" images.
+
+**Stage 3: Training**
+Select model type, choose a base model, and click Train. Training time ranges from minutes (small classification models) to hours (large object detection models with thousands of images). MVI handles transfer learning, augmentation, and hyperparameter optimization.
+
+**Stage 4: Validation**
+Review model performance metrics:
+- **Accuracy** -- overall percentage of correct predictions
+- **Precision** -- of the defects the model found, how many were actually defects (false positive rate)
+- **Recall** -- of the actual defects present, how many did the model find (false negative rate)
+- **Confusion matrix** -- detailed breakdown of which categories get confused with which
+
+If performance is insufficient, iterate: collect more images, improve labeling quality, or adjust training parameters.
+
+**Stage 5: Deployment**
+Deploy the validated model to one or more targets:
+- **API endpoint** on the MVI server for cloud-based inference
+- **Edge device** for local inference without connectivity
+- **Mobile app** for field inspection use
+
+**Stage 6: Production and Monitoring**
+Inspect assets, collect results, link to work orders, and track trends. MVI provides production analytics:
+- Model accuracy over time -- is the model maintaining performance as real-world conditions change?
+- Inspection results summary -- pass/fail counts per asset, per time period
+- Defect trend analysis -- are defect rates increasing or decreasing?
+- Confidence distribution -- are predictions high-confidence or borderline?
+- Inspection coverage -- which assets have been inspected, which are overdue?
+
+Monitor for model drift. Real-world conditions change -- lighting shifts seasonally, assets age differently than training data represented, new defect types appear. Periodic retraining with fresh data keeps the model current.
+
+---
+
+## Hardware Requirements
+
+MVI is the most hardware-intensive MAS application because computer vision requires GPU compute. Here is what you need.
+
+### GPU Infrastructure
+
+| Component | Minimum | Recommended | Notes |
+|---|---|---|---|
+| **Training GPU** | NVIDIA T4 (16GB VRAM) | NVIDIA A100 (40/80GB VRAM) | More VRAM enables larger batch sizes and faster training |
+| **Inference GPU** | NVIDIA T4 (16GB VRAM) | NVIDIA T4 or A10 | One GPU can serve multiple deployed models concurrently |
+| **Edge GPU** | NVIDIA Jetson Nano | NVIDIA Jetson Xavier NX | For edge deployment scenarios requiring local inference |
+
+The **OpenShift GPU Operator** must be installed to expose GPU resources to MVI pods. This is a cluster-level requirement that your infrastructure team provisions -- not something the MVI user manages.
+
+### Camera Infrastructure
+
+| Use Case | Camera Type | Resolution | Frame Rate |
+|---|---|---|---|
+| Close-up inspection (welds, surfaces) | Industrial camera | 5MP+ | N/A (still images) |
+| Drone inspection (lines, pipelines, bridges) | Drone-mounted camera | 12MP+ | 4K video |
+| Continuous monitoring (production lines) | IP camera | 2MP+ | 15+ fps |
+| Mobile field inspection | Smartphone camera | 8MP+ | N/A |
+
+Camera selection directly impacts model performance. Higher resolution captures finer defect detail. Consistent lighting improves model accuracy. For production deployments, invest in proper camera mounting and lighting -- the images your model trains on should match what the camera captures in production.
+
+---
+
+## MAS 9.1: Large Vision Models for Civil Infrastructure
+
+MAS 9.1 introduces **Large Vision Models (LVMs)** -- foundation models specifically trained for civil infrastructure inspection. This is a significant advancement.
+
+Traditional MVI requires you to collect and label your own training images. LVMs come **pre-trained on massive datasets** of infrastructure imagery -- bridges, roads, tunnels, retaining walls. They require minimal additional training data to achieve production accuracy.
+
+What this means in practice:
+
+- A state DOT evaluating automated bridge deck inspection can deploy an LVM-based model with a fraction of the training images previously required
+- Drone-captured imagery of bridge decks, piers, and beams gets analyzed by models that already understand spalling, delamination, efflorescence, and other common infrastructure defects
+- Visual evidence links directly to element-level inspection records for regulatory compliance (FHWA NBIS, AASHTO)
+
+LVMs represent the direction computer vision is heading: **less custom training, more pre-built intelligence.** For organizations that struggled with the data collection burden of traditional model training, this removes a major barrier.
+
+### Other MAS 9 Enhancements
+
+| Enhancement | What It Means |
+|---|---|
+| Java 17 migration | Updated runtime with improved performance and security |
+| Improved GPU utilization | Better multi-model serving on shared GPUs -- more models per GPU |
+| Enhanced model management | Version control, A/B testing, and formal model lifecycle management |
+| Improved edge deployment | Easier deployment to edge devices with better result synchronization |
+
+---
+
+## Manufacturing Use Cases
+
+Manufacturing is the highest-density use case for MVI. Defects are visible, repetitive, and costly when missed.
+
+| Use Case | Model Type | Defects Detected | Business Impact |
+|---|---|---|---|
+| **Weld defect detection** | Object Detection | Porosity, undercut, slag inclusion, cracking | Replace manual weld inspection, achieve 100% coverage instead of sampling |
+| **Surface quality inspection** | Classification | Scratches, dents, discoloration, roughness | Automated QC at production line speed -- no human bottleneck |
+| **Assembly verification** | Object Detection | Missing components, misaligned parts | Prevent rework downstream by catching assembly errors at the source |
+| **Paint quality** | Anomaly Detection | Bubbles, runs, orange peel, bare spots | Consistent quality assessment without subjective human judgment |
+
+The weld defect use case is particularly compelling. Certified weld inspectors are expensive and in short supply. A single MVI model trained on a few hundred annotated weld images can inspect every weld on a production line, flagging only the ones that need human review. The inspector's time shifts from looking at every weld to reviewing only the flagged ones.
+
+---
+
+## Utility Use Cases
+
+Utilities operate geographically dispersed assets that are expensive and sometimes dangerous to inspect manually. MVI combined with drone imagery transforms inspection economics.
+
+| Use Case | Model Type | Defects Detected | Business Impact |
+|---|---|---|---|
+| **Power line inspection (drone)** | Object Detection | Broken conductors, damaged insulators, bird nests | Reduce helicopter inspection costs by orders of magnitude |
+| **Vegetation encroachment** | Object Detection | Trees and branches too close to power lines | Prioritize trimming crews to highest-risk spans |
+| **Pole condition assessment** | Classification | Woodpecker damage, rot, lean, hardware damage | Prioritize pole replacement based on AI-assessed condition |
+| **Substation equipment** | Classification | Oil leaks, corrosion, animal damage | Augment scheduled substation inspections with continuous monitoring |
+
+The drone plus edge deployment combination is particularly powerful. A drone equipped with a camera and an NVIDIA Jetson processes images during flight. By the time the drone returns, every span of transmission line has been inspected and defects have been catalogued with bounding boxes, confidence scores, and GPS coordinates.
+
+---
+
+## Pilot Planning: What It Takes to Get Started
+
+An MVI pilot is one of the more hardware-intensive but conceptually straightforward MAS deployments. Here is the realistic effort breakdown:
+
+| Task | Effort | Prerequisites |
+|---|---|---|
+| Verify GPU nodes available in OpenShift cluster | 2-4 hours | Infrastructure team involvement |
+| Deploy MVI operator and validate installation | 4-8 hours | GPU nodes available |
+| Identify pilot inspection use case | 4-8 hours | Domain expertise -- pick the highest-value, easiest-data use case |
+| Collect sample images (minimum 100, ideally 200+) | 8-40 hours | Camera access, field access |
+| Label images (classification labels or detection bounding boxes) | 8-24 hours | Domain expertise for accurate labeling |
+| Train model | 2-4 hours | Labeled images ready |
+| Evaluate performance and iterate | 4-8 hours | Trained model available |
+| Deploy model to API endpoint | 1-2 hours | Validated model |
+| Test with mobile app or REST API | 4-8 hours | Deployed model |
+| Configure Manage integration (link to inspection work orders) | 8-16 hours | Deployed model, Manage access |
+| Evaluate edge deployment if applicable | 8-16 hours | Deployed model, edge hardware available |
+
+**Total estimated pilot effort: 55-138 hours, 2-3 people, over 2-4 weeks.**
+
+The wide range reflects the variability in image collection. If you already have a historical archive of inspection photos (many organizations do), data collection takes hours. If you need to capture new images from scratch, it takes weeks.
+
+Start with **classification** for your first model. It requires fewer images, trains faster, and produces the most immediately interpretable results. Once you have proven the approach, move to object detection for higher-value use cases.
+
+---
+
+## Dashboard and Production Analytics
+
+Deploying a model is not the end. MVI provides ongoing production analytics that matter for long-term operational value:
+
+- **Model accuracy over time** -- Is the model maintaining accuracy as real-world conditions change? Seasonal lighting shifts, asset aging, and new defect types can all degrade performance.
+- **Inspection results summary** -- How many pass/fail results per asset, per location, per time period? This data feeds directly into asset health scoring and maintenance planning.
+- **Defect trend analysis** -- Are defect rates increasing or decreasing? Rising defect rates on a specific asset class signal a systemic issue.
+- **Confidence distribution** -- Are predictions high-confidence or borderline? A model producing mostly borderline predictions needs retraining or better data.
+- **Inspection coverage** -- Which assets have been inspected recently? Which are overdue? This drives inspection scheduling and compliance tracking.
+
+These analytics transform MVI from a point inspection tool into a **continuous condition monitoring capability**. The data it generates feeds Health, Predict, and Manage -- completing the MAS intelligence pipeline.
+
+---
+
+## Key Takeaways
+
+- **Five capabilities under one platform** -- image classification, object detection, anomaly detection, action detection (video), and OCR cover the full spectrum of visual inspection needs
+- **No data science required** -- drag-drop images, assign labels, click Train. Transfer learning and data augmentation handle the machine learning complexity entirely behind the scenes
+- **Edge deployment on NVIDIA Jetson** enables real-time inspection at remote sites without cloud connectivity -- critical for utilities, pipelines, and offshore assets
+- **MAS 9.1 Large Vision Models** reduce training data needs dramatically for civil infrastructure, making bridge and road inspection accessible without massive labeled datasets
+- **Manufacturing and utility use cases** deliver immediate, measurable value -- weld defects, surface quality, power line inspection, and vegetation management are proven starting points
+
+---
+
+## References
+
+- [IBM Maximo Visual Inspection Documentation](https://www.ibm.com/docs/en/maximo-vi)
+- [IBM Maximo Application Suite 9 Documentation](https://www.ibm.com/docs/en/mas)
+- [NVIDIA Jetson Platform](https://developer.nvidia.com/embedded-computing)
+- [OpenShift GPU Operator Documentation](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/openshift/contents.html)
+- [AASHTO Manual for Bridge Element Inspection](https://store.transportation.org/Item/CollectionDetail?ID=211)
+
+---
+
+**Series Navigation:**
+
+**Previous:** [Part 12 -- Maximo Predict](/blog/mas-features-maximo-predict)
+**Next:** [Part 14 -- Maximo AI Assist and Optimizer](/blog/mas-features-ai-assist-optimizer)
+
+[View the full MAS FEATURES series index](/blog/mas-features-series-index)
+
+---
+
+*Part 13 of the "MAS FEATURES" series | Published by TheMaximoGuys*
+
+*Maximo Visual Inspection is the most visually demonstrable AI capability in the MAS suite. You can literally show a stakeholder a photo with bounding boxes around detected defects and a confidence score next to each one. That tangibility -- the ability to see the AI working -- makes MVI one of the easiest MAS applications to justify and the most satisfying to deploy.*

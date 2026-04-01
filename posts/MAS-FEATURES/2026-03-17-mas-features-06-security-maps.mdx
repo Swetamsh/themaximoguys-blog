@@ -1,0 +1,495 @@
+---
+title: "Security & Maps: New Authentication Models and the End of Google Maps in MAS 9"
+description: "How MAS 9 transforms security with mandatory SAML/OIDC/LDAP authentication, Suite-level SSO, API Key management, and Cert-Manager auto-rotation. Plus the deprecation of Google and Bing Maps in favor of OpenMap and ArcGIS integration."
+date: "2026-03-17"
+slug: "mas-features-security-maps"
+tags: ["Maximo", "MAS 9", "MAS Features", "Security", "SAML", "OIDC", "SSO", "API Keys", "Maps", "ArcGIS", "OpenMap"]
+draft: false
+tier: "free"
+author: "Posam Lakshminarayana"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-features-security-maps.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+faqs:
+  - question: "Can I still use basic authentication for API integrations in MAS 9?"
+    answer: "Basic auth is being replaced by API Keys and OAuth tokens. MAS 9 introduces per-integration API Keys with scope control and rotation support. All new integrations should use API Keys or OAuth."
+  - question: "Does MAS 9 support Azure AD for authentication?"
+    answer: "Yes. MAS 9 supports OIDC (OpenID Connect), which works with Azure AD, Okta, Keycloak, and other OAuth 2.0 providers. SAML is also supported for enterprise SSO."
+  - question: "What happens to my Google Maps integration in MAS 9?"
+    answer: "Google Maps and Bing Maps are deprecated. MAS 9 uses OpenMap as the default (no API key required) and ArcGIS Enterprise for advanced GIS features including spatial scheduling and route optimization."
+keyTakeaways:
+  - "Google Maps and Bing Maps are deprecated — OpenMap is the new default, ArcGIS for enterprise GIS"
+  - "Authentication is now mandatory external IdP — SAML, OIDC, LDAP, or MongoDB local"
+  - "Suite-level SSO is built-in — no more manual SSO configuration per application"
+  - "API Keys replace basic auth for integrations — with scope control and automatic rotation"
+  - "MAS 9.1 adds multiple IdP fallback, self-registration, and multiple LDAP server support"
+series:
+  name: "MAS FEATURES"
+  part: 6
+  total: 25
+tldr: "MAS 9 replaces basic auth with mandatory SAML/OIDC/LDAP and introduces API Keys for integrations. Google and Bing Maps are deprecated in favor of OpenMap and ArcGIS. Suite-level SSO, Cert-Manager auto-rotation, and multiple IdP support make security more robust but require new configuration."
+seoTitle: "MAS 9 Security & Maps: Authentication, SSO, and GIS Changes"
+seoDescription: "Complete guide to MAS 9 security changes — SAML/OIDC/LDAP authentication, API Keys, Suite SSO, Cert-Manager, and the migration from Google/Bing Maps to OpenMap and ArcGIS."
+proficiencyLevel: "intermediate"
+pillarSlug: "mas-features-series-index"
+relatedSlugs:
+  - "mas-features-maximo-mobile"
+  - "mas-features-integration-reporting"
+---
+
+# Security & Maps: New Authentication Models and the End of Google Maps in MAS 9
+
+> **Who this is for:** Maximo administrators, security architects, and GIS coordinators who need to understand how MAS 9 changes authentication, authorization, API security, and mapping — and what to plan for before your upgrade.
+
+**Estimated read time: 10 minutes**
+
+---
+
+## The Monday Morning That Changed Everything
+
+It is 8:02 AM on a Monday. You are two weeks into your MAS 9 test environment, and the help desk has already forwarded three tickets. The first one says: "I can't log in — the login page looks different." The second says: "Our integration to SAP stopped working overnight." The third says: "The map in Work Order Tracking is blank."
+
+Three tickets. Three entirely different subsystems. And every single one traces back to the same root cause: MAS 9 fundamentally rewrote how authentication works, how integrations authenticate, and which map provider renders your assets.
+
+You stare at your coffee and realize this is not a patch-and-move-on situation. This is a "rethink your entire security and spatial architecture" situation.
+
+If your migration planning has not accounted for these changes, this post is your wake-up call. Let's walk through everything.
+
+---
+
+## 🗺️ Maps and Spatial: Google and Bing Are Gone
+
+Let's start with the change that will be immediately visible to every user who opens a map view.
+
+### The Deprecation You Need to Know
+
+**Google Maps and Bing Maps are deprecated as mapping providers in MAS 9.0.**
+
+Not "will be deprecated in a future release." Not "available but not recommended." Deprecated. If your current Maximo 7.6 environment uses Google Maps or Bing Maps for asset visualization, work order mapping, or location services — that integration does not carry forward.
+
+> **Hallway truth:** "We found out about the Google Maps deprecation when our test environment loaded and every map tile was blank. Nobody on the project team had flagged it." — A project manager at a transportation company, explaining why they added two weeks to their migration timeline.
+
+Here is the full comparison:
+
+| Map Feature | Maximo 7.6 | MAS 9 |
+|------------|-----------|-------|
+| **Primary Map Provider** | Bing Maps or Google Maps | OpenMap (open-source) |
+| **Enterprise GIS** | Limited ArcGIS integration | Full ArcGIS integration for spatial scheduling |
+| **Map in Applications** | Separate Map Manager module | Maps integrated throughout core applications |
+| **Technician Tracking** | Not available | GPS-based technician location on map |
+| **Work Order Creation** | Not from map | Create work orders by clicking location on map |
+
+That last row is worth pausing on. In MAS 9, your dispatchers can literally click a location on the map and create a work order right there. Your 7.6 users had to look at a map in one tab, copy coordinates or location IDs, then navigate to the Work Order application. The workflow is night-and-day different.
+
+---
+
+### 🌐 OpenMap: The New Default
+
+OpenMap is the default mapping provider in MAS 9. It works out of the box. No API key. No license negotiation. No billing surprises.
+
+Here is what you get with OpenMap at zero additional cost:
+
+- Standard mapping features — zoom, pan, layers, markers, clustering
+- Asset and location plotting on maps
+- Work order visualization with status-based color coding
+- Route visualization between work order locations
+
+For many organizations, OpenMap is sufficient. If your 7.6 environment used Google or Bing primarily for "put dots on a map so dispatchers can see where work is," OpenMap covers that use case completely.
+
+```
+┌─────────────────────────────────────────────────────┐
+│              MAP PROVIDER MIGRATION PATH             │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│   Maximo 7.6                    MAS 9               │
+│  ┌──────────┐                 ┌──────────┐          │
+│  │  Google   │───────────┐    │ OpenMap   │ DEFAULT  │
+│  │  Maps     │           │    │ (Free)    │ No key   │
+│  └──────────┘           ┌┼──► └──────────┘          │
+│  ┌──────────┐           ││    ┌──────────┐          │
+│  │  Bing    │───────────┘│    │ ArcGIS   │ ENTERPRISE│
+│  │  Maps    │            └──► │ (Licensed)│ GIS      │
+│  └──────────┘                 └──────────┘          │
+│                                                     │
+│  Basic mapping ──────────────► OpenMap               │
+│  Enterprise GIS ─────────────► ArcGIS               │
+│  Custom tile servers ────────► Evaluate both         │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+```
+
+> **Key insight:** The move to OpenMap is not a downgrade. It is a shift from commercial mapping APIs (with per-request billing and API key management) to an open-source default that costs nothing and requires no configuration. For organizations that were paying thousands per month in Google Maps API fees just to show assets on a map, this is a direct cost savings.
+
+---
+
+### 🏢 ArcGIS Integration: Enterprise-Grade Spatial
+
+For organizations with Esri ArcGIS infrastructure, MAS 9 offers full ArcGIS integration that goes far beyond what was possible in 7.6. This is not just "better maps" — it is spatial intelligence baked into scheduling and dispatch.
+
+**What ArcGIS integration gives you:**
+
+| Capability | What It Does | Why It Matters |
+|-----------|-------------|----------------|
+| **Spatial Scheduling** | Optimize dispatch routes based on geographic proximity | Dispatchers assign work by territory, not just by skill |
+| **Travel Time Calculation** | Estimate travel between work locations using road network data | Realistic scheduling that accounts for drive time |
+| **Territory Management** | Define and visualize service territories on the map | Clear ownership boundaries for field teams |
+| **Asset Visualization** | Plot assets on GIS layers with attribute-based styling | See asset condition, criticality, and status at a glance |
+| **Integration Configuration** | Connect MAS to ArcGIS Enterprise or ArcGIS Online | Leverage your existing Esri investment |
+
+The spatial scheduling capability alone is transformative. In 7.6, your dispatchers looked at a list of work orders sorted by priority and a separate map with technician locations. They mentally calculated "who is closest" and assigned accordingly. In MAS 9 with ArcGIS, the system does that math for you — factoring in road networks, not just straight-line distance.
+
+---
+
+### 📍 Map Features Across Applications
+
+Maps are no longer a bolt-on module you configure separately. They are woven into the core applications your teams use every day:
+
+| Application | Map Capability |
+|------------|---------------|
+| **Work Order Tracking** | View work orders on map, create WOs from map click |
+| **Technician (Mobile)** | View assigned work on map, navigate to work location |
+| **Graphical Assignment** | View technician locations and work locations, spatial dispatching |
+| **Service Request** | Plot SR locations, create SRs from map (MAS 9.1) |
+| **Asset Manager** | View assets on map, asset proximity analysis |
+| **Dispatching Dashboard** | Real-time technician and work visualization |
+
+Notice that Graphical Assignment and the Dispatching Dashboard both have map integration. Your dispatchers are not switching between a scheduling tool and a mapping tool anymore. They see technicians and work on the same screen, in real time.
+
+---
+
+### 🚗 Travel Time Optimization
+
+This is the premium capability — and it requires both **Maximo Optimizer** and **ArcGIS integration** working together.
+
+When both are configured, you get:
+
+- **Optimal route calculation** for multi-stop technician assignments
+- **Traffic-aware scheduling** that considers road network patterns
+- **Dynamic re-routing** when emergency work is injected mid-day
+- **Technician start location awareness** — routes begin from the tech's current position, not a depot
+- **Priority-weighted optimization** — critical work gets closer technicians even if it breaks geographic clusters
+
+```
+┌─────────────────────────────────────────────────────┐
+│         TRAVEL TIME OPTIMIZATION STACK               │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│   ┌─────────────┐   ┌─────────────┐                │
+│   │   Maximo     │   │   ArcGIS    │                │
+│   │  Optimizer   │ + │  Enterprise │  = Route Magic │
+│   └──────┬──────┘   └──────┬──────┘                │
+│          │                  │                        │
+│          ▼                  ▼                        │
+│   ┌─────────────────────────────────┐               │
+│   │  Considers:                     │               │
+│   │  • Road network data            │               │
+│   │  • Traffic patterns             │               │
+│   │  • Technician start location    │               │
+│   │  • Work order priority          │               │
+│   │  • Emergency injection          │               │
+│   └─────────────────────────────────┘               │
+│                     │                                │
+│                     ▼                                │
+│   ┌─────────────────────────────────┐               │
+│   │  Result:                        │               │
+│   │  Less windshield time           │               │
+│   │  More wrench time               │               │
+│   │  Higher technician utilization  │               │
+│   └─────────────────────────────────┘               │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+```
+
+The practical impact: less windshield time, more wrench time, higher technician utilization. Organizations with large field teams and geographically distributed assets see the biggest gains.
+
+> **Hallway truth:** "After we turned on spatial scheduling with ArcGIS, our average drive time between jobs dropped by 22 percent. We did not add a single technician — we just stopped sending people across town when someone was already around the corner." — A dispatch supervisor at a facilities management company.
+
+---
+
+## 🔐 Security Model: Everything Changed
+
+Now let's talk about the change that will consume the most planning time in your migration. The security model in MAS 9 is not an incremental update. It is a ground-up redesign of how users authenticate, how integrations connect, and how certificates are managed.
+
+### The Authentication Comparison
+
+Here is the table you need to study before your first MAS 9 planning meeting:
+
+| Security Aspect | Maximo 7.6 | MAS 9 |
+|----------------|-----------|-------|
+| **Authentication** | App server auth, LDAP, or native Maximo | Mandatory external IdP: SAML, OIDC, LDAP, or local MongoDB |
+| **SSO** | Optional, required manual config | Built-in at Suite level |
+| **User Directory** | VMMSYNC or manual creation | MongoDB + LDAP sync with field transformation |
+| **API Authentication** | Basic auth, LTPA tokens | API Keys, OAuth tokens |
+| **Certificate Management** | Manual cert management | Cert-Manager operator with auto-rotation |
+
+Every single row in that table represents a planning conversation your team needs to have. Let's break them down.
+
+---
+
+### 🔑 Supported Authentication Methods
+
+MAS 9 supports four authentication methods. You need to pick one (or more, starting in 9.1). Here is what each one means in practice.
+
+#### MongoDB Local Authentication
+
+This is the **default** method when no external Identity Provider is configured.
+
+- User credentials are stored in MongoDB (hashed, not plaintext)
+- Provides SSO across all MAS applications automatically
+- Suitable for development environments, test environments, or small deployments
+- No external IdP infrastructure required
+
+When do you use this? When you are standing up a sandbox, running a proof of concept, or managing a small deployment where corporate identity infrastructure is not available or not worth integrating.
+
+When do you NOT use this? Production environments at any enterprise scale. If your organization has Active Directory, LDAP, or any SAML/OIDC provider — use it. MongoDB local auth means you are managing yet another credential store, and your security team will not be happy about that.
+
+#### LDAP Authentication
+
+If your organization runs Active Directory or another LDAP-compliant directory, this is likely your path.
+
+Key details your security team needs to know:
+
+- **TLS is mandatory.** MAS 9 requires LDAPS (secure LDAP). Non-TLS LDAP connections are NOT supported. If your current 7.6 environment connects to LDAP over port 389 without TLS, that stops working.
+- **Configurable user synchronization** with custom field mapping — you map LDAP attributes to Maximo user fields during sync
+- **Field value transformation** during sync — meaning you can transform LDAP attribute values as they flow into MAS (normalize department codes, map LDAP groups to Maximo security groups, etc.)
+- **MAS 9.1 supports multiple LDAP servers** for synchronization — critical for organizations with regional directory structures or merger/acquisition scenarios
+
+```
+┌─────────────────────────────────────────────────────┐
+│           LDAP AUTHENTICATION IN MAS 9               │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│   ┌──────────┐    LDAPS (TLS)    ┌──────────────┐  │
+│   │  MAS 9   │◄─────────────────►│ Corp LDAP /  │  │
+│   │  Suite    │    Port 636       │ Active Dir   │  │
+│   └────┬─────┘                   └──────────────┘  │
+│        │                                            │
+│        │  Sync + Transform                          │
+│        ▼                                            │
+│   ┌──────────┐                                      │
+│   │ MongoDB  │  User records + mapped attributes    │
+│   │ (local)  │  Field transformation applied        │
+│   └──────────┘                                      │
+│                                                     │
+│   7.6: VMMSYNC via WebSphere federated repos        │
+│   MAS 9: Direct LDAPS with configurable mapping     │
+│                                                     │
+│   ⚠️  Port 389 (non-TLS) = NOT SUPPORTED           │
+│   ⚠️  9.1: Multiple LDAP servers supported          │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+```
+
+> **Key insight:** The shift from VMMSYNC in WebSphere to direct LDAP synchronization in MAS 9 is actually simpler to configure and maintain. But the mandatory TLS requirement means you need valid certificates on your LDAP servers before MAS 9 can connect. If your 7.6 environment was using non-TLS LDAP (and more environments do this than anyone admits), this is a prerequisite that needs to be resolved before migration.
+
+#### SAML Authentication
+
+SAML is the enterprise SSO path. If your organization uses PingFederate, ADFS, or another SAML 2.0 Identity Provider for single sign-on across enterprise applications, this is the integration point.
+
+Key details:
+
+- Supports SAML 2.0 standard
+- Can be configured as the **default IdP with seamless login** — this means users are redirected directly to the SAML Identity Provider, skipping the Maximo login page entirely
+- **Warning about seamless login:** If your organization requires compliance notices, legal disclaimers, or security banners on the login page, seamless login bypasses all of that. The user goes straight to the corporate SSO prompt. Plan accordingly.
+- Enterprise SSO across Maximo and all other SAML-supporting applications in your portfolio
+
+#### OIDC (OpenID Connect) — NEW in MAS 9.0
+
+This is the new kid on the block and the one that will matter most for organizations investing in modern identity infrastructure.
+
+- Supports modern **OAuth 2.0 / OIDC flows**
+- Integrates with **Azure AD, Okta, Keycloak**, and any other OIDC-compliant provider
+- Additional federation option alongside SAML — you can have both
+
+OIDC is where the industry is heading. If your organization is already using Azure AD or Okta for other cloud applications, connecting MAS 9 via OIDC means your Maximo users get the same SSO experience they have with every other enterprise app.
+
+```
+┌─────────────────────────────────────────────────────┐
+│       AUTHENTICATION OPTIONS — DECISION TREE         │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│   Do you have a corporate IdP?                      │
+│   ├── NO ──► MongoDB Local (dev/test/small only)    │
+│   └── YES                                           │
+│       ├── What type?                                │
+│       │   ├── LDAP / Active Directory               │
+│       │   │   └──► LDAP auth (LDAPS required)       │
+│       │   ├── SAML 2.0 (PingFederate, ADFS)        │
+│       │   │   └──► SAML auth (enterprise SSO)       │
+│       │   └── OIDC (Azure AD, Okta, Keycloak)       │
+│       │       └──► OIDC auth (modern OAuth 2.0)     │
+│       └── Multiple IdPs? (9.1 only)                 │
+│           └──► Configure primary + fallback          │
+│                                                     │
+│   All options provide Suite-level SSO               │
+│   All options use MongoDB for local user records    │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+### 🆕 MAS 9.1 Authentication Enhancements
+
+MAS 9.1 adds three capabilities that solve real-world enterprise problems:
+
+**1. Multiple Identity Provider Fallback**
+
+You can configure multiple IdPs of the same authentication type. If your primary SAML provider goes down, MAS 9.1 can fall back to a secondary. This is not just theoretical resilience — organizations with geographically distributed IdP infrastructure need this for disaster recovery.
+
+**2. Self-Registration**
+
+Users can create their own accounts and request access to applications. This is significant for organizations that provide Maximo access to external contractors or service requestors. In 7.6, every user account required an administrator to create it manually or a VMMSYNC cycle to pick it up from LDAP.
+
+**3. Multiple LDAP Server Synchronization**
+
+For organizations with complex directory structures — multiple AD forests, regional LDAP servers, or post-acquisition environments with separate directories — MAS 9.1 supports syncing users from more than one LDAP server. You no longer need to consolidate all users into a single directory before MAS can see them.
+
+---
+
+### 🔒 Authorization: The Familiar Part
+
+Here is the good news. While authentication changed dramatically, **authorization is conceptually unchanged**.
+
+- **Security Groups** still control access to applications, options, and data
+- **Conditional Expression** security still works for row-level data restrictions
+- **Object Structure Security** is new — it controls what data Role-Based Applications can access (this is the RBA equivalent of application-level security)
+- **Application Security** still controls menu options, toolbar buttons, and field visibility
+
+If you have spent years building a carefully tuned security group structure with conditional expressions that restrict data by site, organization, GL account, and storeroom — that work carries forward. You are not rebuilding your authorization model. You are changing how users prove who they are before they reach that model.
+
+> **Hallway truth:** "We spent three months worrying that our 200+ security groups would need to be rebuilt for MAS 9. Turns out the authorization side was fine — it was the authentication side that needed all the work." — A security administrator at a mining company.
+
+---
+
+### 🔑 API Key Management — NEW
+
+This is the change that will affect every integration team.
+
+In Maximo 7.6, your integrations authenticated using **basic auth** (username and password in the HTTP header) or **LTPA tokens** (WebSphere-specific session tokens). Both of these are going away.
+
+MAS 9 introduces a dedicated **API Key Management** application. Here is how it works:
+
+| Feature | Detail |
+|---------|--------|
+| **Key Creation** | Created in the API Key Management application in MAS |
+| **Scope Control** | Each key defines which Object Structures it can access |
+| **Rotation** | Keys can be rotated with a grace period — old key keeps working until the grace period expires |
+| **Audit Trail** | All key usage is tracked for security audit |
+| **Best Practice** | One API key per integration endpoint — never shared keys |
+
+```
+┌─────────────────────────────────────────────────────┐
+│         API AUTHENTICATION MIGRATION                 │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│   Maximo 7.6                    MAS 9               │
+│  ┌──────────────┐             ┌──────────────┐      │
+│  │ Basic Auth   │             │ API Keys     │      │
+│  │ user:pass    │─────────X──│ Scoped       │      │
+│  │ in header    │  REMOVED    │ Rotatable    │      │
+│  └──────────────┘             │ Audited      │      │
+│  ┌──────────────┐             └──────────────┘      │
+│  │ LTPA Tokens  │             ┌──────────────┐      │
+│  │ WebSphere    │─────────X──│ OAuth Tokens │      │
+│  │ specific     │  REMOVED    │ Standard     │      │
+│  └──────────────┘             └──────────────┘      │
+│                                                     │
+│  ⚠️  Every integration using basic auth             │
+│     needs a new API Key before go-live              │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+```
+
+This means: **every integration that currently uses basic auth needs to be updated before your MAS 9 go-live.** Every SAP integration, every ServiceNow integration, every custom middleware that passes `Authorization: Basic <base64>` in the HTTP header — they all need API Keys.
+
+The good news is that API Keys are better in every way. Scoped access means your SAP integration key can only touch the Object Structures it needs. Rotation with grace periods means you can cycle keys on a schedule without downtime. Per-integration keys mean a compromised key does not expose your entire API surface.
+
+> **Key insight:** Start inventorying your integrations now. Every system that connects to Maximo via REST or OSLC needs to be cataloged, and each one needs a migration plan from basic auth to API Keys. This is not something you want to discover during cutover weekend.
+
+---
+
+### 📜 Certificate Management: Automated at Last
+
+If you have ever spent a Friday evening manually renewing SSL certificates on a Maximo environment because they expired and nobody noticed until users started getting browser warnings — this section is for you.
+
+MAS 9 uses the **Cert-Manager operator** in OpenShift to handle TLS certificates:
+
+- **Automatic certificate rotation** before expiration — no more calendar reminders, no more emergency renewals
+- **Supports Let's Encrypt** for public-facing certificates and **custom CA certificates** for internal environments
+- **Certificate trust chain management** for integration endpoints — when your SAP system presents a certificate signed by an internal CA, Cert-Manager handles the trust chain
+- **Custom certificates can be uploaded** for organizations that require internally-issued certificates for compliance
+
+The contrast with 7.6 is stark. In the legacy world, certificate management was a manual, error-prone process that typically involved the admin, the network team, the security team, and a change management ticket. In MAS 9, it is an automated operator function that you configure once and monitor.
+
+---
+
+## 🎯 The Migration Planning Checklist
+
+These two areas — maps and security — require active planning before your MAS 9 upgrade. Here is what you need to have answered before cutover:
+
+**Maps:**
+- What map provider are you using today (Google, Bing, other)?
+- Is OpenMap sufficient for your needs, or do you need ArcGIS?
+- If ArcGIS: do you have existing Esri licensing?
+- Do you need spatial scheduling (requires Optimizer + ArcGIS)?
+- Which applications use map views today?
+
+**Security:**
+- Which authentication method will you use (LDAP, SAML, OIDC, MongoDB)?
+- If LDAP: is your LDAP server accessible via LDAPS (port 636, TLS)?
+- If SAML: do you need seamless login, and if so, do you have compliance notice requirements?
+- If OIDC: which provider (Azure AD, Okta, Keycloak)?
+- How many integrations currently use basic auth?
+- Who owns API Key creation and rotation?
+- Do you need multiple IdP support (MAS 9.1)?
+- Do you need self-registration for external users (MAS 9.1)?
+
+---
+
+## Suite-Level SSO: The Hidden Win
+
+One more thing worth calling out. In 7.6, if you wanted SSO, you configured it manually — typically through LTPA tokens between WebSphere servers, or through a product like Tivoli Access Manager or SiteMinder. It was a project in itself.
+
+In MAS 9, **Suite-level SSO is built in.** When you configure your IdP (SAML, OIDC, or LDAP), SSO across all MAS applications — Manage, Monitor, Health, Predict, Assist, Visual Inspection — comes for free. One login, all applications.
+
+This sounds small until you realize how many organizations are still running separate authentication configurations for Maximo, Maximo Mobile, and BIRT reporting. In MAS 9, that fragmentation disappears. One IdP configuration. One SSO experience. One set of tokens.
+
+---
+
+## Key Takeaways
+
+- **Google Maps and Bing Maps are deprecated** in MAS 9 — OpenMap is the free default, ArcGIS is the enterprise GIS path with spatial scheduling and route optimization
+- **Authentication is mandatory external IdP** — choose from SAML, OIDC, LDAP, or MongoDB local, and plan your IdP integration before migration
+- **Suite-level SSO is built in** — no more manual SSO configuration per application or per environment
+- **API Keys replace basic auth** for all integrations — inventory your integrations and plan key creation before cutover
+- **Cert-Manager automates certificate lifecycle** — no more manual renewals, no more expiration surprises
+- **MAS 9.1 adds resilience** — multiple IdP fallback, self-registration, and multiple LDAP server support
+- **Authorization is unchanged** — your security groups, conditional expressions, and data restrictions carry forward
+
+---
+
+## References
+
+- [IBM MAS 9 Security Configuration](https://www.ibm.com/docs/en/mas)
+- [IBM MAS Suite Administration - Authentication](https://www.ibm.com/docs/en/mas-cd/maximo-manage/continuous-delivery)
+- [Cert-Manager Documentation](https://cert-manager.io/docs/)
+- [ArcGIS Integration for Maximo](https://www.ibm.com/docs/en/mas-cd/maximo-manage/continuous-delivery)
+- [OpenID Connect Specification](https://openid.net/connect/)
+
+---
+
+**Series Navigation:**
+
+**Previous:** [Part 5 — Maximo Mobile: Anywhere is Dead and Your Field Teams Will Thank You](/blog/mas-features-maximo-mobile)
+**Next:** [Part 7 — Integration & Reporting: JSON API, Kafka, and the Death of BIRT](/blog/mas-features-integration-reporting)
+
+[View the full MAS FEATURES series index](/blog/mas-features-series-index)
+
+---
+
+*Part 6 of the "MAS FEATURES" series | Published by TheMaximoGuys*
+
+*Your maps and your security model are changing in the same release. That is not a coincidence — MAS 9 is modernizing everything that touches external services, from the tiles on your screen to the tokens in your HTTP headers. The organizations that plan for both changes together are the ones that have smooth cutovers. The ones that discover them in UAT are the ones calling us on a Friday evening.*

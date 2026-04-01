@@ -1,0 +1,425 @@
+---
+title: "Work Centers Are Gone: The Complete Guide to Role-Based Applications in MAS 9"
+description: "Work Centers were removed entirely in MAS 9 — replaced by Role-Based Applications built on React/MAF with no automatic migration. This is the most impactful change for daily users. Complete WC-to-RBA mapping, gap analysis, migration strategy, and timeline estimates."
+date: "2026-03-17"
+slug: "mas-features-work-centers-rbas"
+tags: ["Maximo", "MAS 9", "MAS Features", "Work Centers", "Role-Based Applications", "RBA", "MAF", "Migration", "React"]
+draft: false
+tier: "free"
+author: "Posam Lakshminarayana"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-features-work-centers-rbas.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+faqs:
+  - question: "Can I still use Work Centers in MAS 9?"
+    answer: "No. Work Centers were removed starting in MAS 8.9 and are fully eliminated in MAS 9.x. They are replaced by Role-Based Applications (RBAs) built on the Maximo Application Framework (MAF) using React.js."
+  - question: "Is there an automatic migration tool for Work Center customizations?"
+    answer: "No. There is no automatic migration tooling. Every Work Center customization must be manually inventoried, classified by business criticality, and rebuilt using MAF (React.js). This is a manual, effort-intensive process."
+  - question: "Do Purchasing RBAs exist in MAS 9?"
+    answer: "No. Purchasing and Procurement Role-Based Applications do not exist yet. Procurement teams must continue using classic Maximo applications until IBM releases RBA replacements."
+keyTakeaways:
+  - "Work Centers are completely removed in MAS 9 — replaced by Role-Based Applications with no automatic migration"
+  - "Technology changed from XML/JSP to React.js/MAF — existing customizations cannot be ported"
+  - "Critical gaps exist: no Purchasing RBAs, no Asset moves/swaps, no Supervisor SR-to-WO conversion"
+  - "Migration strategy: Inventory all customizations → Classify (A/B/C/D) → Prioritize → Rebuild → Train"
+  - "Budget 3+ weeks per complex Work Center reconstruction"
+series:
+  name: "MAS FEATURES"
+  part: 3
+  total: 25
+tldr: "Work Centers are gone in MAS 9 — replaced by Role-Based Applications built on React/MAF. No automatic migration exists. Every customization must be manually rebuilt. Critical gaps remain in Purchasing, Asset moves, and Supervisor workflows. This is the single most impactful change for daily users."
+seoTitle: "MAS 9 Work Centers Removed: Complete RBA Migration Guide"
+seoDescription: "Work Centers removed in MAS 9 — complete mapping to Role-Based Applications, gap analysis, migration strategy, and timeline estimates for every Work Center replacement."
+proficiencyLevel: "intermediate"
+pillarSlug: "mas-features-series-index"
+relatedSlugs:
+  - "mas-features-carbon-design-ui"
+  - "mas-features-dashboard-scheduling"
+---
+
+# Work Centers Are Gone: The Complete Guide to Role-Based Applications in MAS 9
+
+> **Who this is for:** Every Maximo user, administrator, and project manager who relied on Work Centers in 7.6. If your team customized Work Centers -- and most teams did -- this is the single most important article in this series. Read it before you plan your migration timeline.
+
+**Estimated read time: 10 minutes**
+
+---
+
+## The Morning It Hits You
+
+You log into MAS 9 for the first time in your new test environment. You navigate to the side menu, looking for your Work Centers. The Supervisor Work Center you spent six months customizing. The Inventory Work Center your warehouse team lives in eight hours a day. The Business Analyst Work Center that your maintenance manager calls "my Maximo."
+
+They are not there.
+
+Not hidden. Not renamed. Not moved to a different menu. **Gone.**
+
+You search the documentation. You open a support ticket. You ask your IBM rep. The answer is the same everywhere:
+
+*Work Centers were removed starting in MAS 8.9. They are fully eliminated in MAS 9.x. The replacements are Role-Based Applications.*
+
+And no -- there is no migration tool. Every customization you built? You are rebuilding it from scratch.
+
+> **Hallway quote:** *"We spent 18 months customizing our Work Centers. Nobody told us they were going away. That's 18 months of work we have to redo on a completely different technology stack."* -- Implementation lead at a utilities company, after discovering the Work Center removal during upgrade planning.
+
+---
+
+## Why This Is the Most Impactful Change
+
+Let's be direct about why this matters more than any other change in MAS 9.
+
+Work Centers were not just another feature. For many organizations, they **were** Maximo. Your maintenance supervisors did not think in terms of "the Work Order Tracking application" or "the Service Request application." They thought in terms of "my Work Center" -- the single screen where they reviewed queues, approved work, checked KPIs, and managed their team's daily operations.
+
+When IBM removed Work Centers, they removed the daily interface that thousands of organizations had customized, trained on, and built operational processes around.
+
+```
+  ┌──────────────────────────────────────────────────────┐
+  │         MAXIMO 7.6: WORK CENTER ARCHITECTURE         │
+  │                                                      │
+  │   ┌─────────────┐  ┌─────────────┐  ┌────────────┐  │
+  │   │  Supervisor  │  │  Inventory  │  │  Business   │  │
+  │   │  Work Center │  │ Work Center │  │  Analyst WC │  │
+  │   └──────┬───────┘  └──────┬──────┘  └─────┬──────┘  │
+  │          │                 │                │         │
+  │          ▼                 ▼                ▼         │
+  │   ┌──────────────────────────────────────────────┐   │
+  │   │     Application Designer (XML + JSP)         │   │
+  │   │     Custom queries, portlets, layouts        │   │
+  │   └──────────────────────────────────────────────┘   │
+  │                                                      │
+  │   Technology: XML configuration + JSP rendering      │
+  │   Customization: Application Designer (desktop)      │
+  │   Status: REMOVED in MAS 8.9+                        │
+  └──────────────────────────────────────────────────────┘
+
+                        ▼ ▼ ▼  NO MIGRATION PATH  ▼ ▼ ▼
+
+  ┌──────────────────────────────────────────────────────┐
+  │       MAS 9: ROLE-BASED APPLICATION ARCHITECTURE     │
+  │                                                      │
+  │   ┌─────────────┐  ┌─────────────┐  ┌────────────┐  │
+  │   │  Approvals   │  │  Inventory  │  │ Maintenance │  │
+  │   │     RBA      │  │  Count RBA  │  │ Manager RBA │  │
+  │   └──────┬───────┘  └──────┬──────┘  └─────┬──────┘  │
+  │          │                 │                │         │
+  │          ▼                 ▼                ▼         │
+  │   ┌──────────────────────────────────────────────┐   │
+  │   │     MAF Configuration Application            │   │
+  │   │     React.js components, JSON config         │   │
+  │   └──────────────────────────────────────────────┘   │
+  │                                                      │
+  │   Technology: React.js on MAF framework              │
+  │   Customization: MAF Configuration (cloud-native)    │
+  │   Status: CURRENT in MAS 9.x                         │
+  └──────────────────────────────────────────────────────┘
+```
+
+The technology stack changed completely. XML and JSP are gone. React.js and the Maximo Application Framework (MAF) are the new foundation. Your Application Designer skills still apply to classic apps, but Work Center configurations do not carry over at all.
+
+---
+
+## The Complete Work Center to RBA Mapping
+
+Here is every Work Center from Maximo 7.6 and its MAS 9 replacement. Study this table carefully -- it is the foundation of your migration plan.
+
+| Legacy Work Center | MAS 9 Replacement | Status | Known Gaps |
+|---|---|---|---|
+| **Business Analyst WC** | Operational Dashboard + Maintenance Manager RBA | Available | Dashboard provides KPIs; Maintenance Manager provides operational views |
+| **Data Set Designer** | Operational Dashboard (card configuration) | Available | Dashboard card builder replaces dataset configuration |
+| **Inspection Forms WC** | Inspection Forms RBA (rebuilt on MAF) | Available | Completely rebuilt -- old customizations do NOT carry over |
+| **Conduct an Inspection** | Inspections RBA | Available | New workflow; integrated with Maximo Mobile |
+| **Work Execution WC** | Technician app (Maximo Mobile) + Work Order Tracking (classic) | Available | Mobile-first approach; field technicians use Maximo Mobile |
+| **Work Supervisor WC** | Approvals application | Available | **GAP:** Cannot review SRs and convert to WOs in a single workflow |
+| **Service Request WC** | Service Request RBA | Available | Rebuilt for modern UX; some workflow differences |
+| **Assets WC** | Asset Manager RBA | Available | **GAP:** No asset moves/swaps unless using ACM add-on |
+| **Inventory Work Centers** | Inventory Count RBA, Issues and Transfers RBA, Receiving RBA | Available | **GAP:** Specialized pick list displays not yet replicated |
+| **Administrative WCs** | API Key Management, Security Groups, System Configuration | Available | Distributed across multiple admin applications |
+| **Purchasing/Procurement WCs** | Classic applications remain | **NO RBA** | **GAP:** No RBA replacement exists -- use classic PO, RFQ apps |
+
+> **Key insight:** Seven out of eleven Work Center categories have available RBA replacements -- but almost every replacement has at least one functional gap compared to the original. And Purchasing has no RBA at all. If your procurement team lived in Work Centers, they are going back to classic applications.
+
+---
+
+## The Gaps That Will Hurt
+
+Let's zoom in on the gaps that will cause the most pain in real-world operations. These are not theoretical concerns -- they are the issues that surface during the first week of user acceptance testing.
+
+### Gap 1: Supervisor SR-to-WO Conversion
+
+In the old Supervisor Work Center, a maintenance supervisor could review a Service Request, evaluate it, and create a Work Order from it -- all in a single workflow without leaving the screen. It was one of the most-used features in the entire Work Center ecosystem.
+
+In MAS 9, the Approvals RBA handles work approvals, but it does **not** support the review-SR-and-create-WO workflow in one place. Your supervisors will need to use the classic Work Order Tracking application alongside the Service Request application. Two screens instead of one.
+
+**Workaround:** Use classic Work Order Tracking + Service Request applications. Consider building an Automation Script that streamlines the two-app workflow.
+
+### Gap 2: Asset Moves and Swaps
+
+The Assets Work Center supported moving assets between locations and swapping assets -- critical operations for organizations managing fleet vehicles, rotating equipment, or assets that move between sites.
+
+The Asset Manager RBA does **not** support moves or swaps. You need either the Asset Configuration Management (ACM) add-on (which consumes additional AppPoints) or the classic Assets application.
+
+**Workaround:** Classic Assets application for moves/swaps, or purchase ACM add-on.
+
+### Gap 3: Inventory Pick Lists
+
+The Inventory Work Centers provided specialized pick list displays that warehouse teams relied on for daily operations -- visual layouts optimized for walking the storeroom and pulling parts.
+
+The Inventory RBAs (Inventory Count, Issues and Transfers, Receiving) do not yet replicate these specialized views.
+
+**Workaround:** Use the classic Inventory application for complex pick list workflows.
+
+### Gap 4: Custom Query Portlets
+
+If your organization built custom query portlets inside Work Centers -- and almost everyone did -- those configurations are gone. The technology does not exist to render them.
+
+**Workaround:** Rebuild as Work Queues in the Work Queue Manager application, then surface them on the Operational Dashboard via Work Queue cards.
+
+### Gap 5: Purchasing and Procurement -- No RBA at All
+
+This is the biggest gap. There is **no** Role-Based Application for Purchasing or Procurement as of MAS 9.1. If your procurement team used Work Centers for purchase orders, RFQs, receiving, or invoice matching, they have no modern replacement. Classic applications are the only path.
+
+> **Hallway quote:** *"We told our procurement team they'd get a modern UI. Then we found out there's no Purchasing RBA. That was a difficult conversation."* -- Project manager at a manufacturing company.
+
+---
+
+## The Technology Cliff: XML/JSP to React.js/MAF
+
+This is not a version upgrade. This is a technology replacement. Understanding the magnitude of this change is critical for accurate project planning.
+
+```
+  ┌────────────────────────────────┬────────────────────────────────┐
+  │     WORK CENTERS (7.6)         │     RBAs (MAS 9)               │
+  ├────────────────────────────────┼────────────────────────────────┤
+  │  Configuration: XML files      │  Configuration: MAF JSON       │
+  │  Rendering: JSP pages          │  Rendering: React.js           │
+  │  Tool: Application Designer    │  Tool: MAF Configuration app   │
+  │  Deployment: EAR rebuild       │  Deployment: Server-side push  │
+  │  Customization: XML + Java     │  Customization: MAF + Scripts  │
+  │  Skills: Java EE / XML / JSP   │  Skills: React / JSON / MAF   │
+  │  Security: App-level grants    │  Security: Object Structure    │
+  ├────────────────────────────────┼────────────────────────────────┤
+  │  Portability: ██████████ ZERO  │  These are completely          │
+  │  Migration:   ██████████ NONE  │  different technology stacks.  │
+  └────────────────────────────────┴────────────────────────────────┘
+```
+
+**You cannot port, convert, transform, or automatically migrate Work Center configurations into RBAs.** The XML that defined your Work Center layouts has no equivalent representation in MAF. The JSP pages that rendered your custom views have no React.js counterpart that accepts the same input. The Application Designer tool that you used to build Work Centers does not know what an RBA is.
+
+Every customization must be:
+1. Understood (what does it do?)
+2. Evaluated (is it still needed?)
+3. Redesigned (how should it work in MAF?)
+4. Rebuilt (from scratch in the MAF Configuration application)
+5. Tested (with real users doing real work)
+6. Trained (because the UX is fundamentally different)
+
+### MAF Configuration Application
+
+The MAF (Maximo Application Framework) Configuration application is where you build and customize RBAs in MAS 9. This is your new Application Designer -- but it works entirely differently:
+
+- **Cloud-native interface** -- configured through the browser, not a desktop tool
+- **React.js components** -- you are assembling React components, not XML elements
+- **JSON-based configuration** -- layouts and behaviors defined in JSON, not XML
+- **Object Structure Security** -- RBAs use Object Structure-based security model, not the traditional app-level security grants that Work Centers used
+- **Live preview** -- changes can be previewed in real-time during configuration
+
+> **Key insight:** Your Application Designer expertise gives you a conceptual foundation -- you understand what layout configuration means, what data bindings are, how conditional visibility works. But the mechanics are entirely new. Plan for a learning curve of 2-4 weeks for experienced Maximo configurators to become productive in MAF.
+
+---
+
+## Object Structure Security for RBAs
+
+This is a critical detail that many teams miss during planning. RBAs use a different security model than classic applications.
+
+In classic Maximo and Work Centers, security was granted at the **application level** -- you gave a security group access to the "WOTRACK" application with specific privileges (read, insert, save, delete).
+
+In RBAs, security is enforced through **Object Structures**. An Object Structure defines which business objects and fields an RBA can access. Security groups are granted access to Object Structures, not to applications directly.
+
+**What this means for your migration:**
+- You need to review and potentially reconfigure your Object Structures
+- Security groups need new grants for Object Structure access
+- Field-level security works differently -- it is controlled through Object Structure field definitions
+- Conditional expressions for data restrictions still apply, but they attach to Object Structures rather than applications
+
+If you skip this step, your users will log into the new RBAs and see "not authorized" errors everywhere. Plan for a dedicated security configuration sprint during your migration.
+
+---
+
+## The Migration Strategy: Four Steps, No Shortcuts
+
+IBM does not provide automatic migration tooling. You are on your own. Here is the strategy that works.
+
+### Step 1: Inventory (1-2 weeks)
+
+Document **every** Work Center customization in your 7.6 environment. For each one, record:
+
+- **What it does** -- the business function it serves
+- **Who uses it** -- specific roles, teams, individuals
+- **How often** -- daily, weekly, monthly, rarely
+- **Business criticality** -- what happens if it is unavailable for a week? A month?
+- **Technical complexity** -- simple layout change, custom query, Automation Script integration, custom Java
+
+Do not skip this step. Do not estimate from memory. **Open every Work Center and document what you find.** You will discover customizations that nobody remembers building but everyone relies on.
+
+### Step 2: Classify (1 week)
+
+Sort every customization into one of four categories:
+
+```
+  ┌─────────────────────────────────────────────────────────────┐
+  │              WORK CENTER CUSTOMIZATION CLASSIFICATION        │
+  ├──────────┬──────────────────────────────────────────────────┤
+  │          │                                                  │
+  │  CAT A   │  CRITICAL BUSINESS FUNCTION                     │
+  │  ██████  │  Direct RBA equivalent exists.                  │
+  │          │  Rebuild in MAF. Do this first.                 │
+  │          │                                                  │
+  ├──────────┼──────────────────────────────────────────────────┤
+  │          │                                                  │
+  │  CAT B   │  IMPORTANT BUT FLEXIBLE                         │
+  │  █████   │  No direct RBA match, but achievable with       │
+  │          │  Automation Scripts or workaround.               │
+  │          │  Rewrite with scripting effort.                  │
+  │          │                                                  │
+  ├──────────┼──────────────────────────────────────────────────┤
+  │          │                                                  │
+  │  CAT C   │  NICE TO HAVE                                   │
+  │  ███     │  Addresses a known RBA gap.                     │
+  │          │  Defer until IBM adds functionality,             │
+  │          │  or use classic app as workaround.               │
+  │          │                                                  │
+  ├──────────┼──────────────────────────────────────────────────┤
+  │          │                                                  │
+  │  CAT D   │  OBSOLETE                                       │
+  │  █       │  No longer needed. Business process changed,    │
+  │          │  or feature was unused. Retire it.              │
+  │          │                                                  │
+  └──────────┴──────────────────────────────────────────────────┘
+```
+
+**Category A -- Critical Business (Rebuild in MAF):** The customization serves a critical daily business function, and a direct RBA equivalent exists. These are your quick wins. Rebuild them first in MAF Configuration.
+
+**Category B -- Important (Workaround):** The customization is important but there is no direct RBA equivalent. However, you can achieve the same outcome using Automation Scripts, Work Queue Manager configurations, or a combination of RBA features. These require more creative effort.
+
+**Category C -- Nice-to-Have (Defer):** The customization addresses a known gap in the current RBA set. You cannot rebuild it today. Defer it, track it against the IBM roadmap for gap closure, and use the classic application as a temporary workaround.
+
+**Category D -- Obsolete (Retire):** The customization is no longer needed. The business process changed, the regulation was updated, or the feature was built for a project that ended three years ago. Communicate the retirement to affected users and move on.
+
+> **Key insight:** In our experience, 20-30% of Work Center customizations fall into Category D. Organizations accumulate customizations like sediment -- layer after layer of changes that nobody remembers requesting but nobody wants to remove. The upgrade is your opportunity to clean house.
+
+### Step 3: Prioritize and Execute (3+ weeks per complex WC)
+
+Execute in priority order: A first, then B, then C (track only), then D (communicate only).
+
+**Timeline reality check:**
+
+| Complexity | Examples | Estimated Effort |
+|---|---|---|
+| Simple WC (minimal customization) | Default layout, standard queries, no custom scripts | 1-2 weeks |
+| Moderate WC (some customization) | Custom queries, modified layouts, a few Automation Scripts | 2-3 weeks |
+| Complex WC (heavy customization) | Custom portlets, extensive scripting, custom Java, complex security | 3-5 weeks |
+| Heavily customized WC (enterprise-grade) | Multi-role workflows, dozens of custom queries, integration touchpoints | 5-8 weeks |
+
+These estimates include design, build, test, and user validation. They do **not** include training.
+
+**For a typical organization with 5-8 customized Work Centers, plan for 3-6 months of dedicated migration effort.** This is not a weekend project. This is a program of work that needs its own project plan, resource allocation, and executive sponsorship.
+
+### Step 4: Train (Ongoing)
+
+Users who lived in Work Centers need training on the new RBA navigation and workflows. Do not underestimate this.
+
+The look is different (Carbon Design System instead of classic Maximo skin). The feel is different (React.js responsiveness instead of JSP page refreshes). The workflow is different (multiple focused RBAs instead of one consolidated Work Center).
+
+**Training approach:**
+- Role-based training sessions (supervisors, technicians, planners, warehouse staff)
+- Side-by-side comparison guides (old workflow vs. new workflow)
+- Hands-on sandbox environments for practice
+- Dedicated support channel for the first 30 days post-go-live
+- Feedback loops to capture gaps that were not identified during testing
+
+---
+
+## A Real Migration Scenario
+
+Let's walk through what this looks like for one of the most commonly customized Work Centers: the **Work Supervisor Work Center**.
+
+**7.6 State:**
+Your Supervisor Work Center has been customized with:
+- 4 custom query portlets (Overdue WOs, Unassigned Emergency, My Team's WOs, SRs Pending Review)
+- A custom layout that shows SR details alongside WO creation fields
+- 2 Automation Scripts triggered by portlet actions
+- Custom security conditions limiting visibility by crew assignment
+- A KPI portlet showing team completion rate
+
+**MAS 9 Migration:**
+
+| Component | Category | Migration Path |
+|---|---|---|
+| Overdue WOs query | A | Rebuild as Work Queue in Work Queue Manager |
+| Unassigned Emergency query | A | Rebuild as Work Queue with Urgent priority |
+| My Team's WOs query | A | Rebuild as Work Queue with person group filter |
+| SRs Pending Review query | A | Rebuild as Work Queue |
+| SR-to-WO workflow | C | **GAP** -- no single-screen equivalent. Use classic apps. |
+| Automation Scripts | B | Rewrite to work with new RBA events |
+| Custom security conditions | A | Reconfigure as Object Structure security |
+| Team completion KPI | A | Rebuild as KPI in KPI Manager, display on Operational Dashboard |
+
+**Result:** 6 items rebuilt, 1 rewritten, 1 deferred as a gap. The SR-to-WO workflow -- which was the supervisor's favorite feature -- cannot be replicated today. That is a difficult conversation to have with your operations team.
+
+**Estimated effort for this single Work Center:** 3-4 weeks.
+
+---
+
+## What You Should Do This Week
+
+If you are planning a MAS 9 upgrade -- or if you are already in the middle of one -- here is what to do right now:
+
+1. **Count your Work Centers.** Open every Work Center in your 7.6 environment. Count them. Document them. Do not rely on memory.
+
+2. **Identify your heaviest customizations.** Which Work Centers have the most custom queries, scripts, and layout changes? Those are your highest-risk migration items.
+
+3. **Brief your stakeholders.** If your maintenance supervisors, warehouse managers, or operations leads do not know that Work Centers are gone, tell them now. This is not a surprise you want them to discover during UAT.
+
+4. **Estimate your timeline.** Use the table above. Multiply the number of complex Work Centers by 3-5 weeks each. Add training time. Add buffer. That is your Work Center migration timeline -- and it is almost certainly longer than your current project plan assumes.
+
+5. **Identify the Purchasing gap.** If your procurement team uses Work Centers today, they need to know there is no RBA replacement. Classic applications are their path forward until IBM releases Purchasing RBAs.
+
+> **Key insight:** The organizations that handle this transition best are the ones that treat it as a change management program, not a technical migration. The technology rebuild is the easy part. Getting 200 maintenance supervisors to accept a fundamentally different daily interface -- that is the hard part.
+
+---
+
+## Key Takeaways
+
+- **Work Centers are completely removed in MAS 9** -- not deprecated, not hidden, gone. Starting in MAS 8.9, progressively eliminated, fully removed in MAS 9.x.
+- **No automatic migration tooling exists** -- every customization must be manually inventoried, classified, and rebuilt.
+- **The technology is completely different** -- XML/JSP to React.js/MAF. You cannot port configurations. You must rebuild from scratch.
+- **Critical gaps remain** -- no Purchasing RBAs, no Asset moves/swaps in the Asset Manager RBA, no Supervisor SR-to-WO single-workflow conversion.
+- **Budget realistically** -- 3+ weeks per complex Work Center. 3-6 months for a typical organization. This is a program of work, not a task on a checklist.
+- **Security model changed** -- RBAs use Object Structure security, not application-level grants. Plan for a dedicated security reconfiguration sprint.
+- **Training is not optional** -- the UX change is dramatic enough that even experienced Maximo users will need guided transition support.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite 9.0 Documentation](https://www.ibm.com/docs/en/mas-cd/maximo-manage/continuous-delivery)
+- [Maximo Application Framework (MAF) Configuration Guide](https://www.ibm.com/docs/en/mas-cd/maximo-manage/continuous-delivery?topic=applications-configuring-maf)
+- [Role-Based Applications Overview -- IBM Documentation](https://www.ibm.com/docs/en/mas-cd/maximo-manage/continuous-delivery?topic=applications-role-based)
+- [Object Structure Security in MAS 9](https://www.ibm.com/docs/en/mas-cd/maximo-manage/continuous-delivery?topic=security-object-structures)
+- [Work Queue Manager Documentation](https://www.ibm.com/docs/en/mas-cd/maximo-manage/continuous-delivery?topic=applications-work-queue-manager)
+
+---
+
+**Series Navigation:**
+
+**Previous:** [Part 2 -- Carbon Design System: The New Face of Maximo](/blog/mas-features-carbon-design-ui)
+**Next:** [Part 4 -- Operational Dashboards and Graphical Scheduling](/blog/mas-features-dashboard-scheduling)
+
+[View the full MAS FEATURES series index -->](/blog/mas-features-series-index)
+
+---
+
+*Part 3 of the "MAS FEATURES" series | Published by TheMaximoGuys*
+
+*Work Centers were more than a feature -- they were the daily interface for thousands of Maximo users worldwide. Their removal is not a minor upgrade note. It is the single most impactful change in MAS 9 for daily operations. The organizations that plan for this early, budget realistically, and invest in change management will transition smoothly. The ones that discover it during UAT will not.*
