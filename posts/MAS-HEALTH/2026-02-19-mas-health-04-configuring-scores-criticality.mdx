@@ -144,6 +144,36 @@ The decisions determine which indicators and thresholds matter most.
 
 ---
 
+## 🏗️ Understanding the Scoring Architecture in MAS
+
+Before diving into components and indicators, it helps to understand how MAS Health organizes its scoring hierarchy. In MAS 9.x, the structure is:
+
+```
+SCORING ARCHITECTURE
+
+  SCORING GROUP (tied to an asset group via saved query)
+    └── DRIVER 1 (weighted %)
+    │     └── Scoring Factor A (maps to meter, formula, or field)
+    │     └── Scoring Factor B
+    └── DRIVER 2 (weighted %)
+    │     └── Scoring Factor C
+    │     └── Scoring Factor D
+    └── DRIVER 3 (weighted %)
+          └── Scoring Factor E
+
+  All driver weights must total 100%.
+```
+
+**Scoring Groups** are the top-level container. You create an asset group in MAS Manage using saved queries (e.g., "all centrifugal pumps at Site A"), then assign a scoring group to it with tailored drivers and factors. Different asset groups can -- and should -- use different scoring criteria.
+
+**Drivers** are weighted categories (similar to the "components" we discuss below). Each driver contains one or more **Scoring Factors** that map to actual data sources: meter readings, calculated formulas, asset fields, or inspection results.
+
+**Score types** can also use **formula-based scoring** -- IBM provides built-in formulas, or you can write custom formulas. Formula-based scores act as contributors within scoring groups, giving you the flexibility to combine simple field lookups with complex calculations.
+
+This architecture gives you the flexibility to score a pump fleet differently from your transformer fleet, using whatever data each fleet actually has available.
+
+---
+
 ## 🛠️ Structuring Components and Indicators
 
 ### Step 1: Define Components Per Asset Class
@@ -217,6 +247,22 @@ Scoring rules should be:
 - **Transparent** -- anyone can verify the calculation
 - **Defensible** -- based on engineering judgment or industry standards
 - **Configurable** -- adjustable as you learn more about the relationship between raw values and actual condition
+
+### Creating Meter-Based Scoring Factors in MAS
+
+Meter readings are one of the most powerful and underutilized data sources for health scoring. In MAS Health, creating a meter-based scoring factor follows a specific workflow:
+
+1. **Select "Meter" in the "Calculate a score from" field** -- this tells Health to pull directly from meter data rather than formulas or asset fields
+2. **Choose the meter** -- select from continuous meters (runtime hours, cycles), gauge meters (temperature, pressure), or characteristic meters (condition ratings)
+3. **Set Upper and Lower Limits** -- these define the score normalization range. For a runtime meter with a 50,000-hour design life, you might set Lower = 0 (new) and Upper = 50,000 (end of life)
+4. **Enable Condition Monitoring** (optional) -- check "Use Condition Monitoring" when the meter is connected to IoT sensor data. This configures High/Low threshold values aligned with your IoT reading ranges for real-time health updates
+
+MAS supports three meter types for scoring:
+- **Continuous** -- always increasing (runtime hours, cycle counts, odometer)
+- **Gauge** -- fluctuating within a range (temperature, pressure, vibration)
+- **Characteristic** -- categorical values (condition ratings like Good/Fair/Poor)
+
+> **Practitioner tip:** Characteristic meters are how many organizations bridge their existing condition index methodology into MAS Health. If you already have condition assessment scores from field inspections stored as characteristic meter readings, you can map those directly into health scoring factors -- no data migration required. This is the fastest path to meaningful health scores for organizations with mature inspection programs.
 
 ---
 
