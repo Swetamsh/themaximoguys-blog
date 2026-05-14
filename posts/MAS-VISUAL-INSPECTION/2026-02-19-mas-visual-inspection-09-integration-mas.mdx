@@ -679,6 +679,100 @@ Melbourne Water manages stormwater infrastructure across 14,000 square kilometer
 
 ---
 
+## AI Service 9.2: Model Swap That Affects MVI's Narrative Outputs
+
+This is the most concrete 9.2-specific change in the MAS AI surface and it touches MVI any time inspection findings flow into the broader AI workflows in Manage.
+
+```
+  AI SERVICE 9.2.0 MODEL SWAP
+  ============================
+  (Confirmed, IBM-documented)
+
+  Release date: January 29, 2026
+  Component:    AI Service 9.2.0
+
+  CHANGE:
+  ──────
+  Production model: openai/gpt-oss-120b
+  Replaces:         ibm/granite-3-2-8b-instruct
+  Workflows:        PCC (Predictive Condition
+                    Classification), MCC (Maintenance
+                    Cause Classification), FMEA
+                    (Failure Mode and Effects Analysis)
+  Granite status:   Deprecated February 2026
+  Backport:         Also available on MAS 9.1.11+
+
+  WHY MVI CARES:
+  ──────────────
+  MVI itself is a vision pipeline -- the model swap
+  does not change how MVI detects defects in pixels.
+  But MVI feeds findings into Manage, where AI
+  Service uses gpt-oss-120b for:
+
+  1. AI-generated narrative descriptions of visual
+     findings on work orders ("Grade 3 corrosion
+     on the north-facing casing has progressed
+     from Grade 2 in the last 60 days, indicating
+     accelerated environmental wear ...")
+  2. FMEA reasoning when MVI inputs (visual
+     condition grade, defect class, progression)
+     are joined with sensor and history features
+  3. Maintenance cause classification on work
+     orders that originated from MVI detections
+
+  WHAT TO DO:
+  ──────────
+  - Audit any custom prompts or template text you
+    fine-tuned for Granite — gpt-oss-120b can
+    behave differently on edge cases
+  - Re-validate FMEA outputs against historical
+    work orders after the AI Service upgrade
+  - Update model cards / governance docs to
+    record that AI Service 9.2 is the source of
+    record for narrative descriptions, not Granite
+
+  IBM REFERENCE:
+  ──────────────
+  ibm.com/docs/en/masv-and-l/cd
+    ?topic=features-changing-gpt-oss-120b-models
+```
+
+> **Key insight:** The vision is still IBM. The reasoning is now OpenAI. For MVI-driven work orders, the visual detection and the narrative summary now come from two different model lineages -- worth knowing when you triage why a description sounds different than it did in 2025.
+
+### Outlook: Geofencing for Visual Inspection Integration (9.2 Stream)
+
+```
+  GEOFENCING IN THE INTEGRATION LAYER
+  ====================================
+  (Announced for the MAS 9.2 stream,
+   per Naviam partner outlook —
+   NOT yet confirmed by IBM release notes)
+
+  Geofencing/geospatial visual inspection workflows
+  are flagged by partners as part of the 9.2 stream.
+  In the integration layer specifically, this means:
+
+  - MVI detections can carry a geofence-membership
+    tag that propagates into Manage work orders
+    (auto-route to the supervisor who owns the
+    geofence, not just the asset)
+  - Monitor alerts can be filtered by geofence
+    (e.g., "only escalate cracks detected in the
+    Critical Infrastructure geofence")
+  - Health condition scores can be aggregated
+    by geofence for site-level dashboards
+  - Predict failure models can use geofence as
+    a feature when correlating environmental
+    exposure to deterioration
+
+  STATUS: Not yet documented by IBM as a shipped
+  capability for the 9.2 stream. Track the monthly
+  catalog drops and IBM release notes before
+  designing integration logic that depends on it.
+```
+
+---
+
 ## REST API Integration Reference
 
 For teams building custom integrations or automation pipelines, MVI exposes a complete REST API using `X-Auth-Token` authentication. Key integration endpoints include `/datasets`, `/files`, `/dnn-script`, and `/api/v1/infer`. Use service accounts for integration API keys.
