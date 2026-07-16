@@ -1,0 +1,241 @@
+---
+title: "Building Custom Work Order KPIs in MAS 9 with KPI Manager"
+description: "Part 3 showed you how to consume the operational dashboard. This is the other half: how to build your own work order KPIs in MAS 9. The KPI Manager application, custom queries against any Maximo object, refresh intervals, green/yellow/red thresholds, trend calculations, matching a KPI to the right card type, and the MAS 9.1 ability for KPI services to return JSON from an external API."
+date: "2026-07-15"
+slug: "wo-missing-pieces-custom-wo-kpis"
+tags: ["Maximo", "MAS 9", "KPI Manager", "Custom KPI", "Operational Dashboard", "Work Order Management", "Analytics", "EAM"]
+draft: false
+tier: "developer"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/wo-missing-pieces-04-custom-wo-kpis.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "How do I create a custom work order KPI in MAS 9?"
+    answer: "Use the KPI Manager application. Give the KPI a name and description, select the target Maximo object (WORKORDER, PM, and so on), write a where-clause that defines the population you want to count or measure, set a refresh interval, define green/yellow/red thresholds, and configure a trend calculation period. Once saved, the KPI is available to place on an operational dashboard through a KPI card."
+  - question: "Can a MAS 9 KPI pull data from outside Maximo?"
+    answer: "Yes, starting in MAS 9.1. In earlier releases a KPI is a query against a Maximo object, so it can only measure Maximo data. In 9.1, KPI services can return JSON from an external REST API instead of running a Maximo query, which lets a KPI card display a value sourced from another system without you building a full integration into Maximo first."
+  - question: "What is the difference between a KPI Value, KPI Trend, and KPI Comparison card?"
+    answer: "They render the same KPI in different shapes. A KPI Value card shows a single current number with its trend indicator. A KPI Trend card plots the KPI over time, for example the last twelve months. A KPI Comparison card breaks one KPI out across a dimension such as site, work type, or craft. The Threshold Tile, added in 9.1, shows a KPI as a single color-coded tile against your green/yellow/red bands. You pick the card to match the question you are answering, not the other way around."
+  - question: "How do KPI color thresholds work in MAS 9?"
+    answer: "Each KPI defines three bands - green, yellow, and red - based on the metric value. For a backlog count you might set green below 10, yellow 10 to 25, and red above 25. The dashboard then colors the KPI automatically, so a card turns red the moment the underlying work order population crosses your threshold. Direction matters: for a count you want low, red is high; for a compliance percentage you want high, red is low."
+keyTakeaways:
+  - "KPI Manager is where you build custom work order KPIs; Part 3 covered consuming the ones IBM ships"
+  - "A custom KPI is a named where-clause against any Maximo object, plus a refresh interval, thresholds, and a trend period"
+  - "Color thresholds (green/yellow/red) drive automatic card coloring on the operational dashboard"
+  - "Match each KPI to the right card type: KPI Value, KPI Trend, KPI Comparison, or the 9.1 Threshold Tile"
+  - "MAS 9.1 lets KPI services return JSON from an external REST API instead of only querying Maximo"
+series:
+  name: "MAS WORK ORDER OPS"
+  part: 4
+  total: 6
+tldr: "The operational dashboard from Part 3 is only as useful as the KPIs on it. This part is the build side. In MAS 9 you create custom work order KPIs in the KPI Manager application: pick a target Maximo object, write a where-clause for the population you care about, set a refresh interval, define green/yellow/red thresholds, and configure a trend period. Then you match the KPI to the right card - KPI Value, KPI Trend, KPI Comparison, or the 9.1 Threshold Tile. MAS 9.1 adds a real unlock: KPI services can return JSON from an external REST API, so a card can show a number that never lived in Maximo."
+seoTitle: "Custom Work Order KPIs in MAS 9 with KPI Manager"
+seoDescription: "Build custom work order KPIs in MAS 9 with KPI Manager: where-clauses, refresh intervals, green/yellow/red thresholds, trends, and 9.1 external-API JSON."
+targetQuestions:
+  - "How do I create a custom work order KPI in MAS 9?"
+  - "What is the KPI Manager application in Maximo?"
+  - "How do KPI color thresholds work in MAS 9?"
+  - "Can a MAS 9 KPI return data from an external API?"
+semanticKeywords:
+  - "KPI Manager application"
+  - "custom work order KPI"
+  - "MAS 9 operational dashboard KPI"
+  - "KPI where clause Maximo"
+  - "KPI color thresholds green yellow red"
+  - "KPI trend calculation"
+  - "KPI card types"
+  - "MAS 9.1 KPI external API JSON"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 3 of this series (consuming the operational dashboard and its out-of-box KPIs)"
+  - "Familiarity with the Maximo WORKORDER object and where-clause syntax"
+  - "Access to the KPI Manager application in MAS 9 Manage"
+speakableSections:
+  - "What KPI Manager Actually Is"
+  - "Building a Custom Work Order KPI"
+  - "The MAS 9.1 External API Unlock"
+series_part: 4
+clusterSlugs:
+  - "wo-missing-pieces-series-index"
+  - "wo-missing-pieces-operational-dashboard"
+relatedSlugs:
+  - "wo-missing-pieces-series-index"
+  - "wo-missing-pieces-operational-dashboard"
+  - "wo-missing-pieces-reporting-birt-to-kpi"
+  - "mas-manage-work-management"
+---
+
+# Building Custom Work Order KPIs in MAS 9 with KPI Manager
+
+> 🎯 **Who this is for:** Maximo developers, analysts, and administrators who read Part 3, liked the operational dashboard, and then asked the obvious next question — *"but how do I build a KPI that isn't in the box?"*
+
+**Series:** Part 4 of 6 — *MAS 9 Work Order Operations: The Missing Pieces* | **Read time:** 16 minutes
+
+---
+
+## Where Part 3 Ended and This Part Begins
+
+[Part 3](/blog/wo-missing-pieces-operational-dashboard) walked you through the **operational dashboard** — the Maintenance Manager dashboard, the out-of-box work order KPIs, and how to read them. That's the *consumption* side: someone already defined those KPIs, and you're placing cards and reading numbers.
+
+This part is the *creation* side. The out-of-box KPIs are a starting point, not the finish line. Every real Maximo shop measures something IBM never shipped — a backlog that's counted a specific way, a schedule-compliance number tied to *your* status flow, a craft-utilization metric that only makes sense against your org structure. That's what the **KPI Manager** application is for.
+
+So this post won't re-list the out-of-box KPIs or re-explain the Maintenance Manager dashboard — Part 3 owns that. Here we build.
+
+---
+
+## What KPI Manager Actually Is
+
+The **KPI Manager application** is where every KPI in Manage lives — the ones IBM ships *and* the ones you create. A KPI, at its core, is a small, saved definition with a handful of parts:
+
+- A **name and description**.
+- A **target Maximo object** — `WORKORDER`, `PM`, or any other object you can query.
+- A **query** — a where-clause that defines the population the KPI counts or measures.
+- A **refresh interval** — how often Maximo recalculates the value.
+- **Thresholds** — the green / yellow / red bands that drive automatic coloring.
+- A **trend calculation** — a configured period so the KPI can show direction over time, not just a snapshot.
+
+That's the whole anatomy. Once a KPI is saved in KPI Manager, it becomes a reusable object that any operational dashboard can point a card at. Build it once, place it many times.
+
+<aside>
+
+💡 **Key insight:** A KPI is not a report and it's not a card. It's a *definition*. The card is just the picture frame. This separation is why one well-built backlog KPI can appear as a value tile on the manager's dashboard, a trend line on the planner's, and a color tile on the shift-handover screen — same definition, three frames.
+
+</aside>
+
+---
+
+## 🛠️ Building a Custom Work Order KPI
+
+Here's the seven-step path through KPI Manager for a work order KPI. Nothing here is invented — it's the standard KPI Manager flow applied to `WORKORDER`.
+
+1. **Name and describe it.** Be specific — `WO Aging Backlog > 30 Days`, not `Backlog2`. Dashboards get crowded; the name is the label people read.
+2. **Select the target object.** For work order metrics that's usually `WORKORDER`; for maintenance compliance it may be `PM`. A KPI can target **any Maximo object**, which is the point — you are not limited to a fixed catalog.
+3. **Write the where-clause.** This is the heart of it. The where-clause defines *which records count*. Conceptually, an aging-backlog KPI is "approved work orders whose target start is in the past" — expressed illustratively as a condition like `status = 'APPR' and targstartdate < sysdate`.
+4. **Set the refresh interval.** How fresh does this number need to be? A live dispatch metric might refresh every **15 minutes**; a monthly PM-compliance figure can refresh far less often. Don't set everything to real-time — refresh has a cost.
+5. **Define thresholds.** Assign the **green / yellow / red** bands. For a backlog count you might set green below 10, yellow 10–25, red above 25. For a compliance percentage the direction flips — red is *low*.
+6. **Configure the trend calculation.** Set the period over which the KPI computes direction, so cards can show whether the number is improving or sliding.
+7. **(MAS 9.1) Point the KPI service at an external API — optionally.** In 9.1 a KPI service can call an external REST API for its data instead of running a Maximo query. More on that below.
+
+<aside>
+
+💡 **Key insight:** Treat the where-clause examples in this post as *conceptual*. The exact field names and status codes in your environment depend on your data model and your status flow — the shape is `status = ... and somedate < ...`, but validate the actual columns against your own schema before you save. A KPI that counts the wrong population looks authoritative and is quietly wrong, which is worse than no KPI at all.
+
+</aside>
+
+---
+
+## 🎨 Thresholds: The Feature That Does the Most Work
+
+Thresholds are the smallest part of the definition and the highest-leverage. Once you set green / yellow / red bands, the dashboard colors the KPI **automatically** — a card flips to red the instant the underlying work order population crosses your line, with nobody watching.
+
+The only thing to get right is *direction*:
+
+| KPI shape | You want it… | So red means… |
+|---|---|---|
+| Backlog count | **Low** | A *high* number |
+| Overdue WO count | **Low** | A *high* number |
+| Schedule compliance % | **High** | A *low* number |
+| PM compliance % | **High** | A *low* number |
+
+Get the direction backwards and your dashboard glows green while the shop is on fire. It's the single most common threshold mistake, and it's a thirty-second fix — just decide, per KPI, whether up is good or bad before you type the bands.
+
+> 💡 In MAS 9.1, the **Threshold Tile** card renders a KPI as one big color-coded tile against exactly these bands — the most direct possible expression of a thresholded KPI. It's covered as a card choice below.
+
+---
+
+## 📊 Matching a KPI to the Right Card
+
+A KPI is shape-agnostic; the **card** decides how it reads. Part 3 introduced the dashboard's card catalog — here's the build-side view, focused on the question each card answers:
+
+| Card type | Answers the question | Version |
+|---|---|---|
+| **KPI Value** | "What's the number *right now*, and is it moving?" | 9.0 |
+| **KPI Trend** | "How has this behaved over the last N months?" | 9.0 |
+| **KPI Comparison** | "How does this break down by site / work type / craft?" | 9.0 |
+| **Threshold Tile** | "Are we in the green, yellow, or red band?" | **9.1** |
+
+The rule of thumb: **pick the card to match the decision the viewer is making.** A dispatcher deciding *right now* wants a KPI Value or Threshold Tile. A planner reviewing a quarter wants a KPI Trend. A manager comparing crews wants a KPI Comparison. Same KPI definition underneath — you're just choosing the frame that fits the moment.
+
+---
+
+## ⚡ The MAS 9.1 External API Unlock
+
+Through MAS 9.0, a KPI is a query against a Maximo object. Full stop. If the number you want to show doesn't live in a Maximo table, you can't make a KPI out of it — you'd have to integrate that data *into* Maximo first, then query it.
+
+**MAS 9.1 changes that.** In 9.1, **KPI services can return JSON from an external REST API** instead of running a Maximo query. The KPI still renders on a card the same way, with the same thresholds and trend behavior — but its *source* can be another system entirely.
+
+Think about what that opens up for work order operations:
+
+- A KPI card showing a **contractor's live crew count** pulled from their scheduling API.
+- A **parts-availability** figure sourced from a supplier or ERP endpoint, sitting next to your backlog KPI.
+- A **weather or safety index** from an external service, so the shift-handover dashboard shows the field condition alongside the work queue.
+
+<aside>
+
+💡 **Key insight:** This is the difference between a Maximo dashboard and an *operations* dashboard. Before 9.1, everything on the board was Maximo data by definition. After 9.1, a KPI card is a display surface for any number your services can fetch as JSON — Maximo becomes the frame, not the boundary. If you're on 9.0 and this is on your roadmap, it's a concrete reason to prioritize the 9.1 step.
+
+</aside>
+
+The honest caveat: an external-API KPI is only as reliable as the endpoint behind it. A Maximo where-clause fails loudly inside your own system; a remote API can go slow or dark without warning. Own the endpoint's uptime, and set the refresh interval with that latency in mind.
+
+---
+
+## 🍳 Three WO KPI Recipes You'll Actually Build
+
+Concrete beats abstract. Here are three work order KPIs worth building on day one — described conceptually, because your exact fields and codes are yours to confirm.
+
+**1. Aging backlog (> 30 days).**
+Count approved work orders whose target start has been in the past for more than a month. Conceptually `status = 'APPR' and targstartdate < (sysdate - 30)`. Thresholds: low is good, so red is a high count. Card: **KPI Value** on the manager's board, or a **Threshold Tile** for the morning stand-up.
+
+**2. Schedule compliance.**
+The share of scheduled work that actually got done on time. It's a percentage, so **high is good** — flip your thresholds. Best shown as a **KPI Trend** so the team sees whether the last few months are climbing or slipping.
+
+**3. Emergency-work ratio by craft.**
+How much of each craft's work is reactive versus planned. Same underlying idea broken out across a dimension — a natural **KPI Comparison** card. It turns "we do too much firefighting" from a feeling into a number per crew.
+
+---
+
+## 🔧 Practical Notes Before You Build in Production
+
+- **Standardize naming first.** KPIs proliferate. Agree on a convention (`WO_ Aging Backlog`, `PM_ Compliance`) before ten people create three versions of the same metric.
+- **Match refresh to reality.** A number nobody acts on in real time doesn't need a 15-minute refresh. Reserve tight intervals for genuinely live operational KPIs.
+- **Decide threshold direction per KPI, explicitly.** Write "up is good" or "down is good" in the description. It prevents the glowing-green-while-on-fire failure mode.
+- **Govern custom KPIs like Part 3 governs dashboards.** Who owns the definition? Who can edit the where-clause? A wrong KPI definition is a silent data-quality problem — treat KPI definitions as change-controlled objects, not throwaway tweaks.
+- **Confirm your 9.1 posture before promising external-API KPIs.** The JSON-from-external-API capability is a **9.1** feature. If you're on 9.0, it's a reason to plan the step, not a thing you can wire up today.
+
+---
+
+## Key Takeaways
+
+- **KPI Manager** is the build side of the story; **Part 3** is the consume side. A custom KPI is a named **where-clause against any Maximo object**, plus a refresh interval, thresholds, and a trend period.
+- **Color thresholds (green / yellow / red)** drive automatic card coloring — get the *direction* right per KPI or the dashboard lies to you.
+- **Match the KPI to the card:** KPI Value for "now," KPI Trend for "over time," KPI Comparison for "by dimension," and the **9.1 Threshold Tile** for "which band."
+- **MAS 9.1** lets KPI services **return JSON from an external REST API**, so a work order dashboard can show numbers that never lived in Maximo.
+- Treat where-clause examples as **conceptual** — validate the real fields and status codes against your own schema before you save.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Maximo Manage — KPI Manager (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Manage — Operational Dashboards and KPI cards (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Application Suite 9.1 — What's new (IBM Documentation)](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 3 — The Operational Dashboard for Work Order Management](/blog/wo-missing-pieces-operational-dashboard) |
+| **Next:** | [Part 5 — From BIRT Reports to KPIs](/blog/wo-missing-pieces-reporting-birt-to-kpi) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*

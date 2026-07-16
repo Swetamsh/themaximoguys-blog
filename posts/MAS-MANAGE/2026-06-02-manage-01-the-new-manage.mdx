@@ -1,0 +1,364 @@
+---
+title: "The New Manage in MAS 9: What Changed, What Stayed, and Why It Matters"
+description: "A practitioner's map of how Maximo 7.6 EAM became Maximo Manage in MAS 9 — the move to containers on OpenShift, the Maximo Application Framework, AppPoints licensing, and why your MBOs, scripts, and database survive the journey intact."
+date: "2026-06-02"
+slug: "mas-manage-the-new-manage"
+tags: ["Maximo", "MAS Manage", "MAS 9", "OpenShift", "Maximo Application Framework", "AppPoints", "TPAE", "EAM"]
+draft: false
+tier: "developer"
+author: "Swetansh Kumar"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "../MAS-FEATURES/images/mas-features-platform-shift.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Is Maximo Manage a rewrite of Maximo, or the same product?"
+    answer: "It is the same product, re-platformed. Manage runs on the same TPAE foundation, the same Maximo Business Object (MBO) layer, and the same database schema as Maximo 7.6 EAM. A work order created in the new UI is the same WORKORDER row it always was. What changed is the packaging (containers on OpenShift), the navigation and UI framework, and the licensing model — not the core data model or business logic."
+  - question: "Can I upgrade my Maximo 7.6 environment in place to MAS Manage 9?"
+    answer: "No. There is no single installer that turns a WebSphere-based 7.6 install into a containerized MAS Manage environment. You stand up a fresh MAS Manage instance on Red Hat OpenShift and migrate your configuration, customizations, and data into it. Running 7.6 and MAS Manage in parallel during cutover is a common and supported pattern."
+  - question: "What is the Maximo Application Framework (MAF)?"
+    answer: "MAF — sometimes called the Graphite platform — is the modern UI framework that MAS uses to build role-based applications and Maximo Mobile. In Manage 9 it is the foundation for the new role-based applications that replaced Work Centers, which is why the same form or app definition can appear on both desktop and mobile."
+  - question: "Does AppPoints change how I design security groups?"
+    answer: "It can. AppPoints consumption is tied to user types, so heavy power users cost more than occasional requestors. That makes it worth differentiating roles deliberately — a casual service-request user should not be entitled like a full maintenance planner. Security-group design and licensing entitlement now influence each other in a way they did not under authorized-user licensing."
+keyTakeaways:
+  - "Maximo Manage is Maximo EAM on a new platform — same TPAE core, same MBOs, same database schema"
+  - "The WebSphere monolith became a set of containers orchestrated by operators on Red Hat OpenShift"
+  - "The Maximo Application Framework (MAF) underpins the role-based apps that replaced Work Centers"
+  - "Licensing moved from authorized-user and PVU to a shared pool of AppPoints"
+  - "7.6 to Manage 9 is a migration onto a new environment, not an in-place upgrade"
+series:
+  name: "MAS MANAGE"
+  part: 1
+  total: 11
+tldr: "Maximo Manage in MAS 9 is the same EAM you know — same TPAE foundation, MBOs, and database — re-packaged as containers on Red Hat OpenShift, fronted by the Maximo Application Framework, and licensed through AppPoints. Your scripts, workflows, and customizations carry forward; the platform around them is what changed."
+seoTitle: "The New Maximo Manage in MAS 9 | What Changed vs 7.6"
+seoDescription: "How Maximo 7.6 EAM became Maximo Manage in MAS 9: containers on OpenShift, the Maximo Application Framework, AppPoints licensing, and what stays the same."
+targetQuestions:
+  - "How is Maximo Manage different from Maximo 7.6 EAM?"
+  - "Does MAS Manage 9 still use TPAE and MBOs?"
+  - "Can I upgrade Maximo 7.6 to MAS 9 in place?"
+  - "What is AppPoints licensing in MAS?"
+  - "What is the Maximo Application Framework?"
+semanticKeywords:
+  - "Maximo Manage architecture"
+  - "MAS 9 OpenShift"
+  - "Maximo Application Framework"
+  - "AppPoints licensing"
+  - "TPAE Maximo Business Objects"
+  - "Maximo containerization"
+  - "Maximo 7.6 to MAS migration"
+  - "WebSphere to OpenShift"
+  - "Maximo operators custom resource"
+  - "enterprise asset management"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Working knowledge of Maximo or MAS"
+  - "Basic familiarity with containers and Kubernetes is helpful but not required"
+speakableSections:
+  - "The One Sentence That Calms Everyone Down"
+  - "What Actually Changed"
+  - "What Stayed Exactly the Same"
+relatedSlugs:
+  - "mas-manage-series-index"
+  - "mas-manage-work-centers-to-rba"
+  - "mas9-whats-new"
+  - "mas-integration-series-index"
+---
+
+# The New Manage in MAS 9: What Changed, What Stayed, and Why It Matters
+
+> **Part 1 of the MAS MANAGE series.** Before any single feature makes sense, you need a clean mental model of how Maximo 7.6 EAM became Maximo Manage — and what survived the trip unchanged.
+
+<aside>
+🎯 **Who this is for:** Maximo administrators, developers, and technical leads who know 7.6 cold and now need an honest, no-hype account of what MAS 9 actually changed about the product they run every day.
+</aside>
+
+**Estimated read time:** 22 minutes
+
+---
+
+## 📖 The One Sentence That Calms Everyone Down
+
+Let me give you the conclusion first, because you have probably spent a few anxious weeks without it:
+
+**Maximo Manage is Maximo. The core did not get rewritten. It got re-packaged.**
+
+I know how the rumor mill works. Someone in a meeting said *"MAS is a completely new product,"* and a planner three desks over heard *"none of my PMs will work anymore,"* and by Friday the whole team believed the database was changing. So let us put that to rest with something concrete.
+
+Create a work order in the shiny new MAS 9 interface. Now open a database client and run:
+
+```sql
+SELECT wonum, status, assetnum, siteid
+FROM workorder
+WHERE wonum = 'YOUR-NEW-WO';
+```
+
+It is right there. Same `WORKORDER` table. Same columns. Same `WAPPR` status you have typed ten thousand times. The automation script you wrote in 2019 that fires on save? It still fires. The job plan that copies its tasks into the work plan? It still copies them.
+
+<aside>
+💡 **Key insight:** What changed in MAS 9 is the platform *around* Maximo — how it is deployed, navigated, and licensed — not the asset and work management engine *inside* it. Internalize that, and everything else in this series clicks into place.
+</aside>
+
+That said, "the engine is the same" does not mean "nothing changed." Plenty changed, and some of it is consequential enough to reshape how you deploy, who administers what, and how you budget. The job of this post is to draw a crisp line between the two columns: **what changed** and **what stayed**. Get that line right, and your migration becomes an engineering exercise instead of a leap of faith.
+
+---
+
+## 🧠 A Quick Anchor: The Family Tree
+
+To talk clearly about Manage, you need the lineage straight, because people use these names loosely.
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║                    THE MAXIMO FAMILY TREE                      ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                                ║
+║   Maximo 7.6.x EAM                                             ║
+║   (monolithic, WebSphere, one big web application)            ║
+║          │                                                     ║
+║          │   re-platformed, not rewritten                     ║
+║          ▼                                                     ║
+║   Maximo Application Suite (MAS)                               ║
+║   ┌────────────────────────────────────────────────┐         ║
+║   │  MANAGE   ← the EAM you know (this series)       │         ║
+║   │  Monitor  ┐                                       │         ║
+║   │  Health   │  AI add-on applications               │         ║
+║   │  Predict  │  (their own series — not here)        │         ║
+║   │  Visual   ┘                                       │         ║
+║   │  Inspection                                       │         ║
+║   └────────────────────────────────────────────────┘         ║
+║          │                                                     ║
+║   All sit on a shared MAS core:                               ║
+║   identity / SSO • licensing (AppPoints) • admin • data       ║
+║                                                                ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+**Manage** is one application within the suite — the one that corresponds to traditional Maximo EAM. The others (Monitor, Health, Predict, Visual Inspection) are separate AI applications that share the same core services but solve different problems. This series stays in the Manage lane.
+
+---
+
+## 🏗️ What Actually Changed
+
+There are four changes that matter. Everything else is a detail hanging off one of them.
+
+### 1. The deployment model: from a WebSphere monolith to containers on OpenShift
+
+In 7.6, Maximo was a single Java EE application — one big **EAR file** deployed onto **IBM WebSphere Application Server**. You scaled it by adding JVMs and clusters. You configured it through the WebSphere console, `maximo.properties`, and a stack of scripts. The UI, the integration servlets, the cron engine, and all the business logic ran together in the same process space. It worked, it was stable, and it was about as agile as moving a filing cabinet.
+
+In MAS 9, Manage is delivered as a set of **container images** that run as **pods** inside a **project (namespace)** on **Red Hat OpenShift** — IBM's reference Kubernetes platform. You no longer hand-deploy an EAR. Instead, IBM ships **operators** and **custom resource definitions (CRDs)** that manage the lifecycle of MAS and each application declaratively.
+
+Here is the shift in one table:
+
+| Concern | Maximo 7.6 | MAS Manage 9 |
+|---|---|---|
+| Packaging | Single EAR | Container images |
+| Runtime | WebSphere Application Server | Pods on Red Hat OpenShift |
+| App server | WebSphere (full profile) | WebSphere Liberty inside containers |
+| Scaling | Add JVMs / clusters manually | Replicas and pod autoscaling |
+| Configuration | WebSphere console, properties files | Custom resources (YAML), ConfigMaps, Secrets |
+| Deploy / upgrade | Rebuild and redeploy EAR | Change image tags in the custom resource; operator rolls it out |
+| Logs | WebSphere logs, Maximo UI | `oc logs`, OpenShift logging stack |
+| Resilience | Cluster design + manual failover | Self-healing pods, rolling updates |
+
+What this means in practice: scaling and tuning move from "resize the JVM and restart" to "adjust resource requests, limits, and replica counts in the Manage custom resource." Pods are **ephemeral** — OpenShift can destroy and recreate them based on health probes or node maintenance — so configuration lives outside the pod in ConfigMaps and Secrets, and your database becomes the primary stateful component to protect.
+
+<aside>
+💡 **Key insight:** Your hard-won Maximo tuning knowledge — MBO transaction patterns, database indexing, integration load — is still essential. It just sits next to a new layer of container and cluster concerns. You are not throwing away expertise; you are adding to it.
+</aside>
+
+### 2. The UI framework: the Maximo Application Framework (MAF)
+
+In 7.6, the classic UI was driven by **XML application definitions** stored in the database and rendered as dense, form-heavy screens. You navigated through the **"Go To" menu**, and your landing page was a **Start Center** built from portlets.
+
+MAS 9 keeps the classic applications — Work Order Tracking, Assets, Inventory all still run from those XML definitions — but wraps them in a modernized shell and, crucially, introduces a second UI framework: the **Maximo Application Framework (MAF)**, also referred to as the **Graphite** platform.
+
+MAF is the technology behind two things you will meet constantly in this series:
+
+- The **role-based applications** that replaced Work Centers in Manage 9.0 (Part 2).
+- **Maximo Mobile** (Part 6).
+
+That shared foundation is the punchline: because role-based apps and Maximo Mobile are built on the *same* framework, a definition like an inspection form can be authored once and surface on both desktop and mobile. We will lean on this fact repeatedly.
+
+Navigation modernized too. The old split between a left menu and a right "9-dot" menu was consolidated into a **unified navigation menu** (as of MAS 9.1), with collapsible sections and the ability to pin frequently used applications.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  TWO UI WORLDS, ONE PRODUCT                                │
+├──────────────────────────────────────────────────────────┤
+│                                                            │
+│   CLASSIC (XML-defined apps)      MAF / GRAPHITE           │
+│   • Work Order Tracking           • Role-based apps        │
+│   • Assets, Locations             • Inspection Forms       │
+│   • Inventory, Purchasing         • Maximo Mobile          │
+│   • Application Designer           • Issues and Transfers  │
+│        │                                  │                │
+│        └────────── same MBOs ─────────────┘                │
+│                  same database                             │
+│                                                            │
+│   They coexist. You move between them. Both write          │
+│   to the exact same WORKORDER / ASSET / ITEM tables.       │
+└──────────────────────────────────────────────────────────┘
+```
+
+### 3. Licensing: from authorized users and PVUs to AppPoints
+
+Old-world Maximo licensing was a spreadsheet sport. You counted **authorized users** (named individuals), maybe **limited/express** users at a lower tier, and **PVUs (Processor Value Units)** for capacity. Industry solutions and add-ons — Transportation, Oil & Gas, Scheduler, Spatial, Anywhere — each carried their own metric. Audits were a project unto themselves.
+
+MAS replaces that with **AppPoints**: a single shared pool of points you spend by enabling applications and entitling users. A full maintenance power user consumes more points than a casual requestor who only logs service requests. Because the pool is shared across the suite, the same entitlement budget that runs Manage can stand up Monitor or Health if you have the points — no separate procurement cycle.
+
+There is a subtle but important consequence for administrators:
+
+> *Old world:* "Add the user to the Maintenance security group and you're done."
+>
+> *MAS world:* "Add the user to the security group **and** make sure they have a Manage entitlement — or they'll authenticate successfully and still not see the Manage tile."
+
+Identity, authorization, and entitlement are now three distinct layers. A person can exist in your security groups yet lack the AppPoints entitlement to open Manage at all. That is new, and it is a frequent source of "but I gave them access!" support tickets during early rollouts.
+
+### 4. The administration split: MAS admins and Manage admins
+
+In 7.6, "administration" meant Maximo admin applications plus the WebSphere console, often handled by the same small team. MAS draws an explicit line:
+
+- **MAS Suite administrators** own the environment: identity provider and SSO (via OIDC or SAML), AppPoints and entitlements, suite-wide health, and the OpenShift-level deployment through operators and custom resources. This is platform/DevOps territory.
+- **Maximo / Manage administrators** keep doing what they have always done in the application: Security Groups, System Properties, Database Configuration, Domains, Automation Scripts, Workflow.
+
+The trick is knowing which lever lives where. Base URLs and SSO are a MAS-level task. A workflow change is a Manage-level task. We dedicate Part 11 to this division, but it is worth flagging now because it reshapes your runbooks on day one.
+
+---
+
+## ✅ What Stayed Exactly the Same
+
+This is the reassuring half, and it is bigger than the changed half.
+
+### The TPAE foundation and the MBO layer
+
+Manage still runs on the platform historically known as **TPAE (Tivoli Process Automation Engine)** — the metadata-driven application framework, the **Maximo Business Object (MBO)** layer, the workflow engine, cron tasks, escalations, and the integration framework. Application definitions are still stored as **XML in the database**. The MBOs you know — `WORKORDER`, `ASSET`, `LOCATIONS`, `ITEM`, and their children — behave exactly as before: validation, defaulting, action processing, and persistence all work the way they always did.
+
+### The database structure
+
+The core schema is stable. `ASSET`, `WORKORDER`, `LOCATIONS`, `ITEM`, `COMPANY`, `INVENTORY`, `PM`, `JOBPLAN` — same tables, same semantics, plus your custom attributes and tables added through Database Configuration. New tables exist to support MAS-specific features (AppPoints tracking, entitlements, suite configuration), but they are additive. This continuity is exactly why data migration is feasible through familiar tools.
+
+### Automation scripts, workflow, escalations, and cron
+
+Your **automation scripts** (Jython or JavaScript), attached to object events, attribute events, launch points, or integration points, carry through essentially unchanged. **Workflow Designer**, **escalations**, and **cron tasks** all operate with the same semantics. The one operational nuance: cron tasks now run in specific pods managed by Kubernetes, so you set resource limits and monitor those pods — but the Maximo-side configuration is identical.
+
+### The Maximo Integration Framework
+
+**MIF** remains the integration backbone — object structures, enterprise services, publish channels, external systems, endpoints, and queues all persist. REST and JSON APIs (which have existed for several releases) become more central because Maximo Mobile and other MAS apps consume them, but your existing MIF configurations migrate by adjusting endpoint URLs and authentication, not by rebuilding.
+
+<aside>
+💡 **Key insight:** The migration risk in MAS 9 is concentrated in *deployment and platform*, not in *application logic*. Custom Java is the notable exception — it now has to be built into container images rather than dropped onto a file system — but the code itself (MBO APIs, relationships, event hooks) is unchanged.
+</aside>
+
+---
+
+## 🛤️ One Thing You Must Plan For: It Is a Migration, Not an Upgrade
+
+This deserves its own section because getting it wrong derails project plans.
+
+**There is no in-place upgrade from Maximo 7.6 to MAS Manage 9.** No installer turns your WebSphere environment into a containerized one. Instead, you:
+
+1. **Stand up MAS core and Manage** fresh on a target OpenShift cluster, configured through custom resources.
+2. **Migrate configuration objects** — domains, application configurations, workflows, escalations, automation scripts — often using Migration Manager and related tools.
+3. **Migrate transactional data** — assets, locations, work orders, inventory — via database export/import, MIF, or specialized tooling.
+4. **Adapt custom code and integrations** — rebuild custom Java into container images, adjust integration endpoints.
+
+Running 7.6 and MAS Manage **in parallel** during cutover — staged by site or business unit — is common and supported. You keep both alive, manage data synchronization carefully to avoid divergence, and decommission 7.6 once Manage is the system of record.
+
+```
+   ┌─────────────┐    migrate config + data    ┌──────────────────┐
+   │ Maximo 7.6  │  ─────────────────────────▶  │  MAS Manage 9    │
+   │ (WebSphere) │                              │  (OpenShift)     │
+   └─────────────┘    run in parallel,          └──────────────────┘
+          │            cut over by site                 │
+          └──────────────  decommission  ───────────────┘
+```
+
+<aside>
+⚠️ **Watch out:** Treat the AppPoints conversation as a workstream, not a footnote. Mapping your real personas — technicians, planners, reliability engineers, requestors, storeroom staff, admins — to MAS user types and AppPoints consumption is both a technical and a commercial exercise. Start it early with IBM or your business partner.
+</aside>
+
+---
+
+## 📊 The Whole Picture on One Page
+
+| Dimension | Maximo 7.6 EAM | MAS Manage 9 | Changed? |
+|---|---|---|---|
+| Core engine | TPAE + MBOs | TPAE + MBOs | **Same** |
+| Database schema | WORKORDER, ASSET, ITEM… | WORKORDER, ASSET, ITEM… | **Same** |
+| Automation scripts / workflow | Jython/JS, Workflow Designer | Jython/JS, Workflow Designer | **Same** |
+| Integration | MIF | MIF (+ richer REST) | **Same, extended** |
+| Packaging | EAR on WebSphere | Containers on OpenShift | **Changed** |
+| UI framework | Classic XML apps | Classic + MAF role-based apps | **Changed** |
+| Landing experience | Start Center | Role-based apps / dashboards | **Changed** |
+| Navigation | "Go To" menu | Unified side navigation | **Changed** |
+| Licensing | Authorized user / PVU | AppPoints | **Changed** |
+| Administration | Maximo + WebSphere, one team | MAS admin + Manage admin, split | **Changed** |
+| Mobile | Maximo Anywhere | Maximo Mobile | **Changed** |
+| Upgrade path | Fix packs, in place | Fresh environment, migrate in | **Changed** |
+
+Read that table top to bottom and the strategy writes itself: **protect the "Same" rows, plan the "Changed" rows.** The same rows are your safety net — they are why your investment in Maximo knowledge holds its value. The changed rows are your project plan.
+
+---
+
+## 🔧 A Concrete First-Week Checklist
+
+If you are standing at the start of this and want something to *do*, here is where to point your energy:
+
+1. **Inventory what you have.** Catalog your customizations: automation scripts, custom Java classes, MIF integrations, custom tables and attributes, reports. This list becomes your migration backlog.
+2. **Separate config from code.** Config (domains, scripts, workflows) migrates with tools. Custom Java needs to be built into container images — flag it now.
+3. **Map personas to AppPoints.** List your real user types and their access needs, then work the entitlement math with IBM. This drives both budget and security-group design.
+4. **Decide your OpenShift ownership model.** Will a central platform team own the cluster and operators, or your Maximo team? This determines who holds the "MAS admin" hat.
+5. **Plan a parallel-run window.** Assume 7.6 and Manage coexist for a while. Decide your cutover unit (site, org, business unit) and your data-sync approach.
+6. **Pick a pilot.** Choose one site or one persona to validate the new application model — ideally one that will meet the role-based apps in Part 2 without depending on a heavily customized classic screen.
+
+---
+
+## 🎯 The 5 Commandments of the New Manage
+
+1. **Thou shalt not assume the database changed.** It did not. Your MBOs and schema are intact.
+2. **Thou shalt respect the platform shift.** Containers and OpenShift are real, new operational surface area — staff for it.
+3. **Thou shalt plan a migration, not an upgrade.** There is no in-place path; provision fresh and migrate in.
+4. **Thou shalt treat AppPoints as architecture.** Entitlement now shapes security design and budget together.
+5. **Thou shalt learn who owns which lever.** The MAS-admin / Manage-admin split will define your runbooks.
+
+---
+
+## Key Takeaways
+
+- **Maximo Manage is Maximo EAM, re-platformed** — the TPAE core, MBO layer, and database schema are unchanged.
+- **The deployment model is the biggest change**: a WebSphere monolith became containers orchestrated by operators on Red Hat OpenShift.
+- **MAF (the Maximo Application Framework / Graphite) is the new UI foundation** for role-based apps and Maximo Mobile — and it is why desktop and mobile share definitions.
+- **Licensing moved to AppPoints**, a shared pool tied to user types, which now influences security-group design.
+- **7.6 to Manage 9 is a migration onto a new environment**, commonly run in parallel and cut over by site.
+- **Your scripts, workflows, escalations, and MIF integrations carry forward** — the main exception is custom Java, which now ships inside container images.
+
+---
+
+## References
+
+**IBM Official**
+- [What's new in Maximo Manage 9.0 — IBM Documentation](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=manage-in-90)
+- [What's changed in Maximo Manage — IBM Documentation](https://www.ibm.com/docs/en/masv-and-l/cd?topic=overview-whats-changed-in-maximo-manage)
+- [What's new in Maximo Application Suite 9.0 — IBM Documentation](https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-in-90)
+- [Maximo Application Suite documentation home](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+
+**Community**
+- [MAS 9.0 New Features — Maximo Secrets](https://maximosecrets.com/2024/06/26/mas-9-0-new-features/)
+- [New Features in MAS 9.0 and 9.1 — Maximo Secrets](https://maximosecrets.com/2025/07/06/new-features-in-mas-90-and-91/)
+- [IBM Maximo Application Suite Overview — Maximo Secrets](https://maximosecrets.com/ibm-maximo-application-suite-overview/)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Series Index — The Complete Guide to Maximo Manage in MAS 9](/blog/mas-manage-series-index) |
+| **Next:** | [Part 2 — From Work Centers to Role-Based Applications](/blog/mas-manage-work-centers-to-rba) |
+
+---
+
+*Published by TheMaximoGuys | June 2026*
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS — from architecture and migration planning to the day-to-day work of configuring, extending, and running Maximo Manage. This series is the guide we wish we'd had.

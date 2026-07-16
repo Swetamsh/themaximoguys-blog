@@ -1,0 +1,295 @@
+---
+title: "Asset and Location Management in Maximo Manage 9: Hierarchies, ACM, Linear Assets, and Meters"
+description: "A practitioner's deep dive into asset and location management in Maximo Manage 9 — asset and location hierarchies, rotating items, Asset Configuration Manager for complex serialized assets, linear assets with GIS, and meters with condition monitoring."
+date: "2026-06-02"
+slug: "mas-manage-asset-location-management"
+tags: ["Maximo", "MAS Manage", "MAS 9", "Assets", "Locations", "Asset Configuration Manager", "Linear Assets", "Meters", "Condition Monitoring"]
+draft: false
+tier: "developer"
+author: "Swetansh Kumar"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "../MAS-FEATURES/images/mas-features-spatial-provider-acm-it.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What is the difference between an asset and a location in Maximo Manage?"
+    answer: "An asset (the ASSET object) is a specific, trackable piece of equipment with its own number, manufacturer, model, serial number, and maintenance history. A location (the LOCATION object) is a physical or logical place — a building, room, production line, or process system — where assets sit and where work can be performed. Locations form the spatial and functional structure; assets are the things you maintain within that structure. A work order can target either."
+  - question: "What are rotating items in Maximo?"
+    answer: "Rotating items are inventory items that are also tracked as individual serialized asset records over their life. The item number identifies the type (for example, a model of pump), while each physical unit carries its own asset record. When you install, swap, or move a rotating asset, Maximo updates the serialized asset so the maintenance and cost history follows the physical unit wherever it goes — even through the storeroom and back into service."
+  - question: "What is Asset Configuration Manager (ACM) used for?"
+    answer: "Asset Configuration Manager handles complex serialized assets such as aircraft, rail vehicles, and turbines. It models configuration positions and configuration rules that govern which part numbers are allowed and when components must be replaced (after N cycles, hours, or operational days). It tracks life limits, generates work orders for mandatory inspections and overhauls as those limits approach, maintains a full configuration history, and feeds component-level reliability analysis."
+  - question: "How does Maximo model linear assets?"
+    answer: "Linear assets — roads, pipelines, conveyors, transmission lines — are modeled along their length using reference points, segments, and measures rather than as a single point. Work, inspections, and defects tie to specific segments or chainages, for example work between km 10 and km 12. Defect clustering enables batch repair, and GIS integration through Esri ArcGIS provides coordinates, GIS keys, and map-based visualization."
+keyTakeaways:
+  - "Assets and locations are the backbone every other Manage module hangs from"
+  - "Rotating items link inventory to serialized assets so history follows the physical unit"
+  - "Asset Configuration Manager governs complex serialized assets by position, rule, and life limit"
+  - "Linear assets use reference points, segments, and measures with Esri ArcGIS GIS integration"
+  - "Meters and condition monitoring turn readings into automatic, threshold-driven maintenance"
+series:
+  name: "MAS MANAGE"
+  part: 8
+  total: 11
+tldr: "Assets and locations are the foundation under all of Maximo Manage. This post covers asset and location hierarchies, rotating items that keep history attached to a physical unit, Asset Configuration Manager for complex serialized assets like aircraft and turbines, linear assets modeled by segment and chainage with Esri ArcGIS GIS integration, and meters with condition monitoring that turn readings into automatic maintenance. Get this layer right and work management, reliability, inventory, and scheduling all work."
+seoTitle: "Maximo Asset & Location Management | MAS 9 Hierarchies & ACM"
+seoDescription: "How Maximo Manage 9 handles assets and locations: hierarchies, rotating items, Asset Configuration Manager, linear assets with GIS, and meters."
+targetQuestions:
+  - "How do assets and locations work in Maximo Manage?"
+  - "What are rotating items in Maximo?"
+  - "What is Asset Configuration Manager used for?"
+  - "How does Maximo handle linear assets and GIS?"
+  - "How do meters and condition monitoring trigger maintenance?"
+semanticKeywords:
+  - "Maximo asset management"
+  - "Maximo location hierarchy"
+  - "rotating items serialized assets"
+  - "Asset Configuration Manager ACM"
+  - "linear assets Maximo"
+  - "Esri ArcGIS GIS integration"
+  - "Maximo meters condition monitoring"
+  - "meter-based preventive maintenance"
+  - "asset classification job plans"
+  - "location systems hierarchies"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 3 (work management) depends on the asset and location structure defined here"
+  - "Familiarity with maintenance and asset hierarchy concepts"
+speakableSections:
+  - "The Backbone Everything Hangs From"
+  - "Assets, Hierarchies, and Rotating Items"
+  - "Meters and Condition Monitoring"
+relatedSlugs:
+  - "mas-manage-series-index"
+  - "mas-manage-work-management"
+  - "mas-manage-reliability-strategies"
+  - "mas-manage-inventory-procurement"
+---
+
+# Asset and Location Management in Maximo Manage 9: Hierarchies, ACM, Linear Assets, and Meters
+
+> **Part 8 of the MAS MANAGE series.** This is the layer everything else stands on — get assets and locations right and the rest of Manage falls into place; get them wrong and no amount of work-management polish saves you.
+
+<aside>
+🎯 **Who this is for:** Maximo administrators, data architects, and implementation leads who own the asset register — and anyone who needs to understand how hierarchies, rotating items, ACM, linear assets, and meters fit together in Manage 9.
+</aside>
+
+**Estimated read time:** 22 minutes
+
+---
+
+## 🏗️ The Backbone Everything Hangs From
+
+Most Maximo problems people *think* are work-management problems are actually asset-and-location problems wearing a disguise. PMs generate against the wrong things. Costs roll up to nowhere useful. Reliability analysis is noise because the failure data is attached to a record that no longer reflects the physical unit. The root cause is almost always the same: the asset and location foundation was set up in a hurry, and every module that hangs off it inherited the wobble.
+
+Assets and locations are not a module you configure once and forget. They are the **data backbone** that work management (Part 3), reliability strategies (Part 4), scheduling (Part 7), and inventory's rotating items (Part 9) all hang from. Every work order, every PM, every cost rollup, every reliability calculation resolves back to an asset or a location. This is the one layer worth slowing down for.
+
+<aside>
+💡 **Key insight:** In Maximo, "asset" and "location" are not interchangeable. A location is *where*; an asset is *what*. Work can target either — and choosing correctly at design time is what makes your history, costs, and PMs roll up the way you intend.
+</aside>
+
+---
+
+## 🔧 Assets, Hierarchies, and Rotating Items
+
+### The ASSET object
+
+An asset record (the `ASSET` object) captures the identity and state of a specific piece of equipment: asset number, manufacturer, model, serial number, status, and a parent for hierarchy. Assets are organized into **hierarchies** that mirror how equipment is actually composed:
+
+```
+   Plant  ──▶  System  ──▶  Subsystem  ──▶  Component
+   "Site"      "cooling     "pump skid"      "bearing,
+               loop"                          seal, motor"
+```
+
+The hierarchy is what lets cost and history roll up: maintain the bearing, and the cost is visible at the component, the skid, the system, and the plant. Get the parent chain right and your reporting works for free.
+
+### Rotating items — history that follows the physical unit
+
+This is the concept that trips up newcomers and rewards everyone who understands it. A **rotating item** is an inventory item that is *also* tracked as serialized asset records over its life. The item number identifies the *type* — say, a particular model of pump — while each individual physical unit carries its own asset record with its own serial number.
+
+The payoff is what happens on **install, swap, and move**: those transactions update the serialized asset so the maintenance and cost history **follows the physical unit**, not the position it happens to occupy. Pull a pump for overhaul, send it through the storeroom, refurbish it, and install it elsewhere — its entire history travels with it. That is what makes true component-level reliability possible.
+
+### Extending and classifying assets
+
+Out of the box, the asset record covers the basics. Real programs extend it. Through **Database Configuration** you add attributes the standard record does not carry — criticality, risk score, safety class, warranty details — so the data your strategies and reports need lives on the asset itself.
+
+**Hierarchical classifications** then let similar assets share structure. Classify your centrifugal pumps under a common node, and they can share **job plans, PMs, and reliability strategies** rather than each being configured one by one. Classification is the lever that turns a one-off asset register into a scalable, strategy-driven one.
+
+<aside>
+💡 **Key insight:** Rotating items plus classification are the two highest-leverage choices in the asset register. Rotating items keep history attached to the physical unit; classification lets thousands of similar assets inherit the same maintenance strategy. Skip them and you maintain Maximo by hand forever.
+</aside>
+
+---
+
+## 📍 Locations and Location Systems
+
+A **location** (the `LOCATION` object) is a physical or logical place: a building, a room, a production line, a process system. Locations can be just as hierarchical as assets:
+
+```
+   Site  ──▶  Building  ──▶  Floor  ──▶  Room
+```
+
+Work orders can target locations directly — useful when you maintain a *place* rather than a specific tracked asset (clean this line, service this room) — and **location meters** drive location-level PMs and conditional maintenance just as asset meters do.
+
+The concept worth internalizing is **location systems**: multiple overlapping hierarchies over the same locations at the same time. A single facility might carry a **spatial hierarchy** (site → building → floor → room) *and* a **functional or process hierarchy** (the flow of a process line through those rooms) simultaneously. Different teams navigate different systems to find the same physical place, each through the structure that matches how they think.
+
+| | Asset (`ASSET`) | Location (`LOCATION`) |
+|---|---|---|
+| Represents | A specific tracked thing | A physical or logical place |
+| Identity | Asset number + serial | Location code |
+| Hierarchy | Plant → system → component | Site → building → floor → room |
+| Multiple hierarchies | Single parent chain | **Location systems** (overlapping) |
+| Work targets it? | Yes | Yes |
+| Drives meter PMs? | Yes | Yes (location meters) |
+
+---
+
+## ✈️ Asset Configuration Manager (ACM)
+
+For the most demanding serialized assets — **aircraft, rail vehicles, turbines** — the standard asset hierarchy is not enough. These assets are governed by configuration rules and hard life limits, and getting them wrong is a safety and compliance problem, not just a maintenance one. That is the job of **Asset Configuration Manager (ACM)**.
+
+ACM models the asset as a set of **configuration positions** governed by **configuration rules**:
+
+- **Configuration positions** — the defined slots in the asset's structure where components belong.
+- **Configuration rules** — what is *allowed* in each position (approved part numbers) and *for how long* (replace after N cycles, N operating hours, or N operational days).
+
+When you install a part, ACM **links the asset to a position** and begins tracking its **life limits** — flight hours, cycles, operational days. As a limit approaches, ACM **generates work orders for the mandatory inspections and overhauls** the rule demands, so compliance-driven maintenance is automatic rather than manual.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│   ASSET CONFIGURATION MANAGER                                │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│   Config Position  +  Config Rule  ──▶  Install Part         │
+│   (the slot)          (allowed PN,       (links asset        │
+│                        life limit)        to position)       │
+│                              │                               │
+│                              ▼                               │
+│   Track life limits (hours / cycles / days)                  │
+│                              │                               │
+│                  limit approaching                           │
+│                              ▼                               │
+│   Auto-generate WO  ──▶  Inspection / Overhaul               │
+│                              │                               │
+│                              ▼                               │
+│   Configuration history  ──▶  Component reliability          │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Behind all of that, ACM **maintains a full configuration history** — what was installed where, and when — which both satisfies audit requirements and **feeds component-level reliability analysis**: you can ask how a specific part number performs across every position it has ever occupied.
+
+On the platform side, **ACM gained IBM Power (ppc64le) architecture support in the MAS 9.2 stream** — relevant if you run MAS on Power hardware.
+
+---
+
+## 🛣️ Linear Assets and GIS
+
+Not every asset is a discrete point. **Linear assets** — roads, pipelines, conveyors, transmission lines — extend over distance, and a single asset record at one location cannot represent them faithfully. Maximo models them along their length using **reference points, segments, and measures**.
+
+That length-aware model changes how work attaches. Work, inspections, and defects tie to **specific segments or chainages** rather than the whole asset — for example, *work between km 10 and km 12*. Because defects carry a position, **defect clustering** becomes possible: group nearby defects along the line and dispatch a single crew to repair them in one pass instead of one work order per pothole.
+
+Linear assets pair naturally with geospatial data through **GIS integration via Esri ArcGIS** — coordinates and GIS keys on records, with map-based visualization so you see the asset, its segments, and its defects on a map rather than in a list.
+
+<aside>
+⚠️ **Watch out:** **Maximo Spatial 9.0 deprecated Bing Maps and Google Maps as map providers.** The supported alternatives are **ArcGIS Server, ArcGIS Online, and OpenStreetMap (OpenMap)**. If you are upgrading and your maps were built on Bing or Google, plan the provider switch as part of the move — do not assume the existing basemap carries forward.
+</aside>
+
+---
+
+## 📊 Meters and Condition Monitoring
+
+Time-based PMs are only half the story. The other half is maintaining on **what the asset is actually doing** — and that runs on meters.
+
+A **meter** is a numeric measurement on an asset or location: operating hours, cycles, temperature, vibration, number of starts. There are two behavioral types, and the distinction matters:
+
+- **Continuous meters** — they **accumulate** (total operating hours, total cycles). The value only goes up.
+- **Gauge meters** — they **fluctuate** up and down (temperature, vibration amplitude, pressure).
+
+Continuous meters trigger **meter-based PMs**: service the compressor every 500 operating hours, not every calendar month. The interval matches usage instead of the calendar, so a hard-run asset gets serviced sooner and an idle one does not get serviced for no reason.
+
+Gauge meters drive **condition monitoring**. A condition-monitoring record defines three things:
+
+1. **The monitored meter** — which measurement to watch (for example, bearing vibration).
+2. **The alarm / limit thresholds** — the warning and action limits.
+3. **The action** — what happens when a limit is crossed: **create a work order, notify, or change status**.
+
+```
+   Reading source                       Meter structure              Outcome
+   ──────────────                       ───────────────              ───────
+   Inspection                ┐
+   Technician (Mobile)        ├──▶  Continuous / Gauge meter  ──▶  Meter-based PM
+   SCADA / DCS / IoT          │                                    Condition monitoring
+   (via MIF or MAS Monitor)  ┘                                    → WO / notify / status
+```
+
+The point that ties it together: **the reading source does not change the structure.** Whether a value arrives from a manual **inspection**, a **technician entering it in Mobile**, or an **automated feed from SCADA, DCS, or IoT** (through MIF or MAS Monitor), it lands in the *same* meter structures and triggers the *same* PMs and condition-monitoring logic. You design the meter and the threshold once; the source of the number is just plumbing.
+
+<aside>
+💡 **Key insight:** Meters are where the asset register stops being a static catalog and becomes a live system. A meter plus a condition-monitoring record turns a raw reading into automatic, threshold-driven maintenance — no human deciding, each time, whether the number is bad enough to act on.
+</aside>
+
+---
+
+## 🔁 Closing the Loop With the Rest of Manage
+
+Everything in this post is foundation, and foundations only matter because of what they carry:
+
+- **Work management (Part 3)** targets these assets and locations with work orders, and inherits their hierarchy for cost and history rollup.
+- **Reliability strategies (Part 4)** apply to assets by classification and consume the failure history that rotating items and ACM keep attached to the physical unit.
+- **Scheduling (Part 7)** schedules work *against* these assets and locations as its targets.
+- **Inventory and procurement (Part 9)** is where rotating items live as stocked, serialized inventory — the same records, viewed from the storeroom side.
+
+Get the asset and location layer right — correct hierarchies, rotating items where they belong, classifications that share strategy, meters wired to condition monitoring — and the modules above it work almost for free. Get it wrong and you spend the life of the system fighting symptoms.
+
+---
+
+## 🎯 The Commandments of Asset and Location Management
+
+1. **Thou shalt decide asset-versus-location at design time** — *what* you maintain versus *where*.
+2. **Thou shalt make rotating components rotating items** — so history follows the physical unit.
+3. **Thou shalt classify assets** — so similar equipment shares job plans, PMs, and strategies.
+4. **Thou shalt build the hierarchy deliberately** — cost and history roll up only as well as the parent chain.
+5. **Thou shalt use ACM for life-limited serialized assets** — let rules and limits generate the compliance work.
+6. **Thou shalt model linear assets by segment** — and plan the ArcGIS provider switch off Bing/Google.
+7. **Thou shalt wire meters to condition monitoring** — one design, many reading sources.
+
+---
+
+## Key Takeaways
+
+- **Assets and locations are the backbone** every other Manage module hangs from — work management, reliability, scheduling, and inventory all resolve back to them.
+- **Rotating items link inventory to serialized assets** so install/swap/move keeps maintenance and cost history attached to the physical unit, enabling component-level reliability.
+- **Database Configuration and hierarchical classification** extend and scale the asset register — adding attributes like criticality and letting similar assets share job plans, PMs, and strategies.
+- **Asset Configuration Manager** governs complex serialized assets (aircraft, rail, turbines) by configuration positions, rules, and life limits, auto-generating inspection and overhaul work; it gained IBM Power (ppc64le) support in the MAS 9.2 stream.
+- **Linear assets** are modeled by reference points, segments, and measures with Esri ArcGIS GIS — and Maximo Spatial 9.0 deprecated Bing and Google Maps in favor of ArcGIS Server, ArcGIS Online, and OpenStreetMap.
+- **Meters and condition monitoring** turn readings — from inspections, Mobile, or SCADA/DCS/IoT via MIF or MAS Monitor — into automatic, threshold-driven maintenance using the same meter structures regardless of source.
+
+---
+
+## References
+
+**IBM Official**
+- [Maximo Manage documentation home — IBM Documentation](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [What's new in Maximo Manage 9.0 — IBM Documentation](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=manage-in-90)
+
+**Community**
+- [New Features in MAS 9.0 and 9.1 — Maximo Secrets](https://maximosecrets.com/2025/07/06/new-features-in-mas-90-and-91/)
+- [Linear Assets and Spatial in Maximo — Maximo Secrets](https://maximosecrets.com/)
+- [What's new in Maximo Manage v9 — Pragma Edge](https://pragmaedge.com/whats-new-in-maximo-manage-v9/)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 7 — Graphical Scheduling, Assignment, and FSM](/blog/mas-manage-graphical-scheduling-fsm) |
+| **Next:** | [Part 9 — Inventory and Procurement](/blog/mas-manage-inventory-procurement) |
+
+---
+
+*Published by TheMaximoGuys | June 2026*
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS — from architecture and migration planning to the day-to-day work of configuring, extending, and running Maximo Manage. This series is the guide we wish we'd had.

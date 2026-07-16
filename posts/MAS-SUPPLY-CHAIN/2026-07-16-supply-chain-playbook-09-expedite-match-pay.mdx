@@ -1,0 +1,320 @@
+---
+title: "Expedite & Match-Pay: Let the Escalation Engine Chase Late Vendors and Triage Invoices"
+description: "This is the net-new material most buyers never had out of the box: an escalation engine that chases late vendors for you on a 3/7/14/30-day ladder, a 'My Late Orders' portlet, and a match-pay flow that auto-approves clean invoices and triages only the exceptions through Buyer, AP, and Procurement Manager. No custom code — just Escalations, Comm Templates, and SQL conditions."
+date: "2026-07-16"
+slug: "supply-chain-playbook-expedite-match-pay"
+tags: ["Maximo", "MAS 9", "Escalation", "Invoice Matching", "Comm Templates", "Procurement", "Accounts Payable", "EAM"]
+draft: false
+tier: "developer"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/supply-chain-playbook-09-expedite-match-pay.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "How does MAS 9 chase late vendors without custom code?"
+    answer: "With the out-of-the-box Escalation engine plus Comm Templates and Person Groups. You configure Escalation records on the PO object with SQL conditions for each lateness tier — a daily digest, then 3, 7, 14, and 30 days late — each firing a Comm Template to the buyer, and escalating to the procurement manager as the days climb. Escalation history is auto-logged as the audit trail. There is no custom cron, no custom log table, and no custom email service — the whole stack is config, templates, and SQL."
+  - question: "How is a PO line defined as late in MAS 9?"
+    answer: "A line is late when the PO status is open (OPEN, APPR, or INPRG), the received quantity is less than the ordered quantity, and the effective expected date is in the past. The effective expected date is the first non-null of a vendor-confirmed promised date, the buyer's required date, or the order date plus the item lead time. Days late is today minus that effective expected date. This precedence order is what makes the escalation fire on the most accurate available date."
+  - question: "What is the difference between 2-way, 3-way, and 4-way invoice matching?"
+    answer: "2-way match compares the invoice to the PO, used for low-value services and subscriptions with no physical receipt. 3-way match compares invoice, PO, and receipt, and is the default for standard materials. 4-way match adds inspection acceptance as a fourth gate for high-spec or regulated items, so an invoice cannot auto-approve until the goods have passed inspection. Match level is configured on Organizations under Purchasing Options, per PO type and commodity."
+  - question: "What happens when an invoice fails to match in MAS 9?"
+    answer: "It routes to a three-stage triage workflow. Within tolerance, an invoice auto-approves and posts to GL. Out of tolerance, it goes to WAPPR and to Stage 1, the buyer who owns the PO, with a 2-business-day SLA; unresolved, it escalates to Stage 2, the AP lead, with a 3-day SLA; still unresolved, it reaches Stage 3, the procurement manager, who authorizes an override, rejects the invoice, or cancels and disputes it. Every triage exit carries a reason code for audit hygiene."
+keyTakeaways:
+  - "The OOB Escalation engine chases late vendors on a 3/7/14/30-day ladder with a daily digest — no custom cron, log table, or email service"
+  - "A PO line is late when it's open, under-received, and past its effective expected date (promised, then required, then order-plus-lead-time)"
+  - "The 'My Late Orders' Start Center portlet and an alternate-vendor suggestion query put expediting on one screen"
+  - "2-way, 3-way, and 4-way matching gate payment by scrutiny level; within tolerance auto-approves, out of tolerance triages"
+  - "Invoice triage runs Buyer, then AP lead, then Procurement Manager, each with an SLA and a reason code for the audit trail"
+series:
+  name: "MAS SUPPLY CHAIN"
+  part: 9
+  total: 10
+tldr: "This is the material most buyers never had out of the box. The MAS 9 Escalation engine chases late vendors for you: configure Escalation records on the PO object with SQL conditions for a daily digest and 3/7/14/30-day tiers, each firing a Comm Template to the buyer and escalating to the procurement manager — no custom cron, log table, or email service, with escalation history as the audit trail. A line is late when it's open, under-received, and past its effective expected date. A 'My Late Orders' portlet and an alternate-vendor query put expediting on one screen. On the pay side, 2-way, 3-way, and 4-way matching gate payment by scrutiny; within tolerance auto-approves, out of tolerance triages through Buyer, AP lead, and Procurement Manager, each stage carrying a reason code."
+seoTitle: "Expedite & Match-Pay in MAS 9 | Escalation & Invoicing"
+seoDescription: "Chase late vendors with the MAS 9 escalation engine and triage invoices with 2/3/4-way matching — no custom code, just config and Comm Templates."
+targetQuestions:
+  - "How do you chase late vendors in MAS 9?"
+  - "How is a PO line defined as late in MAS 9?"
+  - "What is the difference between 2-way, 3-way, and 4-way matching?"
+  - "How does invoice triage work in MAS 9?"
+semanticKeywords:
+  - "MAS 9 escalation engine"
+  - "late order digest Comm Template"
+  - "My Late Orders portlet"
+  - "alternate vendor suggestion query"
+  - "2-way 3-way 4-way match"
+  - "invoice tolerance auto-approve"
+  - "invoice triage workflow"
+  - "reason codes invoice"
+proficiencyLevel: "advanced"
+dependencies:
+  - "Access to the Escalations, Comm Templates, and Person Groups applications"
+  - "Match level and tolerance settings on Organizations Purchasing Options"
+  - "The WF_INVOICE (or pluspowf invoice) workflow for triage routing"
+speakableSections:
+  - "The Late Definition"
+  - "Wiring the Escalation Engine"
+  - "Match & Pay"
+series_part: 9
+clusterSlugs:
+  - "supply-chain-playbook-series-index"
+  - "supply-chain-playbook-sourcing-discipline"
+  - "supply-chain-playbook-procurement-lifecycle"
+relatedSlugs:
+  - "supply-chain-playbook-series-index"
+  - "supply-chain-playbook-sourcing-discipline"
+  - "supply-chain-playbook-procurement-lifecycle"
+  - "mas-features-procurement-contracts-receiving"
+---
+
+# Expedite & Match-Pay: Let the Engine Chase Late Vendors and Clear Clean Invoices
+
+> 🎯 **Who this is for:** Buyers, procurement managers, and AP leads — and the admins who wire the escalation and matching configuration. This is the out-of-the-box machinery that chases late vendors for you and auto-approves clean invoices while flagging only the exceptions.
+
+**Series:** Part 9 of 10 — *MAS 9 Supply-Chain Playbook* | **Read time:** 28 minutes
+
+---
+
+## 🏃 The Net-New Material Buyers Never Had
+
+Most of this playbook modernizes something buyers already did. This part is different: it is the machinery most buyers have **never had out of the box** and assume they need custom code for. They don't.
+
+Two engines do the heavy lifting. The **escalation engine** watches every open PO line, decides when a vendor is late, and nudges — buyer, then procurement manager — on a schedule, incrementing the vendor's scorecard as it goes. The **match-pay flow** compares each invoice against the PO, the receipt, and (for regulated items) the inspection, auto-approves the clean ones, and triages only the exceptions across a three-stage path. Both are pure configuration — Escalations, Comm Templates, SQL conditions, and Person Groups. Zero Java.
+
+<aside>
+💡 **Key insight:** The buyer's job shifts from *doing the chasing and the checking* to *handling the exceptions the engine surfaces*. A well-configured MAS 9 buyer desk spends its time on the 5% of late orders and mismatched invoices that need judgment, not the 95% the engine handles silently. That shift is the whole point of this part.
+</aside>
+
+---
+
+## 📅 What "Late" Means
+
+Before you can escalate, you have to define late precisely, because a vague definition escalates the wrong orders. A PO line is late when all of these hold:
+
+1. The PO status is open (`OPEN`, `APPR`, or `INPRG`) — not closed or cancelled.
+2. `receivedqty < orderqty` on the line — it isn't fully received.
+3. The **effective expected date** is in the past.
+
+### The precedence-ordered effective date
+
+The effective expected date is the first non-null of, in order:
+
+1. The vendor-confirmed ship date (`sap_promised_date` in ERP-integrated environments) — highest precedence.
+2. The buyer's required date (`poline.requireddate`).
+3. The fallback: `orderdate + item.leadtime`.
+
+```
+Days late = SYSDATE − effective_expected_date
+```
+
+The precedence matters. A vendor who confirmed a ship date is measured against *their* commitment, not your original required date; only when there is no confirmation do you fall back to the required date, and only when there is neither do you use the lead-time estimate. Get this order right and your late list reflects reality instead of noise.
+
+---
+
+## 🪜 The Escalation Tiers
+
+Days-late drives an escalating series of automated actions, each with a clear owner:
+
+| Days late | Automated action | Owner |
+|---|---|---|
+| −2 (approaching) | Inbox reminder: "order due in 2 days" | Buyer (nudge proactively) |
+| 1–2 | Daily inbox reminder | Buyer |
+| 3 | Escalation email to buyer: expedite / confirm new date / cancel | Buyer |
+| 7 | Copies the procurement manager; vendor scorecard "late" counter increments | Procurement manager |
+| 14 | Alternate-vendor suggestion list surfaces; consider re-source | Procurement manager |
+| 30 | PO flagged for cancellation review; vendor on watch list | Procurement manager |
+
+The tiers escalate both **urgency** and **audience**: days 1–3 are the buyer's problem, day 7 pulls in the manager and dings the scorecard, day 14 offers alternatives, day 30 forces a decision. Every fire leaves an audit row.
+
+### A worked escalation
+
+PO-7002 was required on day 15; the goods don't show. On day 17 the `LATE_DAILY_DIGEST` adds the line to the buyer's morning email. On day 19 (three days late) `LATE_3D_BUYER` fires; the buyer calls the vendor and gets "shipment delayed one week." On day 23 (seven days late) `LATE_7D_PM` fires — the vendor's scorecard late-counter increments and the procurement manager is now copied. On day 30 (fourteen days late) `LATE_14D_ALT` fires with the alternate-vendor list, and the manager decides to re-source half the line to a backup. If nothing resolves by day 46, `LATE_30D_CANCEL` flags the PO for cancellation review and the vendor lands on the watch list. Every one of those events left an audit row and a Comm Template log entry — the buyer's inbox *is* the timeline, and nobody wrote a line of code to produce it.
+
+---
+
+## ⚙️ Wiring the Escalation Engine
+
+Each tier is an **Escalation** record on the PO object. The anatomy is the same every time:
+
+- **Object:** `PO` (or `PR` in SAP-integrated environments).
+- **Condition:** a SQL fragment for the tier — for example, a line late ≥ 3 and < 7 days.
+- **Schedule:** `0 0 7 ? * MON-FRI` — 7:00 a.m. weekdays.
+- **Repeat:** yes — one fire per matching record per day.
+- **Actions tab:** the Comm Template that sends the email.
+- **Assignments tab:** the Person Group that receives it (`PG_BUYER_LEAD`, `PG_PROCUREMENT_MGR`).
+
+A representative escalation set:
+
+| Escalation | Fires when | Comm Template → recipient |
+|---|---|---|
+| `LATE_DAILY_DIGEST` | any late, unreceived line | one digest email per buyer, all their late lines |
+| `LATE_3D_BUYER` | line late 3–6 days | buyer |
+| `LATE_7D_PM` | line late 7–13 days | buyer + procurement manager |
+| `LATE_14D_ALT` | line late 14–29 days | procurement manager, with alternate-vendor list |
+| `LATE_30D_CANCEL` | line late ≥ 30 days | procurement manager (cancel review) |
+
+The history is auto-logged in the Escalation history table — **that is your audit trail. No custom log table required.** The entire stack is configuration plus Comm Templates plus SQL conditions; there is no Java anywhere in it.
+
+<aside>
+⚠️ **Watch out:** The daily digest is what makes this humane. Without it, five separate escalations could email a buyer five separate times about five late lines every morning. `LATE_DAILY_DIGEST` rolls all of a buyer's late lines into one email — configure the digest and retire the per-line spam, or buyers will filter the escalations straight to trash.
+</aside>
+
+---
+
+## 📋 The "My Late Orders" Portlet and Alternate Vendors
+
+The escalation emails have a Start Center twin: a **My Late Orders** portlet showing each late PO with its vendor, item, expected date, and days-late — a live worklist the buyer expedites from. It replaces the old habit of a manually-run late-order report; the digest and portlet together are the buyer's timeline.
+
+When a line crosses fourteen days, the manager needs alternatives fast. An alternate-vendor query surfaces, for the late item, every other vendor who has actually delivered it in the last 24 months — pulled from the item-vendor table joined to receipt history, ranked by most-recent receipt. That turns "who else can supply this?" from a phone-around into a ranked list the manager acts on.
+
+---
+
+## 🧾 Invoice Matching: 2-Way, 3-Way, 4-Way
+
+The pay side reconciles each vendor invoice before AP pays. The match level sets how much scrutiny an invoice gets:
+
+| Match | Compares | Use for |
+|---|---|---|
+| **2-way** | Invoice ↔ PO | Low-value services, subscriptions, no physical receipt |
+| **3-way** | Invoice ↔ PO ↔ Receipt | Standard materials — the default |
+| **4-way** | 3-way + Inspection acceptance | High-spec / regulated items |
+
+The 4-way level is where the inspection hold from Part 3 pays off: even a perfect quantity-and-price match cannot auto-approve until inspection has accepted the goods, so you never pay for material sitting in HOLDING having failed inspection. Configure the default match level per PO type and commodity on **Organizations → Purchasing Options**.
+
+---
+
+## 📐 Tolerance Config
+
+Within tolerance, an invoice auto-approves, posts the GL, and generates the AP voucher; outside tolerance, it routes to triage. The controller signs off on these:
+
+| Tolerance | Default | Rationale |
+|---|---|---|
+| Qty variance % | ±2% (or ±1 unit, larger) | Short/over ship |
+| Price variance % | ±1% | FX + rounding |
+| Price variance $ (absolute) | ≤ $25 | Low-dollar auto-pass |
+| Total invoice variance $ | ≤ $50 | Multi-line rollup |
+| Freight allow-list | named vendors up to $X | Logistics reality |
+| Tax allow-list | named tax codes | Sales-tax variance |
+
+The allow-lists are what keep freight and tax — which appear on invoices but not on POs — from generating a mismatch on every single invoice. Name the vendors allowed a freight line and the tax codes that auto-pass, and the routine invoices flow.
+
+---
+
+## 🔀 The Three-Stage Triage
+
+An out-of-tolerance invoice does not just sit — it walks a staged path with SLAs backed by escalations:
+
+```
+Stage 1: Buyer — 2 BD SLA
+   ├─ Resolved (price update / qty correction / freight added) → APPR
+   └─ Escalate ▼
+Stage 2: AP Lead — 3 BD SLA
+   ├─ Resolved (short-pay / dispute memo) → APPR
+   └─ Escalate ▼
+Stage 3: Procurement Manager — decision
+   ├─ Authorize override → APPR
+   ├─ Reject invoice (return to vendor)
+   └─ Cancel + dispute
+```
+
+Each stage has an escalation behind it: three business days of silence at Stage 1 auto-escalates to Stage 2. And every triage exit carries a **reason code** — `PRICE_DRIFT`, `QTY_OVERSHIP`, `FREIGHT_NOT_ON_PO`, `TAX_VARIANCE`, `LUMPSUM_NEEDS_SPLIT`, and so on.
+
+### Reason codes are a management signal
+
+The reason-code mix is a dashboard metric in its own right. It tells you *why* invoices fail, which tells you where to fix the process upstream. If `PRICE_DRIFT` dominates, your contract prices are stale; if `FREIGHT_NOT_ON_PO` dominates, your freight allow-list is too narrow. The top one or two reason codes should change quarter over quarter as you fix the upstream cause — a stable reason-code mix means you are triaging the same failure forever instead of eliminating it.
+
+<aside>
+💡 **Key insight:** Reason codes turn invoice triage from janitorial work into diagnostics. Each code is a pointer at an upstream defect — a stale contract, a missing allow-list entry, a vendor that lump-sums multiple POs. Work the top reason code to zero and a whole category of mismatches disappears; then the next code rises and you work that one.
+</aside>
+
+---
+
+## 🤖 Auto-Reorder With Confidence
+
+The escalation and match engines make the *downstream* trustworthy; auto-reorder makes the *upstream* hands-off. But "with confidence" is the operative phrase — it means the buyer trusts the pipeline enough to let it run without daily babysitting, and that trust is earned in levels.
+
+### The maturity ladder
+
+| Level | Behavior |
+|---|---|
+| 0 | Reorder app generates PRs; buyer runs it manually each morning, reviews each line |
+| 1 | Nightly cron auto-generates PRs in WAPPR; buyer bulk-approves — daily effort drops ~80% |
+| 2 | Auto-approve C-items under contract and under a dollar threshold; buyer reviews only A/B (~20%) |
+| 3 | Auto-PR for A/B, auto-PO for contract C-items; buyer reviews an exception report only |
+| 4 | Predictive — Predict/Monitor/MRO Inventory Optimization pre-position spares before failure |
+
+Do not jump the ladder. Level 2+ depends entirely on the clean vendor master and formula-justified reorder points from Part 5 — automate garbage and you get faster garbage.
+
+### The non-negotiable safeguards
+
+Before Level 2, all of these must be scripted, tested, and monitored:
+
+- **Vendor data gate** — skip any item whose primary vendor is disabled, address-less, terms-less, or commodity-mismatched.
+- **Price sanity** — flag if the proposed price differs from last-received by more than X%.
+- **Quantity sanity** — flag if the order quantity exceeds 3× average monthly consumption.
+- **Open-order check** — skip if a PR or PO is already open for this item/storeroom.
+- **Demand anomaly** — flag if a single large issue, not steady-state demand, tripped the reorder.
+- **Daily exception report** — the buyer reviews flagged items; no exception, no action.
+- **Audit log** — every auto-generated PR/PO stamped `createdby = 'SC_AUTOREORDER'` with the cron run ID.
+
+This is where the whole series converges: sourcing discipline (Part 8) supplies the scorecard that guards the vendor gate, replenishment discipline (Part 5) supplies the reorder points, and the escalation engine catches the vendors who let the auto-orders run late. A buyer whose desk runs all three well is measurably different — the daily reorder ritual drops from two hours of clicking to thirty minutes of exception handling, and when you ask them "do you still spot-check every auto-PR?" the answer moves from "yes, all of them" to "no, just the exceptions." That answer is what "with confidence" actually means.
+
+---
+
+## 🔧 Troubleshooting Expedite & Match-Pay
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Buyer gets five late-order emails a day | No daily digest configured | Enable `LATE_DAILY_DIGEST`, retire per-line spam |
+| On-time vendor flagged late | Effective-date precedence wrong | Honor promised → required → lead-time order |
+| Every invoice with freight mismatches | Freight not on the allow-list | Add vendors to the freight allow-list |
+| 4-way item won't auto-approve | Inspection not yet accepted | Accept in Inspection; the gate then clears |
+| Auto-reorder over-orders at Level 2 | Reorder points not cleaned first | Complete Part 5 before advancing levels |
+| Same reason code every quarter | Upstream defect never fixed | Work the top reason code to its root cause |
+
+---
+
+## 🎓 The Commandments of Expedite & Match-Pay
+
+1. **Thou shalt define "late" by precedence** — promised, then required, then lead-time.
+2. **Thou shalt wire escalations with config, not code**, and honor the daily digest.
+3. **Thou shalt match at the right level** — 2/3/4-way by risk — and let tolerance auto-approve the clean.
+4. **Thou shalt triage in three stages** with reason codes, and treat the code mix as diagnostics.
+5. **Thou shalt climb the auto-reorder ladder deliberately**, never past clean data.
+6. **Thou shalt gate auto-reorder** with the seven safeguards before any auto-approval.
+
+---
+
+## Key Takeaways
+
+- **The escalation engine chases late vendors for you** — precedence-ordered "late," 3/7/14/30-day tiers, all Escalations + Comm Templates + Person Groups, zero Java, with the history table as the audit trail.
+- **The daily digest and My Late Orders portlet** replace manual late-order reports, and an alternate-vendor query surfaces re-source options at 14 days.
+- **2/3/4-way matching plus tolerance auto-approves clean invoices**; the 4-way level gates payment on inspection acceptance.
+- **Out-of-tolerance invoices walk a three-stage triage** — Buyer, AP, Procurement Manager — with reason codes that double as upstream-defect diagnostics.
+- **Auto-reorder "with confidence" is a maturity ladder** guarded by seven safeguards, and it only works on the clean data from Parts 5 and 8.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Maximo Manage — Escalations and Communication Templates (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Manage — Invoices and invoice matching (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Manage — Purchasing Options and tolerances (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 8 — Sourcing Discipline](/blog/supply-chain-playbook-sourcing-discipline) |
+| **Next:** | [Part 10 — The Procurement Lifecycle](/blog/supply-chain-playbook-procurement-lifecycle) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*

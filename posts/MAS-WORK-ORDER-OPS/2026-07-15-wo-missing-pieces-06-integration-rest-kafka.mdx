@@ -1,0 +1,288 @@
+---
+title: "Work Order Integration in MAS 9: The REST/JSON API, Kafka Events, and Where MIF Still Fits"
+description: "The work order integration surface moved in MAS 9. Here's the JSON API for work orders — /api/os/mxwodetail with lean=1 — with real query and create examples, Kafka events for near-real-time WO changes, and the honest posture on MIF: it still works, but new integrations belong on REST and Kafka."
+date: "2026-07-15"
+slug: "wo-missing-pieces-integration-rest-kafka"
+tags: ["Maximo", "MAS 9", "Work Order Management", "REST API", "JSON API", "Kafka", "MIF", "Integration", "EAM"]
+draft: false
+tier: "developer"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/wo-missing-pieces-06-integration-rest-kafka.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What is the REST endpoint for work orders in MAS 9?"
+    answer: "The JSON API object structure endpoint is /api/os/mxwodetail. You add lean=1 to strip the response of namespace wrappers and return flat JSON, and you use oslc.where and oslc.select query parameters to filter and shape the payload. This is the recommended path for all new work order integrations in MAS 9. The legacy /maxrest/rest MBO endpoints and RMI-based access are deprecated in favor of it."
+  - question: "How do I create a work order through the REST API in MAS 9?"
+    answer: "POST a JSON body to /api/os/mxwodetail?lean=1 with at least a siteid, description, and worktype. You can include assetnum, location, wopriority, and classstructureid in the same body. To change status afterward you POST to /api/os/mxwodetail/{workorderid}?lean=1&action=wsmethod:changeStatus with the target status. Authenticate with an API key rather than basic auth, which is deprecated."
+  - question: "Can I get near-real-time work order changes without polling?"
+    answer: "Yes. Configure a Kafka provider under External Systems and Maximo will publish an event each time a work order is created, updated, or changes status. External systems subscribe to the WO-specific Kafka topics and react to changes as they happen. On MAS 9 the Kafka broker is provided by Strimzi on OpenShift. This scales better than JMS for high-volume WO integrations and replaces polling the REST API on a timer."
+  - question: "Does the Maximo Integration Framework still work in MAS 9?"
+    answer: "Yes. The MXWODETAIL Object Structure, Publish Channels, and Enterprise Services all still function, and existing MIF integrations for work orders keep running with no change. What changed is the direction of investment: IBM is building on the REST/JSON API and Kafka, not MIF. The migration posture is simple — build new integrations on REST/Kafka and leave your working MIF integrations alone."
+keyTakeaways:
+  - "The JSON API endpoint /api/os/mxwodetail with lean=1 is the recommended path for all new WO integrations"
+  - "Query with oslc.where and oslc.select; create with a JSON POST; change status with the changeStatus action"
+  - "The legacy /maxrest/rest MBO endpoints, RMI access, and basic auth are deprecated in favor of the JSON API and API keys"
+  - "Kafka events publish WO create/update/status changes for near-real-time integration; Strimzi provides the broker on OpenShift"
+  - "MIF still works for existing WO integrations, but the migration posture is: new on REST/Kafka, existing MIF left alone"
+series:
+  name: "MAS WORK ORDER OPS"
+  part: 6
+  total: 6
+tldr: "The work order integration surface moved in MAS 9. New integrations use the JSON API at /api/os/mxwodetail with lean=1 — query with oslc.where/oslc.select, create with a JSON POST, change status with the changeStatus action — and authenticate with API keys, since the legacy /maxrest MBO endpoints, RMI, and basic auth are deprecated. For near-real-time flows, configure a Kafka provider and subscribe to WO topics (Strimzi on OpenShift). MIF Publish Channels and Enterprise Services still work for existing integrations, but IBM is not investing there. Posture: build new on REST/Kafka, leave working MIF alone."
+seoTitle: "Work Order Integration in MAS 9: REST, Kafka, MIF"
+seoDescription: "How work order integration changed in MAS 9: the /api/os/mxwodetail JSON API with lean=1, Kafka WO events, and where MIF still fits for existing integrations."
+targetQuestions:
+  - "What is the REST endpoint for work orders in MAS 9?"
+  - "How do I create a work order with the MAS 9 JSON API?"
+  - "How do Kafka events work for work orders in MAS 9?"
+  - "Does MIF still work for work order integration in MAS 9?"
+semanticKeywords:
+  - "work order REST API"
+  - "mxwodetail JSON API"
+  - "lean=1 Maximo"
+  - "Kafka work order events"
+  - "Strimzi OpenShift Maximo"
+  - "MIF Publish Channels work order"
+  - "OSLC mxwodetail"
+  - "changeStatus action REST"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Familiarity with the Maximo work order object (WORKORDER / MXWODETAIL)"
+  - "Basic understanding of REST, JSON, and HTTP verbs"
+  - "Awareness of the Maximo Integration Framework (Object Structures, Publish Channels, Enterprise Services)"
+speakableSections:
+  - "The JSON API for Work Orders"
+  - "Kafka Events for Work Orders"
+  - "MIF Still Works — Here's Where It Fits"
+series_part: 6
+clusterSlugs:
+  - "wo-missing-pieces-series-index"
+  - "wo-missing-pieces-reporting-birt-to-kpi"
+relatedSlugs:
+  - "wo-missing-pieces-series-index"
+  - "mas-integration-series-index"
+  - "mas-integration-api-first-architecture"
+  - "mas-integration-event-driven-transformation"
+---
+
+# Work Order Integration in MAS 9: The REST/JSON API, Kafka Events, and Where MIF Still Fits
+
+> 🎯 **Who this is for:** Integration developers and architects who move work order data in and out of Maximo — and just heard from a teammate that "the old work order endpoint changed" in MAS 9.
+
+**Series:** Part 6 of 6 (Series Finale) — *MAS 9 Work Order Operations: The Missing Pieces* | **Read time:** 22 minutes
+
+---
+
+## The Integration Surface Moved — For Work Orders Specifically
+
+Here is the message that lands in your inbox after an upgrade: *"The integration team says the old work order endpoint changed — did it?"*
+
+Short answer: **the recommended front door for work order integration moved.** The work order object didn't change — `WORKORDER` and its `MXWODETAIL` object structure are the same records you've always integrated. What changed is *how IBM wants you to reach them*, and which access patterns are now on the deprecation list.
+
+This is the series finale, and it's deliberately narrow. **We are only covering work-order-scoped integration here** — the endpoint you hit for a WO, the events a WO publishes, and where MIF fits for WO data specifically. The full integration framework — API key management, the broader OSLC surface, MIF architecture, event-driven patterns across every object — is its own subject, and we cover it properly in the **MAS INTEGRATION series** (start with *API-First Architecture* and *Event-Driven Transformation*). If you want the platform-wide picture, go there. This post is the work order slice.
+
+Three things to know, in order of how often you'll use them:
+
+1. **The JSON API** at `/api/os/mxwodetail` is the recommended path for all new WO integrations.
+2. **Kafka events** publish WO changes for near-real-time, subscribe-don't-poll integrations.
+3. **MIF still works** for your existing WO integrations — but it's no longer where the investment goes.
+
+---
+
+## 📊 Old World vs. MAS 9
+
+| Work order integration pattern | Legacy Maximo | MAS 9 |
+|---|---|---|
+| Preferred API | `/maxrest/rest` MBO endpoints | **`/api/os/mxwodetail`** JSON API (`lean=1`) |
+| OSLC | `/oslc/os/mxwodetail` | Still works, but JSON API preferred |
+| Near-real-time events | JMS / polling | **Kafka** WO topics (Strimzi on OpenShift) |
+| Object Structure | MXWODETAIL | Same — still functions for MIF |
+| Publish Channels / Enterprise Services | Primary integration path | Still fire, but **no new investment** |
+| RMI for WO access | Supported | **Deprecated** — rewrite to REST |
+| Direct SQL for WO queries | Common | **Restricted** — use REST or automation scripts |
+| API authentication | Basic auth | **API keys** (basic auth deprecated) |
+
+<aside>
+
+💡 **Key insight:** Nothing on the *outbound-still-works* side of this table needs your attention today. The rows that matter are the deprecated ones — RMI, direct SQL, basic auth. If any of your WO integrations lean on those, they are the migration backlog. Everything else is "leave it alone."
+
+</aside>
+
+---
+
+## 🔌 The JSON API for Work Orders
+
+The JSON API is the recommended method for every new work order integration in MAS 9. It's built on the object structure model, so the endpoint you care about is the one that exposes the work order object structure: **`/api/os/mxwodetail`**.
+
+The one flag you'll use constantly is **`lean=1`**. It tells Maximo to strip the OSLC namespace wrappers out of the response and give you flat, readable JSON — the difference between a payload you can parse in one line and one buried under `rdf:` and `spi:` prefixes. Add it to every call.
+
+### Query work orders
+
+Filter with `oslc.where` and shape the returned columns with `oslc.select`. Here's a query for all approved work orders, returning just the fields you need:
+
+```http
+GET /api/os/mxwodetail?lean=1&oslc.where=status="APPR"&oslc.select=wonum,description,status,location,assetnum
+```
+
+That returns a lean JSON list of approved work orders with only `wonum`, `description`, `status`, `location`, and `assetnum` — not the entire fat WO record. `oslc.select` is how you keep payloads small and fast; ask for the columns you'll actually use.
+
+### Create a work order
+
+POST a JSON body to the same endpoint. At minimum you need a `siteid`, a `description`, and a `worktype`; the rest of the WO fields ride along in the same body:
+
+```http
+POST /api/os/mxwodetail?lean=1
+Content-Type: application/json
+
+{
+  "siteid": "BEDFORD",
+  "description": "Pump P-2047 vibration alarm",
+  "worktype": "CM",
+  "wopriority": 2,
+  "assetnum": "P-2047",
+  "location": "PUMPHOUSE-A",
+  "classstructureid": "1234"
+}
+```
+
+Maximo creates the work order and returns the new record. This is the pattern that replaces "insert a row and hope the triggers fire" — you go through the object structure, so the business rules run.
+
+### Change work order status
+
+Status changes don't go through a plain field update — you invoke the work order's `changeStatus` method through the API so the status transition logic runs. POST to the specific work order by its `workorderid`:
+
+```http
+POST /api/os/mxwodetail/{workorderid}?lean=1&action=wsmethod:changeStatus
+Content-Type: application/json
+
+{
+  "status": "APPR",
+  "memo": "Approved by REST API integration"
+}
+```
+
+The `action=wsmethod:changeStatus` parameter is the important part: it routes the call through the work order's status-change method rather than blindly stamping the `status` field, so state validation and side effects behave exactly as they would in the UI.
+
+<aside>
+
+💡 **Key insight:** Prefer `wsmethod:changeStatus` over a direct write to the `status` attribute. A raw field update can bypass the transition logic; the method call honors it. When an integration "sets a work order to COMP but nothing downstream fired," a bypassed status method is usually why.
+
+</aside>
+
+### What changed from the legacy endpoints — and why
+
+If your integrations point at **`/maxrest/rest/mbo/workorder`** (the classic MBO REST layer), those are the endpoints being left behind. The move is to the **object-structure-based `/api/os/`** surface for a real reason: the object structure enforces the same integration processing, cross-object rules, and security that MIF uses, so a REST create and a MIF create behave consistently. The old `/maxrest` MBO endpoints operated closer to the raw object and are the legacy path.
+
+Two more deprecations to note on the WO integration surface:
+
+- **RMI for WO access is deprecated** — rewrite any RMI-based work order access to REST.
+- **Basic auth is deprecated** — authenticate with **API keys**, not a username/password on every call. (API key management is a platform topic; see the MAS INTEGRATION series for setup.)
+
+**OSLC still works.** `/oslc/os/mxwodetail` remains functional if you have OSLC-based integrations; the JSON API is simply preferred for new work.
+
+---
+
+## 📡 Kafka Events for Work Orders
+
+Polling the REST API on a timer to catch work order changes is the pattern MAS 9 wants you to retire for high-volume, time-sensitive flows. The replacement is **event-driven**: let the work order tell you when it changed.
+
+Here's how it fits together for work orders:
+
+- **Configure a Kafka provider** under **External Systems**, the same place you've always defined integration endpoints.
+- **Maximo publishes an event** every time a work order is **created, updated, or changes status** — the same three lifecycle moments you'd otherwise poll for.
+- **External systems subscribe** to the WO-specific Kafka topics and react as changes happen, instead of asking "anything new?" every thirty seconds.
+- On MAS 9 the Kafka broker itself is provided by **Strimzi on OpenShift** — it's part of the platform, not a separate cluster you stand up by hand.
+
+The canonical use case is **real-time WO status sync with an ERP system**: a work order moves to COMP in Maximo, an event fires, and the ERP updates the associated cost or maintenance record within seconds — no batch job, no polling window. For high-volume WO integration, this scales better than the old JMS-based approach.
+
+<aside>
+
+💡 **Key insight:** Kafka is the answer when latency and volume both matter. If you sync a handful of WO changes a day, the REST API on a schedule is fine. If you sync thousands of status changes an hour into an ERP, that's the workload event-driven Kafka was built for. Match the mechanism to the volume — don't Kafka-ify a nightly batch.
+
+</aside>
+
+If event-driven integration is new to your team, the pattern (topics, subscribers, at-least-once delivery) is covered in depth in the **MAS INTEGRATION series** — this post just tells you that work orders are a first-class publisher on it.
+
+---
+
+## 🗂️ MIF Still Works — Here's Where It Fits
+
+Now the reassurance, because integration developers hear "the surface moved" and immediately worry their production MIF flows are about to break. **They aren't.** The Maximo Integration Framework still works for work orders:
+
+- **The `MXWODETAIL` Object Structure** still functions for inbound and outbound WO integration.
+- **Publish Channels** still fire on work order events.
+- **Enterprise Services** still receive inbound WO data.
+- **Interface Tables** still work where direct database access is available.
+
+Everything you built on MIF for work orders keeps running. There is no forced cutover, no end-of-support cliff announced for these in the work order roadmap. Your outbound Publish Channel that pushes completed WOs to a data warehouse tonight will push them tomorrow night too.
+
+**The single caveat IBM does add:** new integrations should use the REST API, not MIF. That's it — a direction of investment, not a deprecation of what exists.
+
+One environment note worth flagging: **Interface Tables depend on database access**, and in sealed or SaaS-style MAS deployments you may not have it. If your MIF integration relies on reading or writing interface tables directly, confirm your environment still exposes the database before you count on that path in a cloud upgrade.
+
+<aside>
+
+💡 **Key insight:** "MIF still works" and "build new integrations on MIF" are two different statements. The first is true; the second isn't the recommendation. Keep your working Publish Channels; don't author a brand-new one when a REST call or a Kafka topic does the job.
+
+</aside>
+
+---
+
+## 🧭 The Migration Posture
+
+Pull the pieces together and the posture is refreshingly simple. You don't need a big-bang integration rewrite for MAS 9 — you need a rule for *new* work and a rule for *old* work.
+
+**For new work order integrations:**
+
+- Use the **JSON API** (`/api/os/mxwodetail`, `lean=1`) for request/response — query, create, and status-change flows.
+- Use **Kafka events** for near-real-time, high-volume, subscribe-don't-poll flows.
+- Authenticate with **API keys**, never basic auth.
+
+**For existing work order integrations:**
+
+- **Leave working MIF alone.** Publish Channels, Enterprise Services, and the MXWODETAIL object structure keep running.
+- **Migrate only the deprecated pieces** — RMI-based WO access, direct SQL WO queries, and basic-auth API calls are the actual backlog.
+- **Sanity-check Interface Tables** against your deployment model if you're moving to a sealed/SaaS environment.
+
+<aside>
+
+💡 **Key insight:** Treat this like the BIRT rationalization from Part 5 — it's a triage exercise, not a rebuild. Sort every WO integration into "works, leave it," "deprecated, rewrite it," and "new, build it the MAS 9 way." Most of your catalog lands in the first bucket.
+
+</aside>
+
+---
+
+## Key Takeaways
+
+- The **JSON API** at **`/api/os/mxwodetail`** with **`lean=1`** is the recommended path for all new work order integrations — query with `oslc.where`/`oslc.select`, create with a JSON POST, change status with `action=wsmethod:changeStatus`.
+- The **legacy `/maxrest` MBO endpoints, RMI access, and basic auth are deprecated**; move to the object-structure JSON API and **API keys**. **OSLC** (`/oslc/os/mxwodetail`) still works but the JSON API is preferred.
+- **Kafka events** publish WO create/update/status changes for near-real-time integration; external systems subscribe to WO topics, and **Strimzi on OpenShift** provides the broker.
+- **MIF still works** — MXWODETAIL object structure, Publish Channels, and Enterprise Services keep running for existing integrations; IBM just isn't investing there.
+- The **migration posture** is: build new integrations on **REST/Kafka**, leave working **MIF** alone, and migrate only the genuinely deprecated pieces.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Maximo Manage REST/JSON API (IBM Documentation)](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Maximo Integration Framework — Object Structures and Publish Channels (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Configuring Kafka as an external system (IBM Documentation)](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 5 — Work Order Reporting in MAS 9](/blog/wo-missing-pieces-reporting-birt-to-kpi) |
+| **Next:** | *You have reached the end of the series* — [Back to the series index](/blog/wo-missing-pieces-series-index) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*

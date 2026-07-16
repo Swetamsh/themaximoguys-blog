@@ -1,0 +1,255 @@
+---
+title: "Graphical Scheduling, Assignment, and Field Service Management in Maximo Manage 9"
+description: "A practitioner's deep dive into the Maximo Manage 9 scheduling stack — Gantt-based Graphical Scheduling for outages and projects, Graphical Assignment for short-horizon dispatch, the crafts/crews/calendars foundation, and the AI-driven Field Service Management solution introduced in 9.0 with its Scheduling and Dispatching dashboards, extended in 9.1."
+date: "2026-06-02"
+slug: "mas-manage-graphical-scheduling-fsm"
+tags: ["Maximo", "MAS Manage", "MAS 9", "Graphical Scheduling", "Scheduler", "Graphical Assignment", "Field Service Management", "Dispatching"]
+draft: false
+tier: "developer"
+author: "Swetansh Kumar"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "../MAS-FEATURES/images/mas-features-dashboard-scheduling.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What is the difference between Graphical Scheduling and Graphical Assignment in Maximo Manage?"
+    answer: "Graphical Scheduling (the Scheduler) is a long-horizon, Gantt-based tool for building schedules from work order and PM queries — you drag work order bars across a timeline, manage predecessor/successor dependencies, and level resources for outages, shutdowns, and capital projects. Graphical Assignment is a short-horizon dispatch tool: it assigns work orders and tasks to specific labor or crews against their available time slots, honoring calendars, shifts, and existing assignments. Scheduling decides when work happens; assignment decides who does it and when."
+  - question: "What is Maximo Field Service Management and when was it introduced?"
+    answer: "Maximo Field Service Management (FSM) is a solution introduced in the Manage 9.0 release. It applies AI-based scheduling and dispatching algorithms developed by IBM Research that consider technician location, availability, skills, and craft. IBM reports it can handle roughly ten times more work orders than manual approaches and improve job completion time by more than ten percent. It is delivered through a Scheduling Dashboard and a Dispatching Dashboard."
+  - question: "What do the FSM Scheduling Dashboard and Dispatching Dashboard do?"
+    answer: "The Scheduling Dashboard builds optimized schedules with qualification consideration and milestone support for job plans and tasks. The Dispatching Dashboard handles real-time dispatch, including an Emergency Intelligent Assignment Workflow and real-time technician position fed from Maximo Mobile. Manage 9.1 added drag-and-drop to the Scheduling Dashboard and a new Dispatching Status alongside Assignment Status."
+  - question: "What scheduling capabilities did Manage 9.1 add?"
+    answer: "Manage 9.1 introduced a Planning Dashboard that works against Graphical Scheduling projects with KPIs and drill-down, added drag-and-drop to the FSM Scheduling Dashboard, introduced a new Dispatching Status with granular states (TRAVELLING, ONSITE, STARTED, RESTORED) alongside the existing Assignment Status, and extended Qualifications to crews."
+keyTakeaways:
+  - "Graphical Scheduling is Gantt-based for outages and projects; Graphical Assignment is short-horizon dispatch"
+  - "Crafts, qualifications, calendars, shifts, and crews are the foundation every scheduling tool consumes"
+  - "Field Service Management (new in 9.0) brings AI scheduling and dispatching from IBM Research"
+  - "FSM splits into a Scheduling Dashboard and a Dispatching Dashboard with real-time mobile position"
+  - "Manage 9.1 added the Planning Dashboard, drag-and-drop, granular Dispatching Status, and crew qualifications"
+series:
+  name: "MAS MANAGE"
+  part: 7
+  total: 11
+tldr: "Maximo Manage 9 carries two complementary classic tools — Gantt-based Graphical Scheduling for outages and capital projects, and Graphical Assignment for short-horizon dispatch — both built on the crafts, qualifications, calendars, shifts, and crews foundation. The 9.0 release added Field Service Management, an AI-driven solution from IBM Research delivered through a Scheduling Dashboard and a Dispatching Dashboard that consider location, availability, skills, and craft. Manage 9.1 extended it with a Planning Dashboard, drag-and-drop scheduling, granular Dispatching Status, and crew qualifications. This post explains how the pieces fit and which tool to reach for."
+seoTitle: "Maximo Scheduling & FSM in MAS 9 | Graphical & AI Dispatch"
+seoDescription: "How Maximo Manage 9 scheduling works: Graphical Scheduling, Graphical Assignment, the crews foundation, and the AI Field Service Management dashboards."
+targetQuestions:
+  - "What is the difference between Graphical Scheduling and Graphical Assignment?"
+  - "What is Maximo Field Service Management?"
+  - "How does AI scheduling work in Maximo Manage 9?"
+  - "What do the FSM Scheduling and Dispatching dashboards do?"
+  - "What scheduling features did Manage 9.1 add?"
+semanticKeywords:
+  - "Maximo Graphical Scheduling"
+  - "Maximo Graphical Assignment"
+  - "Maximo Field Service Management"
+  - "Scheduling Dashboard Maximo"
+  - "Dispatching Dashboard Maximo"
+  - "Gantt schedule work orders"
+  - "crews crafts qualifications Maximo"
+  - "calendars and shifts Maximo"
+  - "AI scheduling dispatching"
+  - "outage shutdown scheduling"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 3 (work management — job plans, qualifications, and milestone tasks) is the foundation this schedules"
+  - "Part 6 (Maximo Mobile) supplies real-time technician position and status to dispatching"
+speakableSections:
+  - "Two Tools, Two Horizons"
+  - "The Foundation Everything Stands On"
+  - "Field Service Management — AI Enters Scheduling"
+relatedSlugs:
+  - "mas-manage-series-index"
+  - "mas-manage-work-management"
+  - "mas-manage-maximo-mobile"
+  - "mas-manage-asset-location-management"
+---
+
+# Graphical Scheduling, Assignment, and Field Service Management in Maximo Manage 9
+
+> **Part 7 of the MAS MANAGE series.** This is where the backlog stops being a list and becomes a plan — *when* the work happens, *who* does it, and how AI now helps decide both.
+
+<aside>
+🎯 **Who this is for:** Maintenance planners, schedulers, dispatchers, and Maximo administrators who need to turn a pile of approved work orders into a realistic, resource-aware schedule — and who want to know exactly what the classic graphical tools and the newer Field Service Management deliver in Manage 9.
+</aside>
+
+**Estimated read time:** 22 minutes
+
+---
+
+## ⏱️ Two Tools, Two Horizons
+
+A work order that is approved and planned is still just an intention. Somebody has to decide *when* it runs against everything else competing for the same people and the same window, and *who* picks up the wrench. Maximo Manage has long carried two distinct graphical tools for this, and the most common implementation mistake is treating them as interchangeable. They are not — they answer different questions over different horizons.
+
+**Graphical Scheduling** — the Scheduler — is the long-horizon planning tool. It is Gantt-based: you build a schedule from a query of work orders and PMs (filtered by date range, location, type, and so on), and each work order shows up as a **bar on a timeline** that you drag to adjust its start and finish. You manage **constraints** and **predecessor/successor dependencies** so the sequence makes physical sense, and **resource panes** show labor, crew, and tool utilization so overloads surface before they become problems on the floor. This is the tool for **outages, shutdowns, and capital projects** — anything where dozens or hundreds of work orders have to interlock across a finite window.
+
+**Graphical Assignment** is the short-horizon dispatch tool. Where scheduling decides *when*, assignment decides *who and exactly when within the day or week*. You assign work orders and tasks to specific labor or crews against their available time slots, dragging work onto individual timelines. It honors **calendars, shifts, and existing assignments**, and it **highlights conflicts and overloads** the moment you create them. This is the supervisor's and dispatcher's tool for daily and weekly assignment.
+
+<aside>
+💡 **Key insight:** Scheduling answers *"when does this work happen?"* across a long horizon; assignment answers *"who does it, and in which slot?"* across the coming days. Confuse the two and you will either micro-manage an outage in the assignment tool or try to dispatch a single crew's Tuesday in a Gantt chart. Use the right horizon for the right question.
+</aside>
+
+```
+   HORIZON ──────────────────────────────────────────────────▶
+
+   ┌───────────────────────────┐
+   │   GRAPHICAL SCHEDULING     │   weeks → months
+   │   Gantt bars, dependencies │   outages, shutdowns,
+   │   resource leveling        │   capital projects
+   └───────────────────────────┘
+                 │  scheduled dates commit to work orders
+                 ▼
+   ┌───────────────────────────┐
+   │   GRAPHICAL ASSIGNMENT     │   today → this week
+   │   labor/crew time slots    │   daily/weekly dispatch
+   │   calendars, shifts        │   by supervisors
+   └───────────────────────────┘
+```
+
+It is worth being honest about optimization here: in the **core scheduler**, optimization is largely **manual and heuristic**. You filter, sort, group, and level resources by hand and by judgment. The schedule is only as good as the planner driving it. That limitation is precisely what the AI-driven Field Service Management was built to address — more on that below.
+
+---
+
+## 🧱 The Foundation Everything Stands On
+
+None of these tools mean anything without good underlying data. Every scheduling and assignment decision is made *against a model of your workforce*, and that model is built from a small set of foundational objects you configure once and reuse everywhere:
+
+- **Crafts** — the trade or skill type a piece of work requires (electrician, millwright, pipefitter). Work orders and job plan tasks call for crafts; labor records carry them.
+- **Qualifications / certifications** — the formal competencies a person holds, frequently with **expirations**. A certification that lapses next week should not be assigned next month's confined-space entry, and the scheduling tools can take that into account.
+- **Calendars and shifts** — when people are actually available. Calendars define working days and non-working days; shifts define the hours within them. Availability is meaningless without this layer.
+- **Crews and crew types** — a **crew** is a named group you dispatch as a unit; a **crew type** defines its *standard composition* of crafts, skills, and tools. Crew types let you say "a standard line crew is two linemen, one apprentice, and a bucket truck" once, and then build crews to match.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│   SCHEDULING FOUNDATION                                   │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│   Crafts ──┐                                             │
+│            ├─▶ Labor ──┐                                 │
+│   Quals ───┘           ├─▶ Crews ◀── Crew Types          │
+│   (+ expirations)      │   (named unit)  (std. comp.)    │
+│                        │                                 │
+│   Calendars + Shifts ──┘  (when each is available)       │
+│                                                          │
+│        ▼ all of this feeds ▼                             │
+│   Graphical Scheduling · Graphical Assignment · FSM      │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+<aside>
+⚠️ **Watch out:** The scheduling tools are only as smart as this foundation. If qualifications are not maintained, certifications have no expiration dates, calendars are stale, or crew types do not reflect reality, then every schedule and every AI assignment inherits those errors. Get the foundation clean *before* you judge the scheduling tools — most "the scheduler is wrong" complaints trace back to data, not the tool.
+</aside>
+
+---
+
+## 🤖 Field Service Management — AI Enters Scheduling
+
+The classic tools are powerful, but their optimization is manual. The **Manage 9.0** release introduced a genuinely new solution to change that: **Maximo Field Service Management (FSM)**.
+
+FSM applies **AI-based scheduling and dispatching algorithms developed by IBM Research**. Instead of a planner hand-leveling a Gantt chart, the algorithms consider **technician location, availability, skills, and craft** together and produce an optimized plan. IBM's reported figures for the offering: it can handle roughly **ten times more work orders** than manual approaches, and improve **job completion time by more than ten percent**. The point is scale and speed — service organizations with large mobile workforces and high work-order volume are exactly where manual scheduling breaks down, and that is the gap FSM targets.
+
+FSM is delivered through **two dashboards**, mirroring the scheduling-versus-assignment split you already understand:
+
+| | **Scheduling Dashboard** | **Dispatching Dashboard** |
+|---|---|---|
+| Horizon | Plan the schedule | Real-time dispatch |
+| Considers | Qualifications | Live field state |
+| Signature capability (9.0) | Milestone support for job plans and tasks | Emergency Intelligent Assignment Workflow |
+| Real-time input | — | Technician position via Maximo Mobile |
+
+- The **Scheduling Dashboard** builds optimized schedules with **qualification consideration** — it will not schedule someone for work they are not qualified to do — and **milestone support** for job plans and tasks, so multi-step work with intermediate checkpoints schedules coherently.
+- The **Dispatching Dashboard** handles the live picture. Its standout is the **Emergency Intelligent Assignment Workflow** — when an emergency lands, the system intelligently slots it against the available workforce rather than forcing a dispatcher to scramble. Crucially, it consumes **real-time technician position from Maximo Mobile (Part 6)**, so dispatch decisions are made against where crews actually are, not where the schedule assumed they would be.
+
+<aside>
+💡 **Key insight:** FSM is not a replacement for Graphical Scheduling and Graphical Assignment — it is the AI-optimized path for high-volume field service. The classic Gantt scheduler still shines for outages and capital projects where a human planner is sequencing interlocking work in a fixed window. Choose FSM when volume and real-time field conditions overwhelm manual scheduling.
+</aside>
+
+It helps to be precise about what "AI scheduling" means here, because the term is overloaded. FSM is not generating text or summarizing tickets; it is running optimization. Given a pool of open work orders, a workforce with known crafts and qualifications, and a set of constraints — who is available, who is where, who can legally do what — the IBM Research algorithms search for an assignment of work to people and time that satisfies the constraints and minimizes wasted travel and idle time. A human planner can do this for a handful of jobs and a few crews. The combinatorics explode well before you reach the scale a large service organization runs daily, which is exactly why the manual heuristics in the core scheduler hit a ceiling and why an optimizer earns its keep at volume.
+
+Two related usability touches also arrived in the **9.0** stream on the graphical side: the **Graphical Work Week / Graphical Resource View** let users **choose the start day of the week**, so the resource view matches how a given operation actually runs its week — a small change that removes real friction for teams whose operational week does not start on a Monday.
+
+---
+
+## 🚦 What Manage 9.1 Added
+
+Manage 9.0 introduced FSM; **Manage 9.1** matured it and tightened the link to the field. The additions are practical and build directly on the 9.0 dashboards:
+
+- **Planning Dashboard** — a new dashboard that works against **Graphical Scheduling projects**, surfacing **KPIs** with **drill-down**. This gives planners a measurement layer over their scheduling projects rather than only the working Gantt view.
+- **Drag-and-drop on the Scheduling Dashboard** — the FSM Scheduling Dashboard became directly manipulable, so planners can override or fine-tune the optimized plan by hand without leaving it.
+- **A new Dispatching Status** — alongside the existing **Assignment Status**, 9.1 added a separate **Dispatching Status** with granular states: **TRAVELLING, ONSITE, STARTED, RESTORED**. This is the real-time pulse of a job in the field — you can see not just that work is assigned, but that the technician is en route, has arrived, has begun, and has restored service.
+- **Qualifications extended to crews** — qualification logic, previously applied to individual labor, now applies to **crews** as well, so crew-level dispatch respects crew competencies.
+
+```
+   ASSIGNMENT STATUS            DISPATCHING STATUS (9.1, granular)
+   ─────────────────            ─────────────────────────────────
+   assigned / accepted   ──▶    TRAVELLING ─▶ ONSITE ─▶ STARTED ─▶ RESTORED
+   (the plan)                   (the live field reality, via Mobile)
+```
+
+<aside>
+💡 **Key insight:** The new Dispatching Status is where scheduling stops being a plan and becomes a live operational feed. TRAVELLING → ONSITE → STARTED → RESTORED is the field reality flowing back — and it only works because Maximo Mobile (Part 6) is reporting position and status in real time. Scheduling without that feedback is open-loop; with it, dispatchers manage what is actually happening.
+</aside>
+
+---
+
+## 🔁 How It All Connects Back to Manage
+
+The scheduling stack is not an island — it consumes from and commits to the rest of Manage:
+
+- **From work management (Part 3):** it schedules the **work orders and PMs** you plan there, and it reads the **Qualifications** field and the **milestone tasks** defined on job plans. The quality of your job plans directly shapes the quality of your schedules.
+- **From Maximo Mobile (Part 6):** **real-time technician position and status** feed the Dispatching Dashboard and the granular Dispatching Status. Without the mobile layer, dispatch is planning against assumptions.
+- **Back to the work orders:** the **scheduled dates and assignments commit back to the work orders**. The schedule is not a separate artifact — it writes its decisions onto the same records technicians execute, so the plan and the work stay in sync.
+
+This is the through-line of the whole series: capabilities are valuable in Manage precisely because their output lands on the shared work objects. Scheduling decides timing and ownership; those decisions live on the work order; the mobile worker executes against them; and status flows back to close the loop.
+
+---
+
+## 🎯 The Commandments of Maximo Scheduling
+
+1. **Thou shalt match the tool to the horizon** — Graphical Scheduling for outages and projects, Graphical Assignment for daily and weekly dispatch.
+2. **Thou shalt build the foundation first** — crafts, qualifications, calendars, shifts, crews, and crew types before any schedule is trusted.
+3. **Thou shalt keep qualifications and certification expirations current** — stale competencies poison every assignment.
+4. **Thou shalt reach for FSM when volume and real-time conditions overwhelm manual scheduling** — not as a blanket replacement for the Gantt scheduler.
+5. **Thou shalt feed dispatch with real mobile position** — the Dispatching Status is only as honest as Maximo Mobile makes it.
+6. **Thou shalt let scheduled dates and assignments commit back to the work orders** — the plan lives in the work, not beside it.
+
+---
+
+## Key Takeaways
+
+- **Graphical Scheduling and Graphical Assignment answer different questions** — Gantt-based long-horizon planning for outages and projects versus short-horizon dispatch of labor and crews to time slots.
+- **Everything stands on the foundation** — crafts, qualifications (with expirations), calendars, shifts, crews, and crew types; clean that data before judging any schedule.
+- **Core scheduler optimization is manual and heuristic** — you filter, sort, group, and level by hand, which is exactly the limit Field Service Management addresses.
+- **Field Service Management, new in Manage 9.0**, applies IBM Research AI that considers location, availability, skills, and craft — reportedly handling ~10x more work orders and improving completion time by >10% — through a Scheduling Dashboard and a Dispatching Dashboard.
+- **Manage 9.1 matured it** — a Planning Dashboard over Graphical Scheduling projects, drag-and-drop on the Scheduling Dashboard, a granular Dispatching Status (TRAVELLING, ONSITE, STARTED, RESTORED) alongside Assignment Status, and Qualifications extended to crews.
+- **The stack closes the loop with Manage** — consuming job plans, qualifications, and milestones from Part 3, real-time position from Maximo Mobile (Part 6), and committing scheduled dates and assignments back to the work orders.
+
+---
+
+## References
+
+**IBM Official**
+- [What's new in Maximo Manage 9.0 — IBM Documentation](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=manage-in-90)
+- [Maximo Manage documentation home](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+
+**Community**
+- [New Features in MAS 9.0 and 9.1 — Maximo Secrets](https://maximosecrets.com/2025/07/06/new-features-in-mas-90-and-91/)
+- [MAS 9.0 New Features — Maximo Secrets](https://maximosecrets.com/2024/06/26/mas-9-0-new-features/)
+- [What's new in Maximo Manage v9 — Pragma Edge](https://pragmaedge.com/whats-new-in-maximo-manage-v9/)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 6 — Maximo Mobile for Manage](/blog/mas-manage-maximo-mobile) |
+| **Next:** | [Part 8 — Asset and Location Management](/blog/mas-manage-asset-location-management) |
+
+---
+
+*Published by TheMaximoGuys | June 2026*
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS — from architecture and migration planning to the day-to-day work of configuring, extending, and running Maximo Manage. This series is the guide we wish we'd had.

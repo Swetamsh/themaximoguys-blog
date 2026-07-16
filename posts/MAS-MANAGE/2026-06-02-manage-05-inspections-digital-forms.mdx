@@ -1,0 +1,282 @@
+---
+title: "Inspections and Digital Forms in Maximo Manage 9: The Inspection Form Builder, Scoring, and Follow-Up Work"
+description: "A practitioner's deep dive into Inspections in Maximo Manage 9 — how the Inspection Forms Work Center became a Maximo Application Framework app, the refreshed Form Builder, question types and conditional logic, scoring and pass/fail, follow-up work orders and meter updates, form versioning, and offline mobile execution."
+date: "2026-06-02"
+slug: "mas-manage-inspections-digital-forms"
+tags: ["Maximo", "MAS Manage", "MAS 9", "Inspections", "Inspection Forms", "Digital Forms", "Maximo Mobile", "Quality"]
+draft: false
+tier: "developer"
+author: "Swetansh Kumar"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "../MAS-FEATURES/images/mas-features-mro-optimization-hse.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What happened to the Inspection Forms Work Center in Maximo Manage 9?"
+    answer: "In Manage 9.0 the Inspection Forms Work Center was replaced with a new Maximo Application Framework (MAF, also called Graphite) role-based application called Inspection Forms, located in the Planning module. IBM's wording is that the Work Center 'is replaced with a new Maximo Application Framework application that has the same functionality.' Because it runs on the same framework as Maximo Mobile, you build a form once and it runs on both desktop and mobile."
+  - question: "What question types do Maximo inspection forms support?"
+    answer: "Inspection forms support numeric questions (with upper and lower limits), text or free-text, single choice, multi-select, and date-time. You can add conditional visibility so a specific or failed answer reveals follow-up questions, mark questions mandatory, and apply scoring that produces a pass/fail result or a condition score."
+  - question: "Can a Maximo inspection automatically create a work order when an asset fails?"
+    answer: "Yes. You can configure follow-up actions that fire when an answer crosses a threshold or fails — creating a corrective work order, changing an asset status, or sending a notification. When a mobile inspection syncs, the server creates the inspection result records and runs these configured on-failure actions automatically."
+  - question: "Do Maximo inspections work offline on mobile?"
+    answer: "Yes. Forms are executed in the Maximo Mobile Inspections app and work offline. On sync, the server creates the inspection result records and runs the configured on-failure actions. Maximo Mobile 9.0 migrated inspection forms from the old Work Center to the Graphite platform with no loss of functionality, plus better performance and attachment support on questions."
+keyTakeaways:
+  - "The Inspection Forms Work Center became a Maximo Application Framework app in Manage 9.0 — same functionality, build once, run on desktop and mobile"
+  - "Forms support numeric (with limits), text, single choice, multi-select, and date-time questions, plus conditional logic, mandatory rules, and scoring"
+  - "Inspection results link to the work order, asset, and location, and numeric answers can map to asset or location meters"
+  - "Failed answers can auto-create corrective work orders, change asset status, or send notifications"
+  - "Form versioning with effective dates keeps historical results tied to the exact form version used — an audit trail for regulators"
+series:
+  name: "MAS MANAGE"
+  part: 5
+  total: 11
+tldr: "Inspections in Maximo Manage 9 moved off the old Inspection Forms Work Center and onto the Maximo Application Framework — the same Graphite platform as Maximo Mobile — so you author a form once and run it on desktop and offline mobile. The refreshed Inspection Form Builder gives you drag-and-drop authoring, rich question types, conditional logic, scoring with pass/fail, follow-up actions that create work orders or change asset status on failure, meter mapping, and versioning with effective dates for a clean audit trail. In 9.1 inspection forms reached the Incidents and Audit and Surveys applications."
+seoTitle: "Maximo Inspections & Digital Forms | MAS Manage 9"
+seoDescription: "How Maximo Manage 9 inspections work: the Inspection Form Builder, question types, conditional logic, scoring, follow-up work orders, and offline mobile."
+targetQuestions:
+  - "What happened to the Inspection Forms Work Center in Maximo Manage 9?"
+  - "What question types do Maximo inspection forms support?"
+  - "How does inspection scoring and pass/fail work in Maximo?"
+  - "Can a Maximo inspection create a work order automatically on failure?"
+  - "Do Maximo inspections work offline on Maximo Mobile?"
+semanticKeywords:
+  - "Maximo inspection forms"
+  - "Inspection Form Builder"
+  - "Maximo Application Framework Graphite"
+  - "digital inspection forms"
+  - "conditional logic inspection"
+  - "inspection scoring pass fail"
+  - "follow-up work order"
+  - "inspection result records"
+  - "form versioning effective dates"
+  - "Maximo Mobile Inspections offline"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 3 (work management — work orders, job plans, meters) is the foundation follow-up actions write into"
+  - "Part 4 (reliability strategies) — inspection data validates and refines failure modes"
+  - "Familiarity with asset and location records"
+speakableSections:
+  - "From Clipboards to Configurable Forms"
+  - "Building a Form — Questions, Logic, and Scoring"
+  - "When an Answer Fails — Follow-Up Actions"
+relatedSlugs:
+  - "mas-manage-series-index"
+  - "mas-manage-work-centers-to-rba"
+  - "mas-manage-maximo-mobile"
+  - "mas-manage-reliability-strategies"
+---
+
+# Inspections and Digital Forms in Maximo Manage 9: The Inspection Form Builder, Scoring, and Follow-Up Work
+
+> **Part 5 of the MAS MANAGE series.** This is where condition data stops living on a clipboard and starts driving work — automatically.
+
+<aside>
+🎯 **Who this is for:** Maximo administrators, reliability and quality engineers, and mobile rollout teams who build and run inspections — and who need to know exactly what changed when the Inspection Forms Work Center became a Maximo Application Framework app in Manage 9.
+</aside>
+
+**Estimated read time:** 20 minutes
+
+---
+
+## 🔥 From Clipboards to Configurable Forms
+
+Walk most plant floors and you will still find the inspection clipboard — a laminated checklist, a pen on a string, and a stack of paper that someone keys into a system days later, if at all. The reading was real; the action it should have triggered was lost somewhere between the asset and the data-entry desk.
+
+Inspections in Maximo Manage is the capability built to delete that gap. A technician answers questions on a phone, standing at the asset, possibly with no signal. The moment they sync, the readings become structured records, the failing answers spawn the corrective work, and the meters update — all without anyone re-typing anything.
+
+The shift is from this:
+
+> *Old world:* "We inspected it Tuesday. The form's in the truck. I think one valve was marginal — I'll write a WO when I get back to the office."
+
+to this:
+
+> *MAS world:* "Reading was 92 PSI, below the 85–120 band. The form failed that question, the server created the corrective work order, set the asset to a degraded status, and pushed a notification — before the tech left the asset."
+
+<aside>
+💡 **Key insight:** The point of digital inspections is not a prettier checklist. It is collapsing the distance between *observing a condition* and *acting on it* to zero — the form itself triggers the work.
+</aside>
+
+---
+
+## 🧩 The Big Change: Work Center to Application Framework
+
+If you ran inspections on older Maximo, the most important thing to know about Manage 9 is structural. In **Manage 9.0**, the **Inspection Forms Work Center was replaced** with a new **Maximo Application Framework (MAF, also called Graphite)** role-based application named **Inspection Forms**, now living in the **Planning module**.
+
+IBM's wording is deliberately reassuring:
+
+> *"The Inspection Forms Work Center is replaced with a new Maximo Application Framework application that has the same functionality."*
+
+Same functionality — different, modern framework. And the framework choice is the payoff. Inspection Forms now runs on the **same Maximo Application Framework as Maximo Mobile**. That means **build once, run anywhere**: the form you author on the desktop is the form your technician executes on a phone. No separate mobile design step, no drift between the desktop definition and the mobile experience.
+
+```
+   OLD (pre-9)                          NEW (Manage 9.0+)
+┌────────────────────────┐          ┌────────────────────────────┐
+│ Inspection Forms       │          │ Inspection Forms (MAF /     │
+│ Work Center            │  ──────▶ │ Graphite) — Planning module │
+│ (legacy UI framework)  │          │ same framework as Mobile    │
+└────────────────────────┘          └────────────────────────────┘
+                                       build once → desktop + mobile
+```
+
+On the mobile side, **Maximo Mobile 9.0 migrated inspection forms** from the old Work Center to the **Graphite platform with no loss of functionality** — and added **better performance** plus **attachment support on individual questions**, so a technician can attach a photo of the corroded fitting right on the question that flagged it.
+
+<aside>
+⚠️ **Watch out:** "Same functionality" means feature parity, not a zero-effort cutover. Re-test your existing forms on the new application, confirm your conditional logic and on-failure actions behave as expected, and validate the mobile experience before you retire the old Work Center habits. Always confirm specifics for your release against IBM documentation.
+</aside>
+
+---
+
+## 🛠️ Building a Form — Questions, Logic, and Scoring
+
+The authoring surface is the **Inspection Form Builder**, refreshed in 9.0 with **drag-and-drop authoring** and improved hover behavior. You assemble a form from questions, arrange them, and layer in the logic — no code required.
+
+### Question (answer) types
+
+| Type | Use it for | Notable behavior |
+|---|---|---|
+| **Numeric** | Readings — pressure, temperature, thickness | Supports **upper and lower limits**; out-of-band can fail the question |
+| **Text / free-text** | Notes, observations, serial numbers | Captures qualitative detail |
+| **Single choice** | Pass/Fail, Good/Marginal/Bad | One option from a list |
+| **Multi-select** | "Which defects are present?" | Several options at once |
+| **Date-time** | When something was observed or last serviced | Timestamped values |
+
+### Conditional logic
+
+A form is rarely a flat list. **Conditional visibility** lets a specific or **failed answer reveal follow-up questions** — answer "Leak: Yes" and the form unfolds severity, location, and photo questions that stay hidden otherwise. This keeps the routine inspection short while still capturing depth exactly when a problem appears.
+
+You can also mark questions **mandatory**, so the form cannot be submitted until the critical readings are in.
+
+### Scoring
+
+Layer **scoring** on the answers and the form produces a verdict, not just data. Scoring can yield a **pass/fail** outcome or a **condition score** — a numeric or graded summary of the asset's state. That score is what downstream logic and reliability work act on, turning a set of individual readings into a single, decision-ready signal.
+
+```
+   Question answers ──▶ Scoring rules ──▶ ┌─ PASS / FAIL
+                                          └─ Condition score (e.g. 0–100)
+                                                   │
+                                                   ▼
+                                          drives follow-up actions
+                                          + feeds reliability
+```
+
+<aside>
+💡 **Key insight:** Numeric limits, conditional questions, and scoring are what separate a digital form from a digital *photocopy* of a paper checklist. They let the form make a judgment — pass, fail, or a graded condition — at the point of capture.
+</aside>
+
+---
+
+## 📋 What an Inspection Produces — Results, Links, and Meters
+
+When an inspection is completed, Manage creates **inspection result records**. These are not orphaned readings — they are **linked to the work order, the asset, and the location** the inspection was performed against. That linkage is what makes the data useful later: you can see every inspection ever run on a given asset, in context, alongside the work it generated.
+
+Two integration points matter especially:
+
+- **Meter mapping.** A **numeric answer can map to an asset or location meter**. The 92 PSI a technician records does not just sit in the inspection result — it can update the asset's pressure meter, so condition-based PMs and trends see it immediately. (Meters and condition monitoring get their own treatment later in the series.)
+- **Work and reliability linkage.** Because results tie to the work order and asset, the inspection becomes evidence — both for the work that was done and for the **failure-mode assumptions in your reliability strategy (Part 4)**. Inspection data validates or revises those assumptions and feeds **condition-based maintenance**.
+
+---
+
+## 🔁 When an Answer Fails — Follow-Up Actions
+
+This is the feature that earns its keep. You can configure **follow-up actions that fire when an answer crosses a threshold or fails**:
+
+- **Create a corrective work order** — the failing reading becomes scheduled, planned work automatically.
+- **Change an asset status** — flag the asset as degraded, down, or needing attention.
+- **Send notifications** — alert the right person or group the moment the condition is detected.
+
+The trigger is the answer itself: when a numeric value falls outside its limits, or a choice answer hits a configured fail condition, the action runs. No human has to remember to raise the work order — the form does it.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│   THE INSPECTION-TO-WORK LOOP                                 │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│   Technician answers ──▶ Answer fails / crosses threshold    │
+│       (desktop or             │                              │
+│        offline mobile)        ▼                              │
+│                       ┌─ Create corrective Work Order        │
+│                       ├─ Change Asset status                 │
+│                       ├─ Send notification                   │
+│                       └─ Update Asset/Location meter         │
+│                               │                              │
+│                               ▼                              │
+│                    feeds Reliability Strategies (Part 4)     │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### How this plays out on mobile
+
+Here is the elegant part. A technician runs the form in the **Maximo Mobile Inspections app, offline**. They never see a spinner waiting for the server. When the device **syncs**, the **server creates the inspection result records and runs the configured on-failure actions** — the work orders, status changes, and notifications all fire server-side at sync time. The field experience is fast and offline; the automation is reliable and centralized.
+
+---
+
+## 🗂️ Versioning and the Audit Trail
+
+Inspection forms change over time — a question gets reworded, a limit gets tightened, a new regulatory item gets added. Maximo handles this with **form versioning using effective dates**. When you revise a form, you create a new version effective from a given date; the older version is preserved.
+
+Crucially, **historical results stay tied to the exact form version used** when the inspection was performed. An inspection run last March reflects March's form, not today's. For regulated industries this is not a nicety — it is the difference between a defensible audit trail and a guess. When an auditor asks "what exactly was inspected, and against which criteria, on this date?", versioning gives you the precise answer.
+
+| Concern | How versioning answers it |
+|---|---|
+| Forms evolve | New version with an **effective date** |
+| Old results must stay meaningful | Results **bound to the version used** at the time |
+| Regulatory traceability | A precise, dated record of criteria — an **audit trail** |
+
+---
+
+## 🌐 Broader Reach in 9.1
+
+The Inspection Forms application did not stay confined to standalone inspections. In **Manage 9.1**, inspection forms were **added to the Incidents application and the Audit and Surveys application**. That extends the same configurable, scored, conditional forms into incident capture and into audit and survey workflows — so the form-building investment you make for inspections pays off across more of Manage, not just one app.
+
+---
+
+## 🎯 The Commandments of Maximo Inspections
+
+1. **Thou shalt build once on the Application Framework** — desktop and mobile from a single form.
+2. **Thou shalt use numeric limits and conditional logic** — let the form make judgments, not just collect ink.
+3. **Thou shalt score** — produce a pass/fail or condition score, not a pile of readings.
+4. **Thou shalt configure follow-up actions** — let failing answers create the work order, not the technician's memory.
+5. **Thou shalt map numeric answers to meters** — feed condition-based maintenance automatically.
+6. **Thou shalt version with effective dates** — keep historical results tied to the form they were run against.
+7. **Thou shalt design for offline** — the field is fast, the server does the automation at sync.
+
+---
+
+## Key Takeaways
+
+- **The Inspection Forms Work Center became a Maximo Application Framework (Graphite) app in Manage 9.0** — IBM states it has "the same functionality," and because it shares Maximo Mobile's framework you build once and run on desktop and mobile.
+- **The refreshed Inspection Form Builder** offers drag-and-drop authoring with numeric (limits), text, single-choice, multi-select, and date-time questions, plus conditional visibility, mandatory rules, and scoring (pass/fail or condition score).
+- **Inspection result records link to the work order, asset, and location**, and numeric answers can map to asset or location meters.
+- **Failed answers can auto-trigger follow-up actions** — create a corrective work order, change an asset status, or send notifications.
+- **Form versioning with effective dates** keeps historical results bound to the version used, giving a defensible audit trail for regulators.
+- **Mobile inspections run offline**; on sync the server creates result records and runs on-failure actions. **9.1** extended inspection forms to the Incidents and Audit and Surveys applications.
+
+---
+
+## References
+
+**IBM Official**
+- [What's new in Maximo Manage 9.0 — IBM Documentation](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=manage-in-90)
+- [Maximo Manage documentation home](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+
+**Community**
+- [New Features in MAS 9.0 and 9.1 — Maximo Secrets](https://maximosecrets.com/2025/07/06/new-features-in-mas-90-and-91/)
+- [MAS 9.0 New Features — Maximo Secrets](https://maximosecrets.com/2024/06/26/mas-9-0-new-features/)
+- [What's new in Maximo Manage v9 — Pragma Edge](https://pragmaedge.com/whats-new-in-maximo-manage-v9/)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 4 — Reliability Strategies](/blog/mas-manage-reliability-strategies) |
+| **Next:** | [Part 6 — Maximo Mobile for Manage](/blog/mas-manage-maximo-mobile) |
+
+---
+
+*Published by TheMaximoGuys | June 2026*
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS — from architecture and migration planning to the day-to-day work of configuring, extending, and running Maximo Manage. This series is the guide we wish we'd had.

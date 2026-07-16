@@ -1,0 +1,276 @@
+---
+title: "MAS 9 Java Extensions Series: The Complete Guide to PLUS Prefixes, MBO Inheritance, and Add-On Architecture"
+description: "A developer's deep dive into how IBM Maximo add-ons and industry solutions extend the core through Java — PLUS prefixes, MBO inheritance chains, product.xml, bytecode injection, the compatibility matrix, the MAS 9 Customization Archive, and the Java 17 shift."
+date: "2026-07-15"
+slug: "mas-java-extensions-series-index"
+tags: ["Maximo", "MAS 9", "Java Extensions", "MBO", "PLUS Prefix", "Customization Archive", "Java 17", "EAM"]
+draft: false
+tier: "developer"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-java-extensions-00-series-index.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What is a PLUS prefix in Maximo?"
+    answer: "A PLUS prefix is the letter code IBM assigns to each Maximo add-on or industry solution so its Java classes never collide with core Maximo or with each other. Transportation is PLUST, HSE/Oil & Gas is PLUSG, Spatial is PLUSS, Nuclear is PLUSN, and so on. Every class the add-on ships lives in a package like psdi.plust.app.asset and is named PlusTAsset, PlusTAssetSet, and so on. Part 2 maps the complete registry."
+  - question: "Do Java extensions still work the same way in MAS 9?"
+    answer: "The extension model itself is unchanged: MBOs, MBO Sets, Remote interfaces, product.xml, and PLUS inheritance chains all work exactly as they did in Maximo 7.6. What changed is packaging and delivery — custom Java is now built into a Customization Archive and baked into a container image on Red Hat OpenShift rather than dropped into a WebSphere file system — and the JVM moved to Java 17. Parts 5 and 6 cover both shifts."
+  - question: "What is the MBO inheritance chain?"
+    answer: "When more than one product extends the same Maximo object, Maximo stitches their classes into a single inheritance chain at build time. If Transportation, HSE, and Spatial all extend WorkOrder, you get PlusSWOSet → PlusGWOSet → PlusTWOSet → WOSet → MboSet. The class registered in MAXOBJECT.CLASSNAME is always the top of the chain, and a call to super.save() propagates down through every layer. Part 3 explains how this chain is resolved."
+  - question: "Which parts should I read first?"
+    answer: "Start with Part 1 (the fundamentals of how an extension is built) and Part 2 (the PLUS registry, so you can identify what is installed). After that, follow your need: troubleshooters and architects go to Part 3 (resolution and product.xml) and Part 4 (compatibility), while upgrade and DevOps teams go to Part 5 (the Customization Archive and MAS 9 deployment) and Part 6 (Java 17)."
+keyTakeaways:
+  - "Every Maximo add-on extends the core through a standardized Java model using a unique PLUS letter prefix"
+  - "When multiple products extend one object, Maximo builds a single MBO inheritance chain via bytecode injection"
+  - "product.xml is the control file that declares every service, MBO, bean, and field an extension registers"
+  - "The extension model is unchanged in MAS 9 — what changed is packaging (Customization Archive) and the JVM (Java 17)"
+  - "Understanding the chain is the difference between confident customization and upgrade-day surprises"
+series:
+  name: "MAS JAVA EXTENSIONS"
+  part: 0
+  total: 6
+tldr: "A six-part developer deep dive into the Java architecture beneath every Maximo add-on: PLUS prefixes, the four-file MBO pattern, the PLUS registry, MBO inheritance chains, product.xml, bytecode injection, database footprint, the compatibility matrix, the MAS 9 Customization Archive, and the Java 17 shift. Written for developers, architects, and upgrade teams who need to reason about extension behavior instead of guessing at it."
+seoTitle: "MAS 9 Java Extensions | PLUS Prefixes & MBO Inheritance"
+seoDescription: "A 6-part guide to Maximo Java extensions on MAS 9: PLUS prefixes, MBO inheritance chains, product.xml, bytecode injection, Customization Archive, Java 17."
+targetQuestions:
+  - "How do Maximo Java extensions and PLUS prefixes work?"
+  - "What is the MBO inheritance chain in Maximo?"
+  - "How do custom Java extensions work in MAS 9?"
+  - "What is the Maximo Customization Archive?"
+  - "How does Java 17 affect Maximo customizations?"
+semanticKeywords:
+  - "Maximo PLUS prefix"
+  - "MBO inheritance chain"
+  - "psdi.mbo.MboSet"
+  - "Maximo product.xml"
+  - "Maximo Customization Archive"
+  - "MAXOBJECT CLASSNAME"
+  - "Maximo Java 17"
+  - "Maximo add-on architecture"
+  - "MAS 9 customization"
+  - "Maximo bytecode injection"
+proficiencyLevel: "advanced"
+dependencies:
+  - "Working knowledge of Maximo Business Objects (MBOs)"
+  - "Familiarity with Java class inheritance"
+  - "Basic understanding of Maximo customization and Database Configuration"
+speakableSections:
+  - "Why This Series Exists"
+  - "The Series at a Glance"
+  - "Recommended Reading Paths"
+clusterSlugs:
+  - "mas-java-extensions-fundamentals"
+  - "mas-java-extensions-plus-registry-inheritance"
+  - "mas-java-extensions-productxml-resolution"
+  - "mas-java-extensions-database-addons-compatibility"
+  - "mas-java-extensions-mas9-deployment-customization"
+  - "mas-java-extensions-java17"
+relatedSlugs:
+  - "mas-manage-configuration-administration"
+  - "from-mbos-to-microservices"
+  - "stop-customizing-old-way"
+  - "mas-integration-series-index"
+---
+
+# MAS 9 Java Extensions Series: The Complete Guide to PLUS Prefixes, MBO Inheritance, and Add-On Architecture
+
+> **Who this is for:** Maximo developers, technical architects, customization leads, and upgrade teams who need to understand *exactly* how add-ons, industry solutions, and custom code layer onto core Maximo — and what happens to all of it when you move to MAS 9.
+
+**Estimated read time for this index:** 8 minutes | **Total series read time: ~2.5 hours across 6 parts**
+
+---
+
+## Why This Series Exists
+
+You have written Maximo customizations for years. You know that a class extends `Mbo`, that a set extends `MboSet`, and that `MAXOBJECT.CLASSNAME` points at the set class Maximo instantiates. You have probably opened a `product.xml` and half-understood it. And at some point you have almost certainly asked the question every Maximo developer eventually asks:
+
+*"Why is my custom `WOSet` not the class that's actually running?"*
+
+The answer lives in a piece of Maximo that is almost never documented in one place: the **Java extension architecture**. Every add-on — Transportation, HSE, Spatial, ACM, Calibration, Nuclear, Aviation, Utilities — extends the core through the same standardized mechanism, using a unique **PLUS letter prefix** (PLUST, PLUSG, PLUSS, PLUSA, PLUSC, PLUSN…). When two or more of them extend the same object, Maximo weaves their classes into a **single inheritance chain** at build time. Your custom class sits somewhere in that chain — and if you do not know where, you are customizing blind.
+
+Then MAS 9 arrived, and two things changed underneath all of it: custom Java is now delivered as a **Customization Archive** baked into a container image instead of dropped onto a WebSphere file system, and the whole suite runs on **Java 17**. Neither changes the *model* — but both change how you build, package, and troubleshoot it.
+
+**This series is the map.** It is written for developers, by developers — no marketing, no hand-waving. We start from the four Java files that make up a single MBO and work all the way up to a fully loaded suite with six industry solutions stacked on one object, then out to how you package your own extensions in MAS 9. Every claim is grounded in the actual class hierarchy and IBM's documented mechanics.
+
+---
+
+## The Series at a Glance
+
+| Part | Title | Focus Area | Read Time |
+|------|-------|-----------|-----------|
+| 1 | How Maximo Java Extensions Actually Work | The four-file MBO pattern, how add-ons layer on, field validation classes | 20 min |
+| 2 | The PLUS Registry and the MBO Inheritance Chain | Complete PLUS prefix directory, the layer model, how chains are built | 24 min |
+| 3 | product.xml and Extension Chain Resolution | The control file, service/bean/field tags, bytecode injection, load order | 24 min |
+| 4 | Database Footprint, Add-Ons, and the Compatibility Matrix | MAXOBJECT counts, add-on technical relationships, what can run together | 22 min |
+| 5 | Deploying and Customizing Extensions in MAS 9 | Components and activation, the Customization Archive, upgrade-safe packaging | 22 min |
+| 6 | Java 17 and the Future of Maximo Extensions | The JVM shift, what breaks, what to change, and where extensions are heading | 18 min |
+
+---
+
+## Part-by-Part Guide
+
+### Part 1: How Maximo Java Extensions Actually Work
+
+**[Read Part 1 — How Maximo Java Extensions Actually Work](/blog/mas-java-extensions-fundamentals)**
+
+**Read time:** 20 minutes
+
+The foundation. Before any add-on or chain makes sense, you need a precise mental model of how a *single* extension is built. This post covers the four-file MBO pattern, how a PLUS extension layers on top of a core object, and how field validation classes are extended and declared.
+
+**You will learn:**
+- The four Java files behind every MBO — class, set, and the two Remote interfaces
+- How `MAXOBJECT.CLASSNAME` links a Maximo object to its MBO Set class
+- The exact rules a PLUS extension follows to extend a core object (with real class signatures)
+- How add-ons extend field validation classes and declare them in `product.xml`
+- Why this uniform pattern is what makes stacking add-ons possible at all
+
+---
+
+### Part 2: The PLUS Registry and the MBO Inheritance Chain
+
+**[Read Part 2 — The PLUS Registry and the MBO Inheritance Chain](/blog/mas-java-extensions-plus-registry-inheritance)**
+
+**Read time:** 24 minutes
+
+The map of everything installed. This post is the reference you will keep open: the complete PLUS prefix directory (what every letter means, its package root, and its MAS 9 status), the five-layer extension hierarchy, and how Maximo assembles multiple extensions into one chain.
+
+**You will learn:**
+- The complete PLUS prefix directory — PLUSA through PLUSV, TLOAM, and custom
+- Which prefixes are included capabilities, which are paid add-ons, and which are legacy
+- The five-layer model: framework → core → TLOAM → add-ons → industry solutions → custom
+- How the inheritance chain is ordered and why the top of the chain is what runs
+- A functional map of which core objects each add-on extends and what it creates
+
+---
+
+### Part 3: product.xml and Extension Chain Resolution
+
+**[Read Part 3 — product.xml and Extension Chain Resolution](/blog/mas-java-extensions-productxml-resolution)**
+
+**Read time:** 24 minutes
+
+Where the chain is actually declared and built. `product.xml` is the control file that tells Maximo which services, MBOs, beans, and fields an extension registers — and the build process turns those declarations into the running inheritance chain through bytecode injection. This is the post that finally makes `product.xml` legible.
+
+**You will learn:**
+- The anatomy of `product.xml`: `<service>`, `<mbo>`, `<bean>`, and `<field>` declarations
+- How extension load order is determined and why alphabetical prefix order matters
+- What bytecode injection does at build time and how the chain is stitched together
+- How the resolved chain ends up in `MAXOBJECT.CLASSNAME`
+- How to read a chain in a live system so you can predict `super` behavior
+
+---
+
+### Part 4: Database Footprint, Add-Ons, and the Compatibility Matrix
+
+**[Read Part 4 — Database Footprint, Add-Ons, and the Compatibility Matrix](/blog/mas-java-extensions-database-addons-compatibility)**
+
+**Read time:** 22 minutes
+
+What each extension actually adds — and what can safely run together. This post covers the database objects each extension introduces, the technical relationships between add-ons and industry solutions, and the compatibility matrix that tells you which combinations are supported.
+
+**You will learn:**
+- How to read MAXOBJECT counts to see an add-on's real database footprint
+- The technical relationships between add-ons and industry solutions (and why HSE ships inside Oil & Gas)
+- The compatibility matrix — which prefixes coexist cleanly and which conflict
+- How overlapping extensions on the same object are ordered and reconciled
+- How to audit a live environment for exactly which extensions are active
+
+---
+
+### Part 5: Deploying and Customizing Extensions in MAS 9
+
+**[Read Part 5 — Deploying and Customizing Extensions in MAS 9](/blog/mas-java-extensions-mas9-deployment-customization)**
+
+**Read time:** 22 minutes
+
+The part that changed. In 7.6 you dropped a JAR into a class folder and rebuilt an EAR. In MAS 9 you build a **Customization Archive** and bake it into a container image. This post covers MAS 9 component activation and how to package your own extensions so they survive upgrades.
+
+**You will learn:**
+- How add-ons are delivered and activated in the MAS Manage component model
+- What the Customization Archive is and how it replaces the old deploy-to-WebSphere flow
+- How to create a custom add-on product, initialize Java support, and build the archive
+- Why container-image packaging makes customizations reproducible and upgrade-safe
+- The new division of labor between MAS platform teams and Maximo customization teams
+
+---
+
+### Part 6: Java 17 and the Future of Maximo Extensions
+
+**[Read Part 6 — Java 17 and the Future of Maximo Extensions](/blog/mas-java-extensions-java17)**
+
+**Read time:** 18 minutes (Series Finale)
+
+The JVM under everything moved. MAS 9 runs on Java 17, and while the extension model is unchanged, the language and runtime around your code are not. This finale covers what that means for existing customizations and where Maximo's extension story is heading.
+
+**You will learn:**
+- What moving to Java 17 changes for existing Maximo extension code
+- The language and runtime differences most likely to surface in customizations
+- How to test and remediate custom Java for the Java 17 runtime
+- Why the extension model endured while everything around it modernized
+- Where customization is heading as MAS leans further into APIs and containers
+
+---
+
+## Recommended Reading Paths
+
+### Customization Developer
+
+**"I write and maintain the custom Java in our environment."**
+
+Read: **Part 1 → Part 3 → Part 5 → Part 6**
+
+Start with the extension fundamentals, learn how the chain resolves so your `super` calls behave, then focus on packaging in MAS 9 and the Java 17 impact on your existing code.
+
+### Technical Architect
+
+**"I decide which add-ons we run and how they fit together."**
+
+Read: **Part 2 → Part 4 → Part 5**
+
+Start with the full registry, move to the compatibility matrix and database footprint, and finish with the MAS 9 component and deployment model.
+
+### Upgrade / Troubleshooting Lead
+
+**"I keep the platform working across versions."**
+
+Read: **Part 2 → Part 3 → Part 4 → Part 6**
+
+Learn what is installed, how chains resolve, what coexists, and what the Java 17 runtime changes — the four things that explain most extension-related upgrade surprises.
+
+---
+
+## Key Themes Across the Series
+
+**The extension model is uniform — and that is the whole point.** Every add-on, from Calibration to Nuclear, follows the same four-file MBO pattern and the same PLUS convention. That uniformity is what lets six industry solutions stack on one object without chaos.
+
+**The chain is deterministic, not magical.** When multiple products extend an object, the resulting inheritance chain is built by a defined process from `product.xml` declarations. Once you can read that process, `super` behavior stops being a mystery.
+
+**MAS 9 changed the packaging, not the pattern.** MBOs, sets, Remote interfaces, and `product.xml` are exactly as they were. The Customization Archive and container-image deployment changed *how you ship* code, not *how you write* it.
+
+**Java 17 is the quiet dependency.** The JVM moved, and most customizations come along for the ride — but "most" is not "all," and knowing which language and runtime changes bite is part of a clean upgrade.
+
+**Reading the chain is a superpower.** Developers who can look at a live environment and name every layer on the WorkOrder object make better customization decisions and diagnose problems in minutes instead of days.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Customizing Maximo Manage — IBM Documentation](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery?topic=manage-customizing)
+- [Building a Manage customization archive — IBM Documentation](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery?topic=customizations-building-manage-customization-archive)
+- [Maximo Business Object (MBO) development — IBM Documentation](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | *You are at the beginning of the series* |
+| **Next:** | [Part 1 — How Maximo Java Extensions Actually Work](/blog/mas-java-extensions-fundamentals) |
+
+---
+
+*Published by TheMaximoGuys | July 2026*

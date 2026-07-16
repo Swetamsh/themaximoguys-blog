@@ -1,0 +1,257 @@
+---
+title: "Inside the Optimization Model: Constraints, Objectives & Parameters"
+description: "Optimizer's behavior is defined by three things — the constraints it must respect, the objectives you tell it to pursue, and the parameters that bound the solver. This part walks all nine scheduling constraints, the five weighted objective functions, crew scheduling and resource leveling, and the parameters that make or break a run."
+date: "2026-07-16"
+slug: "mas-optimizer-optimization-model"
+tags: ["Maximo", "MAS 9", "Optimizer", "Scheduling", "Constraints", "Resource Leveling", "Crew Scheduling", "EAM"]
+draft: false
+tier: "admin"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-optimizer-02-optimization-model.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What constraints does Maximo Optimizer schedule against?"
+    answer: "Nine. Work order priority, required crafts/skills, required tools, asset availability windows, technician availability (working hours, shifts, vacation, training), travel time, work dependencies (predecessor/successor relationships), SLA deadlines, and parts availability. The engine schedules higher-priority work first, matches skills to requirements, only schedules when tools and parts are available, respects asset downtime windows and technician calendars, honors dependency chains, and works to complete jobs before their service-level deadlines."
+  - question: "What objectives can Optimizer optimize for?"
+    answer: "Five: minimize total cost (labor plus travel plus late-work penalties), maximize work completed, minimize travel time or distance, balance workload evenly across technicians, and minimize tardiness relative to target dates. These objectives can conflict — minimizing travel is not the same as maximizing work completed — so Optimizer lets you weight them to match your priorities. The weighting is the strategy; changing it changes the schedule."
+  - question: "What is resource leveling in Optimizer?"
+    answer: "Resource leveling prevents over-allocation and smooths work distribution over time. It stops a technician from being double-booked, spreads work evenly across periods rather than piling it into one day, identifies resource bottlenecks, and can surface where you need to hire or contract additional capacity. It is the mechanism that keeps an optimized schedule physically achievable rather than theoretically dense."
+  - question: "Which Optimizer parameters matter most?"
+    answer: "The ones that bound the search and translate business intent. Planning horizon (the time window to optimize — a day, a week, two weeks), optimization time limit (how long the solver may run — seconds to minutes), priority weights (the relative importance of priorities 1 through 5), travel speed (average speed for distance-based travel estimates), work buffer (padding between assignments), whether overtime is allowed and up to how many hours, and skills matching set to strict or flexible. Each one changes both the runtime and the shape of the answer."
+keyTakeaways:
+  - "Optimizer schedules against nine constraints — priority, crafts, tools, asset windows, technician availability, travel, dependencies, SLA deadlines, and parts"
+  - "You steer it with five weighted objectives — minimize cost, maximize work, minimize travel, balance workload, minimize tardiness — and the weighting is the strategy"
+  - "Crew scheduling assigns and balances groups; resource leveling prevents double-booking and smooths workload over time"
+  - "Solver parameters — horizon, time limit, priority weights, travel speed, buffer, overtime, strict-vs-flexible skills — bound both runtime and the shape of the answer"
+  - "A bad schedule is almost always a bad model: a missing constraint, a mis-weighted objective, or a parameter set too tight"
+series:
+  name: "MAS OPTIMIZER"
+  part: 2
+  total: 5
+tldr: "Optimizer's behavior comes from three levers. Constraints are the hard rules it must not break — nine of them: priority, required crafts, required tools, asset availability, technician availability, travel time, work dependencies, SLA deadlines, and parts availability. Objectives are what it optimizes for — five of them, weightable: minimize cost, maximize work completed, minimize travel, balance workload, minimize tardiness. Parameters bound and tune the solver — planning horizon, time limit, priority weights, travel speed, work buffer, overtime, and strict-vs-flexible skills matching. Crew scheduling and resource leveling keep the result achievable. Master these three levers and 'the optimizer gave a bad answer' becomes 'I asked the wrong question.'"
+seoTitle: "Optimizer Constraints & Objectives: MAS 9 Part 2"
+seoDescription: "The nine constraints, five weighted objectives, and solver parameters that define Maximo Optimizer's behavior in MAS 9 — plus crew scheduling and resource leveling."
+targetQuestions:
+  - "What constraints does Maximo Optimizer use?"
+  - "What objectives can Optimizer optimize for?"
+  - "What is resource leveling in Maximo Optimizer?"
+  - "Which Optimizer parameters matter most?"
+semanticKeywords:
+  - "Optimizer scheduling constraints"
+  - "objective function weighting"
+  - "minimize travel maximize work"
+  - "resource leveling crew scheduling"
+  - "planning horizon optimization time limit"
+  - "strict flexible skills matching"
+  - "priority weights work order"
+  - "constraint based optimization"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 1 — the distinction between graphical scheduling and mathematical optimization"
+  - "Familiarity with Maximo work order priorities, crafts, and assignments"
+speakableSections:
+  - "The Nine Constraints"
+  - "The Five Objectives"
+  - "The Parameters That Bound the Search"
+series_part: 2
+clusterSlugs:
+  - "mas-optimizer-series-index"
+  - "mas-optimizer-why-optimization"
+  - "mas-optimizer-data-prerequisites"
+relatedSlugs:
+  - "mas-optimizer-series-index"
+  - "mas-optimizer-why-optimization"
+  - "mas-optimizer-data-prerequisites"
+---
+
+# Inside the Optimization Model: Constraints, Objectives & Parameters
+
+> 🎯 **Who this is for:** Schedulers and administrators who will configure Optimizer and need to understand exactly what the three levers — constraints, objectives, and parameters — do to the schedule the engine produces.
+
+**Series:** Part 2 of 5 — *Maximo Optimizer Implementation Playbook* | **Read time:** 20 minutes
+
+---
+
+## Three Levers, One Schedule
+
+Part 1 established that Optimizer is a solver: it finds the best *legal* answer to the question you ask. This part is about the three levers you actually pull to ask that question. Every schedule Optimizer produces is the product of exactly three things:
+
+1. **Constraints** — the hard rules the schedule must not break.
+2. **Objectives** — what "best" means, and how much each goal matters.
+3. **Parameters** — the bounds and tuning that shape and limit the search.
+
+Get all three honest and Optimizer produces schedules your operation will actually run. Get any one of them wrong and the engine produces a technically optimal answer to the wrong question — which is worse than no answer, because it *looks* authoritative. This part walks all three levers so that when a schedule surprises you, you know which lever to check.
+
+---
+
+## 🔒 The Nine Constraints
+
+Constraints are the rules that define a *feasible* schedule. Optimizer will never knowingly violate one — a schedule that breaks a hard constraint is not a low-scoring schedule, it is an invalid one the engine discards. Optimizer considers all nine of the following when it builds a schedule:
+
+| Constraint | What it means | What it needs from your data |
+|---|---|---|
+| **Work order priority** | Higher-priority work is scheduled first | Accurate WO priority values |
+| **Required crafts / skills** | Match technician skills to the work requirement | Craft and skill records on work and on people |
+| **Required tools** | Ensure tools are available at the scheduled time | Tool requirements and tool availability |
+| **Asset availability** | Schedule within the asset's downtime windows | Asset availability / downtime calendars |
+| **Technician availability** | Respect working hours, shifts, vacation, training | Shift calendars and absence records |
+| **Travel time** | Minimize travel between work locations | Location coordinates (see Part 4) |
+| **Work dependencies** | Honor predecessor / successor relationships | WO dependency links |
+| **SLA deadlines** | Complete work before service-level deadlines | Target/required dates on work orders |
+| **Parts availability** | Only schedule when required parts are in stock | Inventory / parts reservation data |
+
+Read that table as a checklist of *what has to exist as data* for Optimizer to respect it. This is the bridge to Part 3: every constraint the engine cannot see, it cannot honor. If your work orders carry no craft requirement, the "required crafts" constraint is silently inert and the engine will happily send anyone to any job. If your assets have no coordinates, "travel time" is invisible and the schedule will zig-zag across the map. Constraints are not switches you turn on; they are data the engine reads.
+
+<aside>
+
+💡 **Key insight:** A constraint with no data behind it does not fail loudly — it disappears. The engine does not warn you that "required crafts" is unenforceable; it just stops enforcing it. This is the single most common reason an optimized schedule looks wrong: a constraint everyone assumed was active was never populated in the data.
+
+</aside>
+
+---
+
+## ⚖️ The Five Objectives
+
+If constraints define what is *legal*, objectives define what is *good*. Optimizer's engine supports five objective functions, and the crucial fact is that **you can weight them** to match your priorities:
+
+| Objective | What it optimizes |
+|---|---|
+| **Minimize total cost** | Labor cost + travel cost + penalty for late work |
+| **Maximize work completed** | Complete as many work orders as possible |
+| **Minimize travel** | Reduce total travel time / distance |
+| **Balance workload** | Even distribution across technicians |
+| **Minimize tardiness** | Reduce late completions relative to target dates |
+
+Here is why weighting matters: these objectives **conflict**. Minimizing travel might mean batching all the work in one district and leaving another district's SLAs to slip — which is terrible for "minimize tardiness." Maximizing work completed might mean loading your fastest technicians to the ceiling — which wrecks "balance workload." There is no single schedule that is best on all five axes at once, so the engine needs to know *how much you care* about each.
+
+That weighting is not a technical detail — it *is* your scheduling strategy, expressed as numbers. A utility restoring power after a storm weights "maximize work completed" and "minimize tardiness" heavily and barely cares about cost. A cost-pressured facilities team weights "minimize total cost" and "minimize travel." The same work orders, the same technicians, and two different weightings produce two legitimately different schedules — and both are correct, because they answer different questions.
+
+<aside>
+
+💡 **Key insight:** There is no objectively best schedule, only the best schedule *for your weighting*. The most productive hour of an Optimizer rollout is often the meeting where operations, finance, and dispatch argue about the weights — because that argument surfaces the real priorities that were previously buried in a planner's judgment. Write the weights down; they are the policy.
+
+</aside>
+
+---
+
+## 👥 Crew Scheduling and Resource Leveling
+
+Two capabilities keep the optimized schedule *physically achievable* rather than merely dense on paper.
+
+**Crew scheduling** handles work that goes to a group rather than an individual. Optimizer can:
+
+- Assign work orders to **crews** — defined groups of technicians — rather than single people.
+- **Balance workload** across the members of a crew.
+- Respect **crew composition** rules, such as a lead-plus-apprentice pairing that must stay together.
+- Handle **overtime and shift constraints** at the crew level.
+
+This matters because a lot of real maintenance work is not a one-person job. A schedule that treats a two-person lift as a single assignment, or that splits a crew that has to work together, is not runnable no matter how good its objective score is.
+
+**Resource leveling** is the guardrail against over-allocation. It:
+
+- Prevents a technician from being **double-booked** — assigned to two places at once.
+- **Smooths** work distribution over time so you do not get a wall of work on Monday and an empty Thursday.
+- **Identifies resource bottlenecks** — the craft or shift that is the limiting factor.
+- Surfaces where you may need to **hire or contract** additional capacity.
+
+Together, crew scheduling and resource leveling are what separate an optimized schedule from an optimistic one. The objectives push the engine to pack work in; leveling and crew rules push back so the packed schedule is one humans can actually execute.
+
+---
+
+## 🎛️ The Parameters That Bound the Search
+
+Constraints and objectives define the problem. **Parameters** define how the solver searches it and how business intent gets translated into the model. These are the dials you tune, and Optimizer exposes a configurable set:
+
+| Parameter | What it controls | Example values |
+|---|---|---|
+| **Planning horizon** | The time window to optimize | 1 day, 1 week, 2 weeks |
+| **Optimization time limit** | Maximum time the solver may run | 30 seconds, 5 minutes, 30 minutes |
+| **Priority weights** | Relative importance of priorities 1-5 | P1=100, P2=50, P3=20, P4=10, P5=5 |
+| **Travel speed** | Average speed for distance calculations | 30 mph (urban), 60 mph (highway) |
+| **Work buffer** | Buffer time between assignments | 15 minutes, 30 minutes |
+| **Overtime allowed** | Whether the solver may schedule overtime | Yes/No, with a max-hours cap |
+| **Skills matching** | Strict exact match vs. closest match | Strict, Flexible |
+
+A few of these deserve a closer look because they trip teams up:
+
+**Planning horizon and optimization time limit are a trade-off.** A longer horizon (two weeks) gives the engine more room to sequence work well, but the search space grows and the solver needs more time. A short time limit on a long horizon yields a rougher answer. Tune them together: a daily dispatch run might use a one-day horizon and a thirty-second limit; a shutdown plan might use a two-week horizon and let the solver run for thirty minutes.
+
+**Priority weights turn your 1-5 priority scale into real math.** If P1 is weighted 100 and P2 is weighted 50, a single P1 job is worth two P2 jobs in the objective. Set these to reflect how your operation actually values priority tiers — and audit them, because a flat weighting quietly tells the engine that priority does not matter much.
+
+**Skills matching — strict versus flexible — is a lever with real consequences.** *Strict* means only an exact craft match may do the job; it protects quality and compliance but can leave work unassigned when the perfectly skilled person is unavailable. *Flexible* lets the engine assign the closest match; it completes more work but can send a near-miss skill to a job that needed the exact one. Which you choose is a policy decision, not a technical default.
+
+<aside>
+
+💡 **Key insight:** Parameters are where "the optimizer is too slow" and "the optimizer ignores priority" usually live. Too tight a time limit on too long a horizon produces rushed schedules; flat priority weights produce priority-blind ones; a strict skills setting on thin craft data produces mountains of unassigned work. When the output feels wrong, walk the parameter table before you touch anything else.
+
+</aside>
+
+---
+
+## Reading a Bad Schedule as a Modeling Bug
+
+Put the three levers together and you have a diagnostic method. When an Optimizer run produces something that makes a dispatcher wince, do not conclude the engine is broken — trace the surprise to a lever:
+
+| Symptom | Likely lever | The fix |
+|---|---|---|
+| Wrong-skilled tech sent to a job | **Constraint** (craft data missing) | Populate craft requirements on the work and skills on the person |
+| Schedule zig-zags across the map | **Constraint** (no coordinates) or objective (travel un-weighted) | Add location coordinates; weight "minimize travel" |
+| Low-priority work done before high | **Parameter** (flat priority weights) | Set priority weights to reflect real tiers |
+| Lots of unassigned work | **Parameter** (strict skills) or constraint (thin capacity) | Consider flexible matching; check resource leveling for bottlenecks |
+| Solver too slow / rough answers | **Parameter** (horizon vs. time limit) | Shorten the horizon or extend the time limit |
+| SLAs slipping to save travel | **Objective** (mis-weighted) | Raise the weight on "minimize tardiness" |
+
+Every row points at a lever, and every lever is something you control. This is the practical payoff of understanding the model: it turns "the optimizer is bad" — an unactionable complaint — into "the model asked the wrong question" — a fixable one.
+
+> **First-principles takeaway:** Optimizer has no opinions. It faithfully returns the best legal answer to the exact question posed by your constraints, objectives, and parameters. Every schedule you dislike is a message about the model, not a defect in the engine. Learn to read the message and the tool becomes trustworthy.
+
+---
+
+## Practical Checklist Before You Move On
+
+Before you dig into the data in Part 3, confirm you can answer these:
+
+- **Can you name the nine constraints** and, for each, the data that has to exist for it to be enforced?
+- **Have you agreed the objective weights** with operations, finance, and dispatch — and written them down?
+- **Do you understand crew rules and resource leveling** well enough to know why a dense schedule can still be unrunnable?
+- **Have you set a horizon and time limit** appropriate to the run — short and fast for daily dispatch, long and patient for shutdown planning?
+- **Have you made the strict-vs-flexible skills decision** deliberately, knowing its effect on unassigned work?
+
+If those answers exist, you understand the engine. The next question is whether your data can feed it — which is Part 3.
+
+---
+
+## Key Takeaways
+
+- Optimizer schedules against **nine constraints** — priority, crafts, tools, asset windows, technician availability, travel, dependencies, SLA deadlines, and parts — and **a constraint with no data behind it silently disappears**.
+- You steer it with **five weighted objectives** — minimize cost, maximize work, minimize travel, balance workload, minimize tardiness — and **the weighting is the strategy**.
+- **Crew scheduling** assigns and balances groups; **resource leveling** prevents double-booking and smooths workload so the schedule stays achievable.
+- **Parameters** — horizon, time limit, priority weights, travel speed, buffer, overtime, strict-vs-flexible skills — bound both runtime and the shape of the answer.
+- **A bad schedule is almost always a bad model**: trace every surprise to a constraint, an objective weight, or a parameter.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Maximo Manage Scheduler and Graphical Assignment (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Manage crafts, labor, and qualifications (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [IBM Maximo Application Suite add-on applications](https://www.ibm.com/products/maximo)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 1 — From Scheduler to Solver: What "Optimization" Actually Means](/blog/mas-optimizer-why-optimization) |
+| **Next:** | [Part 3 — The Data Optimizer Lives or Dies On](/blog/mas-optimizer-data-prerequisites) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*

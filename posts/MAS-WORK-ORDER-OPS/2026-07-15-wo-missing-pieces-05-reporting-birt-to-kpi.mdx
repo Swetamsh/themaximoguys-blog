@@ -1,0 +1,252 @@
+---
+title: "Work Order Reporting in MAS 9: Rationalizing BIRT into KPI Manager (and When Cognos Wins)"
+description: "BIRT is not formally deprecated in MAS 9 and your existing work order reports still run. The upgrade mistake is treating the report catalog as a rebuild backlog. Here's how to rationalize WO reporting into KPI Manager cards, keep the reports that must stay reports, and know exactly when Cognos Analytics earns the job."
+date: "2026-07-15"
+slug: "wo-missing-pieces-reporting-birt-to-kpi"
+tags: ["Maximo", "MAS 9", "Work Order Management", "BIRT", "KPI Manager", "Cognos Analytics", "Operational Dashboard", "EAM"]
+draft: false
+tier: "developer"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/wo-missing-pieces-05-reporting-birt-to-kpi.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Is BIRT deprecated in MAS 9?"
+    answer: "No — BIRT is not formally deprecated in MAS 9, and your existing work order reports still run. IBM's strategic direction points toward Cognos Analytics and the Operational Dashboard, but that is a direction of investment, not a switch that turns BIRT off. The real upgrade mistake is treating your entire report catalog as a rebuild backlog. Before you decide to keep, replace, or retire any report, validate the BIRT support posture in your exact MAS version."
+  - question: "Should I rebuild all my BIRT work order reports in Cognos?"
+    answer: "No. Do not assume every legacy WO report should move 1:1 into Cognos. First classify the business need, then pick the right target: many operational, near-real-time reports become KPI Manager cards on the Operational Dashboard; reports that duplicate a live queue or KPI should be retired outright; and only complex, multi-page, print-ready WO reports genuinely need Cognos Analytics. Rationalize the catalog — don't rebuild it wholesale."
+  - question: "Which work order reports can KPI Manager replace?"
+    answer: "For simple WO reporting needs, KPI Manager plus the Operational Dashboard replaces many reports. Simple counts (Open WOs: 147) become a KPI Value card; trends (monthly WO volume) become a KPI Trend card; comparisons (backlog by site) become a KPI Comparison card; and tabular detail lists (overdue WOs with details) become a Work Queues card plus a Table card. Complex multi-page reports with charts have no KPI equivalent — those stay in Cognos."
+  - question: "How do I export work order data out of MAS 9 for reporting?"
+    answer: "Two paths. From the Operational Dashboard you can export table and grid data to CSV and chart visualizations to PNG or JPG. From role-based applications, you trigger an asynchronous CSV export via the REST API from any WO list view — the paginated data is combined into a single download file, which is ideal for ad-hoc WO data extraction and for RBAs and automation scripts that need governed extracts."
+keyTakeaways:
+  - "BIRT is not formally deprecated in MAS 9 and existing work order reports still run — validate the support posture in your exact version before deciding"
+  - "The upgrade mistake is treating the report catalog as a rebuild backlog; classify the business need first, then pick the target"
+  - "Many operational WO reports become KPI Manager cards: counts to KPI Value, trends to KPI Trend, comparisons to KPI Comparison, detail lists to Work Queues plus Table"
+  - "Only complex, multi-page, print-ready WO reports genuinely need Cognos Analytics — there is no KPI alternative for those"
+  - "Export paths: CSV/PNG/JPG from the Operational Dashboard, and asynchronous single-file CSV export via REST from any WO list view"
+series:
+  name: "MAS WORK ORDER OPS"
+  part: 5
+  total: 6
+tldr: "BIRT is not formally deprecated in MAS 9 and your work order reports still run — so the upgrade mistake is treating the report catalog as a rebuild backlog. Rationalize instead: classify each WO report by business need, move operational near-real-time reporting into KPI Manager cards on the Operational Dashboard (counts to KPI Value, trends to KPI Trend, comparisons to KPI Comparison, detail lists to Work Queues plus Table), keep or rebuild the print-ready and audit reports that must stay reports, and reserve Cognos Analytics for complex multi-page WO reporting with no KPI equivalent. Get data out via CSV/PNG/JPG from the dashboard or asynchronous single-file CSV export via REST from any WO list view."
+seoTitle: "Work Order Reporting in MAS 9: BIRT to KPI Manager"
+seoDescription: "How to rationalize BIRT work order reports in MAS 9: KPI Manager cards vs. keep-as-report vs. Cognos, plus CSV/PNG and REST async export paths."
+targetQuestions:
+  - "Is BIRT deprecated in MAS 9?"
+  - "Should I rebuild BIRT work order reports in MAS 9?"
+  - "Which work order reports can KPI Manager replace?"
+  - "When do I need Cognos Analytics for work order reporting?"
+  - "How do I export work order data from MAS 9?"
+semanticKeywords:
+  - "BIRT rationalization MAS 9"
+  - "KPI Manager reporting alternative"
+  - "work order KPI Value card"
+  - "KPI Trend card"
+  - "KPI Comparison card"
+  - "Cognos Analytics work order reports"
+  - "Operational Dashboard export CSV"
+  - "REST asynchronous CSV export"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Familiarity with BIRT reports and the classic Maximo report catalog"
+  - "Understanding of the Operational Dashboard and KPI Manager (see Parts 3 and 4)"
+  - "Basic awareness of Cognos Analytics as an external reporting tool for MAS"
+speakableSections:
+  - "The Rationalization Mindset"
+  - "KPI Manager as a Reporting Alternative"
+  - "The Decision Framework"
+series_part: 5
+clusterSlugs:
+  - "wo-missing-pieces-series-index"
+  - "wo-missing-pieces-custom-wo-kpis"
+  - "wo-missing-pieces-integration-rest-kafka"
+relatedSlugs:
+  - "wo-missing-pieces-series-index"
+  - "wo-missing-pieces-operational-dashboard"
+  - "wo-missing-pieces-custom-wo-kpis"
+  - "mas-manage-work-management"
+---
+
+# Work Order Reporting in MAS 9: Rationalizing BIRT into KPI Manager (and When Cognos Wins)
+
+> 🎯 **Who this is for:** Reporting teams, Maximo administrators, and maintenance managers who own a pile of BIRT work order reports and just got told "we're moving to Cognos" — and need to know what that actually means for the WO catalog on upgrade day.
+
+**Series:** Part 5 of 6 — *MAS 9 Work Order Operations: The Missing Pieces* | **Read time:** 18 minutes
+
+---
+
+## Where Work Order Reporting Actually Stands in MAS 9
+
+Somewhere in your MAS 9 upgrade plan there is probably a line item that reads something like *"Reporting migration: BIRT → Cognos."* And somewhere in a planning meeting, someone counted your BIRT reports, multiplied by an effort estimate, and produced a number that made everyone flinch.
+
+Here is the calmer truth, scoped to work orders.
+
+**BIRT is not formally deprecated in MAS 9, and your existing work order reports still run.** The strategic direction of the platform points toward Cognos Analytics and the Operational Dashboard — that is where IBM is investing — but a direction of investment is not a switch that turns BIRT off. Your WO Detail print report did not stop working the moment you logged into MAS 9.
+
+So the mistake to avoid is not "we didn't move to Cognos fast enough." The mistake is **treating your report catalog as a rebuild backlog** — assuming every legacy work order report should move 1:1 into Cognos, and burning weeks recreating reports that never needed to be reports in the first place.
+
+This post is the WO-scoped version of doing it right: rationalize the catalog first, then choose a target for each report — a KPI Manager card, a report that stays a report, or Cognos Analytics.
+
+---
+
+## 📊 The Old Reporting World vs. MAS 9
+
+| Reporting aspect | Maximo 7.6 | MAS 9 |
+|---|---|---|
+| Report engine | BIRT, built in | BIRT still runs; **Cognos Analytics** is the strategic direction |
+| Report migration | N/A | **No automatic BIRT-to-Cognos tool** — recreation is manual |
+| Operational monitoring | BIRT portlets on Start Centers | **KPI Manager cards** on the Operational Dashboard |
+| Ad-hoc extraction | Limited BIRT ad-hoc | **Asynchronous CSV export** via REST from WO list views |
+| Complex multi-page reports | BIRT | **Cognos Analytics** (no KPI equivalent) |
+
+<aside>
+
+💡 **Key insight:** Two facts sit side by side here and both are true. BIRT still works, *and* there is no automatic BIRT-to-Cognos migration tool. That combination is exactly why blind rebuilding is a trap — you would be doing expensive manual recreation work for reports that BIRT is still perfectly happy to run, or that shouldn't exist at all in MAS 9.
+
+</aside>
+
+---
+
+## 🧭 The Rationalization Mindset
+
+Rationalization means you do not ask *"how do I rebuild this report?"* You ask *"what business need does this report serve, and what is the right MAS 9 surface for that need?"* Sometimes the answer is a KPI card. Sometimes it's a queue. Sometimes it's Cognos. And sometimes the honest answer is "retire it."
+
+Four rules keep the exercise disciplined:
+
+1. **Keep operational, near-real-time consumption in dashboards and queues.** If someone stares at a report every morning to see today's numbers, that is a dashboard job, not a scheduled report.
+2. **Use formal reporting tools for scheduled distribution, print-ready output, audit packs, and multi-table analytics.** That is where Cognos (or a kept BIRT report) earns its place.
+3. **Retire reports that duplicate live queue or KPI behavior.** If the Operational Dashboard already shows "overdue WOs" live, the weekly overdue-WO email report is dead weight.
+4. **Validate BIRT support posture in your exact MAS version before deciding** whether to keep, replace, or retire. Support posture moves across releases; check yours rather than assuming.
+
+<aside>
+
+💡 **Key insight:** Rule 3 is the one that saves the most effort and is skipped the most often. A large share of a legacy WO report catalog exists only because Start Centers couldn't show live operational data well. MAS 9's Operational Dashboard can — so a chunk of your catalog isn't a migration candidate, it's a retirement candidate.
+
+</aside>
+
+---
+
+## 📋 A Work Order Report Triage Table
+
+Before you touch a single report, sort your WO catalog by business need and assign each one a target. This is the triage IBM's own reporting guidance points to, narrowed to the work order reports you actually run:
+
+| WO report need | Priority | Recommended target |
+|---|---|---|
+| Work Order Detail print | Critical | Keep or rebuild in the format that best supports technicians, supervisors, and compliance reviews |
+| WO Backlog by Site/Craft | High | KPI Comparison card, or Cognos |
+| PM Compliance Monthly | High | KPI Trend card, or Cognos |
+| WO Completion Summary | High | KPI Value card, dashboard, or Cognos |
+| Technician Labor Report | High | Cognos or a governed export |
+| Detailed WO Cost Report | High | Cognos or another governed reporting tool |
+| Work Order History by Asset | Medium | Cognos, classic report, or REST export depending on audience |
+| Open WO Aging Report | Medium | Work Queue plus Table card, or Cognos if formal distribution is required |
+| Emergency Work Trend | Medium | KPI Trend card |
+| PM Forecast Report | Medium | Graphical Scheduling view, export, or a formal report if needed |
+
+Notice what this table refuses to do: it never says "rebuild in Cognos" as a reflex. The Work Order Detail print — the report a technician tapes to a job packet, or a compliance reviewer signs off on — is *Critical* and is kept or rebuilt in whatever format serves that audience best. Meanwhile several *High* and *Medium* reports collapse into KPI cards or a queue and never become a formal report at all.
+
+---
+
+## 📈 KPI Manager as a Reporting Alternative
+
+For simple WO reporting needs, KPI Manager plus the Operational Dashboard replaces a lot of BIRT. The mapping is clean enough to memorize, and it lines up directly with the card types you built in **[Part 4](/blog/wo-missing-pieces-custom-wo-kpis)**:
+
+- **Simple counts → KPI Value card.** *"Open WOs: 147."* A single number a manager wants at a glance. That was never worth a report; it's a KPI.
+- **Trends → KPI Trend card.** *"Monthly WO volume over the last 12 months."* Anything where the shape over time is the point — WO volume, PM compliance, emergency work — is a Trend card.
+- **Comparisons → KPI Comparison card.** *"Backlog by site,"* rendered as a bar chart. Site-vs-site, craft-vs-craft, crew-vs-crew comparisons become a Comparison card.
+- **Detail lists → Work Queues card + Table card.** *"Overdue WOs, with details."* A tabular list people act on becomes a live Work Queue plus a Table card, not a printed grid.
+- **Complex multi-page reports → Cognos Analytics only.** Multi-page layouts with charts, sub-reports, and formatting have **no KPI equivalent.** Do not force these into cards.
+
+<aside>
+
+💡 **Key insight:** The tell for "this belongs in a KPI card, not a report" is whether anyone *acts* on the number the moment they see it. A live count of open WOs drives a staffing decision on the spot — that's a card. A quarterly cost report that gets archived and referenced later is a document — that's Cognos or a kept report. Action-in-the-moment versus distribute-and-archive is the cleanest dividing line you have.
+
+</aside>
+
+---
+
+## 🧩 The Decision Framework: KPI Card vs. Keep-as-Report vs. Cognos
+
+Every work order report you own falls into one of three destinations. Run each report through these questions in order and stop at the first "yes."
+
+**Does someone consume this operationally, in near-real-time, and act on it immediately?**
+→ **KPI Manager card** on the Operational Dashboard. Counts, trends, comparisons, and actionable detail lists all live here. This is the largest bucket and the one people underuse.
+
+**Is it a live queue or KPI that already exists on the dashboard, wearing a report's clothes?**
+→ **Retire it.** Don't rebuild what the dashboard already shows live. This is the bucket people skip entirely.
+
+**Does it need scheduled distribution, print-ready or audit-grade output, or multi-table analytics — but the layout is simple enough to reproduce as-is?**
+→ **Keep or rebuild it as a report.** The Work Order Detail print for job packets and compliance is the canonical example; BIRT still runs it today, so keeping is a legitimate choice while you validate your version's support posture.
+
+**Is it a complex, multi-page WO report with charts, sub-reports, or heavy formatting, or does it join many tables for analytics?**
+→ **Cognos Analytics.** This is the only bucket where Cognos is genuinely required, and it's smaller than most upgrade plans assume. There is no automatic BIRT-to-Cognos converter, so recreate these deliberately and prioritize by usage.
+
+<aside>
+
+💡 **Key insight:** Run this framework *before* anyone estimates the reporting migration. The number that made everyone flinch was almost certainly "every BIRT report → Cognos." After triage, the Cognos column is only the last bucket — the complex, multi-page, must-be-a-document reports — and the estimate drops accordingly.
+
+</aside>
+
+---
+
+## 📤 Getting Data Out: Export Paths
+
+Rationalization also changes *how* people get data out, because a KPI card and a queue aren't a printed report you can email. MAS 9 gives work order reporting two governed export paths.
+
+**From the Operational Dashboard:**
+
+- **CSV export** of table and grid data — the tabular contents of a card, straight to a spreadsheet.
+- **PNG / JPG export** of chart visualizations — for a KPI Trend or Comparison chart you want to drop into a slide or a status pack.
+
+**From role-based applications:**
+
+- **Asynchronous CSV export via the REST API** from any WO list view. The request runs asynchronously, the paginated data is combined into a **single download file**, and you get one clean CSV instead of a page-by-page pull.
+
+That REST async export is the quiet workhorse for teams who used to lean on ad-hoc BIRT reports for one-off data pulls. Because it runs through the REST API, it's the natural extraction path for automation — an RBA or an automation script (RBA) that needs a governed WO extract can trigger the async export and pick up the combined file, no BIRT report required.
+
+---
+
+## 🔧 Practical Notes Before You Roll This Out
+
+- **Inventory before you migrate.** You cannot rationalize a catalog you haven't listed. Pull the full WO report inventory, tag each report by actual usage, and only then run the decision framework — priority by real usage beats priority by who shouts loudest.
+- **Don't turn BIRT off to prove a point.** BIRT still runs; keeping low-priority WO reports on BIRT during the transition is a valid phased strategy, not a failure to modernize. Validate your version's support posture and plan around it.
+- **Build the KPI cards first, retire second.** Stand up the Operational Dashboard cards that replace the operational reports, let people live on them for a sprint, *then* retire the duplicate reports. Retiring before the replacement is trusted is how you end up rebuilding reports under pressure.
+- **Size the Cognos column honestly.** After triage, only the complex multi-page bucket needs Cognos. Estimate the reporting migration off that column — not off the full catalog — and remember every one is a manual rebuild.
+- **Point automation at the REST async export.** For scripted or scheduled WO data extracts, the asynchronous single-file CSV export is the governed, version-safe path. Wire new extraction jobs to it instead of resurrecting ad-hoc BIRT reports.
+
+---
+
+## Key Takeaways
+
+- **BIRT is not formally deprecated in MAS 9** and your work order reports still run — the strategic direction is Cognos and the dashboard, but that's investment direction, not an off switch. Validate the support posture in *your* exact version.
+- **The upgrade mistake is treating the report catalog as a rebuild backlog.** Classify each WO report by business need first, then pick the target — and remember there is no automatic BIRT-to-Cognos migration tool.
+- **KPI Manager replaces many WO reports:** counts → KPI Value, trends → KPI Trend, comparisons → KPI Comparison, detail lists → Work Queues + Table. Retire reports that merely duplicate a live queue or KPI.
+- **Cognos Analytics is only for the last bucket** — complex, multi-page, print-ready WO reports with no KPI equivalent. It's a smaller column than upgrade plans assume.
+- **Export paths:** CSV and PNG/JPG from the Operational Dashboard, and asynchronous single-file CSV export via REST from any WO list view — the natural extraction path for RBAs and automation.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Maximo Manage — Operational Dashboard and KPI Manager (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Manage — Reporting with Cognos Analytics (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Manage REST/JSON API — asynchronous export (IBM Documentation)](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 4 — Building Custom Work Order KPIs](/blog/wo-missing-pieces-custom-wo-kpis) |
+| **Next:** | [Part 6 — Work Order Integration Changes](/blog/wo-missing-pieces-integration-rest-kafka) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*

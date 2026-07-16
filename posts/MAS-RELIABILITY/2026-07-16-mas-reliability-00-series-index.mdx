@@ -1,0 +1,296 @@
+---
+title: "MAS 9 Reliability Implementation Playbook"
+description: "An end-to-end, seven-part program for standing up a real reliability strategy in IBM Maximo Application Suite 9 — from RCM and FMEA fundamentals, through the Manage reliability spine, the Reliability Strategies app, and the APM layer, to dependency-correct data loads and a phased, upgrade-window rollout."
+date: "2026-07-16"
+slug: "mas-reliability-series-index"
+tags: ["Maximo", "MAS 9", "Reliability", "RCM", "FMEA", "Asset Performance Management", "Preventive Maintenance", "EAM"]
+draft: false
+tier: "admin"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-reliability-00-series-index.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Is a reliability strategy just doing more preventive maintenance?"
+    answer: "No — and treating it that way is the most common way reliability projects fail. A reliability strategy is a documented maintenance decision for every failure mode that matters: run-to-failure, time-based PM, condition-based, or predictive, chosen on the consequence of the failure and the cost of the task. The Nowlan & Heap studies found only about 11% of failure modes are age-related, so more PM cannot help the other ~89% and intrusive PM can even induce failure. The strategy's value is avoided failure cost minus the cost of the maintenance done to avoid it."
+  - question: "Do I need Maximo Health, Predict, and Monitor to run a reliability program in MAS 9?"
+    answer: "No. Stock Manage applications — Failure Codes, Condition Monitoring, Meters, Job Plans, PM, Asset Templates — cover the entire core strategy before any APM add-on is needed. The APM layer (Health, Predict, Monitor) is Phase 4, an enhancement layer, not a prerequisite. This series builds the Manage spine first and treats APM as the amplifier that sits on top of it."
+  - question: "How does a 7.6 to MAS 9 upgrade affect reliability data?"
+    answer: "The data model is unchanged — same objects (FAILURECODE, ASSET, MEASUREPOINT, PM, JOBPLAN), so reliability data migrates rather than being rebuilt. The team is learning a new Carbon UI and role-based navigation, not new concepts. The upgrade is the one clean moment to cleanse legacy free-text failure data and bulk-load a proper standardized failure hierarchy instead of carrying the mess forward."
+  - question: "Where does this series sit relative to the MAS MANAGE, Health, Predict, and Monitor series?"
+    answer: "This is the end-to-end program that ties them together. MAS MANAGE Part 4 owns the Reliability Strategies application in depth; the MAS-HEALTH, MAS-PREDICT, and MAS-MONITOR series own the APM apps individually. This series is the reliability program: the methodology, the spine, the sequencing, and the rollout that decide when and why you reach for each of those."
+keyTakeaways:
+  - "A reliability strategy is a per-failure-mode decision problem, not a PM-volume problem — the failure hierarchy and criticality data are the foundation, not the PM count"
+  - "Build the reference-data spine first (failure hierarchy + criticality + meters), then attach maintenance decisions, then close the feedback loop with failure reporting and KPIs"
+  - "Stock Manage apps cover the full core strategy; the APM layer (Health, Predict, Monitor) is Phase 4, an enhancement, not a prerequisite"
+  - "Data loads have a hard dependency order — the MBO layer rejects any record whose foreign key does not yet resolve, so sequence is mandatory"
+  - "The 7.6 to MAS 9 upgrade is the one clean moment to cleanse legacy free-text failure data and bulk-load a standardized hierarchy"
+series:
+  name: "MAS RELIABILITY"
+  part: 0
+  total: 7
+tldr: "A seven-part implementation playbook for a real reliability strategy in MAS 9. It starts from first principles — RCM, FMEA/FMECA, and choosing the right task type per failure mode — then covers the metrics that tune it (MTBF, MTTR, availability, PM optimization), builds the reliability spine in Manage (failure hierarchy, criticality, condition monitoring, meters), turns analysis into action with job plans, PMs, asset templates and the Reliability Strategies app, layers APM (Health, Predict, Monitor, AIP) on top, then gets tactical: dependency-correct data loads and a phased rollout from legacy cleanse to closing the loop. Written for teams doing a 7.6 to MAS 9 upgrade who want the program, not just the app tour."
+seoTitle: "MAS 9 Reliability Implementation Playbook"
+seoDescription: "A 7-part MAS 9 reliability program: RCM/FMEA fundamentals, MTBF/MTTR metrics, the Manage spine, Reliability Strategies, APM, data loads, and phased rollout."
+targetQuestions:
+  - "How do you implement a reliability strategy in IBM Maximo MAS 9?"
+  - "What is the correct order to build a reliability program in Maximo?"
+  - "Do you need Maximo Health, Predict, and Monitor for reliability?"
+  - "How do you load reliability data into MAS 9 without breaking dependencies?"
+  - "How does a 7.6 to MAS 9 upgrade change reliability data?"
+semanticKeywords:
+  - "reliability strategy Maximo"
+  - "RCM reliability centered maintenance"
+  - "FMEA FMECA Maximo"
+  - "MAS 9 Reliability Strategies application"
+  - "failure hierarchy failure codes"
+  - "condition monitoring Maximo"
+  - "MTBF MTTR availability"
+  - "Maximo Health Predict Monitor"
+  - "MXLoader MIF data load"
+  - "PM optimization Nowlan Heap"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Familiarity with the Maximo asset, work order, job plan, and PM applications"
+  - "Awareness that Work Centers were removed in MAS 9 (see the MAS MANAGE series)"
+  - "Basic understanding of preventive maintenance and failure reporting concepts"
+speakableSections:
+  - "Why This Series Exists"
+  - "Where This Series Fits"
+  - "The Series at a Glance"
+clusterSlugs:
+  - "mas-reliability-fundamentals-rcm-fmea"
+  - "mas-reliability-metrics-mtbf-mttr"
+  - "mas-reliability-reliability-spine"
+  - "mas-reliability-analysis-to-action"
+  - "mas-reliability-apm-layer"
+  - "mas-reliability-populating-the-spine"
+  - "mas-reliability-phased-rollout"
+relatedSlugs:
+  - "mas-manage-reliability-strategies"
+  - "mas-health-series-index"
+  - "mas-predict-series-index"
+  - "mas-monitor-series-index"
+---
+
+# MAS 9 Reliability Implementation Playbook
+
+> 🎯 **Who this is for:** Reliability engineers, maintenance managers, and Maximo administrators who are standing up — or rescuing — a reliability program in MAS 9, and who want the whole program in the right order rather than a tour of individual applications.
+
+**Series:** Index — *MAS RELIABILITY* | **Read time:** 16 minutes
+
+---
+
+## Why This Series Exists
+
+Most reliability programs in Maximo do not fail because the software is missing a feature. They fail because a team treats reliability as a volume problem — "we need more PMs" — instead of a decision problem, and then loads a spreadsheet of assets in the wrong order and spends the next quarter untangling orphaned records. The methodology is skipped, the failure data is carried forward as free text, the PM count goes up, the failure rate does not move, and eighteen months later someone asks why the reliability initiative was worth the money.
+
+This series is the antidote. It is written as a program, not an app catalog, because the order you do things in is the single biggest determinant of whether a reliability strategy sticks. Reduced to one sentence:
+
+> Build the **reference-data spine** (failure hierarchy + criticality + meters), attach the **maintenance decisions** (job plans / PMs / condition monitoring), then close the **feedback loop** (failure reporting + MTBF/MTTR) — and use data loads to populate the spine fast enough to be worth doing.
+
+Everything else is detail hanging off that sentence. The seven parts walk it from first principles to a phased rollout you can put on a project plan.
+
+<aside>
+
+💡 **Key insight:** A reliability strategy's value is *avoided failure cost minus the cost of the maintenance done to avoid it.* If a PM costs more than the failure it prevents, it has negative value. That single equation is why "do more PMs" is not a strategy — it is a way to spend money without moving risk.
+
+</aside>
+
+There is a second reason the series exists: timing. If you are reading this, you are probably in the middle of a Maximo 7.6 to MAS 9 upgrade. The upgrade is not just a platform migration — it is the one clean moment to fix a decade of legacy free-text failure data before it gets carried forward one more time. Miss that window and you will be cleansing data in production for years. Several parts of this series are written specifically to help you use that window well.
+
+A third reason is honesty about the product. There is a persistent sales narrative that MAS 9 reliability *is* the AI-powered Asset Performance Management layer — buy Health, Predict, and Monitor and you have a program. That is backwards, and this series says so plainly: the entire core strategy runs on stock Manage applications, and APM amplifies a spine that already works rather than substituting for one that does not. Knowing which capabilities have a named IBM app, which are configuration patterns, and which are genuinely optional add-ons is the difference between a reliability budget spent on outcomes and one spent on shelfware. Every part is grounded in what MAS 9 actually documents, and it says so when a capability has no named application.
+
+---
+
+## Where This Series Fits
+
+TheMaximoGuys already has deep series on the individual MAS 9 applications this program touches. This series does not duplicate them — it is the connective tissue that decides *when and why* you reach for each. Here is the division of labour, so you always know which series owns which detail.
+
+| Topic | Who owns the deep detail | What this series does |
+|---|---|---|
+| The Reliability Strategies application (RCM/FMEA inside Maximo) | **MAS MANAGE — Part 4** (`mas-manage-reliability-strategies`) | Summarizes it and shows where it fits in the program (this series, Part 4) |
+| Maximo Health (criticality, risk, end-of-life scoring) | **MAS-HEALTH series** (`mas-health-series-index`) | Positions it as Phase 4 amplification of the spine (Part 5) |
+| Maximo Predict (ML failure forecasting) | **MAS-PREDICT series** (`mas-predict-series-index`) | Explains the "when will it fail?" role and its Health dependency (Part 5) |
+| Maximo Monitor (IoT anomaly detection) | **MAS-MONITOR series** (`mas-monitor-series-index`) | Explains the "is it abnormal now?" role and how it feeds Health/Predict (Part 5) |
+| Work management (work orders, job plans, PMs) | **MAS MANAGE — Part 3** (`mas-manage-work-management`) | Uses those objects as the reliability spine and feedback loop |
+| **The end-to-end reliability program** | **This series** | Methodology → spine → decisions → APM → data loads → phased rollout |
+
+<aside>
+
+💡 **Key insight:** If you only remember one boundary, remember this: MANAGE-04 and the APM series tell you *how each application works*. This series tells you *how they assemble into a program* — and, critically, in what order, so the dependencies resolve and the data loads don't break.
+
+</aside>
+
+---
+
+## The Series at a Glance
+
+| Part | Title | What it delivers | Level |
+|---|---|---|---|
+| **1** | Reliability Fundamentals: RCM, FMEA/FMECA & Task Types | The method before the app — SAE JA1011's seven questions, RPN, and mapping each failure mode to one task type | Intermediate |
+| **2** | Reliability Metrics: MTBF, MTTR, Availability & PM Optimization | The feedback-loop math — worked formulas, the bathtub curve, and the Nowlan & Heap finding turned into a PM-optimization method | Intermediate |
+| **3** | Building the Reliability Spine in Manage | Four stock apps — Failure Codes, criticality, Condition Monitoring, Meters — that turn free text into analyzable, risk-based data | Intermediate |
+| **4** | From Analysis to Action: Job Plans, PMs & Reliability Strategies | Attaching the maintenance decisions — job plans, Master PMs, asset templates, and the Reliability Strategies app | Intermediate |
+| **5** | The APM Layer as Reliability: Health, Predict, Monitor & AIP | The Phase-4 amplifier — how APM scores, forecasts, and monitors on top of the spine, and pushes work back into Manage | Intermediate |
+| **6** | Populating the Spine: Data-Load Tools & Sequencing | The tactical core — five load tools, the eleven-step dependency order, per-object gotchas, and cleansing | Advanced |
+| **7** | The Phased Rollout: From Legacy Cleanse to Closing the Loop | The program on a timeline — Phase 0 through Phase 5 with exit criteria and upgrade-window sequencing | Advanced |
+
+---
+
+## Part-by-Part Guide
+
+### Part 1 — **[Reliability Fundamentals: RCM, FMEA/FMECA & Choosing the Right Task Type](/blog/mas-reliability-fundamentals-rcm-fmea)**
+
+*Read time: 20 minutes.*
+
+Before you open a single Maximo application, you have to get the method right, because a tool applied to the wrong decision just automates a mistake. Part 1 is Reliability Centered Maintenance reduced to the seven questions of SAE JA1011, FMEA and FMECA with the RPN screen worked end to end, and the decision logic that maps every failure mode to exactly one task type — run-to-failure, time-based PM, condition-based, predictive, failure-finding, or redesign. It closes with a fully worked FMEA on a centrifugal pump and the P-F curve that sets inspection frequency.
+
+**You will learn:**
+- The seven RCM questions and why consequence category — not asset age — drives the decision
+- The difference between FMEA and FMECA, and how to compute and *when to distrust* an RPN
+- How to select the correct task type for any failure mode with a decision matrix
+- Why the P-F interval sets inspection frequency, worked with real numbers
+
+### Part 2 — **[Reliability Metrics That Matter: MTBF, MTTR, Availability & PM Optimization](/blog/mas-reliability-metrics-mtbf-mttr)**
+
+*Read time: 19 minutes.*
+
+Metrics are the feedback loop that turns a one-time strategy into a living system. Part 2 works MTBF, MTTF, MTTR, availability, failure rate, and OEE from first principles with a fully worked fleet calculation, explains the bathtub curve, and turns the Nowlan & Heap finding — that only about 11% of failure modes are age-related — into a concrete PM-optimization method you can run against your own Maximo failure history.
+
+**You will learn:**
+- Every core reliability formula, with a worked twelve-pump fleet calculation
+- Why availability is attacked from both sides — fewer failures and faster repair
+- What the bathtub curve and the six failure patterns mean for your PM program
+- A step-by-step method to extend, shorten, or shift PM intervals from real history
+
+### Part 3 — **[Building the Reliability Spine in Manage](/blog/mas-reliability-reliability-spine)**
+
+*Read time: 21 minutes.*
+
+Methodology becomes reference data here. The reliability spine is four stock MAS 9 Manage applications — Failure Codes, asset criticality, Condition Monitoring, and Meters — that together turn free-text guesswork into a controlled vocabulary, risk-based effort, and automatic condition-based work order generation. Part 3 builds each one and then assembles them on a single critical pump.
+
+**You will learn:**
+- How the Failure Codes application builds the class → Problem → Cause → Remedy tree
+- How asset priority and work order priority combine into a calculated priority
+- How Condition Monitoring measurement points auto-generate work orders on limit breaches
+- The three meter types and where each belongs
+
+### Part 4 — **[From Analysis to Action: Job Plans, PMs & the Reliability Strategies App](/blog/mas-reliability-analysis-to-action)**
+
+*Read time: 20 minutes.*
+
+With the spine in place, you attach the maintenance decisions. Job plans define the task, PMs define the schedule, asset templates roll both out at fleet scale, and the dedicated Reliability Strategies application brings RCM/FMEA content natively into Maximo. Part 4 works the flow from an RCM decision to a live PM, and points to MAS MANAGE Part 4 for the full application tour.
+
+**You will learn:**
+- The job-plan-versus-PM split — "what to do" versus "when to do it"
+- How Master PMs, routes, and PM hierarchies scale a decision across a fleet
+- What asset templates carry (and the failure-class field they do not)
+- What the Reliability Strategies app and its vendor library add, and where it lives
+
+### Part 5 — **[The APM Layer as Reliability: Health, Predict, Monitor & AIP](/blog/mas-reliability-apm-layer)**
+
+*Read time: 18 minutes.*
+
+Asset Performance Management sits on top of the Manage spine, not in place of it. Part 5 explains how Maximo Health scores criticality and risk, Monitor answers "is it abnormal now?", Predict answers "when will it fail?", and Asset Investment Planning turns risk into capital timing — and how all of them push work orders back into Manage to close the loop.
+
+**You will learn:**
+- What Maximo Health adds beyond the core-Manage criticality proxy
+- The crisp Monitor-versus-Predict distinction and Predict's Health dependency
+- How the APM data flow closes back into Manage
+- The licensing and packaging facts that decide when APM is worth installing
+
+### Part 6 — **[Populating the Spine: Data-Load Tools & Dependency-Correct Sequencing](/blog/mas-reliability-populating-the-spine)**
+
+*Read time: 22 minutes.*
+
+This is where reliability implementation succeeds or stalls. Part 6 is the tactical core: the five realistic load tools and when to use each, the eleven-step load sequence the MBO layer forces on you, per-object load specifics including the FAILURELIST restricted-object gotcha, and the validation and cleansing that must happen before you load anything.
+
+**You will learn:**
+- Which of the five tools to use for which load, and why Migration Manager is config-only
+- The mandatory eleven-step dependency order and why each step needs the prior one
+- The FAILURELIST restricted-object workaround and other per-object specifics
+- How to cleanse, batch, rehearse, and reconcile so loads don't break in PROD
+
+### Part 7 — **[The Phased Rollout: From Legacy Cleanse to Closing the Loop](/blog/mas-reliability-phased-rollout)**
+
+*Read time: 23 minutes.*
+
+Everything in the series assembles into a phased program: Phase 0 legacy cleanse during the upgrade window, Phase 1 the reference-data spine, Phase 2 the maintenance decisions, Phase 3 the Reliability Strategies layer, Phase 4 APM, and Phase 5 closing the loop — the phase that never ends. Each phase has exit criteria so you know when you can move on.
+
+**You will learn:**
+- Why the upgrade window is the one clean moment to fix legacy failure data
+- The dependency order of the phases and the exit criteria for each
+- Where APM belongs in the sequence and why it is not a prerequisite
+- How reliability work affects the SAP PR integration (volume, not pattern)
+
+---
+
+## Reading Paths by Role
+
+Not everyone needs all seven parts in one sitting. Pick the path that matches your role.
+
+| Role | Start here | Then | Skip / skim |
+|---|---|---|---|
+| **Reliability engineer** | Parts 1 → 2 (method + metrics) | 3, 4, then 5 | 6 (hand to the data lead) |
+| **Maximo administrator / config lead** | Parts 3 → 4 (the apps) | 6 → 7 (loads + rollout) | 1, 2 (skim for vocabulary) |
+| **Data / migration lead** | Part 6 (load tools + sequence) | 7 (Phase 0/1) → 3 | 5 (APM comes later) |
+| **Maintenance manager / sponsor** | Index → Part 1 → Part 7 | 2 for the KPI story | 6 (technical detail) |
+| **APM / IoT owner** | Part 5 | 2 (the metrics APM produces) → 3 | 6 |
+
+<aside>
+
+💡 **Key insight:** If your program is in trouble, the fastest diagnostic is to read Part 7's exit criteria and ask which phase you actually completed. Teams that "have lots of PMs" but no failure hierarchy have skipped Phase 1 — they built the roof before the walls.
+
+</aside>
+
+---
+
+## The Themes That Run Through Every Part
+
+- **Decision over volume.** Reliability is a per-failure-mode decision, not a PM count. Parts 1, 2, and 4 hammer this from three angles.
+- **Sequence is not optional.** The MBO layer enforces a dependency order, and so does the program. Parts 6 and 7 are built around it.
+- **The spine before the amplifier.** Stock Manage apps deliver the whole core strategy; APM (Part 5) enhances a spine that already works. Do not install Health to compensate for a missing failure hierarchy.
+- **The upgrade window is a gift.** The 7.6 → MAS 9 data model is unchanged, so data migrates — which makes the upgrade the one clean moment to cleanse. Parts 6 and 7 exploit it.
+- **The loop is the strategy.** A first cut is never the final cut. Failure reporting and KPI-driven interval tuning (Parts 2 and 7) are what keep the program alive.
+
+---
+
+## Key Takeaways
+
+- **Reliability is a per-failure-mode decision problem**, not a PM-volume problem — the failure hierarchy and criticality data are the foundation, not the PM count.
+- **Build in order:** the reference-data spine first, then the maintenance decisions, then the feedback loop. The whole program is one dependency chain.
+- **Stock Manage apps cover the full core strategy;** APM (Health, Predict, Monitor) is Phase 4, an enhancement, not a prerequisite.
+- **Data loads have a hard dependency order** — the MBO layer rejects any record whose foreign key does not yet resolve, so sequence is mandatory.
+- **The 7.6 to MAS 9 upgrade is the one clean moment** to cleanse legacy free-text failure data and bulk-load a standardized hierarchy.
+
+---
+
+## References
+
+**IBM Official**
+- [Maximo Manage — Reliability Strategies module (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=module-reliability-strategies)
+- [Maximo Manage — Condition Monitoring overview (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=monitoring-condition-overview)
+- [IBM — Asset Performance Management software](https://www.ibm.com/products/maximo/asset-performance-management)
+- [IBM APM Hands-On Lab (MAS v9.0)](https://ibm.github.io/maximo-labs/apm_9.0/demo_script/)
+
+**Community & Standards**
+- [Maximo Secrets — Reliability Strategies](https://maximosecrets.com/2023/11/22/reliability-strategies/)
+- [Maximo Secrets — New Features in MAS 9.0 and 9.1](https://maximosecrets.com/2025/07/06/new-features-in-mas-90-and-91/)
+- [SAE JA1011 — Evaluation Criteria for RCM Processes](https://www.sae.org/standards/content/ja1011_200908/)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Start here:** | [Part 1 — Reliability Fundamentals: RCM, FMEA/FMECA & Task Types](/blog/mas-reliability-fundamentals-rcm-fmea) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves — from architecture and migration planning to the day-to-day work of configuring, extending, and running Maximo.
+
+*Published by TheMaximoGuys | July 2026*

@@ -1,0 +1,298 @@
+---
+title: "Maximo Mobile for Manage: Offline-First Field Work and the End of Anywhere"
+description: "A practitioner's deep dive into Maximo Mobile for Manage 9 — why it replaced Maximo Anywhere, how its offline-first REST and sync architecture works, the Technician, Inspections, and Inventory apps, low-code app definitions in Mobile Studio, RBAC and offline security, and how to migrate off MobileFirst."
+date: "2026-06-02"
+slug: "mas-manage-maximo-mobile"
+tags: ["Maximo", "MAS Manage", "MAS 9", "Maximo Mobile", "Maximo Anywhere", "Offline", "Mobile", "Field Service"]
+draft: false
+tier: "developer"
+author: "Swetansh Kumar"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "../MAS-FEATURES/images/mas-features-maximo-mobile.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What replaced Maximo Anywhere in MAS 9?"
+    answer: "Maximo Mobile replaced Maximo Anywhere. Anywhere was built on IBM MobileFirst (formerly Worklight), required a separate Anywhere/MobileFirst server, used hybrid apps with complex adapters and app signing, and was discontinued at MAS 8.9 — it is not supported through MAS 9. Maximo Mobile is the strategic successor: a cross-platform, offline-first set of role-based apps that talk directly to Manage REST APIs with no middle-tier mobile server."
+  - question: "How does Maximo Mobile work offline?"
+    answer: "Maximo Mobile is offline-first. On sync, a device pulls REST-backed data sets — work orders, assets, locations, job plans, domains, and failure codes scoped by the technician's assignment, work group, or location — into a local device database. The technician then works fully offline: starting and stopping work, recording labor, issuing materials, capturing meters, and completing tasks. Changes queue locally and a sync engine governed by sync policies pushes them back and resolves conflicts on reconnect."
+  - question: "Is there still a separate Maximo Mobile Assist app?"
+    answer: "No. The standalone Assist application was dropped in MAS 9.0. Remote and expert collaboration moved into Maximo Mobile itself, with the expert side using a new Collaborate add-on. So you should not deploy or describe a separate 'Maximo Mobile Assist' app as current — remote assistance is now a capability inside Maximo Mobile."
+  - question: "How is Maximo Mobile secured and how does it handle permissions offline?"
+    answer: "Maximo Mobile uses the same security groups and signature options as the Manage web client. Users log in through the MAS identity provider with tokens, and RBAC hides or disables actions exactly as on the desktop. Because data is scoped at sync time, the permissions captured during sync are what the device enforces while offline. Mobile transactions can also trigger MIF external events, so no mobile-specific endpoints are required."
+keyTakeaways:
+  - "Maximo Mobile replaced Maximo Anywhere, which was EOL'd at MAS 8.9 and is unsupported in MAS 9"
+  - "The architecture is offline-first: REST-backed data sets, a sync engine, and sync policies — no separate mobile server"
+  - "Technician, Inspections, and Inventory apps share the same object structures and validation as the desktop"
+  - "App definitions are JSON authored low-code in Maximo Mobile Studio, with scripting and REST for complex logic"
+  - "The standalone Assist app was dropped in 9.0; remote collaboration moved into Mobile with a Collaborate add-on"
+series:
+  name: "MAS MANAGE"
+  part: 6
+  total: 11
+tldr: "Maximo Mobile is the offline-first successor to Maximo Anywhere, which was discontinued at MAS 8.9. It drops the MobileFirst middle tier and talks directly to Manage REST APIs: data sets sync into a local device database, a sync engine and sync policies govern refresh and conflict handling, and JSON app definitions are authored low-code in Mobile Studio. The Technician, Inspections, and Inventory apps reuse the desktop's object structures, validation, security groups, and RBAC. This post explains the architecture, the apps, and how to migrate off Anywhere."
+seoTitle: "Maximo Mobile for Manage 9 | Offline-First Field Work"
+seoDescription: "How Maximo Mobile replaced Anywhere in MAS 9: offline-first REST and sync, the Technician and Inspections apps, RBAC, and Anywhere migration."
+targetQuestions:
+  - "What replaced Maximo Anywhere in MAS 9?"
+  - "How does Maximo Mobile work offline?"
+  - "What can the Maximo Mobile Technician app do?"
+  - "How are Maximo Mobile apps built and configured?"
+  - "How do I migrate from Maximo Anywhere to Maximo Mobile?"
+semanticKeywords:
+  - "Maximo Mobile"
+  - "Maximo Anywhere replacement"
+  - "offline-first mobile app"
+  - "Maximo Mobile Technician"
+  - "Maximo Mobile Studio"
+  - "sync policies conflict resolution"
+  - "Manage REST API mobile"
+  - "object structures mobile data"
+  - "field service mobile Maximo"
+  - "MobileFirst Worklight migration"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 3 (work management — job plans, PMs, work orders) supplies the work the Technician app executes"
+  - "Part 5 (inspections and digital forms) shares the form engine the Inspections app uses"
+  - "Familiarity with REST APIs, object structures, and MAS security groups"
+speakableSections:
+  - "The End of Anywhere"
+  - "How Offline-First Actually Works"
+  - "The Technician App Is the Flagship"
+relatedSlugs:
+  - "mas-manage-series-index"
+  - "mas-manage-work-centers-to-rba"
+  - "mas-manage-inspections-digital-forms"
+  - "mas-manage-work-management"
+---
+
+# Maximo Mobile for Manage: Offline-First Field Work and the End of Anywhere
+
+> **Part 6 of the MAS MANAGE series.** This is the capability that takes Manage off the desktop and into the technician's hand — and finally retires the mobile platform everyone struggled with.
+
+<aside>
+🎯 **Who this is for:** Maximo administrators, developers, and field-service leads who ran (or fought with) Maximo Anywhere and need to know exactly how Maximo Mobile differs, what it can do offline, and what migrating off MobileFirst actually involves.
+</aside>
+
+**Estimated read time:** 22 minutes
+
+---
+
+## 📴 The End of Anywhere
+
+If you implemented mobile Maximo in the 7.6 era, you carry scar tissue. **Maximo Anywhere** was capable, but the platform under it was heavy. It was built on **IBM MobileFirst** (formerly Worklight), which meant you stood up and maintained a **separate Anywhere/MobileFirst server** alongside Maximo. The apps were **hybrid**, the integration ran through **adapters** you had to write and tune, and shipping a build meant wrestling with **app signing** and a packaging pipeline. Every upgrade was a project.
+
+That era is over. **Maximo Anywhere was discontinued at MAS 8.9** and is **not supported through MAS 9.** Its strategic successor is **Maximo Mobile**, and the difference is not cosmetic — it is architectural.
+
+The shift is from this:
+
+> *Old world:* "We need a MobileFirst server, custom adapters, hybrid app builds, and a signing pipeline before a technician sees a single work order."
+
+to this:
+
+> *MAS world:* "The app talks straight to the Manage REST APIs. There is no mobile middle tier. We configure data sets and sync policies, and the apps run offline-first on Android and iOS."
+
+<aside>
+💡 **Key insight:** The biggest win of Maximo Mobile is what it *removed* — the MobileFirst server, the adapter layer, and the hybrid build pipeline. Maximo Mobile is a thin, REST-native client over the same Manage you already run.
+</aside>
+
+---
+
+## 🔁 How Offline-First Actually Works
+
+Maximo Mobile is **cross-platform** (Android and iOS) and **offline-first** by design. Understanding three concepts explains almost everything about it.
+
+### 1. REST-backed data sets
+
+Instead of bespoke adapters, the apps pull **REST-backed data sets** — mobile data groups built on **object structures** — over the standard **Manage REST APIs**. These are the same object structures and the same validation rules the desktop uses; the mobile app is simply another consumer of them. No mobile-specific data layer, no parallel business logic.
+
+### 2. The sync engine and sync policies
+
+A **sync engine** moves data between the server and the device, and **sync policies** govern *how*: what refreshes, how often, how much, and how conflicts are handled. Sync is **incremental and scoped** — a technician pulls the work orders, assets, locations, job plans, domains, and failure codes relevant to their **assignment, work group, or location**, not the entire database.
+
+### 3. The local device database
+
+Synced data lands in a **local device database**. From there the technician works **fully offline**. Every change — a status update, a labor record, a material issue — **queues locally** and is reconciled on reconnect, with **conflict resolution** applied per the sync policy.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│   MAXIMO MOBILE — OFFLINE-FIRST FLOW                          │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│   Manage REST APIs                                           │
+│   (object structures)                                       │
+│         │                                                    │
+│         │  incremental sync (scoped by                       │
+│         ▼   assignment / work group / location)              │
+│   ┌───────────────┐   sync engine   ┌──────────────────┐     │
+│   │  Sync Policies │ ───────────────▶│  Local Device DB │     │
+│   │ (refresh,      │ ◀─── queued ────│  (WOs, assets,   │     │
+│   │  conflict)     │     changes      │  job plans,...)  │     │
+│   └───────────────┘                  └──────────────────┘     │
+│                                            │                  │
+│                                            ▼                  │
+│                                   Technician works OFFLINE    │
+│                                   changes queue → resolve     │
+│                                   on reconnect                │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+<aside>
+💡 **Key insight:** Because the apps reuse the desktop's object structures and validation, there is no second source of truth for business rules. What is valid on the web is valid on the device — which is exactly the consistency Anywhere's adapter layer made hard.
+</aside>
+
+### How apps are built
+
+App definitions are **JSON** — layouts, cards, data sources, and actions — authored **low-code** in **Maximo Mobile Studio**. For the simple majority of changes you arrange cards and bind data sources visually. For complex logic you drop into **scripting and REST**. There is no hybrid build to compile and no app to re-sign for a configuration change.
+
+This is the quiet revolution buried in the architecture. Under Anywhere, a layout tweak or a new field could mean editing a hybrid app, rebuilding it, and pushing a freshly signed package out to every device — a release cycle measured in days. Under Maximo Mobile, a configuration change is a change to the JSON app definition that flows to devices through the same sync mechanism as data. The cost of iterating on a mobile screen drops by an order of magnitude, which in practice is the difference between a mobile rollout that keeps improving and one that freezes the day it ships because nobody wants to touch the build pipeline again.
+
+---
+
+## 🔧 The Technician App Is the Flagship
+
+**Maximo Mobile Technician** is the role-based app most teams deploy first, and it is the one that replaces the bulk of what Anywhere's Work Execution app did — only offline-first and far simpler to run.
+
+The technician opens to an **assigned work order list**, fed from the supervisor or graphical assignment process (see Part 7), **filterable**, and **fully usable offline** once synced. From there the app supports the full field workflow:
+
+- **Start and stop work** — drive work order status from the device.
+- **Record labor actuals** — written back as **LABTRANS** records.
+- **Issue and return materials** against the work order.
+- **Capture meter readings** for assets and locations.
+- **Complete tasks** on the job plan.
+- **Record failure codes** — class → problem → cause → remedy — against the same taxonomy the desktop uses.
+- **Attach photos and documents** via **DOCLINKS**.
+- **Launch a linked inspection inline** without leaving the work order.
+
+All of this runs against the **local device DB**, which holds the work orders, assets, locations, job plans, domains, and failure codes needed for the assignment. Offline changes **queue and resolve conflicts on reconnect** — the technician never has to think about connectivity.
+
+| Field action | Desktop object it writes |
+|---|---|
+| Start / stop work | Work order status |
+| Record labor | LABTRANS |
+| Issue / return materials | Inventory transactions |
+| Capture meter readings | Meter reading records |
+| Record failure codes | Failure class → problem → cause → remedy |
+| Attach photos / docs | DOCLINKS |
+
+<aside>
+⚠️ **Watch out:** Offline scope is set at sync time. If a technician's assignment, work group, or location filter does not include an asset or work order, it will not be on the device — and they cannot conjure it offline. Get the sync policy scoping right, or your field team will be missing records exactly when they have no signal to fetch them.
+</aside>
+
+---
+
+## 📋 Inspections, Inventory, and Remote Collaboration
+
+The Technician app is the headline, but Maximo Mobile is a *family* of role-based apps that all share the desktop's foundations.
+
+### Maximo Mobile Inspections
+
+The Inspections app presents **card-based forms** that can be **scheduled** (work-order-linked) or **ad hoc** (launched from an asset or location). Critically, it uses the **same form types as the desktop Inspection Forms app**, because both run on the shared **Graphite** engine (see Part 5). Inspections work **offline**, and on sync the **server creates the inspection result records** and **runs the configured on-failure actions** — so a failed inspection automatically spawns the follow-up work your configuration defines.
+
+In **Maximo Mobile 9.0**, inspection forms **migrated from the old Work Center to the Graphite platform with no loss of functionality**, plus **better performance** and **attachment support on inspection questions.** Dispatching also gained **real-time technician position**.
+
+### Maximo Mobile Inventory
+
+The Inventory app brings storeroom work to the device: **physical counts, issues, returns, transfers, and goods receipt.** As with everything else in Maximo Mobile, it uses the **same object structures and validation** as the desktop — counts and issues posted from the device obey the same rules as the web client.
+
+### Remote collaboration — note the version change
+
+Here is a nuance that trips people up. There **is no standalone "Maximo Mobile Assist" app** in current MAS. The separate **Assist application was dropped in MAS 9.0**, and **remote/expert collaboration moved into Maximo Mobile itself** — the technician requests help from within Mobile, and the expert side uses a new **Collaborate** add-on. If you are scoping a deployment, do not plan around a separate Assist install; plan around collaboration as a capability inside Maximo Mobile.
+
+---
+
+## 🔐 Security, RBAC, and Offline Permissions
+
+A recurring worry with mobile is whether it weakens your security model. With Maximo Mobile, it does not — because it reuses the web model wholesale.
+
+- **Same security groups and signature options** as the Manage web client. There is no separate mobile permission scheme to maintain.
+- **Login through the MAS identity provider** with **tokens** — the same SSO and identity stack as the rest of the suite.
+- **RBAC hides or disables actions** on the device exactly as it does on the desktop. A technician who cannot approve on the web cannot approve on the phone.
+- **Offline enforces the permissions captured at sync time.** What the user was entitled to when they synced is what the device honors while disconnected.
+- **Mobile transactions can trigger MIF external events** — so your existing integrations fire from mobile activity with **no mobile-specific endpoints** to build.
+
+<aside>
+💡 **Key insight:** Maximo Mobile does not add a security surface — it inherits one. Security groups, signature options, identity, and RBAC are the same objects you already govern for the web client, which is what makes mobile rollout a configuration exercise rather than a re-architecture.
+</aside>
+
+---
+
+## 🚚 Migrating From Anywhere to Maximo Mobile
+
+If you are coming from **7.6 + Anywhere**, recognize that you are doing **two migrations at once**: an **app-platform migration** (7.6 → MAS 9 Manage) *and* a **mobile-platform migration** (Anywhere → Maximo Mobile). Plan them together.
+
+The good news on data: **mobile data is largely transient** — the device holds a working copy that resyncs from the server — so **data migration is minor.** The real work is operational:
+
+```
+ANYWHERE / MOBILEFIRST  ──────────▶  MAXIMO MOBILE
+
+  • Decommission the MobileFirst /        • Configure data sets, sync
+    Anywhere server                          policies, and app definitions
+  • Remove Anywhere extensions               in Maximo Mobile Studio
+    and custom adapters                    • Reuse desktop object structures,
+  • Retire app-signing / build               security groups, RBAC
+    pipeline                               • Retrain technicians on the
+                                             offline-first apps
+```
+
+1. **Decommission the MobileFirst / Anywhere server** — it has no successor; the middle tier is gone.
+2. **Remove Anywhere extensions and custom adapters** — their logic, where still needed, moves into object structures, automation scripts, or Mobile Studio configuration.
+3. **Configure Maximo Mobile** — data sets, sync policies, and the JSON app definitions.
+4. **Retrain** — the offline-first apps are simpler, but they *are* different. Budget for it.
+
+<aside>
+⚠️ **Watch out:** Do not treat "Anywhere → Mobile" as a like-for-like port. Anywhere customizations built as MobileFirst adapters have no direct equivalent — re-express the requirement using REST, object structures, automation scripts, and Mobile Studio rather than trying to recreate the old extension.
+</aside>
+
+---
+
+## 🎯 The Commandments of Maximo Mobile
+
+1. **Thou shalt not build on Anywhere** — it ended at MAS 8.9 and is unsupported in MAS 9.
+2. **Thou shalt scope sync policies carefully** — offline data is only what was pulled at sync time.
+3. **Thou shalt reuse the desktop's object structures and validation** — one source of truth for business rules.
+4. **Thou shalt configure in Mobile Studio first**, scripting and REST only when the logic demands it.
+5. **Thou shalt inherit the web security model** — same groups, signatures, identity, and RBAC.
+6. **Thou shalt not plan a standalone Assist app** — collaboration lives inside Mobile, with Collaborate for the expert.
+7. **Thou shalt plan Anywhere migration as two migrations** — app platform *and* mobile platform.
+
+---
+
+## Key Takeaways
+
+- **Maximo Mobile replaced Maximo Anywhere**, which was built on IBM MobileFirst, discontinued at MAS 8.9, and is not supported through MAS 9.
+- **The architecture is offline-first and REST-native** — data sets over Manage REST APIs, a sync engine and sync policies, and a local device database — with **no MobileFirst middle tier.**
+- **The Technician app is the flagship**: an offline assigned work order list with start/stop, labor (LABTRANS), materials, meters, tasks, failure codes, DOCLINKS attachments, and inline inspections.
+- **Inspections and Inventory apps reuse the desktop's form engine (Graphite), object structures, and validation**; 9.0 moved inspection forms to Graphite with better performance and question attachments.
+- **Security is inherited, not rebuilt** — same security groups, signature options, MAS identity, and RBAC, with offline enforcing permissions captured at sync time and transactions able to fire MIF events.
+- **The standalone Assist app was dropped in 9.0** — remote collaboration is now part of Maximo Mobile, with a Collaborate add-on for the expert side.
+
+---
+
+## References
+
+**IBM Official**
+- [What's new in Maximo Manage 9.0 — IBM Documentation](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=manage-in-90)
+- [Maximo Manage documentation home](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+
+**Community**
+- [New Features in MAS 9.0 and 9.1 — Maximo Secrets](https://maximosecrets.com/2025/07/06/new-features-in-mas-90-and-91/)
+- [MAS 9.0 New Features — Maximo Secrets](https://maximosecrets.com/2024/06/26/mas-9-0-new-features/)
+- [What's new in Maximo Manage v9 — Pragma Edge](https://pragmaedge.com/whats-new-in-maximo-manage-v9/)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 5 — Inspections and Digital Forms](/blog/mas-manage-inspections-digital-forms) |
+| **Next:** | [Part 7 — Graphical Scheduling, Assignment, and FSM](/blog/mas-manage-graphical-scheduling-fsm) |
+
+---
+
+*Published by TheMaximoGuys | June 2026*
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS — from architecture and migration planning to the day-to-day work of configuring, extending, and running Maximo Manage. This series is the guide we wish we'd had.

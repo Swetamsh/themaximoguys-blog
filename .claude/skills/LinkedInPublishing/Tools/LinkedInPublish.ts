@@ -135,96 +135,40 @@ async function deletePost(postUrn: string): Promise<void> {
   console.log(`Deleted: ${postUrn}`);
 }
 
-// ─── Playwright First Comment ─────────────────────────────────
+// ─── Comments via LinkedIn API ─────────────────────────────────
 
 function postUrnToUrl(postUrn: string): string {
-  // urn:li:share:7444400938880053248 → https://www.linkedin.com/feed/update/urn:li:share:7444400938880053248/
   return `https://www.linkedin.com/feed/update/${postUrn}/`;
 }
 
-async function addFirstCommentViaBrowser(postUrn: string, commentText: string, asOrg: boolean): Promise<boolean> {
+async function addFirstComment(postUrn: string, commentText: string, asOrg: boolean): Promise<boolean> {
   try {
-    const { chromium } = await import("playwright");
-    const liAt = process.env.LINKEDIN_LI_AT || "";
-    if (!liAt) {
-      console.error("LINKEDIN_LI_AT not set in .env.local");
-      return false;
-    }
-
-    const browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({
-      viewport: { width: 1280, height: 900 },
-      userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    const actorUrn = asOrg ? ORG_URN : PERSON_URN;
+    const encodedUrn = encodeURIComponent(postUrn);
+    const res = await fetch(`https://api.linkedin.com/v2/socialActions/${encodedUrn}/comments`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "X-Restli-Protocol-Version": "2.0.0",
+      },
+      body: JSON.stringify({
+        actor: actorUrn,
+        message: { text: commentText },
+      }),
     });
-    await context.addCookies([
-      { name: "li_at", value: liAt, domain: ".linkedin.com", path: "/", httpOnly: true, secure: true, sameSite: "None" as const },
-    ]);
 
-    const page = await context.newPage();
-
-    if (asOrg) {
-      // Navigate to admin page-posts view — comments automatically as the company page
-      console.log("Commenting as company page via admin view...");
-      await page.goto("https://www.linkedin.com/company/111960338/admin/page-posts/published/", {
-        waitUntil: "domcontentloaded", timeout: 30000,
-      });
-    } else {
-      // Navigate to the post directly — comments as personal profile
-      const postUrl = postUrnToUrl(postUrn);
-      console.log(`Opening post: ${postUrl}`);
-      await page.goto(postUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-    }
-
-    await page.waitForTimeout(8000);
-
-    // Check if logged in
-    if (page.url().includes("login")) {
-      console.error("Not logged in — li_at cookie may be invalid");
-      await browser.close();
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`Comment API failed: ${res.status} ${errText}`);
       return false;
     }
 
-    // For personal posts, click Comment button first to open the editor
-    if (!asOrg) {
-      await page.locator('button:has-text("Comment")').first().click();
-      await page.waitForTimeout(3000);
-    }
-
-    // Find and type in the comment editor
-    const commentEditor = page.locator('.ql-editor[contenteditable="true"]').first();
-    await commentEditor.waitFor({ state: "visible", timeout: 30000 });
-    await commentEditor.click();
-    await page.waitForTimeout(500);
-    await commentEditor.pressSequentially(commentText, { delay: 25 });
-    await page.waitForTimeout(1500);
-
-    // Find and click the Comment submit button
-    const allButtons = await page.locator('button').all();
-    let submitted = false;
-    for (const btn of allButtons) {
-      const text = (await btn.textContent())?.trim();
-      const classes = await btn.getAttribute('class') || '';
-      if (text === 'Comment' && classes.includes('comments-comment-box__submit-button')) {
-        if (await btn.isVisible()) {
-          await btn.click();
-          submitted = true;
-          break;
-        }
-      }
-    }
-
-    if (!submitted) {
-      console.error("Could not find Comment submit button");
-      await browser.close();
-      return false;
-    }
-
-    await page.waitForTimeout(4000);
-    console.log(`First comment posted as ${asOrg ? "company page" : "personal profile"}!`);
-    await browser.close();
+    const data = await res.json();
+    console.log(`First comment posted as ${asOrg ? "company page" : "personal profile"}! ID: ${data.id}`);
     return true;
   } catch (e: any) {
-    console.error(`Browser comment failed: ${e.message}`);
+    console.error(`Comment failed: ${e.message}`);
     return false;
   }
 }
@@ -276,7 +220,7 @@ async function cmdComment(args: string[]) {
   if (!comment) { console.error("--text <comment-text> is required"); process.exit(1); }
 
   console.log(`Adding comment to ${postUrn} (as ${asOrg ? "company page" : "personal"})...`);
-  const success = await addFirstCommentViaBrowser(postUrn, comment, asOrg);
+  const success = await addFirstComment(postUrn, comment, asOrg);
   if (success) {
     console.log(`\n✓ Comment added to: ${postUrnToUrl(postUrn)}`);
   } else {
@@ -345,12 +289,19 @@ async function cmdPost(args: string[]): Promise<{ postUrn: string }> {
   console.log(`Post published! URN: ${result.postUrn}`);
   console.log(`URL: ${postUrnToUrl(result.postUrn)}`);
 
-  // Add first comment via Playwright if requested
+  // Add first comment via API if requested
   if (comment && result.postUrn && result.postUrn !== "unknown") {
-    console.log(`\nAdding first comment via browser (as ${asOrg ? "company page" : "personal"})...`);
-    const success = await addFirstCommentViaBrowser(result.postUrn, comment, asOrg);
+    console.log(`\nWaiting 5s for post to propagate...`);
+    await new Promise((r) => setTimeout(r, 5000));
+    console.log(`Adding first comment via API (as ${asOrg ? "company page" : "personal"})...`);
+    let success = await addFirstComment(result.postUrn, comment, asOrg);
     if (!success) {
-      console.log("\n⚠ Browser comment failed. Add manually at:");
+      console.log("Retrying after 10s...");
+      await new Promise((r) => setTimeout(r, 10000));
+      success = await addFirstComment(result.postUrn, comment, asOrg);
+    }
+    if (!success) {
+      console.log("\n⚠ Comment failed. Add manually at:");
       console.log(postUrnToUrl(result.postUrn));
       console.log("\nComment text:");
       console.log(comment);

@@ -1,0 +1,262 @@
+---
+title: "Work Order Approvals in MAS 9: The Approvals Application, Work Order Intelligence, and Electronic Signatures"
+description: "Approving a work order looks different in MAS 9. Here's the honest picture — the Workflow Designer is unchanged and your 7.6 workflows carry forward, the new Approvals Role-Based Application replaces the Work Supervisor approval flow (with one gap), watsonx-powered Work Order Intelligence recommends a failure code with a confidence score at approval, and electronic signatures can be enforced on specific status changes for regulated work."
+date: "2026-07-15"
+slug: "wo-missing-pieces-approvals-esignatures"
+tags: ["Maximo", "MAS 9", "Work Order Approval", "Workflow Designer", "Role-Based Application", "Work Order Intelligence", "watsonx", "Electronic Signatures", "EAM"]
+draft: false
+tier: "developer"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/wo-missing-pieces-02-approvals-esignatures.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Did the Workflow Designer change in MAS 9?"
+    answer: "No. The Workflow Designer application remains available and functional. Visual workflow design still works, approval routing based on conditions, person groups, and escalations is unchanged, communication templates still drive notifications, and workflow assignments still appear in user inboxes. Critically, your existing 7.6 workflows carry forward during the upgrade — you do not rebuild them."
+  - question: "What is the Approvals Role-Based Application in MAS 9?"
+    answer: "The Approvals RBA is a new application that gives approvers a streamlined, card-based view of pending approvals with quick approve or reject plus comments. It is mobile-friendly for on-the-go approval and replaces the Work Supervisor Work Center for approval workflows. It does not, however, let you review a Service Request and convert it to a Work Order in one flow — for that you use the classic applications."
+  - question: "How does Work Order Intelligence recommend a failure code?"
+    answer: "When a work order reaches approval status, Maximo Work Order Intelligence (MAS 9.0) uses IBM watsonx generative AI to analyze the WO long and short descriptions. A model trained on your historical work orders recommends the most likely problem (failure) code and shows the approver a confidence score. The approver can accept, modify, or reject the recommendation. It requires the Maximo AI Service (10 AppPoints), sufficient historical WO data, and setup in the AI Configuration application."
+  - question: "Can MAS 9 require an electronic signature to complete a work order?"
+    answer: "Yes. Maximo Mobile supports electronic signature enforcement on work order status changes, configurable per transition — for example, requiring a signature when a work order moves from INPRG to COMP. The digital signature is captured and stored with the work order record, which is valuable for regulated industries such as pharmaceutical, nuclear, and aviation."
+keyTakeaways:
+  - "The Workflow Designer is unchanged in MAS 9 and your 7.6 workflows carry forward — you don't rebuild them"
+  - "The Approvals RBA replaces the Work Supervisor approval flow with a card-based approve/reject interface"
+  - "The Approvals RBA cannot review an SR and convert it to a WO in one flow — that gap sends you to the classic apps"
+  - "Work Order Intelligence (9.0) uses watsonx to recommend a failure code with a confidence score at approval"
+  - "Electronic signatures can be enforced per status transition (e.g. INPRG to COMP) for regulated industries"
+series:
+  name: "MAS WORK ORDER OPS"
+  part: 2
+  total: 6
+tldr: "Approving a work order changed shape in MAS 9, but not everywhere. The Workflow Designer is untouched and your 7.6 approval workflows carry forward. The new Approvals Role-Based Application replaces the Work Supervisor approval flow with a card-based approve/reject view — though it cannot convert a Service Request to a Work Order in one screen. Work Order Intelligence (9.0) adds a watsonx failure-code recommendation with a confidence score at approval, gated behind the Maximo AI Service (10 AppPoints) and enough historical data. And electronic signatures can be enforced per status transition on Maximo Mobile for regulated work."
+seoTitle: "Work Order Approvals in MAS 9: Approvals RBA & E-Sig"
+seoDescription: "What changed in MAS 9 work order approval: the Approvals RBA, watsonx Work Order Intelligence failure-code hints, and electronic signatures on status changes."
+targetQuestions:
+  - "How do you approve work orders in MAS 9?"
+  - "Did the Workflow Designer change in MAS 9?"
+  - "What is the Approvals Role-Based Application in MAS 9?"
+  - "How does Work Order Intelligence recommend a failure code?"
+  - "Can MAS 9 require an electronic signature to complete a work order?"
+semanticKeywords:
+  - "MAS 9 Approvals application"
+  - "Approvals Role-Based Application"
+  - "Workflow Designer unchanged"
+  - "Work Order Intelligence watsonx"
+  - "failure code recommendation confidence score"
+  - "Maximo AI Service AppPoints"
+  - "electronic signatures work order status change"
+  - "AI Configuration application"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Familiarity with the Maximo work order lifecycle and statuses (see MAS MANAGE Part 3)"
+  - "Awareness that Work Centers were removed in MAS 9"
+  - "Basic understanding of Maximo workflow, person groups, and Maximo Mobile"
+speakableSections:
+  - "The Workflow Designer Did Not Change"
+  - "The Approvals Application"
+  - "Electronic Signatures on Status Changes"
+series_part: 2
+clusterSlugs:
+  - "wo-missing-pieces-series-index"
+  - "wo-missing-pieces-service-requests"
+  - "wo-missing-pieces-operational-dashboard"
+relatedSlugs:
+  - "wo-missing-pieces-series-index"
+  - "wo-missing-pieces-service-requests"
+  - "mas-manage-work-management"
+  - "mas-manage-work-centers-to-rba"
+---
+
+# Work Order Approvals in MAS 9: The Approvals Application, Work Order Intelligence, and Electronic Signatures
+
+> 🎯 **Who this is for:** Approvers, maintenance supervisors, and Maximo administrators who owned work order approval in 7.6 — and want to know exactly what changed, what stayed, and what quietly got smarter in MAS 9.
+
+**Series:** Part 2 of 6 — *MAS 9 Work Order Operations: The Missing Pieces* | **Read time:** 20 minutes
+
+---
+
+## The Short Version
+
+Approving a work order in MAS 9 is a story of one thing that *didn't* change and three things that did.
+
+- **The Workflow Designer is unchanged.** Your approval logic carries forward.
+- **The Approvals Role-Based Application** is new, and it replaces the Work Supervisor approval flow — with one honest gap.
+- **Work Order Intelligence** (MAS 9.0) puts a watsonx AI recommendation for the failure code right in front of the approver.
+- **Electronic signatures** can now be enforced on specific status transitions for regulated work.
+
+We're not going to re-explain the work order lifecycle here — WAPPR, APPR, INPRG, COMP, CLOSE and how work moves between them is covered in the **MAS MANAGE series, Part 3 (Work Management)**. This post is strictly about the *approval* moment: how it's triggered, where the approver sits, and what MAS 9 adds around it.
+
+---
+
+## 🔄 The Workflow Designer Did Not Change
+
+Start with the reassuring part, because it saves you a migration you were dreading.
+
+The **Workflow Designer application remains available and functional** in MAS 9. Everything you built your approval routing on is intact:
+
+- The **visual workflow design tool** still works the same way.
+- **Approval routing based on conditions, person groups, and escalations** is unchanged.
+- **Communication templates** still drive your approval notifications.
+- **Workflow assignments** still show up in users' inboxes.
+
+Most importantly: **your existing 7.6 workflows carry forward during the upgrade.** The engine underneath approval is the same engine you already know. If you have a WOAPPR routing that fans out to person groups based on cost thresholds, it comes across and keeps running.
+
+<aside>
+
+💡 **Key insight:** The *decision logic* of approval — who approves, under what conditions, with what escalations — lives in the Workflow Designer, and that is unchanged. What MAS 9 changes is the *surface* where an approver acts on that decision, and the *intelligence* offered at the moment of the decision. Keep the two ideas separate and the rest of this post is easy.
+
+</aside>
+
+---
+
+## 📊 Old World vs. MAS 9
+
+| Capability | Maximo 7.6 | MAS 9 |
+|---|---|---|
+| Workflow engine | Workflow Designer | **Unchanged** — 7.6 workflows carry forward |
+| Approval surface | Work Supervisor Work Center | **Approvals Role-Based Application** (card-based) |
+| SR-to-WO in one flow | Yes, in the Work Supervisor Work Center | **Removed** — use classic Service Requests + Work Order Tracking |
+| Failure-code entry | Manual lookup by the approver | **Work Order Intelligence** recommends a code with a confidence score (**9.0**) |
+| Sign-off on status change | Not enforced natively | **Electronic signatures** per transition on Maximo Mobile |
+
+<aside>
+
+💡 **Key insight:** Notice the pattern from Part 1 repeating. The Work Supervisor Work Center's job got *split*: intake went to the Service Request RBA (Part 1), and approval went to the Approvals RBA (here). Neither one inherited the old single-screen SR-to-WO conversion — that flow simply didn't survive the split.
+
+</aside>
+
+---
+
+## 🛠️ The Approvals Application
+
+The **Approvals Role-Based Application (RBA)** is the new home for approvers. If your supervisors used to approve work orders in the Work Supervisor Work Center, this is where they do it now.
+
+What it gives you:
+
+- A **modern, card-based view of pending approvals** — each work order awaiting your decision is a card, not a row buried in a list.
+- **Quick approve or reject with comments** — the two actions an approver actually needs, front and center, with a place to say *why*.
+- A **mobile-friendly** experience, so approval happens from a phone in the field, not only from a desk.
+
+That's the whole point of it: **it replaces the Work Supervisor Work Center for approval workflows** and makes the approve/reject moment fast. It reads its queue from the same workflow engine described above — the Approvals RBA is the *surface*, the Workflow Designer is still the *brain*.
+
+### The gap you need to plan around
+
+Here is the honest limitation, and it's the same gap Part 1 flagged from the intake side:
+
+> **The Approvals RBA cannot review a Service Request and convert it to a Work Order in a single workflow the way the old Work Supervisor Work Center could.**
+
+If your approvers were used to triaging an incoming SR and spinning up the resulting WO without leaving one screen, that combined flow is gone. **For SR-to-WO conversion, you use the classic applications** — review in **Service Requests**, create the work order in **Work Order Tracking**. It works; it's just deliberately outside the role-based approval lane.
+
+<aside>
+
+💡 **Key insight:** Both role-based apps scope tightly to one job. The Service Request RBA does intake; the Approvals RBA does approval. Conversion — the step that bridges the two objects — is intentionally left to the classic pair. Don't hunt for a hidden conversion button in the Approvals RBA. It isn't there by design, so bake the two-app path into your SOP before go-live.
+
+</aside>
+
+---
+
+## 🤖 Work Order Intelligence at Approval (MAS 9.0)
+
+This is the genuinely new capability in the approval flow, and it's the AI feature Part 1 kept pointing you toward.
+
+**Maximo Work Order Intelligence** uses **IBM watsonx generative AI** to accelerate approval by taking one tedious job off the approver's plate: figuring out the right **problem code** (failure code).
+
+### How it works
+
+1. A work order reaches approval status.
+2. The AI **analyzes the WO description** — both the long and short descriptions.
+3. A model **trained on your organization's historical work orders** recommends the **most likely problem (failure) code**.
+4. The approver sees the recommendation **with a confidence score**.
+5. The approver can **accept, modify, or reject** the AI's suggestion.
+
+The recommendation is presented inline using IBM's new AI Design UI elements (Graphite design patterns), so it reads as part of the approval screen rather than a bolt-on.
+
+### Why it matters
+
+- It **speeds up approval** by pre-filling failure classification data the approver would otherwise look up.
+- It **improves data quality** — consistent, model-suggested failure codes beat a dozen approvers each guessing differently.
+- It **reduces time spent researching** which problem code fits.
+- Because the model **trains on your own historical work order data**, its recommendations reflect how your organization actually classifies failures.
+
+### What it costs you to turn on
+
+Work Order Intelligence is not free out of the box. Three things must be in place:
+
+| Requirement | Detail |
+|---|---|
+| **Maximo AI Service** | Must be deployed — budget **10 AppPoints** |
+| **Historical WO data** | You need **sufficient historical work orders** to train the model meaningfully |
+| **AI Configuration app** | An **administrator sets it up** in the AI Configuration application |
+
+<aside>
+
+💡 **Key insight:** The model is only as good as the history you feed it. If your failure-code discipline in 7.6 was inconsistent, the recommendations will inherit that inconsistency. Treat the historical-data requirement as a *data-quality* prerequisite, not just a volume checkbox — a clean-up of your existing problem codes before training pays off in every recommendation afterward.
+
+</aside>
+
+---
+
+## ✍️ Electronic Signatures on Status Changes
+
+The last piece of the approval story is enforcement, and it lives on the device.
+
+**Maximo Mobile supports electronic signature enforcement on work order status changes.** The behavior is:
+
+- **Configurable per status change** — you decide which transitions demand a signature. The canonical example is requiring one when a work order moves from **INPRG to COMP**.
+- The **digital signature is captured and stored with the work order record**, so the sign-off is part of the auditable history, not a side note.
+- It's built for **regulated industries** — pharmaceutical, nuclear, aviation — where "who confirmed this work was complete, and when" is a compliance requirement, not a nicety.
+
+The important detail is that this is a **per-transition** control. You're not signing every status change; you're enforcing signatures exactly where your compliance regime requires them and leaving the rest frictionless.
+
+<aside>
+
+💡 **Key insight:** Map your signature requirements to specific transitions *before* you configure them. Requiring a signature on INPRG→COMP is common and sensible; requiring one on every transition will slow technicians down and train them to sign reflexively — which defeats the audit value. Precision here is a feature.
+
+</aside>
+
+---
+
+## 🔧 Practical Notes Before You Roll This Out
+
+- **Don't rebuild your workflows.** The Workflow Designer is unchanged and 7.6 approval workflows carry forward. Test them post-upgrade, but plan to *validate*, not *rewrite*.
+- **Give approvers the Approvals RBA, keep classic in reach.** The RBA handles the approve/reject moment; anyone who needs SR-to-WO conversion still needs the classic Service Requests and Work Order Tracking applications.
+- **Scope Work Order Intelligence deliberately.** It's a licensed capability (Maximo AI Service, 10 AppPoints) with a data prerequisite. Decide whether the approval time it saves justifies the AppPoints before you deploy it.
+- **Clean failure-code history before you train.** The AI model learns from your past work orders — garbage classifications in, inconsistent recommendations out.
+- **Enforce signatures surgically.** Configure electronic signatures on the exact transitions your compliance requires (commonly INPRG→COMP), not everywhere.
+
+---
+
+## Key Takeaways
+
+- The **Workflow Designer is unchanged** in MAS 9; your **7.6 approval workflows carry forward** during upgrade — validate them, don't rebuild them.
+- The **Approvals Role-Based Application** replaces the Work Supervisor approval flow with a **card-based approve/reject** interface, and it's mobile-friendly — but it **cannot convert an SR to a WO** in one screen (use the classic apps).
+- **Work Order Intelligence (9.0)** uses **watsonx** to recommend the **problem/failure code with a confidence score** at approval, gated behind the **Maximo AI Service (10 AppPoints)**, sufficient historical data, and the **AI Configuration application**.
+- **Electronic signatures** can be enforced **per status transition** (e.g. INPRG→COMP) on Maximo Mobile, capturing and storing the signature with the record for **regulated industries**.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Maximo Manage — Workflow Designer (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Work Order Intelligence and the AI Service (IBM Documentation)](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Maximo Mobile — Electronic Signatures (IBM Documentation)](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Role-Based Applications and Work Center replacements (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 1 — Service Requests in Manage 9](/blog/wo-missing-pieces-service-requests) |
+| **Next:** | [Part 3 — The Operational Dashboard](/blog/wo-missing-pieces-operational-dashboard) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*

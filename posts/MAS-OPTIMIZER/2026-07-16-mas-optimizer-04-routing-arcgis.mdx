@@ -1,0 +1,216 @@
+---
+title: "Routing & Spatial: Travel Time, Route Optimization & ArcGIS"
+description: "Travel is where field service wins or loses. This part covers how Optimizer estimates travel — from straight-line distance to real road networks — how route optimization groups and sequences work, and when the optional Esri ArcGIS integration is worth the effort versus straight-line estimation."
+date: "2026-07-16"
+slug: "mas-optimizer-routing-arcgis"
+tags: ["Maximo", "MAS 9", "Optimizer", "Route Optimization", "ArcGIS", "Spatial", "Field Service", "EAM"]
+draft: false
+tier: "admin"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-optimizer-04-routing-arcgis.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "How does Maximo Optimizer estimate travel time?"
+    answer: "In layers of increasing fidelity. The basic method is straight-line (as-the-crow-flies) distance combined with an average travel-speed parameter. With Esri ArcGIS integration it uses real road-network distance, which follows actual streets. It can also incorporate historical travel-time data and optimize multi-stop routes. The straight-line method needs only coordinates and a travel-speed setting; the road-network method needs the ArcGIS connection."
+  - question: "What is route optimization in Optimizer?"
+    answer: "For field service and geographically distributed work, route optimization minimizes total travel distance and time by grouping nearby work orders together, considering traffic patterns and time-of-day routing, and optimizing vehicle utilization. It sits on top of travel-time estimation — the engine sequences and clusters assignments so a crew's day is a sensible route rather than a series of cross-town hops."
+  - question: "What does the Esri ArcGIS integration add to Optimizer?"
+    answer: "Real road-network routing between work locations, traffic-aware travel-time estimates, service-territory definitions, map-based visualization of optimized routes, and integration with the Manage Spatial module. It replaces straight-line approximation with distances and times that follow actual roads and conditions, which matters most for organizations with crews spread across a real street network."
+  - question: "Do I need ArcGIS, or is straight-line estimation enough?"
+    answer: "It depends on geography. For a single plant, campus, or tightly clustered set of assets, straight-line distance with a sensible average speed is often adequate and avoids an integration project. For distributed field service across a metropolitan area or region — where the difference between crow-flies distance and real road distance is large — ArcGIS earns its integration cost by producing routes crews can actually drive. Both methods still require coordinates on your assets."
+keyTakeaways:
+  - "Travel estimation is a ladder: straight-line distance with an average speed, then road-network distance via ArcGIS, then historical travel data and multi-stop routing"
+  - "Route optimization groups nearby work, sequences it sensibly, considers traffic and time-of-day, and optimizes vehicle utilization"
+  - "ArcGIS adds real road routing, traffic-aware times, service territories, and map visualization through the Manage Spatial module"
+  - "For a single site straight-line estimation is often enough; for distributed field service ArcGIS earns its integration cost"
+  - "Both methods depend on coordinates — spatial optimization is gated on the Part 3 coordinate data"
+series:
+  name: "MAS OPTIMIZER"
+  part: 4
+  total: 5
+tldr: "Travel is where field service wins or loses, and Optimizer estimates it in layers. The basic method is straight-line distance plus an average travel-speed parameter. Esri ArcGIS integration upgrades that to real road-network routing, traffic-aware travel times, service-territory definitions, and map-based visualization through the Manage Spatial module; historical travel data and multi-stop route optimization refine it further. Route optimization then groups nearby work, sequences it, and optimizes vehicle utilization. For a single plant or campus, straight-line estimation is usually enough; for distributed field service across a real street network, ArcGIS earns its integration cost. Everything here depends on the coordinate data from Part 3."
+seoTitle: "Optimizer Routing & ArcGIS: MAS 9 Part 4"
+seoDescription: "How Maximo Optimizer estimates travel, optimizes routes, and uses the optional Esri ArcGIS spatial integration in MAS 9 — and when straight-line estimation is enough."
+targetQuestions:
+  - "How does Maximo Optimizer estimate travel time?"
+  - "What is route optimization in Optimizer?"
+  - "What does the ArcGIS integration add to Optimizer?"
+  - "Do I need ArcGIS for Maximo Optimizer?"
+semanticKeywords:
+  - "route optimization field service"
+  - "travel time minimization"
+  - "straight-line road-network distance"
+  - "Esri ArcGIS Maximo Spatial"
+  - "traffic-aware routing"
+  - "service territory definition"
+  - "multi-stop route optimization"
+  - "vehicle utilization scheduling"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 3 — location coordinates on assets and locations"
+  - "Familiarity with field service and travel-time concepts"
+speakableSections:
+  - "The Travel Estimation Ladder"
+  - "What Route Optimization Does"
+  - "When ArcGIS Earns Its Keep"
+series_part: 4
+clusterSlugs:
+  - "mas-optimizer-series-index"
+  - "mas-optimizer-data-prerequisites"
+  - "mas-optimizer-dispatching-rollout"
+relatedSlugs:
+  - "mas-optimizer-series-index"
+  - "mas-optimizer-data-prerequisites"
+  - "mas-optimizer-dispatching-rollout"
+---
+
+# Routing & Spatial: Travel Time, Route Optimization & ArcGIS
+
+> 🎯 **Who this is for:** Field-service and dispatch managers who run distributed crews and live on travel time — and administrators deciding whether the Esri ArcGIS integration is worth building.
+
+**Series:** Part 4 of 5 — *Maximo Optimizer Implementation Playbook* | **Read time:** 18 minutes
+
+---
+
+## Travel Is the Field-Service Prize
+
+For a single plant, the biggest wins from Optimizer are skill matching and resource leveling — travel between assets is measured in minutes of walking. For distributed field service, the calculus flips. When fifty technicians cover a metropolitan area and drive between hundreds of locations a day, **travel time is the dominant cost**, and it is the cost Optimizer is best positioned to recover. This is why the documented field-service payoff — a 20-30% reduction in travel time and 15-25% more work completed per day — is expressed in travel terms, and why the phase's success bar is a travel-time number.
+
+This part is about the machinery behind that number: how Optimizer estimates travel, how it turns estimates into sensible routes, and when to invest in the Esri ArcGIS integration versus staying with the built-in straight-line method. One dependency runs underneath all of it, carried forward from Part 3:
+
+> **Everything in this part is gated on coordinates. The engine cannot optimize a distance it cannot see — assets without latitude and longitude are invisible to every method below.**
+
+---
+
+## 🗺️ The Travel Estimation Ladder
+
+Optimizer does not estimate travel one way; it estimates it with increasing fidelity depending on what you give it. Think of it as a ladder:
+
+| Rung | Method | What it needs | Fidelity |
+|---|---|---|---|
+| 1 | **Straight-line distance** | Coordinates + a travel-speed parameter | Basic — good for clustered work |
+| 2 | **Road-network distance** | Esri ArcGIS integration | Real — follows actual streets |
+| 3 | **Historical travel-time data** | Recorded travel history | Refined — reflects how long trips really take |
+| 4 | **Multi-stop route optimization** | The above, sequenced | Best — optimizes the whole day's route |
+
+**Rung 1 — straight-line distance** is the built-in method. Optimizer computes the as-the-crow-flies distance between two coordinates and divides by an **average travel speed** you set as a parameter (recall from Part 2: 30 mph for urban, 60 mph for highway are typical values). It is an approximation — real roads are never straight — but for co-located or lightly distributed work it is close enough to produce good schedules, and it requires no integration project.
+
+**Rung 2 — road-network distance** replaces the straight line with a route that follows actual streets, using the ArcGIS integration. This is a materially better estimate wherever the road network diverges from straight lines: rivers with few bridges, one-way grids, limited-access highways. The gap between crow-flies and road distance is exactly the error straight-line estimation introduces, and in some geographies that error is large.
+
+**Rung 3 — historical travel-time data** refines the estimate further by learning how long trips *actually* take, rather than trusting a computed distance and speed. **Rung 4 — multi-stop route optimization** sequences a technician's whole day so the route as a whole is efficient, not just each leg.
+
+The practical point is that you climb the ladder as far as your geography justifies. A campus stays on rung 1. A regional field-service operation climbs to rung 2 and beyond.
+
+<aside>
+
+💡 **Key insight:** Straight-line estimation is not "the cheap version that gives bad schedules." For clustered work it is genuinely adequate, and it lets you prove Optimizer's value without a spatial integration in the critical path. Climb the ladder when the *geography* — not the marketing — demands it. The trigger is a real gap between crow-flies and road distance across your service area.
+
+</aside>
+
+---
+
+## 🚚 What Route Optimization Does
+
+Travel estimation tells the engine how far apart two jobs are. **Route optimization** is what the engine does with that knowledge for geographically distributed work. It:
+
+- **Minimizes total travel distance and time** across the schedule, not just per leg.
+- **Groups nearby work orders together** so a crew works a cluster before moving on, rather than criss-crossing the map.
+- **Considers traffic patterns and time-of-day routing** so a trip planned across town at rush hour is costed accordingly.
+- **Optimizes vehicle utilization** so trucks and their capacity are used sensibly.
+
+The difference between "assign the nearest job" and true route optimization is the difference between a greedy heuristic and a global one. A greedy approach sends each technician to their next-nearest job and can paint itself into a corner — the last few jobs end up far apart because the easy ones were skimmed off first. Route optimization looks at the whole day and the whole crew at once, which is exactly the kind of combinatorial problem the solver exists to handle.
+
+Route optimization also connects directly to the objectives from Part 2. "Minimize travel" is the objective; route optimization is the mechanism that pursues it. And because objectives are weighted, route optimization does not run in isolation — it is balanced against completing high-priority work and hitting SLAs. A pure travel-minimizing route that lets a P1 SLA slip is not what a sensibly weighted model produces.
+
+---
+
+## 🌐 When ArcGIS Earns Its Keep
+
+For organizations with **Esri ArcGIS**, the integration is where routing gets serious. It adds:
+
+| Capability | What it gives you |
+|---|---|
+| **Real road-network routing** | Distances and times that follow actual streets |
+| **Traffic-aware travel estimates** | Times that reflect congestion and time of day |
+| **Service-territory definitions** | Formal boundaries that scope work to the right crews |
+| **Map-based visualization** | Optimized routes drawn on a map for dispatchers |
+| **Manage Spatial integration** | Assets and work tied to map geometry inside Manage |
+
+Two of these deserve emphasis. **Service territories** let you formalize the boundaries your operation already runs on — this ZIP-code cluster belongs to the north crew, that region to the south — so the engine keeps work within the right territory instead of optimizing travel across a line no crew actually crosses. **Map-based visualization** is what makes the optimized schedule legible to a human dispatcher: a list of assignments is hard to sanity-check, but a set of routes drawn on a map is immediately readable, which matters for the human-in-the-loop review we cover in Part 5.
+
+The integration runs through the **Manage Spatial** module, which is the same mechanism that ties assets to map geometry across the platform. That is worth noting for scoping: if your organization already runs Spatial with ArcGIS for asset mapping, the Optimizer integration builds on infrastructure you have; if you do not, standing up ArcGIS is itself a project (budgeted at roughly one to two weeks for the Optimizer connection alone, on top of any ArcGIS platform work).
+
+<aside>
+
+💡 **Key insight:** ArcGIS is not a toggle inside Optimizer — it is an integration to an external Esri platform. The decision is not "do I want better routing" (everyone does) but "does my geography justify an ArcGIS integration project." Distributed field service across a real street network: yes. A clustered plant or a single campus: usually no. Decide on geography and existing Esri footprint, not on the feature list.
+
+</aside>
+
+---
+
+## Choosing Your Rung: A Decision Frame
+
+Put the pieces together into a decision. The question is not abstract — it is "how far up the travel-estimation ladder should this operation climb?" Use these signals:
+
+| If your operation looks like… | Then… |
+|---|---|
+| Single plant, campus, or tightly clustered assets | **Straight-line** (rung 1) is usually adequate — skip ArcGIS |
+| Regional or metro field service, many locations | Climb to **road-network routing** (rung 2) — ArcGIS earns its cost |
+| Large gap between crow-flies and road distance (rivers, highways, one-ways) | ArcGIS strongly justified — straight-line error is material |
+| Already running Esri ArcGIS + Manage Spatial | Integration is incremental — do it |
+| No Esri footprint and clustered work | Straight-line; revisit only if geography changes |
+
+The through-line: match the routing investment to the travel problem. Over-investing in ArcGIS for a single plant adds an integration project for a marginal gain; under-investing in straight-line estimation for a metro field-service operation leaves the biggest prize — recovered drive time — on the table. And in every case, none of it functions without the coordinate data from Part 3, so confirm coordinates before you debate rungs.
+
+> **First-principles takeaway:** Route optimization can only recover travel it can measure, and it can only measure travel it can see. Coordinates make travel visible; the estimation ladder makes it accurate; route optimization turns accurate estimates into drivable days. Invest at the rung your geography justifies — no higher, no lower.
+
+---
+
+## Practical Checklist Before You Move On
+
+Before the finale, confirm the spatial picture:
+
+- **Do the assets and locations in scope have coordinates?** Nothing here works without them.
+- **Have you set a realistic average travel speed** for straight-line estimation — urban vs. highway as appropriate?
+- **Have you judged your geography honestly?** Clustered work stays on straight-line; distributed work climbs to ArcGIS.
+- **If you are considering ArcGIS, do you already run Esri and Manage Spatial?** That changes the integration from a project to an increment.
+- **Have you confirmed route optimization is weighted against SLAs**, not just travel? A travel-only route can break priority commitments.
+
+If those answers exist, the routing layer is sound. Part 5 turns everything — constraints, objectives, data, and routing — into a running program with dispatchers in the loop.
+
+---
+
+## Key Takeaways
+
+- Travel estimation is a **ladder**: straight-line distance with an average speed, then **road-network distance via ArcGIS**, then historical data and multi-stop routing.
+- **Route optimization** groups nearby work, sequences it, considers traffic and time-of-day, and optimizes vehicle utilization — a global solve, not a greedy nearest-job heuristic.
+- **ArcGIS** adds real road routing, traffic-aware times, service territories, and map visualization through the **Manage Spatial** module.
+- For a **single site**, straight-line estimation is usually enough; for **distributed field service**, ArcGIS earns its integration cost.
+- **Everything depends on coordinates** — spatial optimization is gated entirely on the Part 3 coordinate data.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Maximo Manage Spatial and Esri ArcGIS integration (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Manage Scheduler and Graphical Assignment (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Esri ArcGIS](https://www.esri.com/en-us/arcgis/about-arcgis/overview)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 3 — The Data Optimizer Lives or Dies On](/blog/mas-optimizer-data-prerequisites) |
+| **Next:** | [Part 5 — Dispatching & the Phased Rollout: From Gantt to a Working Program](/blog/mas-optimizer-dispatching-rollout) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*

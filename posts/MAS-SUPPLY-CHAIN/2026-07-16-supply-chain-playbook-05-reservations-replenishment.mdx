@@ -1,0 +1,328 @@
+---
+title: "Reservations & Replenishment: The Invisible Levers Behind Stockouts and Bloat"
+description: "Reservation hygiene is the hidden lever behind accurate availability; reorder points are the hidden lever behind stockouts and bloat. In MAS 9 Manage, learn hard vs soft reservations, how to clear stale ones in ten minutes a week, and how to set min/max/safety-stock/EOQ you can actually trust — including the dynamic lead time MAS 9 maintains for you."
+date: "2026-07-16"
+slug: "supply-chain-playbook-reservations-replenishment"
+tags: ["Maximo", "MAS 9", "Reservations", "Reorder", "Safety Stock", "EOQ", "Replenishment", "Supply Chain", "EAM"]
+draft: false
+tier: "admin"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/supply-chain-playbook-05-reservations-replenishment.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What is the difference between a hard and a soft reservation in MAS 9?"
+    answer: "A hard reservation is committed to a specific work order and counts against available balance — it reduces what the system says you can issue elsewhere. A soft reservation is planned but not yet committed; it is visible but not binding on availability. The common problem is inheriting a swamp of hard reservations that should be soft or gone, which distorts available balance and triggers false reorders. The fix is a policy tied to work-order status: WAPPR work orders hold soft reservations, APPR and scheduled ones hold hard reservations, and closed or cancelled ones must have their reservations deleted."
+  - question: "Why is my available balance wrong even though the shelf is full?"
+    answer: "Almost always stale reservations. Reservations count against available balance, so an item with a physical balance of ten and eight lingering reservations shows an available balance of two — and may trigger a reorder even though it is sitting on the shelf. That is correct behavior, not a bug; the reservations are the problem. Clear stale reservations weekly and available balance becomes trustworthy again."
+  - question: "How does MAS 9 handle lead time for reorder calculations?"
+    answer: "MAS 9 maintains a dynamic lead time per item that refines itself on every PO receipt, using the formula newLeadTime = currentLeadTime x (1 - weight) + lastPODays x weight, with a default recent-lead-time weight of 20%. The longer MAS 9 runs in production, the more accurate the lead time becomes automatically — you do not write a cron, you just receive cleanly. Only override it for a brand-new vendor with no history or a vendor whose lead-time behavior changed radically."
+  - question: "What is the difference between the reorder point and the reorder engine?"
+    answer: "The reorder point (min level) is the balance at which an item should be reordered; you set it per item per storeroom alongside max level, order quantity, safety stock, and EOQ. The reorder engine is the PLUSPINVREORDER cron task plus the Reorder application, which walk each storeroom for items where current balance is below min level and generate replenishment — an internal transfer for items sourced from another storeroom, or a purchase requisition for items sourced from a vendor. The reorder point decides when; the engine acts on it."
+keyTakeaways:
+  - "Hard reservations count against available balance; soft ones don't — tie the reservation type to work-order status to keep availability honest"
+  - "Stale reservations are the usual reason available balance is wrong and reorders fire falsely — clear them in ten minutes a week"
+  - "Reorder point, max, order quantity, safety stock, and EOQ are per item per storeroom; they decide when and how much to reorder"
+  - "MAS 9 maintains a dynamic lead time that refines itself on every receipt — don't override it without a reason"
+  - "PLUSPINVREORDER plus the Reorder app turn min-level breaches into internal transfers or purchase requisitions — but they don't order; procurement converts PRs to POs"
+series:
+  name: "MAS SUPPLY CHAIN"
+  part: 5
+  total: 10
+tldr: "Reservation hygiene and reorder points are the two invisible levers behind availability and stockouts. Hard reservations count against available balance; soft ones don't, so tie the type to work-order status and delete reservations on closed or cancelled work orders. Clear stale reservations weekly with a saved query — they are the usual reason available balance is wrong and reorders fire falsely. Set reorder point, max, order quantity, safety stock, and EOQ per item per storeroom, leaning on the dynamic lead time MAS 9 maintains on every receipt. The Reorder app and the PLUSPINVREORDER cron generate internal transfers or purchase requisitions when balance drops below min — but they create requisitions, not orders; procurement converts them."
+seoTitle: "Reservations & Replenishment in MAS 9 | Reorder Guide"
+seoDescription: "Master MAS 9 reservation hygiene and reorder points: hard vs soft reservations, stale cleanup, safety stock, EOQ, dynamic lead time, and PLUSPINVREORDER."
+targetQuestions:
+  - "What is the difference between hard and soft reservations in MAS 9?"
+  - "Why is my available balance wrong in MAS 9?"
+  - "How do you set reorder points and safety stock in MAS 9?"
+  - "What does the PLUSPINVREORDER cron task do?"
+semanticKeywords:
+  - "hard vs soft reservations"
+  - "stale reservation cleanup"
+  - "reorder point safety stock EOQ"
+  - "dynamic lead time MAS 9"
+  - "PLUSPINVREORDER cron task"
+  - "Reorder application Maximo"
+  - "available balance calculation"
+  - "internal vs external reorder"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Stock lines with reservations and issue history"
+  - "Access to the Reorder application and Organizations settings"
+  - "Familiarity with work-order statuses (WAPPR, APPR, CLOSE, CAN)"
+speakableSections:
+  - "Hard vs Soft Reservations"
+  - "Clearing Stale Reservations"
+  - "Reorder Points You Can Trust"
+series_part: 5
+clusterSlugs:
+  - "supply-chain-playbook-series-index"
+  - "supply-chain-playbook-cycle-counting"
+  - "supply-chain-playbook-buyer-start-center"
+relatedSlugs:
+  - "supply-chain-playbook-series-index"
+  - "supply-chain-playbook-inventory-usage"
+  - "supply-chain-playbook-pr-to-po-approvals"
+  - "mas-features-supply-chain-core-inventory"
+---
+
+# Reservations & Replenishment: The Invisible Levers Behind Availability and Stockouts
+
+> 🎯 **Who this is for:** Storeroom supervisors and inventory controllers who own availability and reorder policy — the people who decide what "available" really means and where the min, max, and safety stock get set — plus the storekeepers who live with the consequences.
+
+**Series:** Part 5 of 10 — *MAS 9 Supply-Chain Playbook* | **Read time:** 28 minutes
+
+---
+
+## 🔒 Two Invisible Levers
+
+Two things quietly decide whether your storeroom tells the truth about what it has and orders the right amount at the right time. Neither is visible on a shelf. Both are where good storerooms separate from mediocre ones.
+
+The first is **reservation hygiene** — keeping the reservations that consume available balance honest, so "available" means available. The second is **reorder point discipline** — setting min, max, safety stock, and order quantity so you neither stock out nor bloat. Get both right and the automation downstream (auto-reorder, escalation, scorecarding) becomes trustworthy. Get either wrong and every clever thing you build on top inherits the lie.
+
+This part is those two levers: how hard and soft reservations work and how to keep them clean, and how to set reorder points you can actually trust — including the MAS 9 dynamic lead time that improves itself.
+
+<aside>
+💡 **Key insight:** Availability is not a physical fact — it is a calculation: current balance minus active hard reservations. If the reservations are garbage, availability is garbage, and you get phantom stockouts on parts that are physically on the shelf. Reservation hygiene is therefore not housekeeping; it is the integrity of your most-used number.
+</aside>
+
+---
+
+## 🤝 Hard vs Soft Reservations
+
+A reservation is a claim on stock for a work order. There are two kinds, and the difference is whether the claim counts against availability.
+
+- **Hard reservation** — committed to a specific work order; **counts against Available balance.**
+- **Soft reservation** — planned but not yet committed; **visible, not binding.**
+
+The trouble most storerooms inherit is a swamp of hard reservations that should be soft or gone — pointing at work orders that were never approved, or were closed months ago — each one silently subtracting from availability and triggering false reorders.
+
+### The policy that keeps availability honest
+
+Tie reservation type to work-order status and enforce it:
+
+| Work order status | Reservation should be |
+|---|---|
+| WAPPR (waiting approval) | Soft |
+| APPR, SCHED | Hard |
+| CLOSED, CANCELED | Deleted |
+
+Then automate the transitions. An admin configures a workflow or escalation so that when a work order moves to APPR, its soft reservations upgrade to hard; when it moves to CLOSED or CANCELED, its reservations are deleted; and exceptions notify the storeroom supervisor.
+
+One MAS 9 nuance to check post-upgrade: reservations now carry a **direction type** (INTERNAL, AUTOMATIC, MANUAL), and the default creation behavior may differ from 7.6. Audit how reservations are being created in your first week so you are not surprised by a changed default. And never bulk-delete hard reservations without telling planning — they may point at in-flight work.
+
+---
+
+## 🧹 Clearing Stale Reservations
+
+Stale reservations are the aged, orphaned claims that clog availability. In 7.6 the cleanup was a database script; in MAS 9 it is a saved query plus a ten-minute weekly rhythm.
+
+### The query
+
+The starter query from Part 1 already surfaces them: `status = 'ENTERED' AND storeloc = :STOREROOM AND changedate < SYSDATE - 30`. A second, sharper one flags the ninety-day offenders for escalation.
+
+### The weekly rhythm
+
+1. Open the **Stale Reservations (>30d)** query.
+2. For each stale record, contact the requester — usually the work-order planner.
+3. Either **complete** it (if material was actually issued informally and the record just needs correcting) or **cancel** it (the reservation is no longer needed).
+4. For any reservation whose work order is CLOSED or CANCELED, **bulk-cancel** from the action menu.
+
+Ten minutes a week keeps the stale count under twenty permanently — versus the ten-hours-a-month firefight that stale reservations become when ignored.
+
+### The cron that does it for you
+
+Ask your admin to schedule a **cron task** that flags reservations older than ninety days whose work order is not active and routes them to the supervisor's inbox. Now the weekly rhythm is exception-only: you review what the cron surfaced instead of scanning the whole list.
+
+<aside>
+⚠️ **Watch out:** A partial issue leaves the remaining reservation open — it does not auto-cancel (this is the loose end from Part 2). Those remnants are a steady source of stale reservations, so the weekly cleanup and the partial-issue habit are two halves of the same discipline.
+</aside>
+
+---
+
+## 🎚️ The Three Reorder Levers
+
+Replenishment runs on three fields per stock line, and they answer three different questions:
+
+- **Minimum Level (Reorder Point / ROP)** — *when* do we reorder? When current balance drops to or below it.
+- **Maximum Level** — *how much* do we carry? The target balance a reorder replenishes toward.
+- **EOQ / Order Quantity** — *how much* do we order per requisition?
+
+They live on the Inventory record's Reorder Details tab, per storeroom. Set them well and stockouts and bloat both fall; set them from a stale 2012 load and every reorder decision inherits the error.
+
+---
+
+## 🧮 Calculating Reorder Point and Safety Stock
+
+The formulas are the math a good buyer used to do in their head. Written down, they are:
+
+```
+SAFETY_STOCK = Z × STDDEV_DEMAND × SQRT(LEAD_TIME_DAYS)
+   Z = 2.326 (A / 99%) · 1.645 (B / 95%) · 1.282 (C / 90%)
+
+ROP = (AVG_DAILY_DEMAND × LEAD_TIME_DAYS) + SAFETY_STOCK
+
+EOQ = SQRT( (2 × ANNUAL_DEMAND × ORDER_COST) / (UNIT_COST × HOLDING_PCT) )
+```
+
+The Z-score is the service-level dial: higher service (fewer stockouts) costs more safety stock, so you spend it where a stockout hurts most — A-class at 99%, C-class at 90%.
+
+### A worked example
+
+Take a B-class bearing. Average daily demand over the last year is 4 units; the demand standard deviation is 2 units per day; the supplier lead time is 9 days. For a B-item, Z = 1.645.
+
+```
+SAFETY_STOCK = 1.645 × 2 × SQRT(9) = 1.645 × 2 × 3 = 9.9 ≈ 10 units
+ROP          = (4 × 9) + 10 = 46 units
+```
+
+So the min level is 46: when the balance hits 46, reorder. If order cost is $75, annual demand is 1,460 (4 × 365), unit cost is $30, and holding cost is 20%:
+
+```
+EOQ = SQRT( (2 × 1460 × 75) / (30 × 0.20) ) = SQRT( 219000 / 6 ) ≈ 191 units
+```
+
+You order roughly 191 at a time. These formulas can be implemented as a BIRT report (read-only, for buyer review), an automation script (writes values for C-items, proposes for A/B), or a Databricks pipeline (long-term). Which one depends on maturity — but the math is the same everywhere.
+
+<aside>
+💡 **Key insight:** Garbage data in, garbage ROP out. If your issue history contains an abnormal year — a plant shutdown, a demand spike — the 365-day average is wrong and every ROP derived from it is wrong. Filter or weight recent periods, and treat seasonal items (80% of annual demand in one month) as special cases with monthly buckets, not a flat annual average.
+</aside>
+
+---
+
+## ⏱️ MAS 9 Dynamic Lead Time
+
+Here is a genuine MAS 9 upgrade dividend that did not exist in the old world. Rather than relying on a static lead time that nobody updates, MAS 9 **continuously refines the stored lead time per item as receipts post**:
+
+```
+newLeadTime = currentLeadTime × (1 − recentLeadTimeWeight)
+            + lastPODays × recentLeadTimeWeight
+```
+
+The default `recentLeadTimeWeight` is 0.20 — 80% historical, 20% most-recent. Every time a PO for the item is received, Maximo recalculates. You write no cron; the lead-time field improves itself the longer MAS 9 is in production, and that improved lead time feeds directly into the ROP and safety-stock formulas above.
+
+### When to override
+
+Leave it alone in almost all cases — that is the point. Override with a static lead time only when the item is **new** (no receipt history to learn from) or when the vendor's lead-time behavior has changed radically (a new contract, a factory relocation). For everything else, the self-tuning value beats a number a human last touched three years ago.
+
+---
+
+## 🔁 The Reorder Engine: PLUSPINVREORDER
+
+The min/max/EOQ values are inert until something acts on them. That something is the reorder run, and the standard cron behind it is **`PLUSPINVREORDER`**.
+
+- It is a scheduled task in **Cron Task Setup**, run nightly (recommended) so buyers meet fresh exceptions each morning.
+- It walks every storeroom-and-item where `currentbal <= minlevel`.
+- What it produces depends on how the item is set up.
+
+### Internal vs external reorder
+
+MAS 9 distinguishes two replenishment paths:
+
+| Path | Behavior | Trigger condition |
+|---|---|---|
+| **Internal reorder** | Replenishes from another storeroom via inventory transfer — no vendor PO | `currentbal <= minlevel` and a replenish-from-storeroom set |
+| **External reorder** | Auto-creates a PR to a vendor for purchase | `currentbal <= minlevel` and the item has an active vendor |
+
+For internal items the cron creates an inventory transfer; for external items it creates a PR in WAPPR with vendor and quantity pre-filled. Where multiple active vendors exist for an item, MAS picks per the Item Vendor priority or catalog code, and you can override at the storeroom level with a preferred vendor.
+
+### Specialized inventory types in the loop
+
+Four item types behave differently when the reorder engine sweeps them, and knowing how keeps you from misconfiguring a reorder that never fires or fires wrong:
+
+| Type | What it adds to planning |
+|---|---|
+| **Rotating** | Each unit is its own asset/serial; reorder respects the unique-serial constraint, so it is usually policy-driven (min 0, max N), not formula-driven |
+| **Condition-enabled** | The same item exists in several conditions; all condition balances roll up for the reorder trigger, so min/max apply to the total |
+| **Consignment** | Vendor-owned stock; no PR is triggered until consumption, because you don't own it until you issue it |
+| **Service items** | Treated as time/incident requisitions, not stock — reorder does not apply |
+
+Get the type right before you tune the numbers. A rotating spare on a formula-driven ROP will misbehave; a consignment item you expect to auto-reorder will sit silent because the trigger only fires on consumption.
+
+The crucial thing to understand about the Reorder application: **it does not order.** It creates PR lines. Procurement still converts those to POs — which is exactly where the buyer half of this series (Parts 6–9) picks up. And note the reservation link: reservations count against current balance, so an item with balance 10 and reservations 8 correctly triggers reorder even though ten sit on the shelf. That is right behavior — do not disable it.
+
+---
+
+## 🎯 Critical vs Commodity Treatment
+
+Not every item deserves the same policy. Split the treatment:
+
+- **Critical spares** — downtime worth thousands per hour. Carry a conservative safety stock, maybe a min at twice lead-time demand. A stockout here is an outage.
+- **Commodity consumables** — oil, rags, fasteners. Run lean, low safety stock, near just-in-time. A brief stockout is an annoyance, not an outage.
+
+The Z-score in the safety-stock formula is how you encode this: A-class critical spares at 99% service, C-class commodities at 90%. Direct-issue (non-stocked) items are not in Reorder at all — those flow via PR from work orders directly.
+
+---
+
+## 🚫 Why Auto-Reorder Gets Distrusted
+
+Buyers who distrust auto-reorder almost never distrust the *automation*. They distrust the *data*. The number-one reason a client leaves auto-reorder stuck at "generate but let me approve everything" is that the reorder points are garbage from a decade-old load, so the pipeline faithfully over-orders or under-orders and the buyer learns to check every line.
+
+The cure is not better automation — it is the two levers in this part. Clean reservations so availability is honest, and formula-justified reorder points so the trigger fires at the right time. Do that and the buyer-side pipeline in Part 9 can safely run itself for the clean majority. Skip it and no amount of workflow cleverness will earn a buyer's trust.
+
+<aside>
+💡 **Key insight:** You cannot automate your way out of bad data. Every advanced capability later in this series — auto-reorder, escalation, MRO optimization — inherits the trustworthiness of the reservations and reorder points set here. This part is the foundation the rest of the buyer's confidence stands on.
+</aside>
+
+---
+
+## 🔧 Troubleshooting Reservations & Replenishment
+
+The recurring problems and their fixes:
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Phantom stockout on stock that's on the shelf | Stale hard reservations subtracting from availability | Clear stale reservations; enforce status-based policy |
+| Auto-reorder over-orders | Min/max set from stale demand data | Recompute ROP; filter abnormal history |
+| Reorder never fires on a low item | Item has no active vendor / not site inventory | Set the vendor and `issiteinv` flag |
+| Lead time looks wrong | Overridden with a stale static value | Remove the override; let dynamic lead time learn |
+| Reorder ran but no PO appeared | Reorder creates PRs, not POs | Convert PR → PO (Part 7) |
+| Reservations reappear after cleanup | Partial issues leaving remnants open | Cancel remnants; fix the partial-issue habit |
+
+---
+
+## 🎓 The Commandments of Replenishment
+
+1. **Thou shalt keep reservations honest** — availability is only as true as they are.
+2. **Thou shalt tie reservation type to work-order status**, and automate the transitions.
+3. **Thou shalt clear stale reservations weekly**, and let a cron surface the ninety-day offenders.
+4. **Thou shalt set formula-justified ROP and safety stock**, tuned by ABC class.
+5. **Thou shalt trust dynamic lead time**, overriding only for new or radically-changed vendors.
+6. **Thou shalt remember Reorder makes PRs, not POs** — the buyer closes the loop.
+
+---
+
+## Key Takeaways
+
+- **Availability is current balance minus active hard reservations** — so reservation hygiene is the integrity of your most-used number, not housekeeping.
+- **Tie reservation type to work-order status** (soft for WAPPR, hard for APPR/SCHED, deleted for closed/canceled) and automate the transitions.
+- **Reorder point, safety stock, and EOQ have real formulas**, tuned by ABC service level — and garbage demand data produces garbage reorder points.
+- **MAS 9 dynamic lead time self-tunes on every receipt** (80% historical, 20% recent); override only for new or radically-changed vendors.
+- **PLUSPINVREORDER turns min-level breaches into internal transfers or external PRs** — but Reorder makes requisitions, not purchase orders; the buyer converts them.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Maximo Manage — Inventory reorder and safety stock (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Manage — Reservations (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Manage — Cron Task Setup and reorder processing (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 4 — Cycle Counting the Smart Way](/blog/supply-chain-playbook-cycle-counting) |
+| **Next:** | [Part 6 — The Buyer's Start Center](/blog/supply-chain-playbook-buyer-start-center) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*

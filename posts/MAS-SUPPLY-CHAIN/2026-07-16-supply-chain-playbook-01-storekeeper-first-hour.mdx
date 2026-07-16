@@ -1,0 +1,363 @@
+---
+title: "The Storekeeper's First Hour: A Start Center That Runs the Storeroom Before Anyone Logs In"
+description: "Go-live morning is won or lost in the first hour. Here is the Tier 0 starter pack for MAS 9 Manage: a Start Center template with six result-set portlets and four KPI tiles, fifteen copy/paste saved queries scoped by home storeroom, a 60-minute admin deployment plan, and an hour-1 checklist every storekeeper uses to confirm they got it — all out-of-the-box, no code."
+date: "2026-07-16"
+slug: "supply-chain-playbook-storekeeper-first-hour"
+tags: ["Maximo", "MAS 9", "Storekeeper", "Start Center", "Saved Queries", "Inventory", "Supply Chain", "EAM"]
+draft: false
+tier: "admin"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/supply-chain-playbook-01-storekeeper-first-hour.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What is the single most important thing to do before storekeepers log into MAS 9?"
+    answer: "Pre-load their Start Center. A storekeeper who logs in on go-live morning to an empty Start Center, a blank query bar, and forty-five apps in the Go To menu will generate a week of tickets and pick up permanent bad habits — typing full item numbers, opening Inventory cold, ignoring cycle counts. The fix is a Tier 0 starter pack: a locked Start Center template with result-set and KPI portlets, plus a set of public saved queries, deployed before anyone signs in."
+  - question: "How does one Start Center template work for storekeepers in different storerooms?"
+    answer: "Bind variables. Every starter query uses the :STOREROOM substitution parameter, which resolves per user from their default storeroom. One template pushed to the STOREROOM security group renders each storekeeper's own numbers — storeroom A's storekeeper sees storeroom A, storeroom B's sees storeroom B — with no per-user editing. Set the default storeroom on the person record so the parameter has something to resolve to."
+  - question: "Do custom Start Center portlets from Maximo 7.6 carry forward to MAS 9?"
+    answer: "Not reliably. The MAS 9 Carbon UI renders Start Center portlets differently, and custom portlet code from 7.6 — especially anything that relied on Flash or SVG graph rendering — often will not carry forward. The supported, cleaner pattern is a Result Set portlet bound to a saved query plus KPI tiles. Rebuild rather than resurrect."
+  - question: "How long does the Tier 0 deployment take?"
+    answer: "About sixty minutes for one Maximo admin, done before go-live morning: verify the security groups and default storerooms, create fifteen saved queries in Query Manager, build the STOREKEEPER_HOME template with twelve portlets, assign it to the storeroom groups, and log in as a test user to confirm queries return data and KPIs compute."
+keyTakeaways:
+  - "An empty Start Center on go-live morning is how a storeroom rollout generates a week of tickets and permanent bad habits"
+  - "The Tier 0 starter pack is a locked STOREKEEPER_HOME template plus public saved queries, deployed before anyone logs in"
+  - "The :STOREROOM bind variable lets one template personalize to every storekeeper's own storeroom"
+  - "Six result sets and four KPIs put the whole storeroom on one screen: below-reorder, open issues, PO receipts, cycle counts, stale reservations, inventory value"
+  - "A 60-minute admin deploy plus an hour-1 checklist proves the storeroom is ready before the first real transaction"
+series:
+  name: "MAS SUPPLY CHAIN"
+  part: 1
+  total: 10
+tldr: "The storekeeper's first hour in MAS 9 succeeds only if their Start Center is pre-loaded. Deploy a locked STOREKEEPER_HOME template with six result-set portlets (below-reorder, open issues, PO receipts pending, cycle counts due, stale reservations, inbound transfers) and four KPI tiles (inventory value, below-reorder count, open reservations, material issued this week), backed by fifteen public saved queries scoped with the :STOREROOM bind variable. One admin ships it in sixty minutes; every storekeeper confirms it with an hour-1 checklist. It is all out-of-the-box, no code, and it is the highest-leverage hour of the whole rollout."
+seoTitle: "The Storekeeper's First Hour in MAS 9 | Start Center"
+seoDescription: "Deploy a MAS 9 storekeeper Start Center in 60 minutes: six result sets, four KPIs, fifteen saved queries scoped by storeroom, and an hour-1 checklist."
+targetQuestions:
+  - "How do you set up a storekeeper Start Center in MAS 9?"
+  - "What portlets should a storekeeper have on their MAS 9 Start Center?"
+  - "How do you use the :STOREROOM bind variable in MAS 9 saved queries?"
+  - "What should a storekeeper do in the first hour on MAS 9?"
+semanticKeywords:
+  - "MAS 9 Start Center template"
+  - "storekeeper saved queries"
+  - ":STOREROOM bind variable"
+  - "result set portlet MAS 9"
+  - "KPI portlet storeroom"
+  - "Query Manager Maximo"
+  - "STOREROOM security group"
+  - "go-live starter pack"
+proficiencyLevel: "beginner"
+dependencies:
+  - "Access to the Security Groups, People, and Start Center Template Administration apps"
+  - "A STOREROOM (and ideally STOREROOM_SUPV) security group with members"
+  - "Default storeroom set on each storekeeper's person record"
+speakableSections:
+  - "Why the First Hour Matters"
+  - "The Six Result Sets"
+  - "The 60-Minute Deployment Plan"
+series_part: 1
+clusterSlugs:
+  - "supply-chain-playbook-series-index"
+  - "supply-chain-playbook-inventory-usage"
+relatedSlugs:
+  - "supply-chain-playbook-series-index"
+  - "supply-chain-playbook-inventory-usage"
+  - "supply-chain-playbook-cycle-counting"
+  - "mas-features-supply-chain-core-inventory"
+---
+
+# The Storekeeper's First Hour: A Start Center That Runs the Storeroom Before Anyone Logs In
+
+> 🎯 **Who this is for:** Storeroom clerks, storeroom supervisors, inventory controllers, and the Maximo admins who support them — anyone who will be standing at a MAS 9 login screen on go-live morning and needs the storeroom to run clean from the first transaction.
+
+**Series:** Part 1 of 10 — *MAS 9 Supply-Chain Playbook* | **Read time:** 22 minutes
+
+---
+
+## 🌅 Why the First Hour Decides the Rollout
+
+Go-live morning is not a training problem. It is a configuration decision you made — or failed to make — the week before.
+
+Picture the storekeeper who logs into MAS 9 Manage for the first time at 7 a.m. The Start Center is empty. The query bar is blank. The "Go To" menu lists forty-five applications, and nothing tells them which three run the storeroom. So they do what any human does under pressure: they fall back on the worst possible habits. They open the Inventory application cold, type a full thirteen-character item number by hand, mis-key a digit, and spend four minutes hunting for a part that was one saved query away. By 9 a.m. they have logged three help-desk tickets, and by Friday the whole storeroom believes MAS 9 is slower than 7.6.
+
+None of that is MAS 9's fault. It is the absence of a **Tier 0 starter pack** — a pre-loaded Start Center and a set of public saved queries, deployed before anyone signs in. Get Tier 0 right and the same storekeeper logs in to a screen that already shows what needs to be issued today, what dropped below reorder overnight, what receipts are waiting on the dock, and what cycle counts are due this week. They never open an app cold. They never type a full item number. The rollout is quiet.
+
+<aside>
+💡 **Key insight:** The single highest-leverage hour of an entire MAS 9 storeroom rollout is the sixty minutes one admin spends deploying Tier 0 *before* the first storekeeper logs in. Everything else in this series assumes it is done.
+</aside>
+
+This part is that starter pack, spelled out: the six result-set portlets and four KPI tiles that put a storeroom on one screen, the fifteen saved queries that kill the empty filter bar, the bind-variable trick that personalizes one template for every user, the sixty-minute deployment plan, and the hour-1 checklist that proves it all worked. None of it needs custom code. All of it is out-of-the-box MAS 9.0 and 9.1.
+
+---
+
+## 🧭 What Tier 0 Actually Is
+
+Tier 0 is the pre-loaded version of two things every storekeeper would eventually build for themselves — a personalized Start Center and a stack of saved queries — done once, centrally, and pushed to everyone before day one.
+
+### The two failure modes it prevents
+
+There are exactly two ways a storeroom go-live goes wrong in the first hour, and Tier 0 closes both:
+
+- **The blank-screen failure.** Storekeepers meet an empty Start Center and an empty query bar. They improvise, they mis-key, they open apps cold, and they form habits that never fully unwind. This is the common one.
+- **The wrong-data failure.** Someone builds a Start Center but hard-codes a storeroom name into every portlet, so it works for one person and shows the wrong numbers — or nothing — for everyone else. This is the subtle one, and it is why the bind variable below matters so much.
+
+### The four things you pre-load
+
+A complete Tier 0 deployment loads exactly four artifacts:
+
+| Artifact | What it is | Scope |
+|---|---|---|
+| **15 saved queries** | One or more per storekeeper app, marked Public, scoped by `:STOREROOM` | STOREROOM security group |
+| **1 Start Center template** | `STOREKEEPER_HOME` — six result sets, four KPIs, Favorites, Inbox | Pushed to STOREROOM and STOREROOM_SUPV |
+| **1 deployment plan** | A 60-minute runbook one admin executes before go-live | Admin |
+| **1 hour-1 checklist** | An eight-box verification every storekeeper ticks | Every storekeeper |
+
+Do them in that order. The template binds to the queries, so the queries must exist first; the checklist verifies the template, so the template must be assigned before go-live morning.
+
+---
+
+## 📊 The Six Result Sets That Run a Storeroom
+
+A **Result Set portlet** is a saved query pinned to the Start Center as a live, refreshing list. Six of them, in a left column, are the whole storeroom on one screen. Each is bound to a starter query and set to refresh on a cadence that matches how fast the underlying work moves.
+
+| Slot | Portlet | Source query (app) | Refresh |
+|---|---|---|---|
+| L1 | Items Below Reorder | Below Reorder — My Storeroom (Inventory) | 15 min |
+| L2 | Open Issues Today | Open Issues Today — My Storeroom (Inventory Usage) | 5 min |
+| L3 | PO Receipts Pending | Pending PO Receipts — My Storeroom (Receiving) | 10 min |
+| L4 | Cycle Counts Due This Week | Cycle Counts Due This Week (Physical Count) | daily |
+| L5 | Stale Reservations (>30d) | Stale Reservations >30d — My Storeroom (Inventory Usage) | daily |
+| L6 | Inbound Transfers Pending | Inbound Transfers Pending (Shipment Receiving) | 15 min |
+
+### Why these six and not others
+
+Each portlet answers a question the storekeeper would otherwise have to go looking for:
+
+- **Below Reorder** answers *"what am I about to run out of?"* — the list that prevents the "I didn't know we were out of that" excuse.
+- **Open Issues Today** answers *"what work am I feeding right now?"* — the fastest-moving list, hence the five-minute refresh.
+- **PO Receipts Pending** answers *"what's arriving that I need to put away?"* so a truck on the dock is never a surprise.
+- **Cycle Counts Due** answers *"what do I need to count this week?"* — the quiet discipline that keeps accuracy from decaying (Part 4).
+- **Stale Reservations** answers *"what's blocking stock that could be issued elsewhere?"* — the ten-minute-a-week cleanup that stops phantom stockouts (Part 5).
+- **Inbound Transfers** answers *"what's coming from another storeroom that I need to receive?"* so in-transit material lands cleanly.
+
+<aside>
+💡 **Key insight:** The design principle behind the six is *one screen answers every "do I need to act?" question a storekeeper has before lunch.* If a portlet does not change what the storekeeper does in the next hour, it does not earn a slot.
+</aside>
+
+---
+
+## 🎯 The Four KPI Tiles
+
+Where result sets are lists you act on, **KPI portlets** are single numbers you glance at. Four of them, in the right column, give the storekeeper — and their supervisor — an at-a-glance pulse.
+
+| KPI | What it measures | Metric |
+|---|---|---|
+| Inventory Value ($) | Capital sitting on the shelf | `SUM(currentbal * avgcost)` for the storeroom |
+| Below-Reorder Count | Stockout exposure | `COUNT(*)` where `currentbal < minlevel` |
+| Open Reservations Count | Committed-but-unissued demand | `COUNT(*)` of ENTERED reservations |
+| Material Issued This Week ($) | Throughput | `SUM(linecost)` from this week's issues |
+
+### Traffic-light thresholds
+
+KPIs earn their keep by turning green, yellow, or red. Start with these illustrative thresholds and tune them over the first thirty days against your actual storeroom size:
+
+| KPI | Green | Yellow | Red |
+|---|---|---|---|
+| Below-Reorder Count | ≤ 10 | 11–30 | > 30 |
+| Open Reservations Count | ≤ 25 | 26–75 | > 75 |
+| Inventory Value — drift from baseline | ±5% | ±5–15% | > ±15% |
+| Material Issued This Week — vs 4-week avg | ±20% | ±20–50% | > ±50% |
+
+The thresholds are not sacred. Their purpose is to make an abnormal number *look* abnormal at a glance, so a supervisor walking past a shared display sees red before a stockout becomes an outage.
+
+---
+
+## 🔑 The `:STOREROOM` Bind Variable
+
+Here is the mechanism that makes one template serve an entire storeroom group without per-user editing.
+
+Every starter query uses the `:STOREROOM` **substitution parameter** in its WHERE clause instead of a hard-coded storeroom name. When a storekeeper opens the query, MAS 9 resolves `:STOREROOM` to *their* default storeroom, pulled from their person record. One query, written once, shows storeroom A's storekeeper the storeroom A numbers and storeroom B's storekeeper the storeroom B numbers.
+
+### A worked example
+
+Take the below-reorder query. Written the wrong way — hard-coded — it looks like this and only works for the CENTRAL storeroom:
+
+```sql
+currentbal < minlevel AND location = 'CENTRAL' AND siteid = 'BEDFORD'
+```
+
+Written the right way, it works for every storekeeper in the group with no edits:
+
+```sql
+currentbal < minlevel AND location = :STOREROOM AND siteid = :SITEID
+```
+
+Both `:STOREROOM` and `:SITEID` resolve from the logged-in user's session. For the parameter to have something to resolve to, the storekeeper's **default storeroom** must be set — on the person record, or via **Security Groups → Sites tab → Default Storeroom**. If it is blank, the query returns nothing and the storekeeper sees an empty portlet, which looks exactly like the blank-screen failure you were trying to prevent.
+
+<aside>
+⚠️ **Watch out:** The most common Tier 0 defect is not a broken query — it is a storekeeper with no default storeroom set. The query is fine; the person record is blank. Verify default storerooms *before* you build the template, not after a storekeeper reports an empty screen.
+</aside>
+
+---
+
+## 🗂️ The Fifteen Starter Saved Queries
+
+These are the fifteen queries the admin creates in **Query Manager** and marks **Public** so they appear in the Start Center Result Set picker for the whole group. All use ANSI SQL that runs on both Db2 and Oracle backends. Only one query per app can be marked **Default** per user — that is the one that loads automatically when the app opens.
+
+### Inventory (app: INVENTOR)
+
+| Query | Default | WHERE clause |
+|---|---|---|
+| Below Reorder — My Storeroom | Y | `currentbal < minlevel AND location = :STOREROOM AND siteid = :SITEID` |
+| Zero Balance — My Storeroom | N | `currentbal = 0 AND location = :STOREROOM AND siteid = :SITEID` |
+| Slow Movers (180d) | N | `lastissuedate < SYSDATE - 180 AND location = :STOREROOM AND currentbal > 0` |
+| High Value Active (>$10k) | N | `currentbal * avgcost > 10000 AND location = :STOREROOM` |
+
+### Inventory Usage (app: USAGE)
+
+| Query | Default | WHERE clause |
+|---|---|---|
+| Open Issues Today | Y | `status = 'ENTERED' AND usagetype = 'ISSUE' AND storeloc = :STOREROOM` |
+| Stale Reservations (>30d) | N | `status = 'ENTERED' AND storeloc = :STOREROOM AND changedate < SYSDATE - 30` |
+| Stale Reservations (>90d) — Escalate | N | `status = 'ENTERED' AND storeloc = :STOREROOM AND changedate < SYSDATE - 90` |
+| Transfers Out — In Progress | N | `usagetype = 'TRANSFER' AND status IN ('ENTERED','STAGED','SHIPPED') AND storeloc = :STOREROOM` |
+
+### Receiving, Physical Count, Shipment, Reorder
+
+| Query (app) | Default | WHERE clause |
+|---|---|---|
+| Pending PO Receipts (Receiving) | Y | `... po.status = 'APPR' ... AND storeloc = :STOREROOM AND receivedqty < orderqty` |
+| Overdue Receipts (Receiving) | N | `requireddate < SYSDATE AND receivedqty < orderqty AND storeloc = :STOREROOM` |
+| Inspection Hold (Receiving) | N | `inspectionrequired = 1 AND inspectedqty < receivedqty AND storeloc = :STOREROOM` |
+| Cycle Counts Due This Week (Physical Count) | Y | `physcntdate <= SYSDATE + 7 AND location = :STOREROOM` |
+| Cycle Counts Overdue (Physical Count) | N | `physcntdate < SYSDATE AND location = :STOREROOM` |
+| Inbound Transfers Pending (Shipment) | Y | `status = 'SHIPPED' AND tostoreloc = :STOREROOM` |
+| Ready to Reorder (Reorder) | Y | `location = :STOREROOM AND currentbal <= minlevel AND issiteinv = 1` |
+
+One caution on visibility: mark every one of these **Public**. If a query is left **Private**, it will not appear in the group's Result Set picker, and the portlet bound to it renders empty for everyone but its author.
+
+---
+
+## ⏱️ The 60-Minute Deployment Plan
+
+One Maximo admin, roughly sixty minutes, executed before go-live morning. This is the runbook.
+
+| Min | Step | Where |
+|---|---|---|
+| 0–5 | Verify STOREROOM and STOREROOM_SUPV security groups exist and have members | Security Groups |
+| 5–10 | Confirm every storekeeper has a **default storeroom** on their person record — this is what `:STOREROOM` resolves to | People → Main tab |
+| 10–30 | Create the fifteen starter queries in Query Manager; mark Public, set Default where indicated | Query Manager (from each app's list view) |
+| 30–45 | Build the `STOREKEEPER_HOME` template: six result sets bound to queries, four KPIs with SQL and thresholds, Favorites, Inbox | Start Center → Template Administration |
+| 45–55 | Assign the template to STOREROOM and STOREROOM_SUPV; mark default on first login | Template Administration → Assign |
+| 55–60 | Log in as a test storekeeper; confirm the Start Center renders, queries return data, KPIs compute | Test login |
+
+### The pre-go-live smoke test
+
+Before you call it done, run this smoke test — it is what separates a deployment that *looks* finished from one that *is*:
+
+- Log in as **test storekeeper #1** (storeroom A). The Start Center shows storeroom A's numbers.
+- Log in as **test storekeeper #2** (storeroom B). The Start Center shows *different* numbers — storeroom B's. If both show the same data, your queries are hard-coded, not bind-variable scoped.
+- Open **Inventory**. The defaulted "Below Reorder — My Storeroom" query loads automatically.
+- Open **Inventory Usage**. The defaulted "Open Issues Today" query loads automatically.
+- Click through each Result Set portlet. Each drills into the underlying app list.
+- Confirm the Inbox tile shows at least the workflow approvals routed to the test user.
+
+The two-user step is the one people skip and the one that catches the wrong-data failure. Run it every time.
+
+---
+
+## ✅ The Storekeeper Hour-1 Checklist
+
+Hand this to every storekeeper on go-live morning. If they cannot tick every box, Tier 0 is not finished for them — send them back to the admin.
+
+- [ ] I logged in and my Start Center shows **my storeroom's numbers**, not blanks.
+- [ ] I see at least six Result Set portlets with real data.
+- [ ] I see at least four KPI tiles with numbers.
+- [ ] Opening **Inventory** loads "Below Reorder — My Storeroom" automatically.
+- [ ] Opening **Inventory Usage** loads "Open Issues Today" automatically.
+- [ ] My **Favorites** menu has at least eight apps pre-pinned.
+- [ ] The **Inbox** icon in the top bar shows any approvals routed to me.
+- [ ] I know the name of my default storeroom.
+
+Once every box is ticked, the storekeeper is ready to move into Part 2 and start putting real transactions through Inventory Usage.
+
+---
+
+## 🧨 What Breaks: Portlet Migration Gotchas
+
+If you are coming from a heavily customized 7.6 Start Center, do not assume your old portlets follow you. The MAS 9 Carbon UI renders Start Center content differently, and two categories of 7.6 portlet do not survive the trip.
+
+### Custom portlet code
+
+Custom portlet code from 7.6 — anything hand-built beyond the stock portlet types — frequently will not carry forward. The supported, and honestly cleaner, replacement is a **Result Set portlet bound to a saved query plus KPI tiles**. Rebuild the intent as a query, not as code. In almost every case the result is simpler to maintain than the original.
+
+### Flash and SVG graph portlets
+
+Graph portlets that relied on the old Flash or SVG rendering are gone. Where you had a chart, use a Result Set for the detail and a KPI tile for the headline number. You lose the pie chart; you gain a number that is legible on a phone and a list you can click into.
+
+<aside>
+💡 **Key insight:** Treat the Start Center rebuild as a chance to delete, not to port. Most 7.6 custom portlets encoded a question — "what's below reorder," "what did we issue this week." Re-express the *question* as a public saved query and you end up with less to maintain and a screen that works identically on desktop and mobile.
+</aside>
+
+---
+
+## 🔧 Troubleshooting the First Hour
+
+When a storekeeper's screen is not right, it is almost always one of these five things:
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Portlet is empty for one user | No default storeroom on that person record | Set default storeroom; `:STOREROOM` now resolves |
+| Portlet is empty for everyone | Bound query left Private | Re-mark the query Public in Query Manager |
+| Everyone sees the same numbers | Storeroom hard-coded in the query | Replace literal with `:STOREROOM` / `:SITEID` |
+| App opens with no filter | No query marked Default for that app/user | Mark the intended query Default |
+| KPI shows an error | KPI SQL references a wrong column or unscoped table | Correct the KPI SQL in the template |
+
+Work top to bottom. The first two rows account for the overwhelming majority of go-live-morning tickets, and both take under a minute to fix.
+
+---
+
+## 🎓 The Commandments of the First Hour
+
+1. **Thou shalt pre-load the Start Center** before anyone logs in — Tier 0 is the highest-leverage hour of the rollout.
+2. **Thou shalt scope with bind variables**, never hard-code a storeroom name.
+3. **Thou shalt set every storekeeper's default storeroom** so the parameters resolve.
+4. **Thou shalt mark starter queries Public**, or the portlets render empty.
+5. **Thou shalt run the two-user smoke test**, because it is the only step that catches wrong-data.
+6. **Thou shalt rebuild custom portlets as queries**, not resurrect 7.6 code.
+
+---
+
+## Key Takeaways
+
+- **An empty Start Center on go-live morning is how a storeroom rollout generates a week of tickets** and permanent bad habits — the fix is a pre-loaded Tier 0 pack, not more training.
+- **Tier 0 is four artifacts:** fifteen public saved queries, one locked `STOREKEEPER_HOME` template, a 60-minute deployment plan, and an hour-1 checklist.
+- **The `:STOREROOM` bind variable lets one template serve every storekeeper** — provided each person record has a default storeroom set.
+- **Six result sets and four KPIs put the whole storeroom on one screen:** below-reorder, open issues, PO receipts, cycle counts, stale reservations, inbound transfers, plus value, below-reorder count, open reservations, and weekly throughput.
+- **Custom 7.6 portlets and Flash/SVG graphs do not carry forward** — rebuild the question as a saved query and a KPI tile.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Maximo Manage — Start Centers and Result Set portlets (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Manage — Query Manager and saved queries (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Manage — Inventory (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Series Index — MAS 9 Supply-Chain Playbook](/blog/supply-chain-playbook-series-index) |
+| **Next:** | [Part 2 — Inventory Usage Mastery](/blog/supply-chain-playbook-inventory-usage) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*

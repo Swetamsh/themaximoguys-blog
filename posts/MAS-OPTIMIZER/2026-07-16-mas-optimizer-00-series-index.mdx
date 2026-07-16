@@ -1,0 +1,272 @@
+---
+title: "Maximo Optimizer Implementation Playbook"
+description: "A five-part program for standing up true scheduling optimization in IBM Maximo Application Suite 9 — from why the 7.6 Scheduler was never an optimizer, through the constraint-and-objective model, the labor and location data it lives or dies on, routing and ArcGIS spatial integration, to the Dispatching Dashboard and a phased, Phase-4 rollout."
+date: "2026-07-16"
+slug: "mas-optimizer-series-index"
+tags: ["Maximo", "MAS 9", "Optimizer", "Scheduling", "Dispatching", "Field Service", "Route Optimization", "EAM"]
+draft: false
+tier: "admin"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-optimizer-00-series-index.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Is Maximo Optimizer the same as the Scheduler I had in 7.6?"
+    answer: "No. In Maximo 7.6 the Scheduler module gave you graphical, drag-and-drop scheduling on a Gantt chart, but it did not optimize — a human still decided who did what and when. Optimizer is a separate MAS application that applies mathematical optimization (constraint programming and mixed-integer programming) to a pool of work orders and their constraints, and produces a schedule no planner could build by hand. Optimizer feeds its results back into the Manage Graphical Assignment (Gantt) and Dispatching Dashboard, so the Scheduler you know becomes the review-and-adjust surface for the optimized plan."
+  - question: "What does Optimizer actually need before it can produce a good schedule?"
+    answer: "Clean labor and location data. The engine can only respect constraints it can see: technician crafts and skills, shift and availability calendars, tool requirements, asset downtime windows, work dependencies, parts availability, and — for travel optimization — latitude/longitude on your assets and locations. The prerequisites are the Manage Scheduler configured, the Optimizer operator deployed, accurate craft/skill data, work-location coordinates, and shift definitions. Most of the real project effort is data cleanup, not solver configuration."
+  - question: "Do I need Esri ArcGIS to use Optimizer?"
+    answer: "No — ArcGIS is optional. Without it, Optimizer estimates travel using straight-line distance and an average travel speed, which is enough to see value for co-located maintenance work. ArcGIS integration adds real road-network routing, traffic-aware travel times, service-territory definitions, and map-based visualization through the Manage Spatial module. It matters most for geographically distributed field service; for a single plant or campus, straight-line estimation is often adequate."
+  - question: "Where does Optimizer sit in a MAS 9 rollout?"
+    answer: "Late. In the recommended add-on roadmap Optimizer is a Phase 4 application (roughly months 10-12), priority 6 of 8, with MEDIUM-HIGH business value and MEDIUM complexity. That placement is deliberate: Optimizer depends on the Manage Scheduler being configured and on labor and location data being accurate, and both take time to get right. The documented success bar for the phase is that Optimizer reduces travel time by at least 15% compared with manual scheduling."
+keyTakeaways:
+  - "The 7.6 Scheduler was a drawing board; Optimizer is a solver — it applies constraint programming and mixed-integer programming to produce schedules a human cannot build by hand"
+  - "Optimizer respects only the constraints it can see, so the project is a data project first: crafts, shifts, tools, dependencies, parts, and location coordinates"
+  - "You steer the engine with weighted objectives — minimize cost, maximize work completed, minimize travel, balance workload, minimize tardiness — not with a single fixed goal"
+  - "Optimizer does not replace the planner; results flow into Graphical Assignment and the Dispatching Dashboard for human review, adjustment, and re-optimization"
+  - "It is a Phase 4 add-on (priority 6), and the documented success bar is at least a 15% reduction in travel time versus manual scheduling"
+series:
+  name: "MAS OPTIMIZER"
+  part: 0
+  total: 5
+tldr: "A five-part implementation playbook for true scheduling optimization in MAS 9. It starts with why the 7.6 Scheduler was never an optimizer and what mathematical optimization actually buys you, then opens the engine: the nine scheduling constraints, the five weighted objectives, and the configurable solver parameters. From there it gets tactical — the craft/skill, shift, and coordinate data Optimizer lives or dies on; routing, travel-time estimation, and the optional Esri ArcGIS spatial integration; and finally the Dispatching Dashboard, Graphical Assignment, and a phased Phase-4 rollout with a 15%-travel-reduction success bar. Written for planners, schedulers, dispatchers, and Maximo administrators moving from 7.6 to MAS 9 who want the program, not just the feature tour."
+seoTitle: "Maximo Optimizer Implementation Playbook | MAS 9"
+seoDescription: "A 5-part MAS 9 Maximo Optimizer program: from Scheduler to true optimization, the constraint/objective model, labor and location data, ArcGIS routing, and dispatching rollout."
+targetQuestions:
+  - "How do you implement Maximo Optimizer in MAS 9?"
+  - "What is the difference between the Maximo Scheduler and Optimizer?"
+  - "What data does Maximo Optimizer need to work?"
+  - "Do you need ArcGIS for Maximo Optimizer?"
+  - "Where does Optimizer fit in a MAS 9 rollout?"
+semanticKeywords:
+  - "Maximo Optimizer scheduling"
+  - "constraint programming mixed-integer programming"
+  - "work order schedule optimization"
+  - "route optimization travel time"
+  - "Dispatching Dashboard Graphical Assignment"
+  - "craft skill data Maximo"
+  - "ArcGIS Esri Maximo Spatial"
+  - "resource leveling crew scheduling"
+  - "MAS 9 Scheduler Optimizer"
+  - "AppPoints Optimizer licensing"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Familiarity with the Maximo work order, craft/labor, and assignment concepts"
+  - "Awareness that the Manage Scheduler module provides graphical scheduling (see the MAS MANAGE series)"
+  - "Basic understanding of work order priorities, statuses, and technician assignment"
+speakableSections:
+  - "Why This Series Exists"
+  - "Where This Series Fits"
+  - "The Series at a Glance"
+clusterSlugs:
+  - "mas-optimizer-why-optimization"
+  - "mas-optimizer-optimization-model"
+  - "mas-optimizer-data-prerequisites"
+  - "mas-optimizer-routing-arcgis"
+  - "mas-optimizer-dispatching-rollout"
+relatedSlugs:
+  - "mas-manage-graphical-scheduling-fsm"
+  - "mas-manage-work-management"
+  - "mas-reliability-series-index"
+  - "mas-integration-series-index"
+---
+
+# Maximo Optimizer Implementation Playbook
+
+> 🎯 **Who this is for:** Planners, schedulers, dispatchers, field-service leads, and Maximo administrators moving to MAS 9 who want scheduling that *optimizes* — not just a prettier Gantt chart — and who need to know exactly what to build and load before the solver earns its keep.
+
+**Read time:** ~13 minutes for this index · full series ~1.7 hours
+
+---
+
+## Why This Series Exists
+
+There is a specific disappointment that catches teams a few months into a MAS 9 program. They turn on Maximo Optimizer expecting the schedule to fix itself, run it against a week of work orders, and get back something that looks a lot like what their planner would have produced by hand — or worse, something that ignores a constraint everyone in the room knows about. The conclusion is usually "the optimizer isn't very good." The conclusion is almost always wrong. The optimizer is only as good as the constraints it can *see*, and on day one it usually cannot see the technician skills, the shift calendars, the tool requirements, or the asset downtime windows that a human planner carries in their head.
+
+That gap — between what Optimizer *can* do and what it *will* do until you feed it properly — is the reason for this series.
+
+Start with the honest framing. In Maximo 7.6, the Scheduler module gave you a graphical, drag-and-drop view of work over time. It was a genuinely useful drawing board, but it did not *optimize*: a human still made every assignment decision, and the tool simply drew the result. Maximo Optimizer is a different kind of software. It applies **mathematical optimization** — constraint programming and mixed-integer programming — to a pool of work orders and their constraints, and it produces schedules that would be impossible to build manually. Given fifty technicians, two hundred work orders, five hundred locations, and a tangle of skills, tools, priorities, and deadlines, no human finds the best assignment. A solver can get remarkably close, in seconds.
+
+But a solver optimizes against a model, and a model is only as honest as its inputs. This series is the program for making Optimizer honest:
+
+*"Why did the schedule send my only certified welder to a low-priority job?"* — because the craft data on the high-priority job was blank.
+
+*"Why is it routing crews back and forth across town?"* — because your assets have no coordinates, so travel time is invisible to the engine.
+
+*"Why won't it respect the night shift?"* — because the shift calendar was never defined in Manage.
+
+None of these are Optimizer defects. Every one is a data or configuration gap that the series names and closes. Optimizer is a **Phase 4** application for a reason — it sits on top of a configured Scheduler and clean labor and location data, and getting those right is most of the work. The documented bar for success is concrete: at least a **15% reduction in travel time** versus manual scheduling. This series is how you clear it.
+
+---
+
+## Where This Series Fits
+
+Scheduling content is spread across a few TheMaximoGuys series, and the boundaries are deliberate. Here is the division of labor so you never read the same thing twice:
+
+| If you want… | Read… |
+|---|---|
+| The Manage Scheduler, graphical assignment, dispatch, and field service management workflow | **MAS MANAGE — Part 7 (Graphical Scheduling & FSM)** |
+| The work order lifecycle, tasks, job plans, crafts, and labor records | **MAS MANAGE — Part 3 (Work Management)** |
+| The reliability program that decides *what* work exists and when (AIP, which needs Optimizer, lives here) | **MAS-RELIABILITY series** |
+| Integration surfaces — REST, Kafka, and MIF — for moving work order and labor data | **MAS-INTEGRATION series** |
+| **The end-to-end program for turning scheduling into true optimization** | **This series** |
+
+Put plainly: the MANAGE series owns the *Scheduler application* — the Gantt view, the assignment screens, the dispatch tooling. This series owns the *optimization capability* that plugs into it: what a solver actually does, the constraints and objectives that steer it, the data it requires, and the phased rollout that turns a licensed add-on into a working scheduling engine. Where a topic is fully covered elsewhere, we summarize and point rather than duplicate.
+
+---
+
+## The Series at a Glance
+
+| Part | Title | Focus Area | Read Time |
+|------|-------|-----------|-----------|
+| 1 | From Scheduler to Solver | Why 7.6 Scheduler was not optimization, what constraint/MIP solving buys you, where Optimizer fits | 18 min |
+| 2 | Inside the Optimization Model | The nine constraints, the five weighted objectives, and the solver parameters | 20 min |
+| 3 | The Data Optimizer Lives or Dies On | Crafts/skills, shifts, tools, dependencies, parts, and location coordinates | 20 min |
+| 4 | Routing & Spatial | Travel-time estimation, route optimization, and the optional Esri ArcGIS integration | 18 min |
+| 5 | Dispatching & the Phased Rollout | Graphical Assignment, the Dispatching Dashboard, licensing, and a Phase-4 program | 20 min |
+
+---
+
+## Part-by-Part Guide
+
+### Part 1: From Scheduler to Solver — What "Optimization" Actually Means
+
+**[Read Part 1 — From Scheduler to Solver](/blog/mas-optimizer-why-optimization)**
+
+**Read time:** 18 minutes
+
+Before you touch a parameter, understand what changed. This part draws the hard line between the 7.6 graphical Scheduler and the Optimizer solver, explains constraint programming and mixed-integer programming in plain terms, and positions Optimizer honestly as a Phase 4 amplifier that depends on the Scheduler and clean data underneath it.
+
+**You will learn:**
+- Why the 7.6 Scheduler was a drawing board, not an optimizer, and what that distinction means in practice
+- What mathematical optimization (constraint programming, mixed-integer programming) does that a human planner cannot
+- The shape of the problem Optimizer solves — a pool of work orders against a wall of constraints
+- Why Optimizer is a Phase 4, priority-6 application and what has to exist beneath it first
+- The single number that defines success: a 15% travel-time reduction versus manual scheduling
+
+---
+
+### Part 2: Inside the Optimization Model — Constraints, Objectives & Parameters
+
+**[Read Part 2 — Inside the Optimization Model](/blog/mas-optimizer-optimization-model)**
+
+**Read time:** 20 minutes
+
+This is the engine room. Optimizer's behavior is defined by three things: the constraints it must respect, the objectives you tell it to pursue, and the parameters that bound the solver. This part covers all nine scheduling constraints, the five weighted objective functions, crew scheduling and resource leveling, and the configurable parameters that make or break a run.
+
+**You will learn:**
+- The nine constraints Optimizer schedules against — priority, crafts, tools, asset and technician availability, travel, dependencies, SLAs, and parts
+- The five objective functions (minimize cost, maximize work, minimize travel, balance workload, minimize tardiness) and how weighting them changes the answer
+- How crew scheduling and resource leveling prevent double-booking and smooth workload
+- The solver parameters that matter: planning horizon, optimization time limit, priority weights, travel speed, work buffer, overtime, and strict-vs-flexible skills matching
+- Why "the optimizer gave a bad answer" is almost always "the model asked the wrong question"
+
+---
+
+### Part 3: The Data Optimizer Lives or Dies On
+
+**[Read Part 3 — The Data Optimizer Lives or Dies On](/blog/mas-optimizer-data-prerequisites)**
+
+**Read time:** 20 minutes
+
+This is where Optimizer implementations succeed or stall. The solver can only honor constraints that exist as data, and most of that data has to be cleaned before the first optimization run. This part is the tactical heart of the series: the prerequisite checklist, the labor-data cleanup that is the real project, and the location coordinates that unlock travel optimization.
+
+**You will learn:**
+- The full setup prerequisite list and the effort each realistically takes
+- Why craft and skill data quality is the number-one determinant of schedule quality
+- How to get latitude/longitude onto assets and locations so travel time becomes visible
+- Defining shift calendars, technician availability, tool records, and parts availability so the engine can respect them
+- A pre-optimization data-readiness checklist to run before you blame the solver
+
+---
+
+### Part 4: Routing & Spatial — Travel Time, Route Optimization & ArcGIS
+
+**[Read Part 4 — Routing & Spatial](/blog/mas-optimizer-routing-arcgis)**
+
+**Read time:** 18 minutes
+
+Travel is where field service wins or loses. This part covers how Optimizer estimates travel — from straight-line distance to real road networks — how route optimization groups and sequences work, and when the optional Esri ArcGIS integration is worth the effort versus straight-line estimation.
+
+**You will learn:**
+- The travel-time estimation ladder: straight-line distance, road-network distance, and historical travel data
+- How route optimization minimizes total travel, groups nearby work, and optimizes vehicle utilization
+- What ArcGIS adds — road-network routing, traffic-aware times, service territories, and map visualization via Manage Spatial
+- When straight-line estimation is good enough and when ArcGIS earns its integration cost
+- Why coordinate data quality (from Part 3) is the gate on everything in this part
+
+---
+
+### Part 5: Dispatching & the Phased Rollout — From Gantt to a Working Program
+
+**[Read Part 5 — Dispatching & the Phased Rollout](/blog/mas-optimizer-dispatching-rollout)**
+
+**Read time:** 20 minutes (Series Finale)
+
+The finale closes the loop between the solver and the humans who run the day. It covers how optimized results flow into Graphical Assignment and the Dispatching Dashboard, the human-in-the-loop review-and-re-optimize rhythm, the AppPoints licensing math, and a phased Phase-4 rollout with the three canonical use cases and their measured payoffs.
+
+**You will learn:**
+- How optimized schedules surface in the Graphical Assignment Gantt and the real-time Dispatching Dashboard
+- The dispatcher workflow: review, manually adjust within constraints, and re-optimize
+- The AppPoints licensing math for Optimizer and the Planner/Scheduler role
+- A phased rollout mapped to the Optimizer exploration tasks and the Phase 4 timeline
+- The three proven use cases — field service, maintenance-window planning, and emergency response — and the payoff each documents
+
+---
+
+## Recommended Reading Paths
+
+### Planner / Scheduler
+**"I build the schedule and I want the engine to do the heavy lifting."**
+Read: **Part 1 → Part 2 → Part 5**
+Start with what optimization is, then how to steer it with constraints and objectives, then how the results land in the tools you already use.
+
+### Maximo Administrator / Data Lead
+**"I have to make this work in a live environment."**
+Read: **Part 3 → Part 4 → Part 2**
+Start with the data the solver needs, then the spatial/routing data specifically, then the model those inputs feed.
+
+### Field Service / Dispatch Manager
+**"I run distributed crews and I live on travel time."**
+Read: **Part 1 → Part 4 → Part 5**
+Start with the promise, then routing and ArcGIS, then dispatching and the field-service payoff.
+
+---
+
+## Key Themes Across the Series
+
+**A solver is not a scheduler with better graphics.** Every part comes back to this. The 7.6 Scheduler drew what a human decided; Optimizer decides, against a mathematical model, in a way no human can match at scale. Confusing the two is the root of most disappointment.
+
+**The engine only sees data.** Skills it cannot read, shifts that were never defined, assets with no coordinates — all of it is invisible to the solver, and invisible constraints get violated. The project is a data project first and a configuration project second.
+
+**You steer with objectives, not wishes.** Optimizer does not have one right answer; it has the answer to the question you asked. Weighting cost against travel against tardiness *is* the strategy, and getting the weights honest is how you get schedules the operation will actually run.
+
+**The human stays in the loop.** Optimizer proposes; the dispatcher disposes. Results flow into Graphical Assignment and the Dispatching Dashboard for review and adjustment, and re-optimization absorbs the manual changes rather than fighting them.
+
+**Late for a reason.** Optimizer is Phase 4 because it depends on a configured Scheduler and clean labor and location data. Sequence it against that readiness, hold it to the 15% travel-reduction bar, and it becomes one of the clearest-ROI applications in the suite.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Maximo Manage Scheduler and Graphical Assignment (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Manage Spatial and Esri integration (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [IBM Maximo Application Suite AppPoints licensing](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | *You are beginning the series* |
+| **Next:** | [Part 1 — From Scheduler to Solver: What "Optimization" Actually Means](/blog/mas-optimizer-why-optimization) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*

@@ -1,0 +1,318 @@
+---
+title: "Inventory and Procurement in Maximo Manage 9: Storerooms, Reorder, Purchasing, and the New Role-Based Apps"
+description: "A practitioner's deep dive into inventory and procurement in Maximo Manage 9 — the ITEM and INVENTORY objects, storerooms, costing, reorder processing, the PR-to-PO-to-receipt-to-invoice flow, contracts and vendors, and the role-based Issues and Transfers app that carries forward key Inventory Work Center workflows."
+date: "2026-06-02"
+slug: "mas-manage-inventory-procurement"
+tags: ["Maximo", "MAS Manage", "MAS 9", "Inventory", "Procurement", "Storerooms", "Purchasing", "Supply Chain", "Issues and Transfers"]
+draft: false
+tier: "developer"
+author: "Swetansh Kumar"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "../MAS-FEATURES/images/mas-features-supply-chain-core-inventory.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "How does inventory work in Maximo Manage?"
+    answer: "Items are defined once in the Item Master (the ITEM object) with a number, description, unit of measure, commodity group, and status, and flagged as rotating or non-rotating and capital or expense. Storerooms are special locations, and every item-in-a-storeroom pairing has its own INVENTORY record that tracks current, available, reserved, and in-transit balances along with max/min levels, reorder points, and economic order quantity. Material movements — issues, returns, transfers, and adjustments — are written to MATUSETRANS against a work order, location, and GL account."
+  - question: "What is reorder processing in Maximo?"
+    answer: "Reorder is the engine that keeps storerooms stocked. Run manually or on a cron schedule, it compares each inventory record's balance plus reserved demand and outstanding purchase orders against the reorder point. When stock is short it generates purchase requisitions, internal PRs, or reservations, using lead times, vendor parameters, and usage history to size the order. It also raises exceptions — for example when an item has no active vendor or contract — so a buyer can intervene."
+  - question: "What is three-way matching in Maximo invoicing?"
+    answer: "Three-way matching reconciles the purchase order, the receipt, and the vendor invoice before payment. The Invoicing application compares what you ordered (PO), what you received (receipt records), and what the vendor billed (invoice). Quantities and prices must agree within tolerance, which prevents paying for goods you never received or were overcharged for."
+  - question: "What replaced the Maximo Inventory Work Center in Manage 9?"
+    answer: "The legacy Inventory Work Center was deprecated. Storeroom-clerk functionality moved to role-based applications built on the Maximo Application Framework, most prominently the Issues and Transfers application, which handles issues, returns, transfers, and counts for storeroom staff. This mirrors the broader Work Centers to Role-Based Applications shift covered in Part 2 of this series."
+keyTakeaways:
+  - "Items live once in the Item Master (ITEM); each item-storeroom pair has its own INVENTORY record"
+  - "Storerooms are special locations, and balances split into current, available, reserved, and in-transit"
+  - "Reorder compares balance, reserved demand, and open POs against the reorder point to generate PRs"
+  - "Procurement flows PR to PO to receipt to invoice, with three-way matching before payment"
+  - "Inventory Work Center workflows moved into role-based and mobile apps, most notably Issues and Transfers"
+series:
+  name: "MAS MANAGE"
+  part: 9
+  total: 11
+tldr: "Inventory and procurement is the supply-chain backbone of Maximo Manage. Items are defined once in the Item Master and stocked per storeroom through INVENTORY records that track current, available, reserved, and in-transit balances with reorder points and EOQ. Reorder processing turns shortages into purchase requisitions; PRs become POs, receipts, and invoices reconciled by three-way matching; contracts and vendor records govern pricing and performance. In Manage 9, Inventory Work Center workflows move into role-based and mobile apps like Issues and Transfers, and every issue applies cost back to the work order, asset, and GL."
+seoTitle: "Maximo Manage 9 Inventory & Procurement | Storerooms"
+seoDescription: "How inventory and procurement work in Maximo Manage 9: storerooms, reorder processing, the PR-to-PO-to-invoice flow, contracts, and Issues and Transfers."
+targetQuestions:
+  - "How does inventory work in Maximo Manage?"
+  - "What is reorder processing in Maximo?"
+  - "How does the PR to PO to invoice flow work in Maximo?"
+  - "What is three-way matching in Maximo invoicing?"
+  - "What replaced the Inventory Work Center in Manage 9?"
+semanticKeywords:
+  - "Maximo inventory management"
+  - "Item Master Maximo"
+  - "storeroom inventory record"
+  - "reorder processing cron"
+  - "purchase requisition purchase order"
+  - "three-way matching invoicing"
+  - "blanket purchase agreement contract"
+  - "Issues and Transfers application"
+  - "material transactions MATUSETRANS"
+  - "rotating non-rotating items"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 2 (Work Centers to Role-Based Applications) explains the framework Issues and Transfers runs on"
+  - "Part 3 (work management — job plans and PMs) generates the material demand inventory satisfies"
+  - "Part 8 (asset and location management) — rotating items connect to assets, storerooms are locations"
+speakableSections:
+  - "Where Items Live: Item Master and Inventory"
+  - "Reorder Processing: Turning Shortage Into a PO"
+  - "The Role-Based Apps Took Over the Storeroom"
+relatedSlugs:
+  - "mas-manage-series-index"
+  - "mas-manage-work-centers-to-rba"
+  - "mas-manage-work-management"
+  - "mas-manage-asset-location-management"
+---
+
+# Inventory and Procurement in Maximo Manage 9: Storerooms, Reorder, Purchasing, and the New Role-Based Apps
+
+> **Part 9 of the MAS MANAGE series.** This is the supply-chain backbone — the part of Manage that makes sure the part is on the shelf when the work order needs it, and that the cost lands where it belongs.
+
+<aside>
+🎯 **Who this is for:** Storeroom managers, buyers, materials planners, and Maximo administrators who need to understand how Manage 9 models inventory and procurement — and what changed now that the Inventory Work Center is gone.
+</aside>
+
+**Estimated read time:** 20 minutes
+
+---
+
+## 📦 Inventory and Procurement Is the Quiet Half of Manage
+
+Maintenance gets the attention, but ask any reliability manager what actually delays repairs and the answer is rarely the technician — it is the part. A work order can be perfectly planned and approved and still sit idle because the seal kit is out of stock, the rebuilt motor is stuck in transit, or the PO never got cut. Inventory and procurement is the half of Manage that keeps that from happening.
+
+What makes it powerful is that it is not a bolt-on stock-control module. It is wired into work management: material reservations on a work order signal demand to the storeroom, issues apply cost back to the asset, and reorder turns a shortage into a purchase order without anyone watching a min-level by hand. This post walks the whole chain — from how an item is defined, through stocking and costing, reorder, the full purchasing cycle, contracts and vendors, and the role-based apps that replaced the old Inventory Work Center in Manage 9.
+
+---
+
+## 🗃️ Where Items Live: Item Master and Inventory
+
+The first thing to get straight is the difference between an **item** and an **inventory record**, because Maximo keeps them deliberately separate.
+
+### The Item Master
+
+An item is defined once, globally, in the Item Master — the **ITEM** object. It carries the attributes that are true everywhere the item exists:
+
+- **Item number** and **description**
+- **Unit of measure (UOM)**
+- **Commodity group** (for classification and sourcing)
+- **Status** (active, pending, obsolete)
+
+Two flags shape how the item behaves downstream:
+
+- **Rotating vs. non-rotating** — a rotating item (a pump, a motor) is tracked as individual assets even while it sits in stock, so it connects directly to asset management (Part 8). A non-rotating item (gaskets, filters) is tracked only by quantity.
+- **Capital vs. expense** — drives how the cost is treated financially.
+
+### The Inventory Record
+
+A storeroom is **a special type of location**. Stock the item in a storeroom and Maximo creates an **INVENTORY** record for that specific item-plus-storeroom pairing. The same item in three storerooms has three inventory records — one item, three balances.
+
+Each inventory record tracks balance in several buckets that are easy to confuse and important to keep straight:
+
+| Balance bucket | What it means |
+|---|---|
+| **Current balance** | Physical quantity on the shelf right now |
+| **Reserved balance** | Quantity committed to work orders but not yet issued |
+| **Available balance** | Current minus reserved — what you can actually promise |
+| **In-transit** | Quantity moving between storerooms, not yet received |
+
+The inventory record is also where the **stocking policy** lives: **max/min levels**, **reorder points**, and **economic order quantity (EOQ)**. These are per-storeroom, because the same item may be fast-moving at one site and slow at another.
+
+<aside>
+💡 **Key insight:** Define the item once, stock it many times. Because reorder points and EOQ live on the *inventory record*, not the item, you tune stocking policy site by site without ever touching the global item definition.
+</aside>
+
+### Costing and movement
+
+Maximo supports three inventory costing methods — **average**, **FIFO**, and **LIFO** — chosen to match your accounting policy. Every physical movement is written to **MATUSETRANS** (the material transactions table):
+
+- **Issues** to a work order, location, or GL account
+- **Returns** of unused material back to stock
+- **Transfers** between storerooms
+- **Adjustments** from cycle counts and corrections
+
+Accuracy is kept honest through **cycle counts** (rolling counts of subsets of items) and full **physical inventory** reconciliation. For high-value or regulated stock, Maximo supports **lot, bin, and serial tracking** so you know not just how many you have, but which ones and where.
+
+---
+
+## 🔁 Reorder Processing: Turning Shortage Into a PO
+
+Reorder is the engine that keeps storerooms stocked without a human babysitting min-levels. It runs **manually on demand** or **on a cron schedule** so it sweeps storerooms automatically.
+
+For each inventory record, reorder evaluates the real position — not just what is on the shelf:
+
+```
+   AVAILABLE POSITION
+   = current balance
+   + outstanding POs (already on order)
+   − reserved balance (committed to work orders)
+
+        │
+        ▼
+   compare against REORDER POINT
+        │
+        ├─ above point ──▶  do nothing
+        │
+        └─ below point ──▶  generate:
+                              • purchase requisition (external buy)
+                              • internal PR (transfer from another storeroom)
+                              • reservation
+```
+
+When it decides to order, the **quantity** is shaped by lead times, vendor parameters, and EOQ, while **usage history** informs the reorder points and quantities over time so the policy self-corrects as demand shifts. Reorder also handles **exceptions** — if an item has no active vendor or contract, for instance, it flags the record instead of generating a dead-end requisition, so a buyer can step in.
+
+<aside>
+💡 **Key insight:** Reorder counts *outstanding POs and reserved demand*, not just the shelf balance. That is why it neither double-orders parts already on the way nor leaves committed work short — it plans against your true available position.
+</aside>
+
+---
+
+## 🛒 Purchasing: PR → PO → Receipt → Invoice
+
+Procurement in Manage is a four-stage flow, and each stage is a distinct application with its own records.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│   THE PROCUREMENT CYCLE                                       │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│   PR  ──▶  approval  ──▶  PO  ──▶  Receipt  ──▶  Invoice      │
+│   (need)   (workflow)    (order)   (goods in)   (3-way match) │
+│     ▲                                                         │
+│     │                                                         │
+│   reorder / work order / manual                              │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Purchase requisitions
+
+A **PR** records the need. It can be created **manually**, generated **automatically by reorder**, or raised directly **from a work order**. PRs route through **workflow approval** before they become orders.
+
+### Purchase orders
+
+An approved requisition becomes a **purchase order**. Manage supports several PO types for different buying patterns:
+
+- **Standard PO** — a one-off order
+- **Blanket PO** — an agreement to buy up to a value or quantity over time
+- **Release PO** — a draw against a blanket or contract
+- **Contract PO** — an order issued under a price or purchase contract
+
+Each PO carries line items typed as **item**, **service**, or **tool**, and supports **multi-currency** and **tax** so it works for global supply chains.
+
+### Receiving
+
+The **Receiving** application records goods arriving and is more nuanced than a simple "received" flag:
+
+- **Partial receipts** — receive part of a PO line now, the rest later
+- **Returns to vendor** — send back wrong or defective goods
+- **Inspection hold / quality checks** — hold receipts pending inspection before they count as available
+- **Receive to inventory** or **direct-issue** straight to the work order
+
+### Invoicing and three-way matching
+
+The **Invoicing** application closes the loop with **three-way matching** — reconciling the **PO**, the **receipt**, and the **invoice** before payment is approved. Quantities and prices must agree within tolerance, so you never pay for goods you did not order or did not receive.
+
+| Stage | Application | Key question it answers |
+|---|---|---|
+| PR | Purchase Requisitions | What do we need, and who approves it? |
+| PO | Purchase Orders | What did we commit to buy, from whom, at what price? |
+| Receipt | Receiving | What actually arrived, and is it acceptable? |
+| Invoice | Invoicing | Does the bill match the order and the receipt? |
+
+---
+
+## 🤝 Contracts and Vendors
+
+Procurement does not happen in a vacuum — it runs against agreements with suppliers. Manage models several **contract** types:
+
+- **Blanket purchase agreements** — committed volume or value over a term
+- **Price contracts** — negotiated pricing for specific items
+- **Service contracts** — terms, pricing, and limits for services, often tied to **SLAs**
+
+Contracts carry **terms, pricing, and limits**, and POs issued under them **inherit** those terms and **track consumption** against the contract, so you can see how much of a blanket agreement remains.
+
+On the supplier side, **vendor records** track **performance** — on-time delivery, quality, and price — turning procurement history into a basis for sourcing decisions rather than a filing cabinet.
+
+<aside>
+⚠️ **Watch out:** Contract terms only protect you if your POs are actually issued *under* the contract. A standard PO cut outside a price contract pays list price and never decrements the agreement — quietly eroding the savings you negotiated. Wire reorder and buyers to the right contracts, and reconcile consumption regularly.
+</aside>
+
+---
+
+## 🧑‍🔧 The Role-Based Apps Took Over the Storeroom
+
+This is the Manage 9 change that catches teams off guard. In earlier releases, storeroom staff used the **Inventory Work Center**. In the MAS 9 transition, Work Centers are removed and the storeroom workflows move into role-based and mobile applications.
+
+Its storeroom-clerk functionality did not disappear — it **moved to role-based applications** built on the **Maximo Application Framework**, the same framework covered in Part 2's Work Centers → Role-Based Applications story. The most prominent of these is **Issues and Transfers**, which gives storeroom staff a focused, role-tailored app for:
+
+- **Issues** — handing material out to work orders
+- **Returns** — taking unused material back into stock
+- **Transfers** — moving stock between storerooms
+- **Counts** — recording cycle-count quantities
+
+If your storeroom team still expects the old work center, plan the change-management conversation early. The capabilities carried forward, but the entry point and the UI are different. (See Part 2 for the full framework picture.)
+
+---
+
+## 🔗 How Inventory Closes the Loop With the Rest of Manage
+
+Inventory and procurement only earns its keep because it connects outward:
+
+- **Material reservations** on a work order signal **demand** to the storeroom, so planned work pre-commits the parts it needs (Part 3).
+- **Issues apply cost** to the work order, which rolls up to the **asset or location** — feeding total cost of ownership and the repair-vs-replace decision (Part 8).
+- **Rotating items** connect directly to **asset management** — a rebuilt motor in the storeroom is both stock and a tracked asset (Part 8).
+- **GL accounts** on transactions map to **cost centers and projects**, and export to your **ERP** through the Maximo Integration Framework (**MIF**), keeping finance in sync without manual rekeying.
+
+That last point is the quiet payoff: because every issue, receipt, and invoice carries a GL account, Manage is not just tracking parts — it is producing financially accurate maintenance cost data that the rest of the enterprise can trust.
+
+---
+
+## 🎯 The Commandments of Inventory and Procurement
+
+1. **Thou shalt define the item once** in the Item Master and stock it per storeroom.
+2. **Thou shalt mind the four balances** — current, available, reserved, and in-transit.
+3. **Thou shalt let reorder count open POs and reserved demand**, not just the shelf.
+4. **Thou shalt match three ways** — PO, receipt, and invoice — before paying.
+5. **Thou shalt issue POs under the contract** so terms and consumption actually apply.
+6. **Thou shalt carry the GL account** on every transaction so cost lands on the asset.
+7. **Thou shalt retrain the storeroom** for Issues and Transfers — the Work Center is gone.
+
+---
+
+## Key Takeaways
+
+- **Items are defined once in the Item Master (ITEM)** with number, UOM, commodity group, status, and the rotating/non-rotating and capital/expense flags; each item-plus-storeroom pair gets its own **INVENTORY** record.
+- **Storerooms are special locations**, and inventory balances split into current, available, reserved, and in-transit, with reorder points and EOQ set per storeroom. Movements write to **MATUSETRANS** with costing by average, FIFO, or LIFO.
+- **Reorder processing** — manual or cron-scheduled — compares balance plus open POs minus reserved demand against the reorder point and generates PRs, internal PRs, or reservations, handling exceptions like missing vendors.
+- **Procurement flows PR → PO → receipt → invoice**, with PO types (standard, blanket, release, contract), partial receipts and inspection holds, and **three-way matching** before payment.
+- **Contracts and vendor records** govern pricing, limits, and supplier performance — and in Manage 9, **Inventory Work Center** workflows move into role-based and mobile apps, most notably **Issues and Transfers**.
+
+---
+
+## References
+
+**IBM Official**
+- [Maximo Manage documentation home — IBM Documentation](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Inventory and purchasing in Maximo Manage — IBM Documentation](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd)
+
+**Community**
+- [Maximo Inventory and Reorder — Maximo Secrets](https://maximosecrets.com/)
+- [What's new in Maximo Manage v9 — Pragma Edge](https://pragmaedge.com/whats-new-in-maximo-manage-v9/)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 8 — Asset and Location Management](/blog/mas-manage-asset-location-management) |
+| **Next:** | [Part 10 — The AI Inside Manage](/blog/mas-manage-ai-inside-manage) |
+
+---
+
+*Published by TheMaximoGuys | June 2026*
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS — from architecture and migration planning to the day-to-day work of configuring, extending, and running Maximo Manage. This series is the guide we wish we'd had.

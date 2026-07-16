@@ -1,0 +1,330 @@
+---
+title: "Fast Receiving & Barcode: Clear a Truck Without Clearing Your Morning"
+description: "Receiving is where a truck becomes storeroom balance. In MAS 9 Manage you can receive a 30-line PO in one pass, let a 102% tolerance receipt through without an exception, route inspection items to a holding location, and scan barcodes on both the Carbon desktop and Maximo Mobile — including offline. Here is how the receiving desk actually runs."
+date: "2026-07-16"
+slug: "supply-chain-playbook-fast-receiving-barcode"
+tags: ["Maximo", "MAS 9", "Receiving", "Barcode", "Inspection", "Maximo Mobile", "Supply Chain", "EAM"]
+draft: false
+tier: "admin"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/supply-chain-playbook-03-fast-receiving-barcode.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "How do you receive a multi-line PO quickly in MAS 9?"
+    answer: "Open the Receiving application, enter or scan the PO number, and choose Select Ordered Items from the action menu — every open PO line loads at once. Confirm the received quantity per line (it defaults to the ordered quantity), set the bin, and set any lot, serial, or condition code required by the item. Save once and all lines post together. A clean 10-line PO receives in under three minutes."
+  - question: "Where do receive tolerances live in MAS 9, and who can exceed them?"
+    answer: "Receive tolerances live on Organizations under Inventory Options — not on the individual PO. A within-tolerance receipt (for example, 102% of the ordered quantity when the tolerance is ±2%) auto-accepts with no exception workflow. An over-tolerance receipt requires a supervisor override with a reason code, which writes an audit trail. Storekeepers cannot receive beyond tolerance on their own."
+  - question: "What items require extra data at receipt in MAS 9?"
+    answer: "Three types. Lot-tracked items require a lot number (and often manufacture and expiration dates) or the receipt fails fast. Rotating items require an asset serial number, though the receipt can start in a waiting-for-asset state until the serial is assigned. Condition-enabled items require a condition code. Inspection-required items route to a holding location and wait for the Inspection application to accept or reject them."
+  - question: "Does barcode scanning work on both desktop and mobile in MAS 9?"
+    answer: "Yes. The Carbon UI accepts a USB HID barcode scanner as keyboard input on any text field — no driver needed. Maximo Mobile Inventory Receiving uses the phone or tablet camera and works offline, syncing receipts back to the desktop within seconds of reconnecting. Configure desktop scanners to send an Enter or Tab suffix so the scanned field commits."
+keyTakeaways:
+  - "Select Ordered Items loads every open PO line at once — a clean 10-line PO receives in under three minutes"
+  - "Receive tolerances live on Organizations, not the PO; within tolerance auto-accepts, over tolerance needs a supervisor override with a reason"
+  - "Inspection-required items route to a holding location and feed the optional 4-way match gate before an invoice can pay"
+  - "Lot, rotating-serial, and condition codes are required at receipt — lot and condition fail fast if blank; rotating waits for the asset"
+  - "Barcode works on the Carbon desktop (USB scanner) and Maximo Mobile (camera, offline) — configure an Enter/Tab suffix on desktop scanners"
+series:
+  name: "MAS SUPPLY CHAIN"
+  part: 3
+  total: 10
+tldr: "In MAS 9, Receiving turns a PO into storeroom balance in one pass: enter or scan the PO, choose Select Ordered Items to load every open line, confirm quantities and bins, and save once. Tolerances live on Organizations — within tolerance auto-accepts, over tolerance needs a supervisor override with a reason. Inspection items route to a holding location and can gate a 4-way invoice match. Lot, rotating-serial, and condition codes are required at receipt. Barcode scanning works on the Carbon desktop with a USB scanner and on Maximo Mobile with the camera, including offline, so no storekeeper hand-types a 13-character item number."
+seoTitle: "Fast Receiving & Barcode in MAS 9 | Storekeeper Guide"
+seoDescription: "Receive multi-line POs fast in MAS 9: Select Ordered Items, tolerance receipts, inspection holds, and barcode on desktop and Maximo Mobile."
+targetQuestions:
+  - "How do you receive a PO in MAS 9?"
+  - "Where are receive tolerances configured in MAS 9?"
+  - "How does inspection on receipt work in MAS 9?"
+  - "How do you use barcode scanning in MAS 9 Manage and Mobile?"
+semanticKeywords:
+  - "MAS 9 Receiving application"
+  - "Select Ordered Items"
+  - "receive tolerance Inventory Options"
+  - "inspection on receipt holding location"
+  - "lot rotating condition at receipt"
+  - "barcode scanning Carbon UI"
+  - "Maximo Mobile Inventory Receiving"
+  - "4-way match gate"
+proficiencyLevel: "beginner"
+dependencies:
+  - "An approved PO with open lines to receive against"
+  - "Organizations Inventory Options access to view or set receipt tolerances"
+  - "A USB barcode scanner or a Maximo Mobile device for the barcode sections"
+speakableSections:
+  - "The Fast Receipt Pass"
+  - "Tolerance Receipts"
+  - "Barcode on Desktop and Mobile"
+series_part: 3
+clusterSlugs:
+  - "supply-chain-playbook-series-index"
+  - "supply-chain-playbook-inventory-usage"
+  - "supply-chain-playbook-cycle-counting"
+relatedSlugs:
+  - "supply-chain-playbook-series-index"
+  - "supply-chain-playbook-inventory-usage"
+  - "supply-chain-playbook-expedite-match-pay"
+  - "mas-features-procurement-contracts-receiving"
+---
+
+# Fast Receiving & Barcode: Clear a Truck Without Clearing Your Morning
+
+> 🎯 **Who this is for:** Storeroom clerks and receiving staff who meet the dock every morning, plus the supervisors and admins who set the tolerance, inspection, and barcode configuration that decides whether a truck takes three minutes or thirty.
+
+**Series:** Part 3 of 10 — *MAS 9 Supply-Chain Playbook* | **Read time:** 24 minutes
+
+---
+
+## 📥 Where a Truck Becomes Balance
+
+Receiving is the moment a purchase order stops being a promise and becomes stock on your shelf. Everything upstream — the requisition, the sourcing, the approval — was preparation. Receiving is where inventory actually appears, where the general ledger takes the cost, and where a work order finally has the part it was waiting on.
+
+Done badly, it is death by a thousand clicks: one PO line at a time, one save at a time, a clerk hunched over a keyboard while pallets stack up. Done well in MAS 9, a thirty-line PO clears in a single pass, a slightly-over shipment flows through without an exception, inspection items route themselves to a holding location, and the whole thing happens from a phone at the dock with the barcode scanner doing the typing.
+
+This part is how the receiving desk actually runs: the multi-line pass, the tolerance settings that keep small variances from becoming exceptions, the inspection hold and the match gate it feeds, the fields that are mandatory at receipt, and barcode on both the Carbon desktop and Maximo Mobile.
+
+<aside>
+💡 **Key insight:** Every setting in this part exists to answer one question — *"can this line post without a human decision?"* Tolerance, inspection flags, lot and serial requirements, and barcode all shift the balance between speed and control. Tune them once, deliberately, and receiving runs itself for the clean 95% while flagging the 5% that genuinely needs eyes.
+</aside>
+
+---
+
+## 🏃 The Multi-Line Receipt Pass
+
+This is the core transaction, and it is fast when you let the app do the loading.
+
+1. Open **Receiving** and enter the PO number — or scan it from the barcode on the packing slip, if your POs print one (they should).
+2. From the action menu, choose **Select Ordered Items**. Every open PO line loads at once.
+3. For each received line, confirm the **received quantity** (it defaults to the ordered quantity), set the **bin**, and set any **lot**, **serial**, or **condition code** the item requires.
+4. **Save.** The balance increments, the receipt posts to `MATRECTRANS`, and each line's `receivedqty` updates. A line whose received quantity now equals its ordered quantity flips to COMP; when all lines are COMP the PO can move to CLOSE (or stay APPR pending invoice, per your close policy).
+
+A clean ten-line PO receives in under three minutes with this pass. The discipline is simply to use **Select Ordered Items** rather than adding lines by hand — the same "one document, many lines" principle that runs Inventory Usage in Part 2.
+
+### Simple receipt vs. inspection receipt
+
+There are two shapes of receipt, and the item's configuration decides which you get:
+
+- **Simple receipt** — the item goes straight to its storeroom bin and the balance increments immediately.
+- **Inspection receipt** — the item is flagged for inspection, so it receives into a **holding location** and waits for acceptance before it becomes available stock.
+
+The next two sections cover the settings that drive each.
+
+---
+
+## 📐 Receive Tolerance
+
+Vendors rarely ship exactly the ordered quantity. Receive tolerance is what keeps a 102% shipment from becoming a manual exception every single time.
+
+### Where it lives — and where it does not
+
+Tolerance settings live on **Organizations → Inventory Options → Receipt Tolerances**, *not* on the individual PO. This surprises storekeepers who go hunting on the purchase order for a setting that is actually an organization-level policy. The common settings:
+
+| Setting | Typical value | Effect |
+|---|---|---|
+| Receive qty tolerance % | ±2% | Auto-accept within 2% of ordered qty |
+| Receive qty tolerance abs | ±1 unit | Whichever is larger applies |
+| Receive price tolerance % | ±1% | Small price drift accepted |
+| Over-tolerance action | Supervisor override | Requires override + reason code |
+
+Within tolerance, the line auto-accepts and nobody thinks about it. Over tolerance, the storekeeper cannot push it through alone — a **supervisor override with a reason code** is required, and that reason code becomes the audit trail. That is the point: the routine flows, the exception is captured.
+
+<aside>
+⚠️ **Watch out:** Because tolerance is an organization-level setting, changing it affects every storeroom in the org. Do not tune tolerance to solve one vendor's chronic over-shipping — that is a vendor-scorecard conversation (Part 8 and 9), not a global policy change.
+</aside>
+
+---
+
+## 🔬 The Inspection Hold
+
+Some items must not become available stock the instant they hit the dock — regulated parts, high-spec components, anything where quality has to sign off first. Set `item.inspection = 1` on those items and receiving routes them through a hold.
+
+### The flow
+
+```
+Receipt → status WINSP → Inspection app
+   │
+   ├─ Accept → moves to primary bin → COMP → available stock
+   │
+   └─ Reject → return-to-vendor + debit memo
+```
+
+The item receives into a holding location (commonly named HOLDING or QC), appears in the **Inspection** app queue, and waits. The inspector can pass or fail per line, partially accept (eight of ten units accepted, two rejected), capture their identity, attach photos from the mobile app, and record a reason code on any rejection. Accepted units move to the storeroom bin; rejected units generate a return-to-vendor and a debit memo.
+
+### The 4-way match gate it feeds
+
+The inspection hold is not only a quality step — it is a **gate on payment**. For high-spec items you can set the invoice match level to **4-way**, which adds inspection acceptance as a fourth condition:
+
+```
+Invoice ↔ PO ↔ Receipt ↔ Inspection.acceptqty
+```
+
+So even when the invoiced quantity and price match the PO and the receipt perfectly, the invoice cannot auto-approve until inspection has passed the goods. That prevents paying for material that is sitting in HOLDING having failed inspection. The buyer-side mechanics of 4-way match live in Part 9; here, just know that flagging an item for inspection is what arms that gate.
+
+---
+
+## 🏷️ Required-at-Receipt: Lot, Serial, and Condition
+
+Three item types demand a field at receipt, and two of them will refuse the save if you leave it blank. Knowing which fail fast saves a lot of dock confusion.
+
+| Item type | Required at receipt | If left blank |
+|---|---|---|
+| Lot-tracked (`lottype = 'LOT'`) | Lot number, mfg/expiration date | **Fails fast** — vendor must provide the lot |
+| Rotating (`rotating = 1`) | Asset number (serial) | Receipt **waits** as "waiting asset" until serialized |
+| Condition-enabled (`condition_enabled = 1`) | Condition code | **Fails fast** — pick the condition |
+
+Lot and condition are hard stops: no lot number, no save; no condition code, no save. Rotating is different — the receipt can post into a "waiting asset" state and get its serial assigned before it becomes a fully available rotating asset. Design your dock process around which items are which, or your clerks will meet these blocks one confused pallet at a time.
+
+---
+
+## 🔄 Rotating Asset Receipt
+
+Receiving a rotating item does more than increment a balance — it **creates an asset record**. Each physical unit becomes an `ASSET` tied to the item, either with a serial you key in or one auto-generated from an Autonumber sequence.
+
+That new asset inherits a surprising amount from the item and the PO:
+
+- `item.classstructureid` → the asset's classification.
+- `item.specifications` → the asset's attribute defaults.
+- `polocation` → the asset's location.
+- If the item is calibration-required, a calibration work order can trigger on receipt.
+
+The practical consequence is a dependency you must set up in advance: if the receipt is configured to auto-generate asset numbers and the **Autonumber sequence does not exist**, the receipt blocks — both the `MATRECTRANS` row and the `ASSET` creation have to succeed together, and if the number can't be generated, neither happens. Have your admin pre-create the sequence before go-live so the first rotating receipt doesn't fail on the dock.
+
+<aside>
+💡 **Key insight:** A rotating receipt is really two transactions wearing one button: a material receipt and an asset birth. When it fails, ask which half failed — a missing Autonumber sequence blocks the asset half and takes the receipt down with it.
+</aside>
+
+---
+
+## 📱 Barcode on Desktop and Mobile
+
+Nobody should type a thirteen-character item number by hand during normal receiving. Barcode eliminates the keystroke errors and roughly ten-times the speed of high-volume work.
+
+### Desktop (Carbon UI)
+
+The MAS 9 Carbon UI accepts a **USB HID barcode scanner** as keyboard input on any text field. No driver — it emulates a keyboard.
+
+1. Plug the scanner into the storeroom PC.
+2. Click into the Item field on a receiving or Inventory Usage line.
+3. Scan. The item populates and the cursor tabs to the next field.
+
+The one configuration that matters: set the scanner to send **Enter or Tab after each scan**, or the field never commits. Carbon's numeric fields also occasionally eat leading zeros, so for item numbers with leading zeros, use text-type fields or a keyboard-wedge mode that types the zero.
+
+### Mobile (camera)
+
+**Maximo Mobile** uses the phone camera. Tap the scan icon on the Item or Bin field, point at the QR or 1D barcode, and the field fills. In poor warehouse lighting the camera struggles — a cheap Bluetooth ring scanner paired to the phone is far more reliable for high-volume work.
+
+### What to barcode in your storeroom
+
+If you have not already, barcode these:
+
+| Barcode on | Encodes | Why |
+|---|---|---|
+| Item master cards | `ITEMNUM` | Scan at issue and count |
+| Bin / shelf labels | `BIN` | Auto-populate the bin field |
+| PO packing slips | `PONUM` | Opens receiving on the right PO |
+| Work order paper | `WONUM` | Opens the WO from mobile |
+| Asset tags | `ASSETNUM` | Rotating issue and location lookup |
+
+---
+
+## 🌐 Receiving on Maximo Mobile — Including Offline
+
+The native **Maximo Mobile Inventory Receiving** app runs on iOS, Android, and Windows, needs no build or redeploy, and does the receiving job from the dock. Its capabilities matter because they remove the walk-to-the-PC step entirely:
+
+| Feature | Why it matters |
+|---|---|
+| PO list with images | Pick the PO from a visual, scrollable list |
+| Quantity entry | Enter received qty, differing from ordered when needed |
+| Item image verification | Confirm the right item arrived before receiving |
+| Rotating asset receipt | Create the "waiting asset" state on the phone |
+| Real-time sync | The receipt shows on desktop within seconds |
+| Inspection on receipt | Capture pass/fail on the phone |
+| Offline mode | Receive without connectivity; sync on reconnect |
+| Barcode scanning | Built into every screen |
+
+### The 9.1 enhancements
+
+MAS 9.1.x added four receiving improvements worth knowing:
+
+- **Receiving bin updates** — update the bin and additional attributes during receipt without exiting the screen.
+- **Enhanced item identification** — more on-screen fields to confirm "is this the right thing?"
+- **Performance** — faster data load and better sort/filter/search on the PO list.
+- **Return processing** — process returns to vendor directly from Mobile Receiving.
+
+Offline mode is the sleeper capability: a clerk can receive an entire truck in a low-signal warehouse and let it sync when they walk back into coverage.
+
+---
+
+## ↩️ Reversals, Voids, and Returns to Vendor
+
+Receipts go wrong, and MAS 9 gives you three clean ways to correct them — each writing an audit row.
+
+| Action | Use case | Effect |
+|---|---|---|
+| **Void** | Receipt keyed in error, before put-away | Reverses `MATRECTRANS`, decrements balance, audit row written |
+| **Reverse** | After-the-fact correction (wrong qty or lot) | Same effect, with reverse-of-original linkage |
+| **Return to Vendor (RTV)** | Damaged or wrong item | New `MATRECTRANS` return; debit memo can auto-generate |
+
+The principle is that nothing is silently erased — every correction leaves a trace. A voided receipt is not a receipt that never happened; it is a receipt plus its reversal, both visible. That is what keeps receiving auditable.
+
+---
+
+## 🔧 Troubleshooting Receiving
+
+The recurring receiving problems and their fixes:
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Can't receive above ordered qty | Over-tolerance without override | Supervisor override + reason code |
+| Tolerance change didn't take effect on a PO | Setting is org-level, not PO-level | Adjust Organizations → Inventory Options |
+| Save blocked on a lot item | Lot number / date missing | Enter the lot and expiration |
+| Rotating receipt won't complete | Autonumber sequence missing | Admin pre-creates the sequence |
+| Received item isn't available stock | Item is inspection-flagged, sitting in HOLDING | Accept it in the Inspection app |
+| Scanner fills field but nothing commits | No Enter/Tab suffix configured | Set scanner suffix to Enter or Tab |
+
+---
+
+## 🎓 The Commandments of Fast Receiving
+
+1. **Thou shalt use Select Ordered Items** — never add receipt lines by hand.
+2. **Thou shalt set tolerance at the organization**, and let routine variances flow.
+3. **Thou shalt gate quality with inspection flags**, feeding the 4-way match.
+4. **Thou shalt honor the required-at-receipt fields** — lot, serial, condition.
+5. **Thou shalt pre-create Autonumber sequences** before the first rotating receipt.
+6. **Thou shalt scan, not type**, and configure the scanner suffix.
+
+---
+
+## Key Takeaways
+
+- **Select Ordered Items receives a whole PO in one pass** — a clean ten-line receipt takes under three minutes.
+- **Receive tolerance lives on Organizations, not the PO**, and over-tolerance requires a supervisor override with a reason code.
+- **The inspection hold routes flagged items to a holding location** and, with 4-way match, gates invoice payment on inspection acceptance.
+- **Lot and condition fail fast if blank; rotating waits as a "waiting asset"** — and a rotating receipt also creates the asset record, so the Autonumber sequence must exist.
+- **Barcode on desktop (USB) and mobile (camera), including offline receiving**, is the difference between a three-minute truck and a thirty-minute one.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Maximo Manage — Receiving (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Manage — Inspection and receipt processing (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Mobile — Inventory Receiving app (IBM Documentation)](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 2 — Inventory Usage Mastery](/blog/supply-chain-playbook-inventory-usage) |
+| **Next:** | [Part 4 — Cycle Counting the Smart Way](/blog/supply-chain-playbook-cycle-counting) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*

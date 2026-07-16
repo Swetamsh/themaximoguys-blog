@@ -1,0 +1,325 @@
+---
+title: "Building the Reliability Spine in Manage"
+description: "Methodology becomes reference data here. The reliability spine is four stock MAS 9 Manage applications — Failure Codes, asset criticality, Condition Monitoring, and Meters — that together turn free-text guesswork into a controlled vocabulary, risk-based effort, and automatic condition-based work order generation."
+date: "2026-07-16"
+slug: "mas-reliability-reliability-spine"
+tags: ["Maximo", "MAS 9", "Failure Codes", "Condition Monitoring", "Meters", "Criticality", "Reliability", "EAM"]
+draft: false
+tier: "admin"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-reliability-03-reliability-spine.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What is the Failure Codes application and what does it build?"
+    answer: "The Failure Codes application (in the Assets module) builds the FAILURELIST hierarchy: a top-level failure class (for example, 'Pump') branches into Problems, then Causes, then Remedies — a four-level Problem → Cause → Remedy tree. A failure class is assigned on the asset or location record, and when a work order is raised against that asset, the technician's failure reporting is constrained to that class's tree. That controlled vocabulary is what makes failure data analyzable and feeds Pareto and trend analysis."
+  - question: "How does Maximo make maintenance effort risk-based?"
+    answer: "Maximo records an asset priority on the asset (often used as a criticality proxy) and a work order priority on the work order, then computes a calculated priority from the two via the priority matrix — pushing high-criticality assets up the queue. Criticality drives strategy: critical assets justify intensive PM, condition monitoring, and predictive coverage, while low-criticality assets may move to run-to-failure. Formal criticality scoring beyond core Manage comes from Maximo Health."
+  - question: "How does Condition Monitoring generate work orders automatically?"
+    answer: "The Condition Monitoring application creates measurement point records — a gauge or characteristic meter on an asset or location with upper/lower limits plus warning and action limits, each able to reference a job plan or PM. When a reading breaches limits, Maximo can automatically generate a work order or trigger a PM. Ticking 'Use Action Limits as Work Order Generation Criteria' restricts generation to readings past the action limits, not merely warning limits — so you get work orders on real exceedances, not warning-limit noise."
+  - question: "What are the three meter types in Maximo?"
+    answer: "Continuous meters are cumulative and ever-increasing (run hours, mileage) and drive meter-based PM frequency. Gauge meters hold a value that rises and falls (temperature, pressure) and are used in condition monitoring. Characteristic meters hold a value from a domain list (OK / Worn) and require a domain. Meter groups bundle meters for consistent application, and meters are placed on assets and locations via the Meters tab."
+keyTakeaways:
+  - "The Failure Codes application builds the Problem → Cause → Remedy tree; assigning a failure class to an asset constrains technician failure reporting to a controlled vocabulary"
+  - "Asset priority plus work order priority produce a calculated priority via the priority matrix, making effort risk-based"
+  - "Condition Monitoring measurement points auto-generate work orders on limit breaches; 'Use Action Limits' filters out warning-limit noise"
+  - "The three meter types — continuous, gauge, characteristic — serve usage-based PM, condition monitoring, and domain-list readings respectively"
+  - "The spine (failure hierarchy + criticality + meters) is the true foundation — the PMs of Part 4 attach to it"
+series:
+  name: "MAS RELIABILITY"
+  part: 3
+  total: 7
+tldr: "The reliability spine is four stock MAS 9 Manage applications. Failure Codes builds the failure-class → Problem → Cause → Remedy hierarchy that constrains technician failure reporting to a controlled vocabulary, making failure data analyzable. Asset priority plus work order priority yield a calculated priority that makes effort risk-based (formal criticality scoring comes from Health). Condition Monitoring creates measurement points that auto-generate work orders when readings breach action limits. Meters — continuous, gauge, characteristic — are the measurement backbone for usage-based PM and condition monitoring. Build this spine before any PM, because everything downstream attaches to it. The data model is unchanged from 7.6, so it migrates."
+seoTitle: "The Reliability Spine in Manage: MAS 9 Reliability Part 3"
+seoDescription: "Build the MAS 9 reliability spine: Failure Codes hierarchy, asset criticality, Condition Monitoring measurement points, and the three meter types."
+targetQuestions:
+  - "What is the Failure Codes application in Maximo?"
+  - "How does asset criticality work in Maximo?"
+  - "How does Condition Monitoring generate work orders?"
+  - "What are the three meter types in Maximo?"
+semanticKeywords:
+  - "Failure Codes application FAILURELIST"
+  - "problem cause remedy tree"
+  - "asset priority calculated priority"
+  - "condition monitoring measurement point"
+  - "action limits work order generation"
+  - "continuous gauge characteristic meter"
+  - "meter groups asset meter"
+  - "failure class controlled vocabulary"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 1 — Reliability Fundamentals (task types, consequence, CBM)"
+  - "Familiarity with the Maximo Assets, Locations, and Work Order Tracking applications"
+speakableSections:
+  - "Failure Codes: The Controlled Vocabulary"
+  - "Criticality: Risk-Based Effort"
+  - "Condition Monitoring and Meters"
+series_part: 3
+clusterSlugs:
+  - "mas-reliability-series-index"
+  - "mas-reliability-analysis-to-action"
+relatedSlugs:
+  - "mas-reliability-series-index"
+  - "mas-reliability-metrics-mtbf-mttr"
+  - "mas-health-configuring-scores-criticality"
+---
+
+# Building the Reliability Spine in Manage
+
+> 🎯 **Who this is for:** Maximo administrators and reliability engineers who are ready to turn the methodology of Parts 1–2 into actual Manage reference data — the failure hierarchy, criticality, condition monitoring, and meters that everything else attaches to.
+
+**Series:** Part 3 of 7 — *MAS 9 Reliability Implementation Playbook* | **Read time:** 21 minutes
+
+---
+
+## 🦴 What "the Spine" Means and Why It Comes First
+
+Every part of this series has said the same thing in a different way: reliability is a decision problem, and the decisions have to be *recorded* somewhere durable and analyzable. The spine is that somewhere. It is four stock MAS 9 Manage applications that, together, convert the FMEA decisions of Part 1 and the metrics of Part 2 into structured data:
+
+1. **Failure Codes** — the controlled vocabulary of *what fails and why*.
+2. **Asset criticality** — the ranking that makes effort *risk-based*.
+3. **Condition Monitoring** — the mechanism that turns a *measurement* into a *work order*.
+4. **Meters** — the measurement backbone that both usage-based PM and condition monitoring stand on.
+
+The order matters, and the word "spine" is deliberate. A spine is what everything else attaches to. PMs (Part 4) hang off it; APM scoring (Part 5) reads from it; MTBF/MTTR (Part 2) are computed from it. Build a PM program before the failure hierarchy exists and you get a pile of work orders whose failure history is free text — unanalyzable, un-optimizable, and exactly the mess Part 6 has to cleanse.
+
+<aside>
+
+💡 **Key insight:** The single most valuable thing you can do for reliability in MAS 9 is *not* to add PMs — it is to build the failure hierarchy and criticality ranking so that every work order that already exists starts producing analyzable data. The spine pays off retroactively across your entire work history.
+
+</aside>
+
+Because the MAS 9 data model is unchanged from 7.6 (same `FAILURECODE`, `ASSET`, `MEASUREPOINT`, `PM`, `JOBPLAN` objects), everything in this part *migrates* rather than being rebuilt. You are learning a Carbon UI and role-based navigation, not new concepts — a point the upgrade sections (Parts 6–7) lean on heavily.
+
+---
+
+## 🌳 Failure Codes: The Controlled Vocabulary
+
+The **Failure Codes** application (in the Assets module) is where the FMEA of Part 1 becomes reference data. It builds the **FAILURELIST** hierarchy — a four-level tree:
+
+```
+FAILURE CLASS  (e.g. "PUMP-CENTRIFUGAL")
+   └─ PROBLEM   (e.g. "SEAL-LEAK")
+        └─ CAUSE   (e.g. "SEAL-FACE-WEAR")
+             └─ REMEDY  (e.g. "REPLACE-SEAL")
+```
+
+### How the tree is assigned and enforced
+
+A **failure class** is assigned on the asset or location record, in the *Failure Class* field. That single assignment is what makes the whole thing work: when a technician raises or closes a work order against that asset and opens the **Failure Reporting** tab in Work Order Tracking, the problem/cause/remedy pick-lists are **constrained to that class's tree**. The technician cannot type "pump broke again" — they select from a controlled vocabulary, the same wording every time.
+
+<aside>
+
+💡 **Key insight:** The value is not the tree itself — it is the *constraint*. A controlled vocabulary is what makes failure data Pareto-analyzable. Free text describing the same seal failure five different ways cannot be counted; "SEAL-LEAK / SEAL-FACE-WEAR" reported 40 times is a signal you can act on. This is the mechanism behind every MTBF and Pareto chart in Part 2.
+
+</aside>
+
+### Field reference
+
+| Level | Object | Example value | Purpose |
+|---|---|---|---|
+| Failure class | `FAILURECODE` (class) | PUMP-CENTRIFUGAL | Assigned to the asset; roots the tree |
+| Problem | `FAILURELIST` | SEAL-LEAK | The functional failure the operator sees |
+| Cause | `FAILURELIST` | SEAL-FACE-WEAR | The failure mode from your FMEA |
+| Remedy | `FAILURELIST` | REPLACE-SEAL | The action that fixed it |
+
+Note two facts you will need in Part 6: failure classes are defined at the **Organization** level (not site), and `FAILURELIST` is a **restricted object** that resists direct bulk load — the reason Part 6 spends time on the `MHFAILURELIST` workaround. For now, the design point is what matters: your FMEA failure modes *are* the Cause level of this tree. Design the tree from the FMEA, not from a generic template.
+
+---
+
+## 🎚️ Asset Criticality: Making Effort Risk-Based
+
+Part 1 insisted that effort should concentrate where consequences are severe. Criticality is how Maximo expresses that in data so the platform can act on it.
+
+### Asset priority, work order priority, calculated priority
+
+Maximo records a **priority** on the asset (frequently used as a criticality proxy) and a **priority** on the work order, then combines them into a **calculated priority** through a configurable **priority matrix**. The effect: a routine work order on a highly critical asset outranks an urgent-sounding work order on a trivial one.
+
+Here is a simplified priority matrix, the kind you configure once and let drive the queue:
+
+| Asset priority ↓ / WO priority → | 1 (urgent) | 2 | 3 (routine) |
+|---|---|---|---|
+| **1 (critical asset)** | 1 | 1 | 2 |
+| **2** | 1 | 2 | 3 |
+| **3 (non-critical asset)** | 2 | 3 | 4 |
+
+A calculated priority of 1 floats to the top of every planner's queue; a 4 sinks. The matrix is the durable, auditable encoding of "critical assets first" — instead of relying on whichever planner shouts loudest.
+
+### Criticality as a proxy vs. formal scoring
+
+Be honest about the limit here: core Manage gives you a *priority ranking used as a criticality proxy*, not a formal, multi-factor criticality score. Formal criticality — weighting safety, environmental, production, and replacement cost into a computed number, with map and matrix visualizations — is what **Maximo Health** adds in the APM layer (Part 5). For the core strategy you do not need it: a well-run asset-priority ranking is enough to make effort risk-based. Health is the amplifier, not the prerequisite.
+
+<aside>
+
+⚠️ **Watch out:** Do not stall the whole program waiting for a "perfect" criticality model. A three-tier asset-priority ranking (critical / important / routine), applied consistently, delivers 80% of the value on day one. You can refine toward Health's formal scoring later — but you cannot make effort risk-based at all until *some* ranking exists on every asset.
+
+</aside>
+
+---
+
+## 📟 Meters: The Measurement Backbone
+
+Both usage-based PM and condition monitoring stand on meters, so they come before either. The **Meters** application defines meter masters in three types:
+
+| Meter type | Behaviour | Typical use | Reliability role |
+|---|---|---|---|
+| **Continuous** | Cumulative, ever-increasing (run hours, mileage, cycles) | Runtime tracking | Drives **meter-based PM frequency** and the operating-time denominator of MTBF |
+| **Gauge** | Rises and falls (temperature, pressure, vibration) | Condition readings | The **CBM signal** for condition monitoring |
+| **Characteristic** | Value from a domain list (OK / Worn / Cracked) | Qualitative inspection | Domain-driven condition readings (needs a domain) |
+
+### Meter groups and placement
+
+**Meter groups** bundle a consistent set of meters so you can apply them to many assets at once — a "centrifugal pump" meter group might carry run-hours (continuous), bearing temperature and vibration (gauge), and seal condition (characteristic). Meters are placed on assets and locations via the **Meters** tab (creating `ASSETMETER` / `LOCATIONMETER` rows), and readings are entered manually through **Meter Reading Entry**, imported, or fed automatically from Monitor (Part 5).
+
+<aside>
+
+💡 **Key insight:** Design meter *groups* before individual meters. A meter group applied through an asset template (Part 4) is how you put the same three meters on 200 pumps in one action instead of 200. Bottom-up, meter-by-meter placement is the slow road that never finishes.
+
+</aside>
+
+### Why characteristic meters need a domain
+
+A characteristic meter (OK / Worn) is only as good as its domain. Before you can load or use one, the domain that holds its allowed values must exist — which is the reason Part 6's load sequence puts **domains first, before everything.** A characteristic meter pointed at a non-existent domain is a rejected row.
+
+---
+
+## 📡 Condition Monitoring: Turning a Reading Into a Work Order
+
+Meters capture the signal; **Condition Monitoring** acts on it. The application creates **measurement point** records — a gauge or characteristic meter bound to an asset or location, with **upper/lower limits** plus **warning** and **action** limits, each able to reference a job plan or PM. When a reading breaches a limit, Maximo can **automatically generate a work order or trigger a PM.** This is the core CBM mechanism from Part 1, made real.
+
+### Worked example: a bearing-temperature measurement point
+
+Take the pump bearing from Part 1's FMEA. You put a **gauge meter** (bearing temperature) on the asset, then create a measurement point:
+
+| Field | Value | Meaning |
+|---|---|---|
+| Meter | BEARING-TEMP (gauge) | The signal being watched |
+| Upper warning limit | 75 °C | "Getting warm" — informational |
+| Upper action limit | 85 °C | "Act now" — degradation is real |
+| Job plan | JP-PUMP-BRG-INSP | What to do when the limit trips |
+| Use Action Limits as WO Generation Criteria | ✅ ticked | Only generate on action-limit breaches |
+
+Now a reading of 78 °C logs, colours the point amber, but **does not** raise a work order. A reading of 87 °C trips the action limit and **auto-generates** a work order against JP-PUMP-BRG-INSP. The vibration route from Part 1's P-F example works identically — the action limit is the level associated with point P, and the inspection interval is set shorter than the P-F interval.
+
+### The "Use Action Limits" checkbox and why it matters
+
+<aside>
+
+💡 **Key insight:** The **"Use Action Limits as Work Order Generation Criteria"** checkbox is the difference between a CBM program people trust and one they mute. Without it, every *warning*-limit reading generates a work order and technicians drown in noise — then they stop reading meters. Tick it, and only genuine action-limit exceedances create work. Warning limits still colour the data for trending; they just don't cry wolf.
+
+</aside>
+
+---
+
+## 🔗 How the Four Fit Together
+
+The spine is not four separate things — it is one connected structure. Here is the data flow:
+
+```
+   ASSET (has failure class + priority)
+     │
+     ├── Failure Codes ──► controlled failure vocabulary
+     │                     (constrains WO failure reporting → MTBF/Pareto)
+     │
+     ├── Priority ────────► calculated priority (risk-based queue)
+     │
+     ├── Meters ──────────► operating time (continuous) + CBM signal (gauge/char)
+     │        │
+     │        ▼
+     └── Condition Monitoring ──► measurement point breaches action limit
+                                   └──► auto-generates WORK ORDER
+                                          └──► failure reporting closes the loop
+```
+
+Read it top to bottom and you can see why the order in Part 6 is mandatory: the failure class and domains have to exist before the asset can reference them, the meters have to exist before condition-monitoring points can bind to them, and everything has to exist before a PM (Part 4) can attach.
+
+---
+
+## 🧮 A Fully Worked Spine: One Critical Pump
+
+Let us assemble all four on a single asset, P-101, the critical cooling pump from Part 1.
+
+1. **Failure class** — create/assign `PUMP-CENTRIFUGAL` on P-101, with the Problem→Cause→Remedy tree drawn from the FMEA (SEAL-LEAK, BEARING-FAIL, IMPELLER-EROSION as problems, each with its causes and remedies).
+2. **Criticality** — set asset priority = 1 (critical: reactor-cooling duty). Every future work order on P-101 now inherits a high calculated priority through the matrix.
+3. **Meters** — apply the `PUMP-CENTRIFUGAL` meter group: RUN-HOURS (continuous), BEARING-TEMP and VIBRATION (gauge), SEAL-COND (characteristic, domain OK/WEEPING/LEAKING).
+4. **Condition monitoring** — two measurement points: BEARING-TEMP with action limit 85 °C → JP-PUMP-BRG-INSP, and VIBRATION with an action limit at the P-point level → a vibration-analysis job plan, both with "Use Action Limits" ticked.
+
+The result: P-101 now produces analyzable failure data on every work order, floats to the top of the queue when it needs attention, tracks its own operating hours for MTBF and meter-based PM, and *automatically raises work* when its bearing runs hot or its vibration climbs — before it fails. That is the spine. Part 4 attaches the scheduled PMs; Part 5's APM layer can now score P-101 because the data exists.
+
+---
+
+## ⚠️ Edge Cases and Gotchas
+
+- **Failure classes are Organization-level.** Define them once at the org, not per site. Duplicating them per site fragments your failure data and breaks fleet-level Pareto analysis.
+- **Characteristic meters need their domain first.** Load or create the domain before the meter, or the meter is invalid.
+- **Warning-limit noise.** If you leave "Use Action Limits" *unticked*, you will generate work on warning breaches and teach technicians to ignore the whole system.
+- **Priority proxy is not a criticality score.** Do not oversell the core-Manage ranking as formal criticality; that is Health's job (Part 5). Set expectations accordingly.
+- **Meter-based PM needs the meter on the asset first.** A meter-based PM (Part 4) that references a continuous meter not yet placed on the target asset will not generate. The meter comes first.
+
+---
+
+## 🩺 Troubleshooting the Spine
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Technician can't pick a failure code on the WO | No failure class assigned on the asset | Set the Failure Class field on the asset record |
+| Condition Monitoring never generates a work order | "Use Action Limits" ticked but readings only reach *warning* limits — or no job plan/PM referenced | Confirm readings exceed the *action* limit; confirm the point references a job plan or PM |
+| Every reading generates a work order (noise) | "Use Action Limits" **not** ticked | Tick "Use Action Limits as WO Generation Criteria" |
+| MTBF looks impossibly high | Dividing by calendar time, or missing failures because reporting is free text | Use continuous meters for operating time; enforce failure reporting |
+| Meter-based PM won't fire | Continuous meter not placed on the target asset | Add the meter to the asset via the Meters tab |
+
+---
+
+## 📋 Practical Notes: Spine Build Checklist
+
+- **Build the failure hierarchy from your FMEA, at Organization level.** The Cause level should be your FMEA failure modes, not a generic vendor list.
+- **Rank criticality on every in-scope asset before building any PM.** A three-tier ranking beats an empty field; refine toward Health later.
+- **Define meter *groups* first, then place them via templates.** Group-then-template is the only approach that scales past a few dozen assets.
+- **Tick "Use Action Limits" on every measurement point.** Make it a build standard, not a per-point decision.
+- **Enforce failure reporting from day one.** The spine only produces metrics if technicians actually report against the tree — which is why Part 7's Phase 5 makes it a closed-loop discipline, not an optional tab.
+
+<aside>
+
+💡 **Key insight:** Sequence within the spine mirrors the sequence of the whole program: vocabulary and criticality first (they cost nothing and pay off retroactively), then meters, then condition monitoring, then — in Part 4 — the PMs that attach to all of it. Build the spine and you have already done the hard, durable part of a reliability strategy.
+
+</aside>
+
+---
+
+## Key Takeaways
+
+- **Failure Codes builds the class → Problem → Cause → Remedy tree**, and assigning a failure class to an asset constrains technician failure reporting to a controlled vocabulary — the thing that makes failure data analyzable.
+- **Asset priority plus work order priority produce a calculated priority** via the matrix, making effort risk-based; formal criticality scoring is Health's job, not core Manage's.
+- **Condition Monitoring measurement points auto-generate work orders on action-limit breaches** — and the "Use Action Limits" checkbox is what keeps the program from drowning in warning-limit noise.
+- **The three meter types — continuous, gauge, characteristic** — serve usage-based PM, condition monitoring, and domain-list readings respectively, and characteristic meters need a domain first.
+- **The spine is the true foundation:** build the failure hierarchy, criticality, meters, and condition monitoring before any PM, because everything downstream attaches to it.
+
+---
+
+## References
+
+**IBM Official**
+- [Maximo Manage — Condition Monitoring overview (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=monitoring-condition-overview)
+- [Maximo Manage — Meters overview (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=assets-meters)
+- [Maximo Manage — Failure Codes (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=assets-failure-codes)
+
+**Community**
+- [Maximo Secrets — Failure Codes and Failure Reporting](https://maximosecrets.com/2022/04/14/failure-codes-and-failure-reporting/)
+- [Maximo Secrets — Condition Monitoring](https://maximosecrets.com/2022/09/16/condition-monitoring/)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 2 — Reliability Metrics That Matter: MTBF, MTTR, Availability & PM Optimization](/blog/mas-reliability-metrics-mtbf-mttr) |
+| **Next:** | [Part 4 — From Analysis to Action: Job Plans, PMs & the Reliability Strategies App](/blog/mas-reliability-analysis-to-action) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves — from architecture and migration planning to the day-to-day work of configuring, extending, and running Maximo.
+
+*Published by TheMaximoGuys | July 2026*

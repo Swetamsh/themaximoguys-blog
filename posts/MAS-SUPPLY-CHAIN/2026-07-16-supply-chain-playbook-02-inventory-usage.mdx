@@ -1,0 +1,307 @@
+---
+title: "Inventory Usage Mastery: One App for Every Issue, Return, and Transfer"
+description: "Issue Current Item is gone. In MAS 9 Manage, one application — Inventory Usage (INVUSAGE) — handles every material issue, return, and transfer. Here is how it works, why everything now flows through it before it touches balance, and how to put ten parts on a single document with one action or one string of barcode scans."
+date: "2026-07-16"
+slug: "supply-chain-playbook-inventory-usage"
+tags: ["Maximo", "MAS 9", "Inventory Usage", "INVUSAGE", "Storekeeper", "Material Issue", "Supply Chain", "EAM"]
+draft: false
+tier: "admin"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/supply-chain-playbook-02-inventory-usage.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What replaced Issue Current Item, Transfer Out, and Return in MAS 9?"
+    answer: "A single application: Inventory Usage, object name INVUSAGE, app name USAGE. In Maximo 7.6 a storekeeper issued, transferred, or returned material through three separate right-click actions on the Inventory application. In MAS 9 all three are usage types — ISSUE, RETURN, and TRANSFER — on one Inventory Usage document. One transaction, one number, one audit trail."
+  - question: "Why didn't my inventory balance go down after I issued material?"
+    answer: "Because the document is still in ENTERED status. In MAS 9, everything flows through INVUSAGE and its line table first, and the balance only moves when the document status changes to COMPLETE. Lines in ENTERED are not yet reflected in current balance. This is the single most common Day-1 storekeeper panic — the fix is to complete the document, not to re-issue."
+  - question: "Can I issue several different parts on one Inventory Usage document?"
+    answer: "Yes, and you should. One INVUSAGE document holds many lines. Use Select Reserved Items to pull every reservation for a work order in one click, use Select Spare Parts to pull from an asset's spare-parts list, or scan each part with a USB or camera scanner to create a line per scan. A twelve-part PM kit becomes one document, one printout, and one GL posting batch instead of twelve separate issues."
+  - question: "Can I mix an issue and a return on the same document?"
+    answer: "No. You cannot mix usage types on one Inventory Usage document — an issue and a return must be separate INVUSAGE records. Within a single usage type you can have as many lines as you like, but ISSUE, RETURN, and TRANSFER each need their own document."
+keyTakeaways:
+  - "Inventory Usage (INVUSAGE) is the one MAS 9 app for issues, returns, and transfers — it replaced three separate 7.6 actions"
+  - "Nothing touches balance until the document reaches COMPLETE; lines in ENTERED are not yet reflected — this is the #1 Day-1 panic"
+  - "One document holds many lines: Select Reserved Items, Select Spare Parts, or scan-per-line turns a 12-part kit into one transaction"
+  - "You cannot mix usage types on one document, and rotating items and tools block completion if you skip their required fields"
+  - "Custom reports that read MATUSETRANS during an open issue must now read the line table instead — the data model changed"
+series:
+  name: "MAS SUPPLY CHAIN"
+  part: 2
+  total: 10
+tldr: "In MAS 9, Inventory Usage (INVUSAGE) is the single application for every material issue, return, and transfer, replacing the three separate Issue Current Item, Transfer Out, and Return actions from 7.6. Everything flows through the document and its line table first and only posts to balance when status reaches COMPLETE — lines in ENTERED are invisible to current balance, which is the number-one storekeeper panic on Day 1. Put many lines on one document with Select Reserved Items, Select Spare Parts, or barcode scanning; keep each usage type on its own document; and remember that rotating items need a specific asset and tools need an issued-to person, or completion is blocked."
+seoTitle: "Inventory Usage in MAS 9 | Issue, Return, Transfer"
+seoDescription: "Master MAS 9 Inventory Usage (INVUSAGE): issues, returns, transfers, bulk issue on one document, and the ENTERED-vs-COMPLETE status trap."
+targetQuestions:
+  - "What replaced Issue Current Item in MAS 9?"
+  - "How do you issue material to a work order in MAS 9?"
+  - "Why doesn't my inventory balance change after an issue in MAS 9?"
+  - "How do you issue multiple parts on one Inventory Usage document?"
+semanticKeywords:
+  - "Inventory Usage INVUSAGE"
+  - "Issue Current Item replacement"
+  - "material issue MAS 9"
+  - "Select Reserved Items"
+  - "ENTERED vs COMPLETE status"
+  - "storeroom transfer usage type"
+  - "rotating item issue"
+  - "tool issue issued-to person"
+proficiencyLevel: "beginner"
+dependencies:
+  - "A storeroom with stock lines and at least one open work order reservation"
+  - "Familiarity with the Inventory and Work Order Tracking applications"
+  - "Awareness of rotating, tool, and condition-enabled item types"
+speakableSections:
+  - "Where Issue Current Item Went"
+  - "The Status Trap"
+  - "Bulk Issue on One Document"
+series_part: 2
+clusterSlugs:
+  - "supply-chain-playbook-series-index"
+  - "supply-chain-playbook-storekeeper-first-hour"
+  - "supply-chain-playbook-fast-receiving-barcode"
+relatedSlugs:
+  - "supply-chain-playbook-series-index"
+  - "supply-chain-playbook-storekeeper-first-hour"
+  - "supply-chain-playbook-reservations-replenishment"
+  - "mas-features-supply-chain-core-inventory"
+---
+
+# Inventory Usage Mastery: One App for Every Issue, Return, and Transfer
+
+> 🎯 **Who this is for:** Storeroom clerks and supervisors who spent years in the Inventory application's right-click menu and now need to move material through MAS 9's one consolidated document — fast, clean, and without the Day-1 panic that the balance "isn't working."
+
+**Series:** Part 2 of 10 — *MAS 9 Supply-Chain Playbook* | **Read time:** 24 minutes
+
+---
+
+## 🔀 Where Issue Current Item Went
+
+If you have issued material in Maximo for any length of time, your hands know three moves: right-click an Inventory line and choose **Issue Current Item**, or **Transfer Out**, or **Return**. Three separate actions, three separate mental models, all launched from the Inventory application.
+
+In MAS 9 Manage, all three are gone as standalone actions — and that is a good thing. They collapsed into a single application: **Inventory Usage** (object `INVUSAGE`, app `USAGE`). Issue, return, and transfer are now **usage types** on one document, not three different doors you walk through.
+
+| Maximo 7.6 action | MAS 9 equivalent |
+|---|---|
+| Issue Current Item (right-click in Inventory) | New Inventory Usage, **Usage Type = ISSUE** |
+| Transfer Out (right-click in Inventory) | New Inventory Usage, **Usage Type = TRANSFER** |
+| Return (right-click in Inventory) | New Inventory Usage, **Usage Type = RETURN** |
+
+The payoff is one transaction, one document number, one audit trail. On a single ISSUE document you can put five parts for one work order; you fix a mistake by editing the line in place until you complete, not by reversing it with a negative transaction later.
+
+<aside>
+💡 **Key insight:** The mental shift is from *action* to *document*. In 7.6 you performed an action against a stock line. In MAS 9 you build a document — a header that says "this is an ISSUE from CENTRAL," and lines that say "these parts, these quantities, to this work order." Learn to think in documents and the rest of this part is easy.
+</aside>
+
+---
+
+## 🧱 The One Object Behind Every Movement
+
+Under the hood, every issue, return, and transfer is an `INVUSAGE` header with one or more `INVUSELINE` line records. That two-table structure is not a detail you can ignore, because it changes *when* your balance moves and *where* your reports have to look.
+
+In 7.6, **Issue Current Item** wrote more or less straight to `MATUSETRANS`, the material-use transaction table. In MAS 9, the transaction flows through `INVUSAGE` and `INVUSELINE` **first**, and only posts to `MATUSETRANS` when the document reaches **COMPLETE**. Nothing about the balance changes while the document sits open.
+
+That single fact is the source of the most common go-live-morning storekeeper panic, so it gets its own section.
+
+---
+
+## ⏳ The Status Trap: ENTERED vs COMPLETE
+
+Here is the scenario that generates a help-desk ticket on almost every rollout.
+
+A storekeeper creates an issue for three bearings against a work order, saves it, and walks to the shelf. They check the balance — and it hasn't moved. The three bearings are still showing as on-hand. They conclude the balance is broken, re-issue, and now you have a double-issue to unwind.
+
+The balance is not broken. The document is in **ENTERED** status, and **lines in ENTERED are not yet reflected in current balance.** The status flow is:
+
+```
+ENTERED  ──────▶  COMPLETE
+(built,           (balance moves,
+ not posted)       reservation consumed,
+                   WO actuals update,
+                   GL posts)
+```
+
+Nothing posts until you change the status to COMPLETE. The moment you do, the balance drops, the reservation is consumed, the work order's material actuals update, and the GL entries post — all atomically.
+
+### Why the two-step exists
+
+The ENTERED-then-COMPLETE flow is a feature, not friction. It means a supervisor can review a document before the balance moves, and it means a storekeeper can build a ten-line issue over several minutes without each line hitting the ledger the instant they type it. The cost is exactly one habit to teach: **complete the document.**
+
+<aside>
+⚠️ **Watch out:** If a storekeeper ever says "the balance didn't go down," your first and usually only question is: *"Is the document COMPLETE?"* Nine times out of ten it is sitting in ENTERED. Put this line in your go-live training deck verbatim.
+</aside>
+
+---
+
+## 📤 Issuing to a Work Order, Step by Step
+
+This is the core storekeeper transaction. Here it is with concrete values, the way it actually runs.
+
+1. Go to **Inventory Usage → New Inventory Usage**.
+2. Set **Usage Type = ISSUE** and **From Storeroom = CENTRAL**.
+3. Click **New Row** in the Lines tab.
+4. Enter the line detail:
+   - **Item** — scan the barcode or type (e.g., `BRG-6205`).
+   - **Quantity** — `3`.
+   - **Issue To = Work Order** (or Location, or GL Account).
+   - **Work Order** — `WO-48213`; the app auto-populates the asset, location, and GL account from the work order.
+   - **Bin** — defaults to the item's primary bin; override for multi-bin picking.
+   - **Rotating Asset Number** — required if the item is rotating (more below).
+   - **Issued To Person** — mandatory if the item is a tool.
+5. Add more lines for more parts on the same issue.
+6. Change status to **COMPLETE**.
+
+At completion the balance drops by three, the work order's reservation for those bearings is consumed, the material shows on the work order's actuals, and the GL posts. One document did all of it.
+
+### Issuing without a reservation
+
+Sometimes material goes out that nobody planned for. Build the line exactly as above but leave **Reservation** blank. The app asks whether to create the issue as unplanned — confirm, and it issues against current balance without a reservation to consume. Use this deliberately; unplanned issues are legitimate but they are also where informal, untracked material movement creeps in, so keep an eye on their volume.
+
+---
+
+## ↩️ Returns and Condition-Enabled Stock
+
+A return puts material back on the shelf. It is its own document.
+
+1. **New Inventory Usage → Usage Type = RETURN.**
+2. Enter the **Item**, **Quantity**, and **Return From Work Order** (or location).
+3. If the item is condition-enabled, pick the returned **condition code** (NEW, REFURB, SCRAP, and so on).
+4. Complete.
+
+### Why condition matters on a return
+
+For a condition-enabled item, each condition is a separate stock line with its own balance and book value — REFURB might carry sixty percent of NEW cost. When you return, the balance posts to the **matching condition-code stock line**, not to a generic pool. Return a refurbished pump as REFURB and it lands on the shelf at the discounted book value, available to reissue against the next work order. Get the condition code wrong and you have overstated (or understated) the value of your inventory. Condition-enabled items are covered end to end in the storeroom's advanced work, but the return is where storekeepers meet them first, so pick the code deliberately.
+
+---
+
+## 🔁 Single-Step Transfers — and When Not to Use One
+
+A transfer moves stock between storerooms. The simplest form is a single-step transfer with no staging.
+
+1. **New Inventory Usage → Usage Type = TRANSFER.**
+2. **From Storeroom** is the source; each line carries a **To Storeroom** destination.
+3. Complete. Balances move immediately — no shipment record, no in-transit state.
+
+That immediacy is exactly why single-step transfer has a boundary. Use it **only** for informal transfers within the same site, where the material physically moves in minutes and nobody needs to see it "in transit."
+
+For anything crossing sites, or any transfer that needs an audit trail — a pick list, a staging bin, a shipment with a tracking number, and destination-side receiving — you use the full staged transfer workflow (`ENTERED → STAGED → SHIPPED → COMPLETE`), which is a supervisor-level topic covered when you get to inter-site movement. The rule of thumb: if the material will be out of both storerooms' sight for more than a few minutes, it needs the staged flow so it shows as a real in-transit quantity.
+
+---
+
+## 📦 Bulk Issue on One Document
+
+The single biggest daily time saver in Inventory Usage is refusing to open a new document per part. One `INVUSAGE` document holds as many lines as you need, and there are three fast ways to fill it.
+
+### Select Reserved Items
+
+From the Lines tab action menu, **Select Reserved Items** pulls every reservation for a given work order and fills the lines automatically. A twelve-part PM kit reserved against `WO-48213` becomes twelve lines in one click. Note the two constraints: it only pulls reservations whose status is active and whose storeroom matches the header storeroom.
+
+### Select Spare Parts
+
+**Select Spare Parts** pulls from the target asset's spare-parts list — useful when you are issuing against an asset whose spares are catalogued but not yet reserved.
+
+### Scan per line
+
+If you scan barcodes into the Item column with a USB scanner, Manage creates a new line per scan at quantity one. Scan each part in a kit and you have a multi-line issue in twenty seconds. Maximo Mobile Inventory does the same with the phone camera.
+
+| Method | Best for | Watch for |
+|---|---|---|
+| Select Reserved Items | Issuing a planned PM/work-order kit | Only active reservations in the header storeroom |
+| Select Spare Parts | Issuing an asset's catalogued spares | Pulls the list, not a reservation — verify quantities |
+| Scan per line | Ad-hoc multi-part issues at the shelf | One line per scan at qty 1 — adjust quantities after |
+
+<aside>
+💡 **Key insight:** "One document, many lines" is the storeroom's version of the whole playbook's batching principle. A kit issued as twelve documents is twelve GL postings and twelve printouts; the same kit as one document is one of each. Teach storekeepers to reach for Select Reserved Items before they reach for New Inventory Usage a second time.
+</aside>
+
+A note on partial issues: if you issue fewer than the reserved quantity, the remaining reservation stays open — it does **not** auto-cancel. Those leftovers are exactly the stale reservations you clean up in Part 5.
+
+---
+
+## 🚫 The Completion Blockers: Rotating Items and Tools
+
+Two item types will refuse to let you complete a document if you skip their required field. Both refusals are protecting data integrity, so learn them rather than fight them.
+
+### Rotating items need a specific asset
+
+A rotating item — a motor, pump, or gearbox — exists both as an item and as one or more specific **assets** with unique asset numbers. When you issue a rotating item you must pick the **specific asset number**, not just a quantity. Issue "pump asset `PMP-0442`," not "one pump." The app blocks completion until you do, because the whole point of a rotating item is a serialized history per physical unit. At issue, the system installs that specific asset at the work order's location; at return, it comes back to the storeroom as an available rotating asset with its repair history intact.
+
+### Tools need an issued-to person
+
+A tool is checked out and returned, not consumed. On a tool issue, **Issued To Person** is mandatory — non-negotiable. Skip it and completion is blocked. This is the traceability that keeps unreturned tools from becoming an unbudgeted expense. If your item master leaves issued-to as free text, a storekeeper types "Joe" and you lose the trail; turn on the person lookup so it captures a real `PERSONID`.
+
+<aside>
+⚠️ **Watch out:** Rotating-plus-lot-controlled is an illegal combination, and rotating-plus-condition-enabled is legal but multiplies your stock lines. If completion blocks on a rotating item and the asset field looks fine, check whether someone tried to make the item lot-controlled too.
+</aside>
+
+---
+
+## 🧾 The Data-Model Change Nobody Warns You About
+
+Here is the one that bites integrations and reports rather than storekeepers.
+
+Because MAS 9 routes everything through `INVUSAGE` and `INVUSELINE` before posting to `MATUSETRANS`, any custom report or integration that read `MATUSETRANS` **during an open issue transaction** will now find nothing there until the document is COMPLETE. The open, in-progress data lives in `INVUSELINE`.
+
+If you have a 7.6-era report that showed "issues in progress" by reading `MATUSETRANS`, it will silently under-report on MAS 9 — the rows aren't in `MATUSETRANS` yet. The fix is to point such reports at `INVUSELINE` for open activity, and keep `MATUSETRANS` for completed, posted history. This is a small change with an outsized blast radius: a stockroom-throughput dashboard that reads the wrong table looks like the storeroom stopped working.
+
+---
+
+## 🔧 Troubleshooting Inventory Usage
+
+The recurring issues and their one-line fixes:
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Balance didn't move after issuing | Document still in ENTERED | Change status to COMPLETE |
+| Can't add a return line to an issue | Usage types can't mix on one document | Create a separate RETURN document |
+| Completion blocked on a rotating item | No specific asset number picked | Enter the asset number for each rotating line |
+| Completion blocked on a tool | Issued To Person left blank | Enter the person (mandatory for tools) |
+| Reservation still open after issue | Partial issue leaves the remainder | Clean up per Part 5, or issue the balance |
+| "In-progress issues" report shows nothing | Report reads MATUSETRANS, not INVUSELINE | Repoint open-activity reads to INVUSELINE |
+
+---
+
+## 🎓 The Commandments of Inventory Usage
+
+1. **Thou shalt think in documents**, not right-click actions.
+2. **Thou shalt complete the document** — nothing posts in ENTERED.
+3. **Thou shalt keep usage types separate** — issue, return, and transfer each get their own document.
+4. **Thou shalt batch with Select Reserved Items** before opening a second document.
+5. **Thou shalt pick the specific asset** for rotating items and the person for tools.
+6. **Thou shalt repoint open-activity reports** from MATUSETRANS to INVUSELINE.
+
+---
+
+## Key Takeaways
+
+- **Inventory Usage (INVUSAGE) is the one MAS 9 app for issues, returns, and transfers** — it replaced Issue Current Item, Transfer Out, and Return as usage types on a single document.
+- **Nothing touches balance until the document reaches COMPLETE.** Lines in ENTERED are invisible to current balance — the number-one Day-1 storekeeper panic.
+- **One document holds many lines:** Select Reserved Items, Select Spare Parts, or scan-per-line turns a twelve-part kit into one transaction, one printout, one GL batch.
+- **You cannot mix usage types on one document**, and rotating items (specific asset) and tools (issued-to person) block completion if you skip their required field.
+- **The data model changed:** open activity lives in INVUSELINE and only posts to MATUSETRANS at COMPLETE — repoint any in-progress reports accordingly.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Maximo Manage — Inventory Usage (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Manage — Inventory (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Mobile — Inventory app (IBM Documentation)](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 1 — The Storekeeper's First Hour](/blog/supply-chain-playbook-storekeeper-first-hour) |
+| **Next:** | [Part 3 — Fast Receiving & Barcode](/blog/supply-chain-playbook-fast-receiving-barcode) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*

@@ -1,0 +1,237 @@
+---
+title: "The Data Optimizer Lives or Dies On"
+description: "Optimizer can only honor constraints that exist as data, and most of that data has to be cleaned before the first run. This is the tactical heart of the series: the prerequisite checklist, the craft/skill and shift cleanup that is the real project, the location coordinates that unlock travel optimization, and a data-readiness checklist to run before you blame the solver."
+date: "2026-07-16"
+slug: "mas-optimizer-data-prerequisites"
+tags: ["Maximo", "MAS 9", "Optimizer", "Data Quality", "Crafts", "Scheduling", "Labor", "EAM"]
+draft: false
+tier: "admin"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-optimizer-03-data-prerequisites.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What are the setup prerequisites for Maximo Optimizer?"
+    answer: "Six. The Manage Scheduler module must be configured (roughly 1-2 weeks). The Optimizer operator must be deployed on OpenShift (1-2 days). Craft and skill data must be accurately recorded in Manage (1-2 weeks of data cleanup). Assets and locations need latitude/longitude for travel optimization (1-2 weeks of data enrichment). Technician shift definitions must exist in Manage (2-4 days). Esri ArcGIS integration is optional (1-2 weeks if you do it). The theme is that most of the effort is data preparation, not solver setup."
+  - question: "Why is craft and skill data quality so important for Optimizer?"
+    answer: "Because craft matching is a hard constraint, and a constraint with no data behind it silently disappears. If a work order carries no required craft, or a technician's skills are not recorded, the engine cannot match them and will assign anyone to anything. Accurate craft and skill data is the single biggest determinant of whether the optimized schedule is trustworthy — which is why the setup guidance allots 1-2 weeks specifically to cleaning it up."
+  - question: "How do I get coordinates onto my assets for travel optimization?"
+    answer: "Assets and locations need latitude/longitude so the engine can compute travel between work sites. This is a data-enrichment exercise, budgeted at roughly 1-2 weeks. Sources include existing GIS or facility records, address geocoding, and — for organizations with Esri ArcGIS — the Manage Spatial integration. Without coordinates, travel time is invisible to the solver and route optimization cannot function; straight-line estimation needs the coordinates just as much as ArcGIS routing does."
+  - question: "Can I run Optimizer without perfect data?"
+    answer: "You can run a meaningful pilot on one well-prepared slice. The recommended approach is to verify craft/skill data quality and location coordinates first, configure the model against those constraints, then run a first optimization on a sample work order set and compare it to the manual schedule. You do not need the entire enterprise clean on day one — you need one asset group, one crew, or one territory clean enough to produce a fair comparison and prove the value."
+keyTakeaways:
+  - "Optimizer's prerequisites are dominated by data work: craft/skill cleanup (1-2 weeks) and location coordinates (1-2 weeks) are the real project, not the operator install (1-2 days)"
+  - "Craft and skill data quality is the number-one determinant of schedule quality — an unpopulated craft constraint disappears silently"
+  - "Assets and locations need latitude/longitude before travel optimization can function at all"
+  - "Shift definitions and technician availability are what let the engine schedule inside real working time"
+  - "Prove value on one clean slice first — a pilot needs one asset group or territory clean, not the whole enterprise"
+series:
+  name: "MAS OPTIMIZER"
+  part: 3
+  total: 5
+tldr: "This is where Optimizer implementations succeed or stall. The engine can only honor constraints that exist as data, so the project is a data project. The six prerequisites are the Manage Scheduler configured, the Optimizer operator deployed, accurate craft/skill data, work-location coordinates, shift definitions, and optional ArcGIS — and the two that dominate the timeline are craft/skill cleanup (1-2 weeks) and coordinate enrichment (1-2 weeks). Craft data quality is the number-one determinant of schedule trust because an unpopulated constraint silently disappears. Coordinates are the gate on all travel optimization. Shifts define real working time. Prove it on one clean slice before scaling, and run a data-readiness check before you ever blame the solver."
+seoTitle: "Optimizer Data Prerequisites: MAS 9 Part 3"
+seoDescription: "The craft/skill, shift, tool, parts, and location-coordinate data Maximo Optimizer needs in MAS 9 — the real project is data cleanup, not solver setup."
+targetQuestions:
+  - "What are the setup prerequisites for Maximo Optimizer?"
+  - "Why does Optimizer need clean craft and skill data?"
+  - "How do I add coordinates to assets for travel optimization?"
+  - "Can I run Optimizer without perfect data?"
+semanticKeywords:
+  - "Optimizer setup requirements"
+  - "craft skill data quality Maximo"
+  - "work location coordinates latitude longitude"
+  - "shift definitions technician availability"
+  - "labor data cleanup scheduling"
+  - "Optimizer operator OpenShift"
+  - "parts availability tool records"
+  - "data readiness pilot"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 2 — the nine constraints and the data each one requires"
+  - "Familiarity with Maximo crafts, labor, qualifications, and locations"
+speakableSections:
+  - "The Prerequisite Checklist"
+  - "Craft and Skill Data Is the Whole Ballgame"
+  - "Coordinates Unlock Travel"
+series_part: 3
+clusterSlugs:
+  - "mas-optimizer-series-index"
+  - "mas-optimizer-optimization-model"
+  - "mas-optimizer-routing-arcgis"
+relatedSlugs:
+  - "mas-optimizer-series-index"
+  - "mas-optimizer-optimization-model"
+  - "mas-optimizer-routing-arcgis"
+---
+
+# The Data Optimizer Lives or Dies On
+
+> 🎯 **Who this is for:** Maximo administrators and data leads who have to make Optimizer work in a live environment — and who would rather clean the data on purpose than discover the gaps in front of a room full of dispatchers.
+
+**Series:** Part 3 of 5 — *Maximo Optimizer Implementation Playbook* | **Read time:** 20 minutes
+
+---
+
+## This Is Where It Succeeds or Stalls
+
+Part 2 ended on a hard truth: a constraint with no data behind it silently disappears. This part is the consequence of that truth. Optimizer is a solver, and a solver is only as good as the model it is given — and the model is built from your Manage data. There is no clever configuration that compensates for blank craft fields or missing coordinates. If the data is not there, the constraint is not enforced, and the schedule is not trustworthy.
+
+That makes the Optimizer project, first and foremost, a **data project**. The solver install is trivial; the data preparation is the work. Teams that internalize this early spend their effort where it pays off. Teams that treat Optimizer as a switch to flip spend their effort explaining to leadership why the "smart scheduler" keeps making dumb decisions.
+
+The frame for this whole part:
+
+> **Optimizer does not schedule against your operation. It schedules against your data about your operation. The gap between the two is where every bad schedule comes from.**
+
+---
+
+## 📋 The Prerequisite Checklist
+
+Optimizer has six documented setup requirements. Read the effort column carefully, because it tells you where the project actually lives:
+
+| Requirement | What it is | Realistic effort |
+|---|---|---|
+| **Manage Scheduler module** | Scheduler must be configured in Manage | 1-2 weeks |
+| **Optimizer operator deployed** | Install Optimizer on OpenShift | 1-2 days |
+| **Craft / skill data** | Technician skills accurately recorded in Manage | 1-2 weeks (data cleanup) |
+| **Work-location coordinates** | Assets/locations need lat/long for travel optimization | 1-2 weeks (data enrichment) |
+| **Shift definitions** | Technician work schedules defined in Manage | 2-4 days |
+| **ArcGIS integration (optional)** | Configure the Esri ArcGIS connection for routing | 1-2 weeks |
+
+Notice the shape of it. The *technical* step — deploying the Optimizer operator — is one to two days. Two of the six items, craft/skill cleanup and coordinate enrichment, are one to two weeks *each*, and they are pure data work. The Scheduler configuration is a further one to two weeks. If you budget the project around the operator install, you will be wrong by an order of magnitude. Budget it around the data.
+
+This is also why Optimizer is a **Phase 4** application: it presumes the Manage Scheduler is already configured and that labor and location data has been brought up to standard. Much of that standard is the same data hygiene the earlier phases (Health, Monitor, Predict) already pushed you toward. Optimizer is the application that finally *cashes in* clean labor and location data — which is exactly why it arrives after the phases that motivate cleaning it.
+
+---
+
+## 🔧 Craft and Skill Data Is the Whole Ballgame
+
+If you fix only one thing before turning Optimizer on, fix craft and skill data. It is the number-one determinant of schedule quality, and the reason is structural: **required crafts/skills is a hard constraint**, and Optimizer matches technician skills to work requirements only when both sides carry the data.
+
+There are two sides to get right:
+
+**On the work.** Every schedulable work order — or its job plan — needs an accurate craft/skill requirement. A work order that says nothing about the craft it needs is, to the engine, a job anyone can do. It will get assigned to whoever is cheapest and nearest, certification be damned. Missing craft requirements do not produce an error; they produce a plausible-looking schedule that sends a general technician to a job that legally required a certified one.
+
+**On the people.** Every technician needs their crafts, skills, and qualifications accurately recorded in Manage. If your master electrician's electrical qualification was never entered, the engine does not know they can do electrical work, and it will route that work elsewhere — or leave it unassigned under a strict skills setting.
+
+The failure modes are symmetrical and both are silent:
+
+| Data gap | What the engine does | What you see |
+|---|---|---|
+| Work order missing craft requirement | Treats it as "any craft" | Wrong-skilled tech assigned |
+| Technician missing a recorded skill | Assumes they lack it | Qualified person left idle; work unassigned or mis-routed |
+| Inconsistent craft codes | Cannot match reliably | Erratic assignments that look random |
+
+The one-to-two-week cleanup budget exists because this is genuinely tedious work: reconciling craft codes, filling qualifications on the labor roster, and attaching craft requirements to the work that lacks them. It is unglamorous, and it is the difference between a schedule the crew trusts and one they override every morning.
+
+<aside>
+
+💡 **Key insight:** The fastest way to kill trust in Optimizer is to let it assign the wrong-skilled person once, in front of the crew. After that, every optimized schedule is second-guessed regardless of quality. Clean craft data is not just a technical prerequisite — it is the credibility budget for the whole rollout. Spend it before go-live, not after.
+
+</aside>
+
+---
+
+## 📍 Coordinates Unlock Travel
+
+Travel time is one of the nine constraints and the target of an entire objective — and it depends completely on one piece of data: **latitude and longitude on your assets and locations.** Without coordinates, the engine has no way to know that Pump House 3 is across town from Substation 12, so travel time is invisible, route optimization cannot run, and the schedule will cheerfully bounce a technician back and forth across a service area.
+
+This is the second one-to-two-week data-enrichment item, and it is worth understanding that *both* travel methods need it. Straight-line distance estimation — the basic method Optimizer uses without any spatial add-on — still requires coordinates to compute the straight line. ArcGIS road-network routing (Part 4) needs the same coordinates as its starting point. Coordinates are not an ArcGIS feature; they are the foundation both methods sit on.
+
+Practical sources for the enrichment:
+
+- **Existing GIS or facility records** — many organizations already have location data in a GIS or CAD system that can be mapped onto Manage locations and assets.
+- **Address geocoding** — where you have street addresses, geocoding converts them to coordinates in bulk.
+- **The Manage Spatial integration** — for organizations with Esri ArcGIS, Spatial provides a first-class path to associate assets with map geometry.
+
+Whatever the source, the deliverable is the same: coordinates populated on the assets and locations that carry schedulable work. Part 4 is about what you *do* with those coordinates; this part is about making sure they exist, because everything spatial is gated on them.
+
+<aside>
+
+💡 **Key insight:** "Optimizer isn't saving us any travel" is, nine times out of ten, "our assets have no coordinates." The travel objective cannot optimize a distance it cannot see. Before you tune a single travel parameter, confirm that the work you are scheduling sits on assets that actually have latitude and longitude.
+
+</aside>
+
+---
+
+## The Rest of the Constraint Data
+
+Craft and coordinates are the headline items, but three more constraints need their data populated to be enforced:
+
+**Shift definitions and technician availability.** Technician availability — working hours, shifts, vacation, and training — is a constraint, and it is only as good as the shift calendars defined in Manage. Budget two to four days to define the shift patterns your workforce actually runs. Without them, the engine assumes a default availability and will schedule work into hours nobody is on shift. Absence and training records layer on top so the engine does not assign work to someone who is on leave.
+
+**Tool records.** "Required tools" ensures a tool is available at the scheduled time. For work that depends on specialized or limited tooling, the tool requirement has to be on the work and the tool availability has to be tracked, or the engine will schedule two jobs that both need the one crane at the same hour.
+
+**Parts availability.** The parts constraint ensures Optimizer only schedules work when the required parts are in stock. This links scheduling to inventory: if the reservation or availability data is not flowing, the engine may schedule a job whose parts are still on order, and the crew arrives to find they cannot do the work.
+
+None of these three is as heavy as craft or coordinate cleanup, but each is a constraint that quietly disappears if its data is absent. The discipline is the same throughout: for every constraint you want enforced, confirm the data exists.
+
+---
+
+## Prove It on One Clean Slice
+
+You do not need the entire enterprise clean before Optimizer earns its first win — and trying to boil the ocean is how these projects stall. The recommended path is a **scoped pilot on data you have deliberately prepared**:
+
+1. **Review the current scheduling process** and identify the pain points worth measuring against.
+2. **Verify craft/skill data quality** for the pilot scope — one crew, one asset group, or one territory.
+3. **Verify work-location coordinate data** for that same scope.
+4. **Deploy the Optimizer operator** on OpenShift.
+5. **Configure the optimization model** with the constraints your pilot scope actually has.
+6. **Run the first optimization** on a sample work order set.
+7. **Compare the optimized schedule to the manual schedule** — this is where the value shows or does not.
+
+The pilot's job is not to schedule everything; it is to produce a fair, apples-to-apples comparison against how your planner does it today. One clean slice that beats the manual schedule on travel and completion is worth more than an enterprise-wide rollout on dirty data that gets overridden every morning. Clean narrow, prove value, then widen.
+
+> **First-principles takeaway:** Optimizer's schedule quality is bounded above by data quality. No amount of solver tuning lifts a schedule above the honesty of the constraints it was given. That is why the setup guidance spends weeks on craft and coordinate data and days on the software — the software was never the hard part.
+
+---
+
+## Data-Readiness Checklist Before You Move On
+
+Run this before you run the solver — or before you blame it:
+
+- **Is the Manage Scheduler configured?** Optimizer feeds it; it must exist first.
+- **Do schedulable work orders carry craft/skill requirements?** If not, matching is inert.
+- **Do technicians have accurate, consistent crafts and qualifications?** Both sides of the match must be populated.
+- **Do the assets and locations in scope have latitude/longitude?** Travel is blind without them.
+- **Are shift calendars, absences, and training defined?** The engine schedules inside availability it can see.
+- **Are tool and parts availability tracked** for work that depends on them?
+- **Is your pilot scope narrow and genuinely clean?** Prove value on a slice before scaling.
+
+If those answers exist, the solver has an honest model to work with. If they do not, fix the data — because Part 4's routing and Part 5's rollout both assume this foundation is in place.
+
+---
+
+## Key Takeaways
+
+- Optimizer's prerequisites are **dominated by data work**: craft/skill cleanup (1-2 weeks) and coordinate enrichment (1-2 weeks) are the real project; the operator install is 1-2 days.
+- **Craft and skill data quality is the number-one determinant** of schedule trust, and an unpopulated craft constraint **disappears silently** rather than erroring.
+- **Assets and locations need latitude/longitude** before any travel optimization — straight-line or ArcGIS — can function.
+- **Shift definitions, tool records, and parts availability** are the constraints that let the engine schedule inside real working time and real resource availability.
+- **Prove value on one clean slice** — a pilot needs one asset group or territory clean, not the whole enterprise.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite Documentation](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Maximo Manage crafts, labor, and qualifications (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Manage Scheduler configuration (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Manage Spatial and Esri integration (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 2 — Inside the Optimization Model: Constraints, Objectives & Parameters](/blog/mas-optimizer-optimization-model) |
+| **Next:** | [Part 4 — Routing & Spatial: Travel Time, Route Optimization & ArcGIS](/blog/mas-optimizer-routing-arcgis) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*

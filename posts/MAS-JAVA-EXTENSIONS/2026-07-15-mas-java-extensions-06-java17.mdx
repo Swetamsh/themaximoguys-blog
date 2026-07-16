@@ -1,0 +1,255 @@
+---
+title: "Java 17, Java 25, and the Future of Maximo Extensions"
+description: "MAS 9.1 moved the JVM under every Maximo customization from Java 11 to Java 17. MAS 9.2 (June 2026) adds Java 25 at the platform and AI-Service level while Java 17 stays the baseline for Manage and your custom code. Here is what changes for existing extensions, why 9.2 is a mixed Java-17/Java-25 environment, how to test and remediate, and why the extension model endured while everything around it modernized."
+date: "2026-07-15"
+slug: "mas-java-extensions-java17"
+tags: ["Maximo", "MAS 9", "Java 17", "Java 25", "MAS 9.2", "Java Extensions", "Customization", "Customization Archive"]
+draft: false
+tier: "developer"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-java-extensions-06-java17.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Will my existing Maximo Java customizations break on Java 17?"
+    answer: "Most will compile and run unchanged, but not all. The changes most likely to surface are the javax.* to jakarta.* namespace shift for any code that touches Java EE APIs directly, JPMS module restrictions that block reflective access which used to work silently, and removed deprecated APIs that throw ClassNotFoundException or NoSuchMethodException at runtime. The only way to know is to recompile against a Java 17 JDK and test under load in a MAS 9.1 or 9.2 sandbox."
+  - question: "Does MAS 9.2 move to Java 25?"
+    answer: "Partly. MAS 9.2 (GA 25 June 2026) is a 'future-ready platform with Java 25 support' — platform services and the AI Service component were upgraded to Java 25 (with Java 21 used for some reference services). But IBM has not dropped Java 17: the Manage runtime and your customizations are still expected to be Java 17-compatible. In practice MAS 9.2 is a mixed Java-17/Java-25 environment, so keep targeting Java 17 for Manage extensions while treating Java 25 as the clear direction of travel."
+  - question: "What version of MAS moved to Java 17?"
+    answer: "MAS 9.1, released in June 2025, moved the suite from Java 11 to Java 17 and made it the required, exclusive runtime baseline for MAS 9.x core and Manage. MAS 9.0 ran on Java 11. If you are on 9.0 you have crossed the container-packaging boundary but not yet the Java 17 boundary."
+  - question: "Do I need to update the PLUS add-on extensions for Java 17 or Java 25?"
+    answer: "No. IBM updates all PLUS extension code (Transportation, HSE, Spatial, Nuclear, and the rest) for JVM compatibility as part of each release. Your concern is limited to your own code: custom Java MBO classes, custom MIF exit classes, custom field validation classes, custom bean classes, and any third-party Java libraries you bundle with your customizations."
+keyTakeaways:
+  - "MAS 9.1 (June 2025) made Java 17 the required baseline; MAS 9.2 (June 2026) adds Java 25 at the platform and AI-Service level while keeping Java 17 for Manage"
+  - "MAS 9.2 is a mixed Java-17/Java-25 environment — target Java 17 for your Manage customizations and treat Java 25 as the direction of travel, not today's requirement"
+  - "The javax.* to jakarta.* namespace shift, JPMS reflection restrictions, and removed deprecated APIs are the changes most likely to bite your custom Java"
+  - "IBM already remediates all PLUS add-on code for each JVM — your only concern is your own custom Java and bundled third-party libraries"
+  - "The four-file MBO extension model survived 7.6 → Java 25 intact — durable interfaces are what make modernization survivable"
+series:
+  name: "MAS JAVA EXTENSIONS"
+  part: 6
+  total: 6
+tldr: "MAS 9.1 (June 2025) moved Maximo from Java 11 to Java 17 and made it mandatory. MAS 9.2 (GA June 2026) adds Java 25 at the platform and AI-Service level (Java 21 for reference services) but does not drop Java 17 — the Manage runtime and customizations are still Java-17 baseline, so 9.2 is a mixed Java-17/Java-25 environment. The extension model — MBOs, sets, Remote interfaces, product.xml, PLUS chains — is unchanged; the language and runtime around your code are not. The javax→jakarta namespace shift, JPMS module restrictions on reflection, and removed deprecated APIs are the changes most likely to surface. IBM remediates all PLUS add-on code, so your job is your own custom Java: inventory it, compile against the target JDK, remediate, repackage into a Customization Archive, and test in a sandbox. This finale ties the six-part arc together and looks at where Maximo customization is heading."
+seoTitle: "Java 17, Java 25 & the Future of Maximo Extensions"
+seoDescription: "MAS 9.1 moved Maximo to Java 17; MAS 9.2 adds Java 25 at platform level while Java 17 stays the Manage baseline. What changes and how to prepare."
+targetQuestions:
+  - "How does Java 17 affect Maximo customizations?"
+  - "Does MAS 9.2 use Java 25?"
+  - "Will my custom Java MBO classes break in MAS 9.1 or 9.2?"
+  - "What changed when Maximo moved from Java 11 to Java 17?"
+  - "Do PLUS add-ons need updating for Java 17 or Java 25?"
+semanticKeywords:
+  - "Maximo Java 17"
+  - "Maximo Java 25"
+  - "MAS 9.2 Java 25"
+  - "MAS 9.1 Java 17"
+  - "javax to jakarta namespace"
+  - "JPMS module restrictions"
+  - "custom Java MBO migration"
+  - "Maximo Customization Archive"
+  - "deprecated API removal"
+  - "MAS 9 upgrade"
+proficiencyLevel: "advanced"
+dependencies:
+  - "Working knowledge of Maximo Business Objects (MBOs) and custom Java extensions"
+  - "Familiarity with Java compilation, packaging, and the module system"
+  - "Understanding of the MAS 9 Customization Archive (see Part 5)"
+speakableSections:
+  - "The Runtime Moved Under You"
+  - "What Java 25 in MAS 9.2 Actually Means"
+  - "The Ten Commandments of Maximo Extension Development in MAS 9"
+clusterSlugs:
+  - "mas-java-extensions-fundamentals"
+  - "mas-java-extensions-plus-registry-inheritance"
+  - "mas-java-extensions-productxml-resolution"
+  - "mas-java-extensions-database-addons-compatibility"
+  - "mas-java-extensions-mas9-deployment-customization"
+  - "mas-java-extensions-java17"
+relatedSlugs:
+  - "mas-java-extensions-mas9-deployment-customization"
+  - "mas-java-extensions-series-index"
+  - "stop-customizing-old-way"
+---
+
+# Java 17, Java 25, and the Future of Maximo Extensions
+
+**Series:** MAS JAVA EXTENSIONS | **Part 6 of 6** (Series Finale)
+
+**Read Time:** ~19 minutes
+
+> 🎯 **Who this is for:** Maximo developers and upgrade leads who have custom Java in their environment — MBO classes, MIF exits, field validators, bean classes — and want to know exactly what the Java 17 runtime does to that code today, what Java 25 in MAS 9.2 means for tomorrow, and what the whole extension story looks like from here.
+
+---
+
+You have a folder of `.java` files that has worked for years. Some of it you wrote. Some of it you inherited from a consultant who left in 2019. It compiles, it runs, it validates a work order the way the business asked for a decade ago, and nobody has touched it because touching it is scary. Now the upgrade team says MAS 9.1 runs on **Java 17** — and the MAS 9.2 release notes are already talking about **Java 25**. A small cold feeling settles in: *is all of that about to break?*
+
+That fear is reasonable, and it is also mostly — not entirely — misplaced. This finale is about the difference between "mostly" and "entirely," because that gap is exactly where a clean upgrade lives. We will cover what the JVM shift actually changes for your extension code, what Java 25 in MAS 9.2 does and does *not* require of you, and a concrete plan to test and remediate. Then, because this is the last stop on a six-part journey, we will step back and look at why the extension *model* survived every one of these transitions — and where Maximo customization goes next.
+
+---
+
+## The Runtime Moved Under You
+
+Here is the single most important framing, and it is good news: **the JVM upgrades changed the runtime, not the model.** Everything you learned across this series — the four-file MBO pattern, `MAXOBJECT.CLASSNAME` pointing at your set class, PLUS prefixes, the inheritance chain, `product.xml`, the Customization Archive — is untouched by any JVM upgrade. A `Mbo` still extends `Mbo`. `super.save()` still propagates down the chain. Your custom validation class still hangs off the same field declaration in `product.xml`.
+
+What moved is the *language and runtime standard* your bytecode is compiled against and executed on. The timeline is now three LTS steps long:
+
+| MAS release | Approx. GA | Java runtime |
+|---|---|---|
+| **MAS 9.0** | 2023 | Java 11 |
+| **MAS 9.1** | June 2025 | **Java 17** — required, exclusive baseline for MAS 9.x core + Manage |
+| **MAS 9.2** | 25 June 2026 | **Java 17 baseline + Java 25 at the platform / AI-Service level** (Java 21 for some reference services) |
+
+That is the accumulation that matters. Each LTS step tightens the language: Java 17 is stricter about namespaces, stricter about reflection, and less forgiving of deprecated APIs than the Java 8 and Java 11 worlds most Maximo customizations were born in — and Java 25 continues in exactly the same direction.
+
+> 💡 **Key insight:** The extension model is the stable interface; the JVM is the volatile implementation underneath it. Your customizations depend on both. The model gives you continuity across a decade; the runtime is what quietly changes beneath a continuous-delivery suite. A clean upgrade is mostly about auditing your dependence on the volatile layer.
+
+---
+
+## What Java 25 in MAS 9.2 Actually Means
+
+This is the part with the most upgrade-day confusion, so let's be precise, because the marketing line and the deployment reality are not the same sentence.
+
+IBM describes MAS 9.2 as a **"future-ready platform with Java 25 support."** Read that carefully — it is *support added*, not *Java 17 removed*:
+
+- **Platform services and the AI Service component were upgraded to Java 25.** IBM's own AI Service 9.2.0 notes state the component now runs on Java 25, and the MAS 9.2 platform materials list "upgrade to Java 25" (with Java 21 used for certain reference services).
+- **Manage and your customizations are still on the Java 17 baseline.** IBM has published no Manage 9.2 statement that says "the Manage runtime now requires Java 25 and no longer supports Java 17." The Java 17 requirement introduced in 9.1 still underpins Manage extensions and industry solutions.
+
+So the honest, deployment-level reading is this: **MAS 9.2 is a mixed Java-17/Java-25 environment.** The newer AI and platform services run on Java 25; the Manage runtime that executes your MBOs, your `product.xml` chain, and your custom Java remains Java 17.
+
+> 💡 **Key insight:** For your custom Java, the decision does not change in 9.2: **compile and validate on Java 17.** Java 25 is the direction of travel, not this release's requirement for Manage code. But every hour you spend making code Java-17-clean is an hour of Java-25 readiness banked, because the two upgrades break the same kinds of things — just more of them.
+
+*"So should I skip Java 17 and jump straight to Java 25?"*
+
+No. Java 17 is the runtime your Manage extensions execute on in both 9.1 and 9.2. Target it. Treat Java 25 as the horizon you are walking toward, not the ground you are standing on — and write code that will survive the next step by avoiding the very things (deep reflection, internal-API access) that each JVM release encapsulates harder.
+
+---
+
+## What Actually Changes in the JVM
+
+Six categories of change are the ones that surface in real Maximo customizations — first with Java 17, and each one gets *stricter*, not looser, on the road to Java 25. Most of your code will sail through all six. The risk is concentrated in code that reaches *around* the framework — direct Java EE calls, reflection, older drivers, scripting engines.
+
+| Change | Impact on your extensions |
+|---|---|
+| **`javax.*` → `jakarta.*` namespace** | Any code using Java EE APIs directly must update its imports |
+| **JPMS module restrictions** | Reflective access that worked silently in Java 8/11 is blocked — and encapsulated harder each LTS |
+| **Removed deprecated APIs** | `ClassNotFoundException` or `NoSuchMethodException` at runtime; the removal list only grows toward Java 25 |
+| **Tightened security defaults** | JDBC / SSL handshakes may fail with older driver configurations |
+| **OpenJDK Nashorn** | The JavaScript engine was removed — may affect legacy JS automation scripts |
+| **BIRT v4.16** | Reporting engine updated in the 9.x line — custom BIRT reports may need adjustment |
+
+A few of these deserve a closer look, because they behave differently from what a developer expects.
+
+**The namespace shift is a compile-time problem, which is the good kind.** If your code imports `javax.servlet`, `javax.xml.bind`, `javax.mail`, or similar Java EE packages directly, those imports move to the `jakarta.*` namespace. You find every one of these the moment you attempt a Java 17 compile — the compiler simply refuses. That is a mechanical, bounded fix. Note that ordinary MBO code that only touches `psdi.*` classes does not hit this at all; it only bites code that talks to the enterprise APIs beneath Maximo.
+
+**Reflection is the sneaky one, because it fails at runtime, not compile time.** Under Java 8 and 11, code that used reflection to reach into non-public fields or internal packages worked with, at most, a warning. Java 17's module system (JPMS) turns many of those warnings into hard failures, and Java 25 encapsulates the JDK internals even more aggressively. If a custom class ever did something clever with `setAccessible(true)` against an internal Maximo or JDK class, it will compile fine and then throw an access exception when that path executes — possibly only under a specific data condition. This is why "it compiled, ship it" is not a valid test strategy.
+
+**Deprecated-API removal is the second runtime landmine.** APIs that were merely deprecated in Java 8 are *gone* in Java 17, and the removal list keeps growing toward Java 25. A call to a removed method compiled into an old JAR surfaces as a `NoSuchMethodException` or `ClassNotFoundException` at the exact moment that line runs. Again: compilation from source catches this immediately; a pre-compiled JAR dragged forward unchanged does not.
+
+```java
+// Compiles clean, breaks at runtime under Java 17+ if the reflected
+// internal is now encapsulated by the module system.
+Field cache = someInternalClass.getDeclaredField("_privateCache");
+cache.setAccessible(true);          // silent in Java 8/11, throws InaccessibleObjectException in 17, harder still in 25
+Object value = cache.get(instance);
+
+// The framework-respecting equivalent has no such fragility —
+// it uses the public MBO API, which IBM keeps stable across JVMs.
+Object value2 = mbo.getMboValue("SOMEATTR");
+```
+
+---
+
+## You Only Own Part of the Problem
+
+This is the line that should lower your blood pressure: **IBM remediates all PLUS extension code for each JVM as part of the release.** Every industry solution and add-on you catalogued in Part 2 — Transportation (PLUST), HSE and Oil & Gas (PLUSG), Spatial (PLUSS), Nuclear (PLUSN), Aviation, Utilities, ACM, Calibration — ships JVM-clean for the release it targets. You do not remediate IBM's code.
+
+Your remediation scope is exactly your own extensions and what you bundle with them:
+
+- Custom Java **MBO classes** and **MBO Set classes**
+- Custom **MIF exit classes** (user exits, processing classes on integration objects)
+- Custom **field validation classes**
+- Custom **bean classes** (app bean handlers)
+- Any **third-party Java libraries** bundled inside your customizations
+
+That last bullet is the one teams forget. Your own code might be pristine, but a bundled reporting library, PDF generator, or crypto helper from 2017 can be the thing that trips a JPMS or removed-API failure. Inventory the JARs you ship, not just the classes you wrote — and check that those libraries have releases that keep pace with Java 17 today and Java 25 tomorrow.
+
+---
+
+## How to Test and Remediate — the Eight-Step Plan
+
+The migration path is mechanical and repeatable. Follow it in order; the order matters because each step de-risks the next. Target **Java 17** — the Manage baseline for both 9.1 and 9.2.
+
+1. **Inventory all custom Java classes** in your environment. You cannot remediate what you have not catalogued. Include bundled third-party JARs.
+2. **Set up a Java 17 compilation environment** — a JDK 17 toolchain matching the MAS 9.x Manage target.
+3. **Attempt compilation** and fix every error. This single step surfaces the entire `javax` → `jakarta` namespace class and every removed-API reference.
+4. **Update namespace references** (`javax.*` → `jakarta.*`) wherever the compiler flagged them.
+5. **Remove deprecated API usage** — find the modern equivalent for anything the JVM deleted, and prefer public MBO APIs over reflection so the code survives Java 25 too.
+6. **Test under load.** Some issues — reflection failures, concurrency-sensitive paths — only surface with concurrent access. A single-user smoke test is not enough.
+7. **Repackage into a Customization Archive** compiled against Java 17 (this is the packaging shift from Part 5 — the archive is now your unit of delivery).
+8. **Test in a MAS 9.1 or 9.2 sandbox** before production. Validate against the real runtime, not your laptop.
+
+> 💡 **Key insight:** Steps 3 and 6 catch two different classes of failure. Compilation catches everything static — namespaces and removed APIs. Load testing catches everything dynamic — reflection blocks and concurrency issues that only appear when a specific code path runs under contention. Skip either and you will meet the failure in production instead.
+
+A useful mental model: **compile-time errors are your friends, runtime errors are your enemies.** Every problem you can convert from runtime to compile-time — by recompiling from source instead of forwarding a JAR — is a problem you find in an afternoon instead of a Sev 1.
+
+---
+
+## Why the Model Endured While Everything Else Modernized
+
+Step back and look at what this series has walked through. Between Maximo 7.6 and MAS 9.2, nearly everything around your custom Java changed:
+
+- The application server moved from **WebSphere to Red Hat OpenShift**.
+- Deployment moved from **dropping a JAR on a file system to a container image**.
+- Packaging moved from **rebuilding an EAR to building a Customization Archive**.
+- The JVM moved from **Java 8 → Java 11 → Java 17 → Java 25** (at the platform edge).
+- The delivery cadence moved from **multi-year upgrades to continuous delivery**.
+
+And through all of it, the thing you actually *write* — a class that extends `Mbo`, a set that extends `MboSet`, a Remote interface, a `product.xml` declaration — did not change. That is not luck. It is the payoff of a well-chosen abstraction. IBM held the extension *interface* stable so it could modernize the *implementation* freely underneath. Your `super.save()` does not know or care whether it is running on WebSphere or OpenShift, Java 8 or Java 25. It only knows the contract.
+
+That is the deepest lesson of this series, and it is bigger than Maximo: **durable interfaces are what make modernization survivable.** The teams that got hurt in the MAS transition were the ones who bypassed the model — direct SQL, database triggers, file-system paths, reflection into internals. Every one of those is a dependency on the volatile layer instead of the stable one. Every one of them broke. The teams that stayed inside the MBO API mostly recompiled and moved on — and they will do it again from Java 17 to Java 25 with the same shrug.
+
+---
+
+## The Ten Commandments of Maximo Extension Development in MAS 9
+
+If this series distilled to a wall poster, this is it. Declarative, opinionated, and earned across six parts.
+
+1. **Thou shalt know where thy class sits in the chain.** The class in `MAXOBJECT.CLASSNAME` is the top of the chain, not necessarily thine.
+2. **Thou shalt respect the PLUS prefix.** Custom code gets its own namespace; never squat on `PLUST`, `PLUSG`, or any letter IBM owns.
+3. **Thou shalt call `super`, and know what happens when thou dost.** Every layer below runs. That is a feature, not a surprise.
+4. **Thou shalt read `product.xml` before troubleshooting a chain.** The control file is the source of truth for what is registered and in what order.
+5. **Thou shalt not bypass the application layer.** No direct SQL, no triggers, no file-system paths, no reflection into internals. The MBO API is the only road — and it is the one that survives the next JVM.
+6. **Thou shalt prefer configuration and automation scripts to custom Java.** Reserve Java for what genuinely cannot be scripted.
+7. **Thou shalt package as a Customization Archive.** The EAR-drop is dead; the archive baked into an image is upgrade-safe.
+8. **Thou shalt compile against the target JVM, from source, every time.** Target Java 17 for Manage today; a forwarded JAR hides the errors a recompile reveals.
+9. **Thou shalt test under load in a real sandbox.** Reflection and concurrency bugs do not appear in single-user smoke tests.
+10. **Thou shalt let IBM own IBM's code.** PLUS extensions are already JVM-clean; remediate only what is thine.
+
+Keep the ones that fit your shop. Argue about the rest. That argument *is* mature extension practice.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite — Releases information (MAS Core 9.2.0, 25 June 2026)](https://www.ibm.com/support/pages/maximo-application-suite-releases-information-0)
+- [IBM Maximo IT 9.2 — "Future-ready platform with Java 25 support"](https://www.ibm.com/support/pages/ibm-maximo-application-suite-ibm-maximo-it-92)
+- [IBM MAS AI Service component release 9.2.0 — "upgraded to use Java 25"](https://www.ibm.com/support/pages/ibm-maximo-application-suite-ai-service-component-release-920)
+- [What is really new with MAS 9.1 — Java 17 becomes the required baseline (TRM)](https://trmgroup.com/resource/what-is-really-new-with-mas-9-1/)
+- [Getting ready to upgrade to MAS — recompile/refactor for Java 17 (IBM Community)](https://community.ibm.com/community/user/blogs/prashant-bavane/2025/10/23/getting-ready-for-upgrade-maximo-7613-to-mas)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 5 — Deploying & Customizing Extensions in MAS 9](/blog/mas-java-extensions-mas9-deployment-customization) |
+| **Next:** | *You have reached the end of the series* — [Back to the series index](/blog/mas-java-extensions-series-index) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*
