@@ -34,7 +34,22 @@ bottom of this prompt, plus its cover image. Work autonomously; nobody will answ
 3. Where knowledge base and web disagree, the knowledge base wins; note discrepancies in
    an HTML comment at the bottom of the post for human review.
 
-## Step 3 — Write the post
+## Step 3 — Write the post (MaximoBlog skill, mandatory)
+
+Write the post USING the MaximoBlog skill — invoke `Skill("MaximoBlog")` and follow its
+system rather than free-writing:
+
+- Load its preferences (`.claude/skills/MaximoBlog/PREFERENCES.md`) and research sources
+  (`References/MaximoSources.md`).
+- Route to the workflow matching this item (per the skill's routing table): AI add-on
+  topics → `Workflows/AIModuleGuide.md`; how-to/configuration/architecture →
+  `Workflows/TechnicalDeepDive.md`; migration/journey posts → `Workflows/MigrationSeries.md`.
+  If none fits cleanly, use TechnicalDeepDive. Never stop to ask which type — decide.
+- Apply its templates where relevant (`Templates/VisualPlaceholders.md`,
+  `Templates/FolderStructure.md`) and honor the Blog Registry cross-linking conventions
+  (`Registry/BlogRegistry.md`) when adding related/cluster slugs.
+
+File and content rules:
 
 - File location: `posts/{series}/{YYYY-MM-DD}-{slug_hint}.mdx` using today's date
   (standalone items with `series: null` go directly in `posts/`).

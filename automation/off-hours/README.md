@@ -18,7 +18,8 @@ cron (hourly 23:10–05:10)
 ```
 
 Item types:
-- **blog-post** → full MDX post (draft: true) + its 16:9 cover via the assigned style skill.
+- **blog-post** → full MDX post (draft: true) written via the MaximoBlog skill (workflow-routed:
+  AIModuleGuide / TechnicalDeepDive / MigrationSeries) + its 16:9 cover via the assigned style skill.
   Research is grounded in `knowledge_base/` (DOC1-12) first, web/SearchMaximo second.
 - **cover-batch** → missing covers for an existing series, one style per series
 - **replan** (auto) → when the queue drains, the runner triggers one replan job per night:

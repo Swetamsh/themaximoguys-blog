@@ -126,9 +126,15 @@ set -a; [ -f /root/.claude-pai/.env ] && . /root/.claude-pai/.env; set +a
 cd "$REPO"
 
 JOB_LOG="$REPO/logs/night-shift-${ITEM_ID}-$(date +%Y%m%d-%H%M%S).log"
+# Lean environment: only the nanobanana MCP server (the full user MCP stack's tool
+# schemas overflow the context and cause autocompact thrashing) and project-level
+# settings only (skips PAI user-level hooks/instructions meant for interactive use).
 timeout "$JOB_TIMEOUT" "$CLAUDE_BIN" -p "$PROMPT" \
   --dangerously-skip-permissions \
   --model "$MODEL" \
+  --mcp-config "$DIR/mcp-night-shift.json" \
+  --strict-mcp-config \
+  --setting-sources project \
   --output-format text \
   > "$JOB_LOG" 2>&1
 EXIT_CODE=$?
