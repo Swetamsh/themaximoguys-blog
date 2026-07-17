@@ -70,8 +70,15 @@ fi
 # --- 3. Pick one pending item (lowest priority, then file order) ------------
 ITEM=$(jq -c '[.items[] | select(.status == "pending")] | sort_by(.priority) | .[0] // empty' "$QUEUE")
 if [ -z "$ITEM" ]; then
-  log "DONE queue empty — nothing pending"
-  exit 0
+  # Queue drained: run a replan job (max once per night) that audits knowledge_base +
+  # content-planning against posts/ and refills the queue until the plan is fulfilled.
+  REPLAN_STAMP="$DIR/.last-replan"
+  if [ -f "$REPLAN_STAMP" ] && [ $(( $(date +%s) - $(stat -c %Y "$REPLAN_STAMP") )) -lt 64800 ]; then
+    log "DONE queue empty — replan already ran in the last 18h"
+    exit 0
+  fi
+  $DRY_RUN || touch "$REPLAN_STAMP"
+  ITEM='{"id":"replan-'"$(date +%Y%m%d)"'","type":"replan"}'
 fi
 ITEM_ID=$(jq -r '.id' <<<"$ITEM")
 ITEM_TYPE=$(jq -r '.type' <<<"$ITEM")
@@ -95,6 +102,7 @@ mark_status() {
 case "$ITEM_TYPE" in
   blog-post)   PLAYBOOK="$DIR/playbooks/blog-post.md" ;;
   cover-batch) PLAYBOOK="$DIR/playbooks/cover-batch.md" ;;
+  replan)      PLAYBOOK="$DIR/playbooks/replan.md" ;;
   *) log "FAIL $ITEM_ID unknown item type '$ITEM_TYPE'"; mark_status "$ITEM_ID" failed "unknown type"; exit 1 ;;
 esac
 

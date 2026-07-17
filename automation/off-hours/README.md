@@ -18,8 +18,15 @@ cron (hourly 23:10–05:10)
 ```
 
 Item types:
-- **blog-post** → full MDX post (draft: true) + its 16:9 cover via the assigned style skill
+- **blog-post** → full MDX post (draft: true) + its 16:9 cover via the assigned style skill.
+  Research is grounded in `knowledge_base/` (DOC1-12) first, web/SearchMaximo second.
 - **cover-batch** → missing covers for an existing series, one style per series
+- **replan** (auto) → when the queue drains, the runner triggers one replan job per night:
+  it audits `knowledge_base/` + `posts/` vs `content-planning/`, updates the gap analysis,
+  and refills the queue — so the content plan is eventually fulfilled end-to-end.
+
+Every job also updates `content-planning/DOCS-TO-BLOGS-GAP-ANALYSIS.md` to reflect the
+work it completed, keeping the plan document in sync with reality.
 
 Cover style rotation (never raw/basic generation, never Flash tier — always nanobanana
 **Pro / 2k / thinking high / 16:9**):

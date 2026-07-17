@@ -43,8 +43,12 @@ Non-negotiable rules for every image:
 1. VIEW every generated PNG with the Read tool; regenerate any that are off-brand,
    text-heavy, malformed, or missing the attribution.
 2. Confirm every post in the batch now has its cover file on disk.
-3. `git add` the new images and `git commit -m "night-shift: <item id> — <N> covers (<style>)"`.
-4. Print exactly one final line:
+3. **Update the content plan:** if the whole series now has all covers on disk, edit
+   `content-planning/DOCS-TO-BLOGS-GAP-ANALYSIS.md` to move that series from "covers
+   pending" to production-complete and update the pending-asset table. Surgical edits only.
+4. `git add` the new images plus any content-planning update and
+   `git commit -m "night-shift: <item id> — <N> covers (<style>)"`.
+5. Print exactly one final line:
    `NIGHT-SHIFT-RESULT: SUCCESS <series> <N> covers generated`
    If any cover in the batch could not be produced, print instead:
    `NIGHT-SHIFT-RESULT: FAILED <one-line reason>`

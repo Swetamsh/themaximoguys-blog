@@ -19,13 +19,20 @@ bottom of this prompt, plus its cover image. Work autonomously; nobody will answ
 - Read 1-2 existing posts in the same series directory (or, for standalone posts, a recent
   `posts/2026-*.mdx` file) to absorb frontmatter shape, series block, tone, section
   structure, and References format.
-- Read `content-planning/DOCS-TO-BLOGS-GAP-ANALYSIS.md` for context on the item's source
-  doc, and read the relevant source doc under `/root/TMG_MAS9_UPGRADE/` if it exists.
+- Read `content-planning/DOCS-TO-BLOGS-GAP-ANALYSIS.md` for context on where this item sits
+  in the overall content plan.
 
-## Step 2 — Research
+## Step 2 — Research (knowledge base FIRST)
 
-Use the SearchMaximo skill (`Skill("SearchMaximo")`) and/or web search to ground the post in
-accurate MAS 9.x facts. Prefer IBM documentation. Collect real reference URLs.
+1. **Primary source: `knowledge_base/`.** Find the DOC file matching the item's source
+   (e.g. DOC5 → `knowledge_base/DOC5_DATA_ANALYTICS_DATABRICKS_MAXIMO_ROADMAP.md`) and read
+   it thoroughly. The post must be grounded in and consistent with this research — it is
+   the reviewed, authoritative content for the series.
+2. Supplement with the SearchMaximo skill (`Skill("SearchMaximo")`) and/or web search for
+   MAS 9.x facts the knowledge base doesn't cover. Prefer IBM documentation. Collect real
+   reference URLs.
+3. Where knowledge base and web disagree, the knowledge base wins; note discrepancies in
+   an HTML comment at the bottom of the post for human review.
 
 ## Step 3 — Write the post
 
@@ -63,8 +70,13 @@ Non-negotiable cover rules:
 2. Confirm the cover PNG exists at the referenced path and you viewed it.
 3. If the item adds a part to an existing series: update the series index post's part list
    and the previous part's `next` navigation to chain correctly.
-4. `git add` the new files and `git commit -m "night-shift: <item id> — <post title>"`.
-5. Print exactly one final line:
+4. **Update the content plan:** edit `content-planning/DOCS-TO-BLOGS-GAP-ANALYSIS.md` so
+   its status tables/sections reflect this post now existing (e.g. move a series from
+   PENDING toward CONTENT COMPLETE, adjust file counts, update the "Updated:" date).
+   Make surgical edits only — do not restructure the document.
+5. `git add` the new files plus the updated content-planning doc and
+   `git commit -m "night-shift: <item id> — <post title>"`.
+6. Print exactly one final line:
    `NIGHT-SHIFT-RESULT: SUCCESS <path-to-mdx>`
    If you could not complete the post + cover, print instead:
    `NIGHT-SHIFT-RESULT: FAILED <one-line reason>`
