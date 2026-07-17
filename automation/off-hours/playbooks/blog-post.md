@@ -48,11 +48,26 @@ bottom of this prompt, plus its cover image. Work autonomously; nobody will answ
   with real URLs.
 - Voice: TheMaximoGuys — practitioner-to-practitioner, concrete, no marketing fluff.
 
-## Step 4 — Cover image (multi-style pipeline, mandatory)
+## Step 4 — Cover image (Art-skill pipeline embedded, mandatory)
 
-Generate the 16:9 cover using the style skill named in the item's `cover_style` field
-(SketchNote, DanKoeStyle, InfoBlocks, or BlueprintBoard). Invoke that skill via the Skill
-tool and follow its workflow — do NOT write a raw one-off prompt to an image model.
+Follow the BlogCoverArt orchestration technique, with the style pre-pinned by the item's
+`cover_style` field (SketchNote, DanKoeStyle, InfoBlocks, or BlueprintBoard):
+
+1. **Analyze the post you just wrote** the way `/root/.claude/skills/BlogCoverArt/SKILL.md`
+   prescribes: extract title, tags, key takeaways, content type, tone, audience, and the
+   single strongest visual metaphor for the post's core idea.
+2. **Load the style skill's technique:** read `/root/.claude/skills/{cover_style}/SKILL.md`
+   and the matching file in its `Workflows/` directory (pick the workflow that fits the
+   content type — e.g. Concept, Process, Architecture). These files contain the exact
+   prompt templates, color palettes, and composition rules for the style.
+3. **Engineer the prompt** using the Art skill's technique (see
+   `/root/.claude/skills/Art/SKILL.md` and `Tools/GeneratePrompt.ts` for the prompt-
+   engineering patterns): start from the style skill's prompt template, substitute the
+   post-specific metaphor/labels, and keep the skill's palette hex codes, materials, and
+   composition language intact. Do NOT improvise a from-scratch prompt.
+4. **Generate** with the parameters below. (Night-shift exception to the Art skill's
+   "Downloads first" rule: save directly to the post's images path — the human preview
+   happens at morning review.)
 
 Non-negotiable cover rules:
 - `mcp__nanobanana__generate_image` with EXACTLY `model_tier: "pro"`, `resolution: "2k"`,

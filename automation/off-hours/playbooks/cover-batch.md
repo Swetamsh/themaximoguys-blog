@@ -21,10 +21,24 @@ bottom of this prompt. Work autonomously; nobody will answer questions.
 - A cover is "missing" if the referenced PNG does not exist on disk. Skip posts whose
   cover already exists.
 
-## Step 2 — Generate each cover
+## Step 2 — Generate each cover (Art-skill pipeline embedded)
 
-Invoke the assigned style skill and follow its workflow for each post. Derive each image's
-concept from that post's actual topic — every cover in the batch must be visually distinct.
+For each post, follow the BlogCoverArt orchestration technique with the style pre-pinned by
+the item's `cover_style` field:
+
+1. **Analyze the post** per `/root/.claude/skills/BlogCoverArt/SKILL.md`: title, tags, key
+   takeaways, content type, tone, audience, and the strongest visual metaphor for its core
+   idea — every cover in the batch must be visually distinct.
+2. **Load the style skill's technique:** read `/root/.claude/skills/{cover_style}/SKILL.md`
+   and the fitting workflow file in its `Workflows/` directory — these carry the exact
+   prompt templates, palette hex codes, and composition rules.
+3. **Engineer each prompt** using the Art skill's prompt-engineering patterns
+   (`/root/.claude/skills/Art/SKILL.md`, `Tools/GeneratePrompt.ts`): style skill's template
+   + post-specific metaphor/labels, palette and composition language kept intact. Do NOT
+   improvise from-scratch prompts.
+4. **Generate** with the parameters below. (Night-shift exception to the Art skill's
+   "Downloads first" rule: save directly to the series images path — human preview happens
+   at morning review.)
 
 Non-negotiable rules for every image:
 - `mcp__nanobanana__generate_image` with EXACTLY `model_tier: "pro"`, `resolution: "2k"`,
