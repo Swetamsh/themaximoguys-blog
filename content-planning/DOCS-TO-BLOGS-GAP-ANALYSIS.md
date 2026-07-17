@@ -38,7 +38,7 @@ include references. "Production complete" means the posts also have local cover 
 | DOC3 | Paid Add-Ons & Industry | ✅ **PRODUCTION COMPLETE** | `posts/MAS-FEATURES` parts 15-20, 25 | None |
 | DOC4 | Supply Chain Features | ✅ **PRODUCTION COMPLETE** | `posts/MAS-FEATURES` parts 21-25 plus `MAS-MANAGE-09` | None for feature coverage |
 | DOC5 | Data Analytics & Databricks | ⛔ **PENDING** | Native analytics only across Features/Health/Monitor/Predict | Build MAS-DATABRICKS/lakehouse series or explicitly defer |
-| DOC6 | Java Extensions | ✅ **PRODUCTION COMPLETE** | `posts/MAS-JAVA-EXTENSIONS` (7 posts + covers) | Optional extension-crossovers post |
+| DOC6 | Java Extensions | ✅ **PRODUCTION COMPLETE** | `posts/MAS-JAVA-EXTENSIONS` (8 posts + covers, incl. Part 7 extension crossovers added 2026-07-16) | None |
 | DOC7 | Work Order Management | ✅ **PRODUCTION COMPLETE** | `posts/MAS-WORK-ORDER-OPS` (index + 6 posts + covers) | None |
 | DOC8 | Storekeeper Quick Wins | 🟡 **CONTENT COMPLETE, ASSETS PENDING** | `posts/MAS-SUPPLY-CHAIN` (merged playbook) | Generate 11 covers |
 | DOC9 | Purchasing Quick Wins | 🟡 **CONTENT COMPLETE, ASSETS PENDING** | `posts/MAS-SUPPLY-CHAIN` (merged playbook) | Generate 11 covers |
@@ -62,7 +62,7 @@ These have both substantive MDX content and local cover assets resolved on disk.
 |---|---|---:|---|
 | `MAS-MANAGE` | DOC1 | 12 | Manage upgrade roadmap series is built. Covers currently borrow existing feature assets; dedicated Manage covers remain optional polish. |
 | `MAS-FEATURES` | DOC3, DOC4, parts of DOC2/DOC12 | 26 | Paid add-ons, industry solutions, supply-chain features, AI apps overview, licensing, and roadmap coverage. |
-| `MAS-JAVA-EXTENSIONS` | DOC6 | 7 | Java extensions, PLUS registry, product XML, DB add-ons, MAS 9 deployment, Java 17. |
+| `MAS-JAVA-EXTENSIONS` | DOC6 | 8 | Java extensions, PLUS registry, product XML, DB add-ons, MAS 9 deployment, Java 17, extension crossovers (PLUSV/Nuclear/shared concepts). |
 | `MAS-WORK-ORDER-OPS` | DOC7 | 7 | Edge-filler series for service requests, approvals/e-sig, dashboards, KPIs, reporting, REST/Kafka. Covers exist. |
 | `MAS-HEALTH` | DOC2 | 9 | Existing deep Health series. |
 | `MAS-MONITOR` | DOC2 | 9 | Existing deep Monitor series. |

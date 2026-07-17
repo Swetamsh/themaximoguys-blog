@@ -30,7 +30,7 @@ keyTakeaways:
 series:
   name: "MAS JAVA EXTENSIONS"
   part: 5
-  total: 6
+  total: 7
 tldr: "In Maximo 7.6 you extended the platform by dropping a JAR into the SMP folder, rebuilding the EAR, and deploying to WebSphere. In MAS 9 that entire flow is gone. Add-ons are now selected during Manage activation in the component model — a Components section or a --manage-components flag — and the Manage operator generates the admin image, builds server-bundle images with the correct class hierarchy, and runs updatedb to process every product.xml. Custom Java is delivered as a Customization Archive: a ZIP/JAR of your classes, product.xml, DBC scripts, and app XML that you upload to a URL and reference at activation, where the operator layers it over the base image. You scaffold and build it with masmanagedev-cli and gradle. The result is reproducible, versioned, upgrade-safe packaging — and a clean split between MAS platform teams and Maximo customization teams."
 seoTitle: "MAS 9 Customization Archive | Deploying Maximo Extensions"
 seoDescription: "How Maximo add-ons activate in MAS 9 and how custom Java ships as a Customization Archive baked into an OpenShift container image — no more WebSphere EAR."
@@ -79,7 +79,7 @@ relatedSlugs:
 
 ---
 
-## The Old World vs the MAS World
+## 🌍 The Old World vs the MAS World
 
 You know the old ritual by heart. You wrote a custom `PlusMboSet`, compiled it, and dropped the JAR (or the loose `.class` files) into the SMP folder — `maximo/applications/maximo/businessobjects/classes`. You ran `buildmaximoear`, watched it churn, and produced a fresh `maximo.ear`. Then you deployed that EAR to WebSphere, restarted the application server, and prayed the class hierarchy resolved the way you expected. Every developer's laptop had a slightly different SMP. Every environment's EAR was, at some level, a hand-built artifact.
 
@@ -87,11 +87,13 @@ That entire flow is gone in MAS 9. **There is no SMP folder.** There is no `buil
 
 This is jarring the first time you meet it, because it feels like your customization workflow was taken away. It was not. It was replaced with something more reproducible. The mental model to hold onto is this: in 7.6 you *deployed code to a server*; in MAS 9 you *contribute code to a build*. Once that clicks, everything else in this post follows.
 
-> **Key insight:** The extension architecture did not change — the *delivery mechanism* did. Your `product.xml`, your DBC scripts, your MBO classes are the same files you have always written. What changed is that they now flow into an image build owned by an operator, not a file copy onto a WebSphere node.
+<aside>
+💡 **Key insight:** The extension architecture did not change — the *delivery mechanism* did. Your `product.xml`, your DBC scripts, your MBO classes are the same files you have always written. What changed is that they now flow into an image build owned by an operator, not a file copy onto a WebSphere node.
+</aside>
 
 ---
 
-## How Add-Ons Are Delivered and Activated
+## 📦 How Add-Ons Are Delivered and Activated
 
 Before your *custom* code, understand how *IBM's* add-ons get there — because your archive rides the exact same machinery.
 
@@ -150,7 +152,7 @@ Here is the part that matters for extensions: the Java extensions — your PLUS 
 
 ---
 
-## What the Customization Archive Is
+## 🗜️ What the Customization Archive Is
 
 Now to your own code. In Maximo 7.6 you dropped custom Java into the SMP folder. In MAS 9, with no SMP folder to drop into, IBM gives you a single, self-contained deliverable: **the Customization Archive.**
 
@@ -182,11 +184,13 @@ Steps 3 is where you connect your artifact to activation, via two parameters:
 
 Read step 4 carefully, because it is the whole point. The operator **layers** your archive over the base Manage image — it does not modify a running server. Your `product.xml` is then processed *alongside* IBM's during `updatedb`, which means your extensions slot into the same chain-resolution process that stitches PLUST, PLUSG, and PLUSS together. Your custom class ends up in `MAXOBJECT.CLASSNAME` exactly the way an add-on's would, because it went through exactly the same machinery.
 
-> **Key insight:** The Customization Archive is not a new place to put files — it is the *same* files (Java, product.xml, DBC, app XML) repackaged as one artifact that the operator layers into the image build. The archive is to MAS 9 what the SMP folder plus `buildmaximoear` were to 7.6, minus the hand-assembly.
+<aside>
+💡 **Key insight:** The Customization Archive is not a new place to put files — it is the *same* files (Java, product.xml, DBC, app XML) repackaged as one artifact that the operator layers into the image build. The archive is to MAS 9 what the SMP folder plus `buildmaximoear` were to 7.6, minus the hand-assembly.
+</aside>
 
 ---
 
-## Building Your Own Add-On
+## 🛠️ Building Your Own Add-On
 
 You do not hand-craft the archive's structure. IBM provides the `masmanagedev-cli` tool for developing custom extensions, and the workflow is three commands:
 
@@ -234,7 +238,7 @@ The takeaway is not "never write Java." It is "reach for a Java MBO only when an
 
 ---
 
-## Why Container-Image Packaging Is Upgrade-Safe
+## 🔒 Why Container-Image Packaging Is Upgrade-Safe
 
 The old way had a quiet, corrosive problem: drift. Because the EAR was assembled from an SMP folder that lived on a build machine, no two environments were provably identical. A class that was present in dev might be missing in prod because someone forgot to copy it. An EAR rebuilt six months apart could differ in ways nobody could fully reconstruct. Upgrades were tense because you were never quite sure what was actually deployed.
 
@@ -249,7 +253,7 @@ This is the real payoff of losing the SMP folder. What felt like a loss of contr
 
 ---
 
-## The New Division of Labor
+## 🤝 The New Division of Labor
 
 The last thing that changes is not technical — it is organizational. In 7.6, one person often owned everything from the Java class to the WebSphere restart. In MAS 9, the work splits along the same seam that runs through the whole platform.
 
@@ -270,11 +274,13 @@ The **Maximo customization team** owns the code: the archive, its `product.xml`,
 
 The handoff between them is the archive URL. The customization team builds and publishes the artifact; the platform team references it at activation. Get that contract right — a versioned archive at a reachable URL, referenced by name — and the two teams can move at their own pace without stepping on each other. This is the same admin split covered in the [Manage configuration and administration guide](/blog/mas-manage-configuration-administration), applied specifically to custom Java.
 
-> **Key insight:** The archive URL is the interface between two teams. The customization team produces a versioned artifact; the platform team consumes it at activation. Treat that URL like an API contract and the organizational seam becomes a strength, not a bottleneck.
+<aside>
+💡 **Key insight:** The archive URL is the interface between two teams. The customization team produces a versioned artifact; the platform team consumes it at activation. Treat that URL like an API contract and the organizational seam becomes a strength, not a bottleneck.
+</aside>
 
 ---
 
-## Old Way vs MAS 9: The Side-by-Side
+## 📊 Old Way vs MAS 9: The Side-by-Side
 
 Everything in this post, condensed:
 
@@ -323,5 +329,7 @@ The model on the left and the model on the right are the *same architecture*. On
 | **Next:** | [Part 6 — Java 17 and the Future of Maximo Extensions](/blog/mas-java-extensions-java17) |
 
 ---
+
+**About TheMaximoGuys:** We are practitioners who implement IBM Maximo across asset-intensive industries. We build and ship Customization Archives for a living, and this part is the packaging playbook we hand new developers on day one.
 
 *Published by TheMaximoGuys | July 2026*

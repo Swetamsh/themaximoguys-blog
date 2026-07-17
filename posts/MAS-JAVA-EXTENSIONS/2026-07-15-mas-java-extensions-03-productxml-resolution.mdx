@@ -30,7 +30,7 @@ keyTakeaways:
 series:
   name: "MAS JAVA EXTENSIONS"
   part: 3
-  total: 6
+  total: 7
 tldr: "product.xml is the file that turns a folder of Java classes into a running inheritance chain. It lives in properties/product/, and its mboset, mbo, class, field, and bean tags declare exactly what each add-on registers against a core object. During updatedb, Maximo reads every product.xml in alphabetical order, reorders by depends tags, runs each product's DBC scripts, writes the topmost MBO Set class into MAXOBJECT.CLASSNAME, and performs bytecode injection — rewriting compiled .class files so each extension's extends clause points at the next product instead of the core. The result is a single deterministic chain you can read live by decompiling the registered class and following extends through each parent, which is how you predict super() behavior before you write a line of custom code."
 seoTitle: "Maximo product.xml & Extension Chain Resolution Explained"
 seoDescription: "How Maximo product.xml, load order, and bytecode injection build the MBO inheritance chain into MAXOBJECT.CLASSNAME — and how to read a live chain."
@@ -74,7 +74,7 @@ relatedSlugs:
 
 ---
 
-## You Opened product.xml and Half-Understood It
+## 🧩 You Opened product.xml and Half-Understood It
 
 You have almost certainly been here. Something in Transportation, or HSE, or your own custom layer was not behaving the way you expected, and someone said *"check product.xml."* So you opened it. You saw a `<product>` root, a version block, a couple of `<depends>` tags, and then a wall of `<mboset>`, `<mbo>`, `<class>`, `<field>`, and `<bean>` entries pointing at fully qualified class names. You got the *gist* — this is where the add-on registers its Java — but you could not have explained, with confidence, how those declarations become the class that actually runs when Maximo opens a Work Order.
 
@@ -84,7 +84,7 @@ Let us make it legible.
 
 ---
 
-## Where product.xml Lives
+## 📂 Where product.xml Lives
 
 Every product — every IBM add-on, industry solution, and your own customizations — ships exactly one `product.xml`, and they all live in the same directory:
 
@@ -109,7 +109,7 @@ Notice the naming immediately. The files are named after the PLUS prefix of the 
 
 ---
 
-## The Anatomy of product.xml
+## 🧬 The Anatomy of product.xml
 
 Here is a complete, representative `product.xml` — Transportation's — so you can see every moving part in context:
 
@@ -206,7 +206,7 @@ That is the anatomy. Now the mechanics.
 
 ---
 
-## How updatedb Processes Extensions
+## ⚙️ How updatedb Processes Extensions
 
 The declarations above are inert until `updatedb` runs. When it does, it processes every product in the `properties/product/` directory in a defined sequence:
 
@@ -226,11 +226,13 @@ Steps 1 and 2 are where load order is decided, and they are the source of more u
 
 The two rules compose: alphabetical order sets the baseline, and `<depends>` promotes prerequisites ahead of the products that need them. This is exactly why the customer file is named `z_customer.xml`. The leading `z` puts it dead last in alphabetical order, so — absent any dependency that would drag it earlier — your customizations are processed after every IBM product. Being processed last is what lands your custom classes at the **top** of the resulting chain, above the add-ons, which is almost always where you want them.
 
-> **Key insight:** The filename is not cosmetic. `updatedb` reads the directory alphabetically, so the letter you put at the front of the file decides your baseline position in the load order — and `z_customer.xml` is named the way it is precisely so your code ends up on top instead of buried under the next add-on IBM ships.
+<aside>
+💡 **Key insight:** The filename is not cosmetic. `updatedb` reads the directory alphabetically, so the letter you put at the front of the file decides your baseline position in the load order — and `z_customer.xml` is named the way it is precisely so your code ends up on top instead of buried under the next add-on IBM ships.
+</aside>
 
 ---
 
-## What Bytecode Injection Actually Does
+## 🔧 What Bytecode Injection Actually Does
 
 Steps 4 and 5 are where the chain physically comes into being, and step 5 is the one that surprises developers most. Here is the thing to internalize: **the `extends` clause you wrote in source is not necessarily the `extends` clause that runs.**
 
@@ -276,11 +278,23 @@ This is not a subtle failure. It crashes Maximo when the application opens, and 
 
 **Incomplete product.xml.** This is the quiet one. Many customer environments have a `product.xml` that only declares 20–30% of their actual custom classes. The rest were wired in by manipulating `MAXOBJECT.CLASSNAME` directly — which works right up until an upgrade re-runs `updatedb`, ignores the undeclared classes, and quietly reverts the manual edits. The fix is an audit: every custom Java class must be declared in `product.xml`, not pinned into the database by hand.
 
-> **Key insight:** If a class is not declared in `product.xml`, the build does not know it exists. Direct `MAXOBJECT.CLASSNAME` edits look like they work, but they live outside the resolution process — and `updatedb` will overwrite them on the next upgrade. Declared classes survive; hand-pinned ones do not.
+Kept side by side, the three failure modes have distinct signatures — which is what makes them diagnosable rather than mysterious:
+
+| Symptom you observe | Root cause | The fix |
+|---|---|---|
+| Maximo crashes when opening the app; Eclipse crashes decompiling the class | Circular loop — a `<class>` tag used where `<mbo>`/`<mboset>` was meant | Correct the tag choice: `<mbo>`/`<mboset>` for classes, `<class>` for interfaces only |
+| A custom override that used to fire is now silently overridden after an add-on install | Your custom class dropped **below** the new add-on in the chain | Add `<depends>` entries for every IBM product; keep the file named `z_customer.xml` |
+| Customizations quietly vanish after an upgrade | Classes pinned via direct `MAXOBJECT.CLASSNAME` edits, never declared | Declare every custom class in `product.xml`; never hand-pin the database |
+
+Notice that all three are *resolution* problems, not code problems — the Java in each case is perfectly correct. That is the recurring lesson of this part: when an extension misbehaves, suspect the declarations and the load order before you suspect your logic.
+
+<aside>
+💡 **Key insight:** If a class is not declared in `product.xml`, the build does not know it exists. Direct `MAXOBJECT.CLASSNAME` edits look like they work, but they live outside the resolution process — and `updatedb` will overwrite them on the next upgrade. Declared classes survive; hand-pinned ones do not.
+</aside>
 
 ---
 
-## Reading a Live Chain
+## 🔎 Reading a Live Chain
 
 All of this becomes practical the moment you can inspect a running environment and name every layer on an object — because that is how you predict what `super()` will actually call before you write a line of code.
 
@@ -300,13 +314,27 @@ Once you have the `.class` file, decompile it and read the *injected* `extends` 
 
 That skill is the payoff of everything in this part. `product.xml` declares the classes, load order decides who sits where, and bytecode injection wires them together — and reading the resolved chain back out of a live pod is how you close the loop from declaration to running behavior.
 
+<aside>
+💡 **Key insight:** Always read the chain from the *decompiled, resolved* class, never from the original source. The whole point of bytecode injection is that the running `extends` clause differs from what your `.java` file says. A developer who trusts the source over the resolved artifact will confidently predict the wrong `super()` behavior — and that mistake is the single most common source of "it worked in dev" extension bugs.
+</aside>
+
 ---
 
-## Where This Leaves You
+## 🧠 Where This Leaves You
 
 `product.xml` is the seam between a folder of Java classes and a running inheritance chain. It declares — through `<mboset>`, `<mbo>`, `<class>`, `<field>`, and `<bean>` tags — exactly what each product registers against each core object. `updatedb` reads every one of those files in alphabetical order, honors the `<depends>` tags, runs the database scripts, writes the topmost set class into `MAXOBJECT.CLASSNAME`, and injects bytecode to rewrite `extends` clauses into a single chain. Get the tags right and name your file `z_customer.xml`, and the resolver puts your code exactly where you expect it. Get them wrong — a `<class>` where you meant `<mbo>`, a missing `<depends>`, an undeclared class pinned into the database by hand — and the same machinery faithfully builds a chain that loops, buries, or reverts.
 
 The next part turns from *how the chain is built* to *what each extension actually adds*: the database footprint of every add-on and the compatibility matrix that tells you which of them can safely run together on the same object.
+
+---
+
+## Key Takeaways
+
+- **`product.xml` is the control file.** Its `<mboset>`, `<mbo>`, `<class>`, `<field>`, and `<bean>` tags declare every class an extension registers — nothing joins the running system without being declared here.
+- **Load order is alphabetical by filename,** overridden by `<depends>` tags. The file that sorts last ends up at the top of the inheritance chain, which is why customizations are named `z_customer.xml`.
+- **Bytecode injection rewrites compiled `.class` files at build time** so `extends` clauses point at the correct parent. You never edit source to join a chain — `updatedb` assembles it.
+- **Three classic failures explain most incidents:** circular loops (wrong tag), buried customizations (missing `<depends>`), and vanishing customizations (undeclared classes hand-pinned via `MAXOBJECT.CLASSNAME`).
+- **Read the resolved chain from a decompiled class in a live pod,** never from source — the running hierarchy is what the build produced, not what your `.java` file says.
 
 ---
 
@@ -327,5 +355,7 @@ The next part turns from *how the chain is built* to *what each extension actual
 | **Next:** | [Part 4 — Database Footprint, Add-Ons, and the Compatibility Matrix](/blog/mas-java-extensions-database-addons-compatibility) |
 
 ---
+
+**About TheMaximoGuys:** We are practitioners who implement IBM Maximo across asset-intensive industries. We wrote this `product.xml` walkthrough because the resolution process is where most extension mysteries begin and end — and almost nobody explains it in one place.
 
 *Published by TheMaximoGuys | July 2026*
