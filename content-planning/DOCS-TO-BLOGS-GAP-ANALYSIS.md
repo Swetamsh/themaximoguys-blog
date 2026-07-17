@@ -1,6 +1,6 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-07-16 (night-shift: MAS-OPTIMIZER Part 5 added)  
+**Updated:** 2026-07-16 (night-shift: MAS-OPTIMIZER Part 5 added, then deepened)  
 **Author:** Swetansh (via TheMaximoGuys AI pipeline)  
 **Source docs:** `/root/TMG_MAS9_UPGRADE/DOC1..DOC12.md`  
 **Blog root:** `/root/themaximoguys-blog/posts/`  
@@ -76,15 +76,19 @@ These are ready for editorial review, but their frontmatter points at missing `.
 | Series | Source | Files | Word-count depth | What is covered | Remaining asset work |
 |---|---|---:|---:|---|---|
 | `MAS-ASSIST` | DOC2 | 7 | ~22.8k words | watsonx foundation, natural-language work guidance, SME knowledge capture, guided troubleshooting, deployment, governance/AppPoints | 7 covers |
-| `MAS-OPTIMIZER` | DOC2 | 6 | ~18.6k words | optimization rationale, constraints/objectives model, data prerequisites, routing/ArcGIS, dispatching/AppPoints/phased rollout (Part 5 now written) | 6 covers (1 of 6 done — Part 5) |
+| `MAS-OPTIMIZER` | DOC2 | 6 | ~19.7k words | optimization rationale, constraints/objectives model, data prerequisites, routing/ArcGIS, dispatching/AppPoints/phased rollout (Part 5 deepened 2026-07-16: crew scheduling, resource leveling, dispatcher override-vs-reoptimize playbook, re-optimization edge cases, troubleshooting, MAS 9.1.x release-note detail) | 6 covers (1 of 6 done — Part 5) |
 | `MAS-SUPPLY-CHAIN` | DOC8-10 | 11 | ~38.7k words | storekeeper first hour, inventory usage, receiving/barcode, cycle counts, reservations, buyer start center, PR->PO, sourcing, expedite/match-pay, lifecycle | 11 covers |
 | `MAS-RELIABILITY` | DOC11 | 8 | ~29.5k words | RCM/FMEA, MTBF/MTTR, reliability spine, analysis-to-action, APM layer, data load sequence, phased rollout | 8 covers |
 | `MAS-NUCLEAR` | DOC12 | 8 | ~20.6k words | product lineage/AppPoints, tech specs/LCO, configuration control, Maintenance Rule, CAP/tagout, regulatory crosswalk, MAS 9.2 reality | 8 covers |
 
 **Optimizer note:** `MAS-OPTIMIZER` Part 5 (`mas-optimizer-dispatching-rollout`) has been written
-(2026-07-16, night-shift), closing the structural gap the index/navigation already referenced. The
-series is now content-complete at 6 files (index + 5 parts); only cover-image asset work remains
-(5 of 6 covers still pending — Part 5's is done).
+(2026-07-16, night-shift), closing the structural gap the index/navigation already referenced, and
+subsequently deepened the same night from ~3.7k to ~4.3k body words with additional researched
+sections (crew scheduling/resource leveling, a dispatcher override-vs-reoptimize decision table,
+re-optimization edge cases, a troubleshooting table, and MAS 9.1.x Optimizer release-note detail
+sourced from IBM release notes and practitioner community writeups). The series is now
+content-complete at 6 files (index + 5 parts); only cover-image asset work remains (5 of 6 covers
+still pending — Part 5's is done).
 
 ---
 
