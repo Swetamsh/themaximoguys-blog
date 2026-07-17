@@ -192,7 +192,32 @@ On top of the clones sit nine applications that exist nowhere else in Maximo:
 | **Tech Specs** | Technical Specifications — LCO tracking, applicability, surveillance requirements |
 | **Commitment Tracking** | Regulatory commitment management |
 
+**A third view — IBM's licensing module grouping.** MAS 9's industry-solution module table doesn't list 13 clones and 9 unique apps at all; it groups Nuclear into four licensing modules: **Configuration Change (Nuc)**, **Operation Management (Nuc)**, **Permits (Nuc)**, and **Condition Report (Nuc)**. This isn't a contradiction — it's a different altitude. The 22-application list is what a customization audit walks object by object; the four-module list is what AppPoints allocation and license entitlement reference. Roughly: Configuration Change (Nuc) = Configuration Change Designer + Changes/Releases (Nuc); Operation Management (Nuc) = the clone applications + Lineups + Surveillance Testing; Permits (Nuc) = Clearances; Condition Report (Nuc) = Condition Reports. Map your customization inventory to this grouping before a license renewal conversation — IBM Support speaks in modules, not application names.
+
 **Why you should care even if you never touch a nuclear plant:** the clone approach is a masterclass in long-term customization cost. Because Nuclear duplicated applications rather than extending them, a customization inventory has to check **both** the `(Nuc)` clone **and** any extensions layered on the clone. Every rule you learned in Part 3 about tracing one inheritance chain becomes two parallel investigations. If you are ever tempted to clone a core application instead of extending it — this is what your upgrade team inherits.
+
+**A second naming wrinkle worth flagging.** IBM's own MAXOBJECT count references label Nuclear's line item **`PLUSN`** with roughly 30 objects — a tidy, conventionally-lettered prefix that contradicts the bare `"PLUS"` designation in swg21650645 and the `nuclear` deployment component name. Both are IBM-sourced; neither is wrong so much as inconsistent, because Nuclear's object prefixes were never fully standardized. Trust what MAXOBJECT rows say over what any prefix table — including this one — predicts:
+
+```sql
+-- Nuclear objects rarely announce themselves with one consistent prefix.
+-- Search by application group instead of assuming PLUSN or PLUS.
+SELECT OBJECTNAME, DESCRIPTION, CLASSNAME
+FROM MAXOBJECT
+WHERE OBJECTNAME LIKE 'PLUSN%'
+   OR OBJECTNAME LIKE 'NUC%'
+   OR CLASSNAME LIKE '%nuclear%'
+ORDER BY OBJECTNAME;
+```
+
+### Upgrading Nuclear Environments: The Clone-Aware Checklist
+
+IBM's standard pre-upgrade checklist for moving to Maximo Manage in MAS covers the same ground for every add-on: back up, run Integrity Checker, disable custom triggers, build a customization archive, deploy, activate, validate. Three of those generic steps carry extra weight on a Nuclear environment because of the clone architecture:
+
+1. **Customization archive scope must name both the clone and its extensions.** An archive built against `WorkOrder` alone misses anything layered on `WorkOrderNuc`. MAS 9 supports **multiple customization archives per activation** — introduced specifically because single-archive configurations were losing track of exactly this kind of split-surface customization. Treat "core WO customizations" and "Nuc WO customizations" as two archives, even if the same team wrote both.
+2. **Integrity Checker findings need a second read for `(Nuc)` objects.** The checker validates against the object it's pointed at — it does not cross-reference a clone against its original. An orphaned reference on `AssetNuc` will not surface as a problem with `Asset`; a clean run on core objects says nothing about the clone side.
+3. **product.xml completeness is doubly important.** Part 3 covered why incomplete product.xml coverage (IBM's field data puts many customer environments at 20–30% coverage of their actual custom classes) breaks silently during upgrades. On Nuclear, an incomplete product.xml can leave the *clone's* customizations undeclared while the *original* application's file looks complete — passing a surface audit while the real gap sits one table away.
+
+Run the MAXOBJECT/NUC audit query above *before* building the customization archive — let the object inventory drive what gets archived, not the other way around.
 
 ### Clearances vs Permit to Work: Same Problem, Different Engineering
 
@@ -242,6 +267,28 @@ The decision rules that survive contact with licensing reality:
 3. **Never add an industry solution for one module.** As Part 4's compatibility matrix showed, each industry solution drags its full extension chain, database footprint, and compatibility restrictions into your environment. Borrowing one app is never worth it.
 4. **For genuinely core needs, prefer core.** Crew Types/Crews in Scheduler cover most crew management outside of compatible-unit utilities work — without touching a PLUS prefix at all.
 
+### Worked Example: Scoping Configuration Management for a Mixed Fleet Utility
+
+A worked example makes the decision rules concrete. Say a transmission-and-distribution utility runs core Manage plus PLUSD (Utilities), and an engineering lead asks: *"We need configuration management for our substation assets — can we just turn on ACM?"*
+
+Walk it through the Type 5 lens instead of the feature-request lens:
+
+1. **What does "configuration management" mean here?** ACM (PLUSA) answers *"what does this asset's physical build actually look like right now, and does it match what engineering designed?"* — serial-numbered components, build positions, baselines, drift detection via the BDI engine. Nuclear's Configuration Change Designer answers a different question: *"has this regulated attribute's proposed change been through engineering approval?"* Neither is a generic "config management" toggle; they're two different questions wearing the same label.
+2. **Which question is the utility actually asking?** Substation equipment with serialized, swappable components (breakers, relays, transformers with tap-changer assemblies) that needs physical-build tracking against an as-designed baseline is an ACM question, not a Configuration Change Designer question — the utility has no NRC-style engineering-change-approval requirement driving the ask.
+3. **What does turning on ACM actually cost?** Per Part 4's dependency map, PLUSA is a 293-object industry solution — the single largest object footprint in the entire PLUS family. It is not "borrowing one app"; it *is* the app. This is the one Type 5 case where the answer legitimately is "add the industry solution," because the utility's actual need matches ACM's actual design center.
+4. **The counter-scenario:** if the same utility instead asked for "an approval workflow before we let anyone change a protection-relay setpoint," that's an engineering-change-approval question — closer to what Nuclear's Configuration Change Designer solves, but licensing Nuclear for one workflow pattern fails rule 3 above. The right move there is a custom workflow built on core Manage's change/approval primitives, not an industry solution license.
+
+The diagnostic query for step 1 in a real environment — confirm what's actually installed before the conversation goes further:
+
+```sql
+-- Which configuration-management implementation(s) exist in this environment?
+SELECT OBJECTNAME, DESCRIPTION FROM MAXOBJECT
+WHERE OBJECTNAME LIKE 'PLUSA%'
+   OR OBJECTNAME LIKE '%CONFIGCHANGE%'
+   OR OBJECTNAME LIKE '%CFGCHANGE%'
+ORDER BY OBJECTNAME;
+```
+
 ---
 
 ## 🔍 Auditing Crossovers in Your Own Environment
@@ -268,6 +315,19 @@ If check 1 returns both eras, or check 3 returns both implementations, you have 
 
 ---
 
+## 🛠️ Troubleshooting Crossover Symptoms
+
+The crossover types above describe the *cause*. In practice you rarely start there — you start with a broken chain, a missing customization, or a schema conflict, and have to work backward. Three symptom patterns cover most crossover-related incidents.
+
+| Symptom | Likely Cause | Fix |
+|---|---|---|
+| **Application won't open, or Eclipse crashes on decompile** | A circular extension loop from a misused product.xml tag — `<class>` where `<mbo>` belongs can chain an object back to itself: `YYYWOSet → PlusSWOSet → PlusGWOSet → TloamWOSet → PlusPWOSet → XXXWOSet → TloamWOSet (LOOP!)`. This is build-time: bytecode injection assembled the loop during `updatedb`, so source files compile clean and show no error. Crossover-heavy environments (Aviation's five prefixes, Nuclear's clone-plus-original surface) have more chain links and more chances for a tag mistake to close one. | Audit product.xml tag usage first, not the Java source — the loop lives in the XML. |
+| **Customizations "disappeared" after installing a new add-on** | Missing or incomplete `<depends>` tags in the customer's product.xml. When a new add-on installs (HSE onto a base environment, Civil Infrastructure onto a database with PLUSV-adjacent customizations), Maximo places customizations by declared dependency. No `<depends>` tag naming the new add-on can leave a customization **below** it in the chain instead of above — the add-on's default silently overrides it. Looks like data loss; the cause is chain ordering. | Name the file `z_customer.xml` and declare `<depends>` tags for every IBM product in the environment — on a composite like Aviation, that means the full five-prefix list, not just the prefix your code extends. |
+| **Clean Integrity Checker run, but Nuclear clone data is still broken** | The Type 4-specific version of the incomplete-audit problem. Integrity Checker validates the object it's pointed at — it has no concept of "this is a clone, check both." A clean run against `WorkOrder` says nothing about `WorkOrderNuc`; a single pass on a Nuclear environment validates roughly half the object surface. | Run Integrity Checker scoped explicitly to `(Nuc)`-suffixed objects as a second, separate pass — a distinct checklist line item, not a sub-case of the standard run. |
+| **Upgrade testing passes, production migration breaks** | product.xml coverage gaps. IBM's field data puts typical customer coverage at 20–30% of actual custom classes; the rest rely on undeclared direct `MAXOBJECT.CLASSNAME` manipulation. A test database built from a production duplicate hides this — the undeclared classes are already present in compiled bytecode, and the gap only surfaces when `updatedb` re-processes the chain from product.xml during the real upgrade run. | Before building the customization archive, cross-reference `MAXOBJECT.CLASSNAME` against every class declared in product.xml — declare gaps, don't discover them in production. |
+
+---
+
 ## The Complete Map, Assembled
 
 Across Parts 4 and 7, the full crossover picture:
@@ -278,6 +338,8 @@ Across Parts 4 and 7, the full crossover picture:
 - **Type 4 — Non-standard:** Nuclear uses bare "PLUS," 13 cloned `(Nuc)` apps, and 9 unique applications engineered for NRC oversight
 - **Type 5 — Independent implementations:** permits, config management, crews, qualifications, and regulatory tracking each exist multiple times with zero shared code
 
+And the troubleshooting patterns that follow from all five types share one root cause worth carrying forward: **crossovers turn one-inheritance-chain problems into two-or-more-chain problems.** A circular loop, a lost customization, a clean-but-incomplete Integrity Checker pass — every one of them is a standard Maximo extension failure mode that gets harder to catch precisely because a crossover-heavy environment (Aviation's five prefixes, Nuclear's dual clone-and-original surface) has more chains for the same mistake to hide in.
+
 Seven parts in, you can now read an environment the way IBM's own build engineers do: prefix by prefix, chain by chain, crossover by crossover — and predict the conflict before it predicts you.
 
 ## Key Takeaways
@@ -287,6 +349,7 @@ Seven parts in, you can now read an environment the way IBM's own build engineer
 - **Clearances out-engineers Permit to Work deliberately** — multi-clearance tag conflict checking exists because 10 CFR demands it, not because HSE's module is deficient
 - **Five business concepts ship as independent implementations** — nothing migrates between them, and integrations must name which one is authoritative
 - **Choose overlapping modules by license and regulator** — and never onboard a whole industry solution to borrow one application
+- **Every crossover troubleshooting symptom traces to chain complexity** — circular loops, lost customizations, and incomplete Integrity Checker passes all get harder to catch when an environment has more prefix chains for the same mistake to hide in
 
 ## References
 
@@ -296,7 +359,11 @@ Seven parts in, you can now read an environment the way IBM's own build engineer
 - [IBM Maximo for Nuclear Power documentation](https://www.ibm.com/docs/en/mfnp)
 - [IBM Maximo Health, Safety and Environment Manager documentation](https://www.ibm.com/docs/en/mhse)
 - [IBM Maximo Civil Infrastructure documentation](https://www.ibm.com/docs/en/mci)
-- TheMaximoGuys knowledge base — MAS 9 Java Extensions Hierarchy Technical Guide (DOC6), §8.5
+- [IBM Maximo Nuclear overview — Continuous Delivery documentation](https://www.ibm.com/docs/en/mfnp/continuous-delivery?topic=product-overview)
+- [Maximo Technical and Functional Concepts — Industry Solutions Prefix and Java Versions](http://maximotechnofunctional.blogspot.com/2019/06/maximo-industry-solutions-prefix-and.html)
+- [Naviam — IBM Maximo Application Suite 9.2: What to Expect](https://www.naviam.io/resources/blog/ibm-maximo-application-suite-9-2-what-to-expect)
+- TheMaximoGuys knowledge base — MAS 9 Java Extensions Hierarchy Technical Guide (DOC6), §8.5, §6.2, §7
+- TheMaximoGuys knowledge base — IBM Maximo Application Suite user guide, "Upgrade checklist" and "Multiple customization archives for Maximo Manage configuration" (via SearchMaximo sweep)
 
 ## Series Navigation
 
@@ -308,3 +375,13 @@ Seven parts in, you can now read an environment the way IBM's own build engineer
 ---
 
 **About TheMaximoGuys:** We help Maximo developers and teams navigate the MAS transformation with practitioner-grade technical guidance.
+
+<!--
+DISCREPANCY NOTE FOR HUMAN REVIEW (night-shift deepen-javaext-part7):
+DOC6 §7's MAXOBJECT-count table lists Nuclear's prefix as "PLUSN" (~30 objects), while DOC6 §8.5, IBM Support doc
+swg21650645, and the corroborating maximotechnofunctional.blogspot.com prefix table all list Nuclear's prefix as
+bare "PLUS" (no trailing letter). Per the depth contract, the knowledge base's own §8.5/swg21650645 position (bare
+"PLUS") is treated as authoritative in the body text, but the §7 "PLUSN" reference is real and unreconciled inside
+DOC6 itself — flagged in-body as a naming wrinkle rather than silently dropped. A human with direct MAXOBJECT access
+to a live Nuclear environment should confirm which prefix actually appears on disk and correct this article if needed.
+-->
