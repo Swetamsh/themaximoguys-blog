@@ -42,8 +42,9 @@ npm run sync:validate
 
 ## Hooks
 
-- **PreToolUse/Write:** Secret detection — blocks writes containing hardcoded API keys
+- **PreToolUse/Write:** Secret detection (`.claude/hooks/detect-secrets.sh`) — blocks writes containing hardcoded API keys (Google `AIzaSy…`, AWS, GitHub, Slack, private keys). Env refs like `${VAR}` are allowed.
 - **PostToolUse/Write:** MDX frontmatter validation — warns if `.mdx` files missing frontmatter
+- **git pre-commit** (`scripts/git-hooks/pre-commit`) — blocks *commits* containing the same secret patterns; catches every commit path (Claude, automation, manual git). Install after clone: `bash scripts/install-git-hooks.sh`. Real secrets belong in `/root/.claude-pai/.env` (sourced by `automation/off-hours/night-shift.sh`).
 
 ## Blog Post Structure
 

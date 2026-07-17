@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+#
+# pre-commit — block hardcoded secrets from entering git history.
+#
+# Scans ONLY the lines being added in this commit (staged diff) so that
+# pre-existing content never blocks unrelated work. Catches every commit
+# path: interactive git, the night-shift automation, and Claude Code.
+#
+# Installed at .git/hooks/pre-commit. Source of truth lives here in
+# scripts/git-hooks/ so it survives a re-clone; run scripts/install-git-hooks.sh
+# to (re)install.
+#
+# Legitimate false positive? Bypass once with:  git commit --no-verify
+# Better fix: reference secrets via ${ENV_VAR} and keep real values in
+# /root/.claude-pai/.env (already sourced by automation/off-hours/night-shift.sh).
+
+set -euo pipefail
+
+# Named pattern -> ERE. Values are matched against added ('+') diff lines.
+declare -a NAMES=(
+  "Google API key"
+  "AWS access key ID"
+  "OpenAI API key"
+  "GitHub token"
+  "Slack token"
+  "Private key block"
+)
+declare -a PATTERNS=(
+  'AIzaSy[0-9A-Za-z_-]{33}'
+  'AKIA[0-9A-Z]{16}'
+  'sk-[A-Za-z0-9_-]{20,}'
+  'gh[pousr]_[A-Za-z0-9]{36,}'
+  'xox[baprs]-[0-9A-Za-z-]{10,}'
+  '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+)
+
+# Added lines across staged, non-deleted files (strip the leading '+').
+added="$(git diff --cached --diff-filter=ACM -U0 | grep '^+' | grep -v '^+++' || true)"
+
+if [ -z "$added" ]; then
+  exit 0
+fi
+
+found=0
+for i in "${!PATTERNS[@]}"; do
+  hits="$(printf '%s\n' "$added" | grep -nE -- "${PATTERNS[$i]}" || true)"
+  if [ -n "$hits" ]; then
+    if [ "$found" -eq 0 ]; then
+      echo "" >&2
+      echo "🔴 COMMIT BLOCKED — hardcoded secret detected in staged changes:" >&2
+      echo "" >&2
+    fi
+    found=1
+    echo "  • ${NAMES[$i]}:" >&2
+    printf '%s\n' "$hits" | sed 's/^/      /' >&2
+  fi
+done
+
+if [ "$found" -eq 1 ]; then
+  echo "" >&2
+  echo "  Fix: replace the literal value with \${ENV_VAR} and put the real" >&2
+  echo "       secret in /root/.claude-pai/.env (sourced by night-shift.sh)." >&2
+  echo "  If this is a genuine false positive: git commit --no-verify" >&2
+  echo "" >&2
+  exit 1
+fi
+
+exit 0
