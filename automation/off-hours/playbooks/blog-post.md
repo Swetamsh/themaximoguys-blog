@@ -13,6 +13,9 @@ bottom of this prompt, plus its cover image. Work autonomously; nobody will answ
    fields only.
 3. **Stay on the one assigned item.** Do not pull other work from the queue.
 4. **Drafts are for human review** — set frontmatter `draft: true` on the new post.
+5. **Image generation ALWAYS goes through the image skills** (BlogCoverArt analysis + the
+   assigned style skill's templates + Art skill prompt engineering, per Step 4). A raw
+   ad-hoc prompt sent to an image model outside that pipeline is a failed job.
 
 ## Step 1 — Study conventions (do not skip)
 
