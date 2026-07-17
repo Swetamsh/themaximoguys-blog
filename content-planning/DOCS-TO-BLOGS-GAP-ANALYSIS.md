@@ -1,6 +1,6 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-07-16  
+**Updated:** 2026-07-16 (night-shift: MAS-OPTIMIZER Part 5 added)  
 **Author:** Swetansh (via TheMaximoGuys AI pipeline)  
 **Source docs:** `/root/TMG_MAS9_UPGRADE/DOC1..DOC12.md`  
 **Blog root:** `/root/themaximoguys-blog/posts/`  
@@ -76,14 +76,15 @@ These are ready for editorial review, but their frontmatter points at missing `.
 | Series | Source | Files | Word-count depth | What is covered | Remaining asset work |
 |---|---|---:|---:|---|---|
 | `MAS-ASSIST` | DOC2 | 7 | ~22.8k words | watsonx foundation, natural-language work guidance, SME knowledge capture, guided troubleshooting, deployment, governance/AppPoints | 7 covers |
-| `MAS-OPTIMIZER` | DOC2 | 5 | ~14.9k words | optimization rationale, constraints/objectives model, data prerequisites, routing/ArcGIS; index references a missing Part 5 slug | 5 covers + decide whether to write Part 5 |
+| `MAS-OPTIMIZER` | DOC2 | 6 | ~18.6k words | optimization rationale, constraints/objectives model, data prerequisites, routing/ArcGIS, dispatching/AppPoints/phased rollout (Part 5 now written) | 6 covers (1 of 6 done — Part 5) |
 | `MAS-SUPPLY-CHAIN` | DOC8-10 | 11 | ~38.7k words | storekeeper first hour, inventory usage, receiving/barcode, cycle counts, reservations, buyer start center, PR->PO, sourcing, expedite/match-pay, lifecycle | 11 covers |
 | `MAS-RELIABILITY` | DOC11 | 8 | ~29.5k words | RCM/FMEA, MTBF/MTTR, reliability spine, analysis-to-action, APM layer, data load sequence, phased rollout | 8 covers |
 | `MAS-NUCLEAR` | DOC12 | 8 | ~20.6k words | product lineage/AppPoints, tech specs/LCO, configuration control, Maintenance Rule, CAP/tagout, regulatory crosswalk, MAS 9.2 reality | 8 covers |
 
-**Optimizer note:** `MAS-OPTIMIZER` index/navigation references `mas-optimizer-dispatching-rollout`,
-but only parts 00-04 exist. Treat Optimizer as **near-complete**, not final, until Part 5 is either
-created or removed from the series map.
+**Optimizer note:** `MAS-OPTIMIZER` Part 5 (`mas-optimizer-dispatching-rollout`) has been written
+(2026-07-16, night-shift), closing the structural gap the index/navigation already referenced. The
+series is now content-complete at 6 files (index + 5 parts); only cover-image asset work remains
+(5 of 6 covers still pending — Part 5's is done).
 
 ---
 
@@ -96,14 +97,14 @@ created or removed from the series map.
 | 1 | `MAS-DATABRICKS` | DOC5 | No standalone Databricks/lakehouse series exists. Current posts mention Databricks only incidentally. | Build if analytics/lakehouse authority matters this quarter. |
 | 2 | `MAS-PARTS-IDENTIFIER` | DOC2 | Directory exists but has no MDX files. Coverage today is only shallow inside `MAS-FEATURES-14/24`. | Build a short 5-part computer-vision/parts workflow series or explicitly fold into Supply Chain. |
 | 3 | `MAS-CIVIL-INFRASTRUCTURE` | DOC2 | No standalone series exists. Coverage today is inside broader industry/add-on posts. | Build only if DOT/public infrastructure audience is a target. |
-| 4 | `MAS-OPTIMIZER` Part 5 | DOC2 | Index links to Part 5, but the file is absent. | Write Part 5 or revise index/navigation to a 4-part series. |
+| ~~4~~ | ~~`MAS-OPTIMIZER` Part 5~~ | DOC2 | **Resolved 2026-07-16 (night-shift).** Part 5 written; nav chain confirmed intact. | Cover image still needed for Parts 1-4. |
 
 ### Pending Asset Work
 
 | Series | Missing local covers |
 |---|---:|
 | `MAS-ASSIST` | 7 |
-| `MAS-OPTIMIZER` | 5 |
+| `MAS-OPTIMIZER` | 5 (Part 5 cover done; Parts 1-4 + index still pending) |
 | `MAS-SUPPLY-CHAIN` | 11 |
 | `MAS-RELIABILITY` | 8 |
 | `MAS-NUCLEAR` | 8 |
@@ -113,10 +114,11 @@ created or removed from the series map.
 
 ## 5. Recommended Next Decision
 
-1. **Fix Optimizer first:** either write `mas-optimizer-dispatching-rollout` as Part 5 or make the
-series officially four parts. This is the only newly found structural content mismatch.
+1. ~~**Fix Optimizer first**~~ — done 2026-07-16 (night-shift): `mas-optimizer-dispatching-rollout`
+written as Part 5, nav chain confirmed intact end to end.
 2. **Generate covers for text-complete series:** Assist, Supply Chain, Reliability, Nuclear, and
-Optimizer can become production-complete once their `./images/*.png` assets exist.
+Optimizer can become production-complete once their `./images/*.png` assets exist (Optimizer Part 5
+cover is done; index + Parts 1-4 remain).
 3. **Choose one remaining net-new content lane:** Databricks has the strongest strategic authority
 value; Parts Identifier is the fastest; Civil Infrastructure is niche and should wait unless the
 audience is active.
