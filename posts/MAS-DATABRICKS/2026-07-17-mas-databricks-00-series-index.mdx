@@ -1,0 +1,303 @@
+---
+title: "MAS 9 + Databricks: Building the Maximo Data Lakehouse"
+description: "A six-part series on where MAS 9 native analytics stops and Databricks starts — data extraction patterns, the medallion architecture for Maximo objects, five concrete analytics use cases, custom ML versus Maximo Predict, and lakehouse governance."
+date: "2026-07-17"
+slug: "mas-databricks-series-index"
+tags: ["Maximo", "MAS 9", "Databricks", "Data Lakehouse", "Delta Lake", "Unity Catalog", "Predictive Maintenance", "EAM Analytics"]
+draft: true
+tier: "executive"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-databricks-00-series-index.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Does Maximo Application Suite already include a data lakehouse?"
+    answer: "No, and this series does not pretend otherwise. MAS 9 ships strong native analytics — Operational Dashboards, Cognos Analytics, Maximo Health, Maximo Predict, Maximo Monitor, and the AI Service — but none of them is a lakehouse. They read and write MAS data; they do not join it with your ERP, weather, GIS, or ten years of historical sensor data, and they do not give you a general-purpose notebook environment. IBM's own answer to that gap is watsonx.data, its open lakehouse product. Databricks is a separate, non-IBM option organizations choose for the same gap. Part 1 draws the line precisely."
+  - question: "Do I need Databricks if I already pay for MAS Predict and Maximo Health?"
+    answer: "Only if you have already run into their limits. Predict and Health are the right first stop for any organization — they ship pre-built models, they are entitled inside your MAS AppPoints pool, and they require no data engineering team. Databricks earns its cost when you need custom ML that Predict's fixed model catalog does not offer, when you need to join Maximo data with ERP or weather or production data Predict cannot see, or when more than three people need self-service BI beyond what Cognos' included admin seats allow. Part 5 gives the specific decision framework, not a blanket recommendation."
+  - question: "How do you actually get data out of MAS 9 into Databricks?"
+    answer: "Four patterns, in order of how most MAS 9 shops actually use them: the REST/JSON API is the primary, IBM-recommended mechanism and works against both cloud-managed and self-managed MAS; the Maximo Integration Framework over Kafka/Event Streams suits near-real-time and event-driven extraction for shops with an existing MIF investment; direct database extraction only works for self-managed, on-prem MAS, because managed SaaS MAS seals the database from external connections; and Lakehouse Federation lets Databricks query the Maximo database live via SQL pushdown without copying data at all, which is excellent for ad-hoc lookups but the wrong tool for ML training workloads. Part 2 walks each pattern with its actual constraints."
+  - question: "What does the medallion architecture look like for Maximo-specific tables?"
+    answer: "Bronze holds the raw extract exactly as it arrived — WORKORDER, ASSET, FAILUREREPORT, MEASUREMENT, and similar tables landed as-is with no transformation, so you can always replay history if a downstream rule changes. Silver applies real cleaning: joining WORKORDER to ASSET and LOCATIONS and FAILUREREPORT into one enriched work-order record, time-aligning sensor readings, deduplicating inventory transactions. Gold is where the business questions live — asset health scores, failure predictions, maintenance cost KPIs, PM effectiveness rankings — the tables a dashboard or an executive report actually queries. Part 3 works through this mapping table by table with real Maximo object names."
+  - question: "Is this series going to tell me to rip out Cognos or MAS Health and replace them with Databricks?"
+    answer: "No. The recommended pattern across this whole series is complementary, not either/or: keep Maximo Health, Predict, Monitor, Assistant, and Cognos for day-to-day operational work inside MAS, and add Databricks specifically for cross-system analytics, custom ML, self-service BI beyond three Cognos seats, and enterprise-wide governance. Replacing entitled, already-paid-for MAS capabilities with a duplicate Databricks build is the single most common overspend pattern this series is written to help you avoid."
+keyTakeaways:
+  - "MAS 9 ships real native analytics — Operational Dashboards, Cognos (3 admin seats), Maximo Health, Predict, Monitor, and the watsonx-backed AI Service — and this series names exactly where each one's ceiling sits"
+  - "Databricks is a complementary lakehouse platform, not a Maximo replacement: it earns its keep on cross-system joins, custom ML, self-service BI at scale, and enterprise data governance"
+  - "There are four real ways to get Maximo data into a lakehouse — REST API, MIF/Kafka, DB-direct (self-managed only), and Lakehouse Federation — and the right one depends on your deployment model and latency needs"
+  - "The medallion architecture (bronze/silver/gold) maps cleanly onto named Maximo objects: WORKORDER, ASSET, FAILUREREPORT, MEASUREMENT, INVENTORY, MATUSETRANS, LABTRANS, and PM"
+  - "IBM has its own lakehouse answer, watsonx.data — this series scopes deliberately to Databricks because that is the platform most MAS 9 customers are already evaluating, not because it is IBM's preferred path"
+series:
+  name: "MAS DATABRICKS"
+  part: 0
+  total: 6
+tldr: "A six-part practitioner's guide to pairing MAS 9 with Databricks for analytics that go beyond native Maximo Health, Predict, Monitor, and Cognos. It covers why native MAS analytics has real limits (cross-system joins, custom ML, seat-limited BI), the four practical patterns for getting Maximo data out (REST API, MIF/Kafka, DB-direct, Lakehouse Federation), the medallion architecture mapped to actual Maximo tables, five concrete analytics use cases tied back to reliability and cost metrics, a decision framework for custom Databricks ML versus Maximo Predict, and governance patterns for securing Maximo-derived data in Unity Catalog. The series is honest that Databricks is one of at least two lakehouse paths available to MAS 9 shops — IBM's own watsonx.data is the other — and stays deliberately scoped to Databricks throughout."
+seoTitle: "MAS 9 + Databricks Lakehouse | Series Index"
+seoDescription: "A 6-part guide to MAS 9 and Databricks: native analytics limits, data extraction patterns, medallion architecture, ML vs Maximo Predict, and lakehouse governance."
+targetQuestions:
+  - "Should I use Databricks with IBM Maximo Application Suite?"
+  - "How do I get Maximo data into a Databricks lakehouse?"
+  - "What is the difference between Maximo Predict and custom ML in Databricks?"
+  - "How does the medallion architecture apply to Maximo work order and asset data?"
+  - "Does MAS 9 have its own data lakehouse, or do I need a separate platform?"
+semanticKeywords:
+  - "Maximo Databricks integration"
+  - "MAS 9 data lakehouse"
+  - "Delta Lake medallion architecture"
+  - "Unity Catalog governance"
+  - "Maximo REST API data extraction"
+  - "Maximo Predict vs custom ML"
+  - "Cognos Analytics MAS 9"
+  - "Maximo Kafka Event Streams"
+  - "bronze silver gold Maximo tables"
+  - "watsonx.data vs Databricks"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Familiarity with core Maximo Manage objects (WORKORDER, ASSET, LOCATIONS, INVENTORY)"
+  - "Basic understanding of MAS 9 native analytics — Health, Predict, Monitor (see the MAS-HEALTH, MAS-PREDICT, and MAS-MONITOR series)"
+  - "General data-platform literacy: what a data lake, data warehouse, and ETL pipeline each do"
+speakableSections:
+  - "Why This Series Exists"
+  - "Where This Series Fits"
+  - "The Series at a Glance"
+clusterSlugs:
+  - "mas-databricks-01-why-lakehouse"
+  - "mas-databricks-02-data-flows"
+  - "mas-databricks-03-medallion-architecture"
+  - "mas-databricks-04-analytics-use-cases"
+  - "mas-databricks-05-ml-vs-mas-predict"
+  - "mas-databricks-06-governance-security"
+relatedSlugs:
+  - "mas-health-series-index"
+  - "mas-predict-series-index"
+  - "mas-monitor-series-index"
+  - "mas-reliability-series-index"
+  - "supply-chain-playbook-series-index"
+  - "mas-features-series-index"
+---
+
+# MAS 9 + Databricks: Building the Maximo Data Lakehouse
+
+<aside>
+
+🎯 **Who this is for:** Data engineers and architects tasked with extending MAS 9 analytics, reliability and maintenance leaders who have hit the ceiling of Cognos and Maximo Health, IT and platform owners scoping a lakehouse investment, and any Maximo practitioner who has heard "just put it in Databricks" in a planning meeting and wants to know what that actually means for their WORKORDER and ASSET tables.
+
+</aside>
+
+**Series:** Series Index — *MAS 9 + Databricks Lakehouse* | **6 parts** | **Total read time:** ~1.75 hours
+
+---
+
+## 📖 Why This Series Exists
+
+Every organization that upgrades from Maximo 7.6 to MAS 9 inherits a genuinely better analytics story than it had before. Operational Dashboards replace Start Centers. Cognos Analytics replaces BIRT. Maximo Health scores assets. Maximo Predict trains failure models. Maximo Monitor ingests IoT streams and detects anomalies. The AI Service, backed by watsonx, answers natural-language questions about your work orders. None of that is marketing. It is real, entitled, and worth using first.
+
+And then, six months into running MAS 9 in production, the same questions start showing up in planning meetings. *Can we join maintenance cost against SAP financials?* *Can more than three people build a Cognos report without a separate license?* *Can we train a custom failure model on our own vibration data instead of Predict's fixed catalog?* *Can we keep ten years of sensor history queryable instead of aging out of Monitor's retention window?* The honest answer to all four, inside MAS 9 alone, is no — and that "no" is exactly where Databricks conversations start.
+
+This series is not a Databricks sales pitch dressed up as Maximo content, and it is not a MAS-native loyalty piece either. It draws the line between the two as precisely as the MAS-NUCLEAR series draws the line between named applications and configuration: **MAS 9 native analytics is real and should be your first stop. Databricks earns its cost only past a specific, nameable ceiling.** Every part in this series names that ceiling for one analytics domain, then shows the pattern that gets past it — with real Maximo object names, real REST endpoints, and real medallion table structures, not slideware.
+
+<aside>
+
+💡 **Key insight:** The organizing question of this whole series is not "Databricks or Maximo?" — that framing is wrong on its face. It is **"which of my analytics questions does MAS 9 already answer, and which ones require data MAS 9 was never built to hold?"** Read the series through that lens and the six parts stop looking like six separate products and start looking like one architecture with two tiers.
+
+</aside>
+
+---
+
+## 🧭 Where This Series Fits
+
+This series is deliberately about the boundary between MAS 9's native analytics stack and everything past it. It does not re-teach Maximo Health, Predict, or Monitor from scratch — those series already do that job in depth. There is a division of labor across TheMaximoGuys content so you are never reading the same material twice:
+
+| If you want… | Read… |
+|---|---|
+| Deep, hands-on coverage of Maximo Health scoring, risk matrices, and degradation curves | **MAS-HEALTH series** |
+| Deep, hands-on coverage of Maximo Predict's ML model catalog and prediction workflows | **MAS-PREDICT series** |
+| Deep, hands-on coverage of Maximo Monitor's IoT ingestion and anomaly detection | **MAS-MONITOR series** |
+| Reliability metrics (MTBF, MTTR, RCM/FMEA) that this series' analytics use cases build on | **MAS-RELIABILITY series** |
+| Inventory and procurement workflows referenced in the inventory-ML use case | **Supply Chain Playbook series** |
+| **Where native MAS 9 analytics stops, and how to extend it with Databricks** | **This series** |
+
+<aside>
+
+💡 **Key insight:** If a stakeholder wants to understand how Maximo Health actually calculates a 0–100 score, send them to MAS-HEALTH. This series assumes that baseline and picks up exactly where those series' native capabilities run out of runway — cross-system data, custom models, and governance across more than one platform.
+
+</aside>
+
+---
+
+## 📊 The Series at a Glance
+
+| Part | Title | Focus Area | Read Time |
+|------|-------|-----------|-----------|
+| 1 | Why Your Maximo Data Belongs in a Lakehouse | Native analytics ceiling: Cognos' 3 seats, Predict's fixed models, Monitor's retention limits; data gravity and the cost of duplicate copies | 16 min |
+| 2 | Getting Maximo Data Out | REST/JSON API, MIF over Kafka/Event Streams, DB-direct (self-managed only), Lakehouse Federation — with real endpoint and table detail | 17 min |
+| 3 | Building the Asset Lakehouse | Medallion architecture (bronze/silver/gold) mapped to WORKORDER, ASSET, FAILUREREPORT, MEASUREMENT, MATUSETRANS, PM | 18 min |
+| 4 | Five Analytics Use Cases | MTBF/MTTR trends, maintenance cost rollups, slow-moving inventory, backlog aging, PM compliance — with worked SQL | 17 min |
+| 5 | Custom ML vs. Maximo Predict | Decision framework: data needs, skills, AppPoints economics, writing scores back into MAS Health | 16 min |
+| 6 | Governance and Security | Unity Catalog over Maximo-derived data, site/org security parity, lineage, PII in labor records | 16 min |
+
+---
+
+## 🔑 What Makes This Series Different
+
+Three ideas run through every part. Internalize them and the series reads as one argument instead of six standalone articles.
+
+**Native-first, lakehouse-second is not a hedge — it is the architecture.** Every part follows the same sequence: name what MAS 9 already does natively, name precisely where it stops, then show the Databricks pattern that picks up from there. A shop that skips the "what MAS already does" step ends up rebuilding Cognos-shaped dashboards in Databricks SQL for no reason, which is the single most common wasted-spend pattern in lakehouse projects touching an EAM system.
+
+**Databricks is not the only lakehouse answer — this series just scopes to it.** IBM sells its own open lakehouse product, watsonx.data, built on Presto C++, and IBM's own published benchmarks claim better price-performance against Databricks' Photon engine at equal query runtime. This series does not evaluate watsonx.data because most MAS 9 customers approaching this topic are already mid-evaluation of Databricks specifically — but a fair comparison belongs in your own vendor selection, not an assumption this series makes for you.
+
+**Closed-loop is the pattern that actually pays back.** A Databricks lakehouse that only produces dashboards nobody acts on is a cost center. The pattern that shows up in every proven case study this series cites — Siemens, GE, CBRE, the medical-device manufacturer running Azure Databricks against SAP HANA — is closed-loop: predictions and scores write back into Maximo via REST API as work orders, service requests, or updated reorder points, so the lakehouse output becomes an action inside the system your technicians already work in, not a report that sits in a folder.
+
+<aside>
+
+💡 **Key insight:** If you remember only one thing from the index, make it this: **name the ceiling, extend past it, close the loop back into Maximo.** Every part is an application of that triad. Skip any one of the three and you get either a rebuilt Cognos, an unscoped platform decision, or a beautiful dashboard nobody uses.
+
+</aside>
+
+---
+
+## 🗺️ What MAS 9 Already Gives You (and Where It Stops)
+
+Before the part-by-part guide, this table grounds the whole series in what native MAS 9 analytics actually covers today — the baseline every part measures against.
+
+| MAS 9 Native Capability | What It Does Well | Where It Stops |
+|---|---|---|
+| **Operational Dashboards** | Role-based, cross-app views pulling from Monitor, Health, and Manage in one screen | Not a BI platform — no ad-hoc joins, no external data sources, no complex statistical analysis |
+| **Cognos Analytics** | Drag-and-drop report authoring against the Maximo database, scheduled distribution | Only 3 administrative authoring seats included; no BIRT migration path — reports must be rebuilt; cannot easily join non-Maximo data |
+| **Maximo Health** | Configurable 0–100 health/risk scores from asset, work order, and meter data inside Manage | Cannot incorporate external factors — weather, SCADA load, supply-chain risk — into the score formula |
+| **Maximo Predict** | Pre-built failure-probability, RUL, and anomaly models trained via watsonx.ai | Fixed model catalog with limited customization; requires IoT data to already be flowing through Monitor; cannot ingest external data sources |
+| **Maximo Monitor** | Real-time IoT dashboards, built-in anomaly detection, alert-to-work-order automation | Not built for multi-year historical trend analysis or custom ML algorithms beyond its built-in anomaly functions |
+| **Maximo AI Service / Assistant** | Natural-language Q&A against Maximo data, FMEA content generation, similarity tracking | Scoped to Maximo data only; 10-AppPoints entitlement with a monthly usage ceiling before additional watsonx licensing is required |
+
+That right-hand column is not a criticism of MAS 9 — every EAM system on the market has an equivalent list. It is the honest starting point for deciding whether your organization actually needs a lakehouse, or whether the gap you are feeling is really an under-used native capability. Part 1 opens with exactly that diagnostic.
+
+---
+
+## 🧩 Part-by-Part Guide
+
+### Part 1: Why Your Maximo Data Belongs in a Lakehouse
+
+**[Read Part 1 — Why Your Maximo Data Belongs in a Lakehouse](/blog/mas-databricks-01-why-lakehouse)** · 16 minutes
+
+The case for adding a lakehouse alongside MAS 9's native stack, built around three concrete constraints: Cognos' three-seat authoring limit, Predict's fixed and non-extensible model catalog, and Monitor's retention window for historical sensor trend analysis.
+
+**You learn:** how to build the "do we actually need this" diagnostic before any platform is purchased; the concept of data gravity and why copying Maximo data indiscriminately creates more operational risk than it solves; how to position Databricks against MAS Health and Predict without duplicating either; and where IBM's own watsonx.data fits as an alternative worth a fair evaluation.
+
+### Part 2: Getting Maximo Data Out
+
+**[Read Part 2 — Getting Maximo Data Out](/blog/mas-databricks-02-data-flows)** · 17 minutes
+
+The architecture question every lakehouse project answers first and gets wrong most often: how do you actually extract data from MAS 9 without breaking anything or violating your SaaS entitlement's sealed-database boundary?
+
+**You learn:** the REST/JSON API pattern IBM recommends, with the actual key tables (WORKORDER, ASSET, FAILUREREPORT, MEASUREMENT, INVENTORY) and realistic extraction frequencies; how MIF over Kafka/Event Streams enables near-real-time extraction, including the Suite Administration Kafka broker configuration steps; why DB-direct extraction only exists for self-managed MAS, and why managed SaaS MAS explicitly seals the database; and how Lakehouse Federation queries Maximo live via SQL pushdown without an ETL pipeline at all — and why that is the wrong tool for ML training data.
+
+### Part 3: Building the Asset Lakehouse
+
+**[Read Part 3 — Building the Asset Lakehouse](/blog/mas-databricks-03-medallion-architecture)** · 18 minutes
+
+The medallion architecture — bronze, silver, gold — mapped table by table onto real Maximo objects, with the cleansing rules and conformed dimensions that make the gold layer trustworthy enough for an executive dashboard.
+
+**You learn:** what belongs in bronze versus what gets cleaned in silver, with a full WORKORDER-to-ASSET-to-LOCATIONS-to-FAILUREREPORT enrichment example; how meter and sensor data gets time-aligned and outlier-cleaned; how PM completion records roll up into a PM-effectiveness silver table; and which gold tables (asset health scores, failure predictions, maintenance cost KPIs, inventory recommendations) actually answer a business question versus which ones are just restated bronze data.
+
+### Part 4: Five Analytics Use Cases
+
+**[Read Part 4 — Five Analytics Use Cases](/blog/mas-databricks-04-analytics-use-cases)** · 17 minutes
+
+Five concrete, SQL-level use cases built on the gold layer from Part 3, each tied back to a metric the MAS-RELIABILITY series already defined: MTBF/MTTR reliability trends, maintenance cost rollups by asset class, slow-moving inventory identification, work order backlog aging, and PM compliance rates.
+
+**You learn:** worked Databricks SQL for each use case against gold-layer tables; how to connect Power BI or Tableau to Databricks SQL endpoints for the reporting layer; how these five use cases map to the same metrics maintenance leaders already track in Maximo Health and Reliability Strategies; and where each use case's insight should close the loop back into a Maximo work order, service request, or reorder point.
+
+### Part 5: Custom ML vs. Maximo Predict
+
+**[Read Part 5 — Custom ML vs. Maximo Predict](/blog/mas-databricks-05-ml-vs-mas-predict)** · 16 minutes
+
+The decision framework this whole series has been building toward: when a fixed Maximo Predict model is the right call, and when a custom AutoML/MLflow model trained in Databricks earns its added cost and complexity.
+
+**You learn:** a scored decision matrix across data needs, in-house ML skills, and AppPoints economics; what it actually takes to write a Databricks-trained model's score back into a Maximo Health custom score field or trigger a Predict-style work queue; a real closed-loop example — sensor data in, model score out, high-priority work order created automatically via REST API; and why "use both" is usually the right answer, not "replace Predict."
+
+### Part 6: Governance and Security for the MAS Lakehouse
+
+**[Read Part 6 — Governance and Security for the MAS Lakehouse](/blog/mas-databricks-06-governance-security)** · 16 minutes (Series Finale)
+
+The governance layer that turns a Databricks lakehouse from a data-sprawl liability into an auditable enterprise asset, using Unity Catalog to mirror the site/org security model Maximo administrators already understand.
+
+**You learn:** how Unity Catalog's fine-grained, column-level access control maps to Maximo's site- and org-level security groups; how data lineage traces a gold-layer failure prediction back through every transformation to its raw Maximo source, which matters as much for a SOX audit as a 10 CFR 50 one; where labor transaction data carries PII that needs different handling than asset or work order data; and what an auditor actually expects to see when a lakehouse-derived score influenced a maintenance decision.
+
+---
+
+## 🧭 Recommended Reading Paths
+
+### Data Engineer / Architect
+**"I own the pipeline and the platform."**
+Read **Part 2 → Part 3 → Part 6.** Start with extraction patterns, then the medallion mapping, then governance — the three parts that determine whether the platform is buildable and auditable.
+
+### Reliability / Maintenance Leader
+**"I own uptime, cost, and the maintenance budget."**
+Read **Part 1 → Part 4 → Part 5.** Start with the honest case for adding a lakehouse, then the five concrete use cases, then the ML decision framework — skip the pipeline plumbing unless you need it.
+
+### IT / Platform Owner
+**"I own the license decision and the roadmap."**
+Read **Part 1 → Part 5 → Part 6.** Start with the ceiling MAS 9 native analytics actually has, then the AppPoints-versus-Databricks-cost tradeoff in Part 5, then governance for the compliance conversation.
+
+### Data Scientist / ML Engineer
+**"I own the models."**
+Read **Part 3 → Part 5 → Part 4.** Start with what the gold layer actually contains, then the Predict-versus-custom decision, then the concrete use cases as worked examples of what a good gold table supports.
+
+---
+
+## 💡 Key Themes Across the Series
+
+**MAS 9 native analytics is genuinely good — and genuinely bounded.** Cognos, Health, Predict, Monitor, and the AI Service are real capabilities worth using fully before any lakehouse conversation starts. Every part in this series names their specific ceiling instead of hand-waving past them, because a Databricks build that duplicates entitled MAS capability is the most common way these projects overspend.
+
+**Extraction method depends on your deployment model, not preference.** REST API is the default; MIF/Kafka suits near-real-time needs; DB-direct only exists for self-managed MAS because SaaS MAS seals its database; Lakehouse Federation is for ad-hoc queries, not ML training pipelines. Part 2 treats this as an architecture decision, not a checklist.
+
+**The medallion architecture is not abstract — it is table names you already know.** WORKORDER, ASSET, FAILUREREPORT, MEASUREMENT, INVENTORY, MATUSETRANS, LABTRANS, and PM move through bronze, silver, and gold in Part 3 with the exact joins and cleansing rules that make the gold layer trustworthy.
+
+**Closed-loop is what separates a working lakehouse from an expensive reporting layer.** Every use case in Part 4 and every custom model in Part 5 should end with a REST API call back into Maximo — a work order, a service request, an updated reorder point — not just a chart nobody acts on.
+
+**Governance is not optional once Maximo data leaves MAS.** Part 6 treats Unity Catalog as the direct analog to Maximo site/org security, because an auditor asking "who could see this asset's cost data" needs the same answer whether the data lives in Manage or in a Databricks gold table.
+
+---
+
+## 🧰 How to Use This Series
+
+- **Scoping a lakehouse business case?** Use Part 1's diagnostic to separate "we need Databricks" from "we're under-using MAS Health and Predict" before a single dollar is committed.
+- **Building the actual pipeline?** Parts 2 and 3 give you the extraction method and medallion structure in enough table-level detail to start a Phase 1 build.
+- **Justifying the spend to a maintenance VP?** Part 4's five use cases connect directly to the reliability and cost metrics that VP already tracks in MAS-RELIABILITY and MAS-HEALTH reporting.
+- **Deciding between Predict and a custom model?** Part 5's decision framework is built to be handed to both a data science team and a reliability engineer and get the same answer from both.
+- **Preparing for a data governance or compliance review?** Part 6's Unity Catalog mapping is written to survive an auditor's question about Maximo-derived data the same way the MAS-NUCLEAR series' regulatory crosswalk survives a 10 CFR 50 inspector's question.
+
+---
+
+## References
+
+- [Databricks Lakehouse Architecture](https://www.databricks.com/product/data-lakehouse)
+- [Databricks Lakehouse Federation — Connect to external databases and catalogs](https://docs.databricks.com/aws/en/query-federation/)
+- [IBM Documentation — Administering AI Integration with watsonx (MAS Manage)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=administering-ai-integration)
+- [IBM watsonx.data — open data lakehouse product page](https://www.ibm.com/products/watsonx-data)
+- [Maximo Secrets — New Features in MAS 9.0 and 9.1](https://maximosecrets.com/2025/07/06/new-features-in-mas-90-and-91/)
+- [PragmaEdge — Maximo Application Suite 9.1 Release: What to Expect](https://pragmaedge.com/maximo-application-suite-9-1-release-in-june-2025-what-to-expect/)
+
+---
+
+## Start the Series
+
+Begin with **[Part 1 — Why Your Maximo Data Belongs in a Lakehouse](/blog/mas-databricks-01-why-lakehouse)**, or jump to the part your role needs using the reading paths above.
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*
+
+<!--
+Editorial note for human review: This index post was drafted before Parts 1-6 exist (per queue brief,
+written "last conceptually but can be drafted first"). Part links above point to the planned slugs in
+automation/off-hours/queue.json (databricks-01 through databricks-06); they will 404 until those posts
+land. No knowledge-base/web discrepancies were found during research — DOC5's Databricks technical
+claims (medallion architecture, extraction methods, Lakehouse Federation) matched current Databricks
+documentation. The watsonx.data vs. Databricks price-performance claim is IBM's own comparison and is
+presented as such, not verified independently.
+-->

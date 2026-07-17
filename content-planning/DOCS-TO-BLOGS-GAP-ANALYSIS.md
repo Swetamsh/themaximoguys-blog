@@ -1,6 +1,6 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-07-17 (night-shift: MAS-OPTIMIZER Part 5 added, then deepened; MAS-JAVA-EXTENSIONS Part 7 deepened to 5,100+ words)  
+**Updated:** 2026-07-17 (night-shift: MAS-OPTIMIZER Part 5 added, then deepened; MAS-JAVA-EXTENSIONS Part 7 deepened to 5,100+ words; MAS-DATABRICKS series index drafted)  
 **Author:** Swetansh (via TheMaximoGuys AI pipeline)  
 **Source docs:** `/root/TMG_MAS9_UPGRADE/DOC1..DOC12.md`  
 **Blog root:** `/root/themaximoguys-blog/posts/`  
@@ -37,7 +37,7 @@ include references. "Production complete" means the posts also have local cover 
 | DOC2 | Suite Add-Ons | ⚠️ **MOSTLY BUILT** | Health(9), Monitor(9), Predict(9), MVI(13), Assist(7), Optimizer(5) | Parts Identifier and Civil Infrastructure still need standalone deep series if wanted |
 | DOC3 | Paid Add-Ons & Industry | ✅ **PRODUCTION COMPLETE** | `posts/MAS-FEATURES` parts 15-20, 25 | None |
 | DOC4 | Supply Chain Features | ✅ **PRODUCTION COMPLETE** | `posts/MAS-FEATURES` parts 21-25 plus `MAS-MANAGE-09` | None for feature coverage |
-| DOC5 | Data Analytics & Databricks | ⛔ **PENDING** | Native analytics only across Features/Health/Monitor/Predict | Build MAS-DATABRICKS/lakehouse series or explicitly defer |
+| DOC5 | Data Analytics & Databricks | 🟡 **IN PROGRESS** | `posts/MAS-DATABRICKS` (index drafted 2026-07-17; Parts 1-6 pending) | Build Parts 1-6 (queued in `automation/off-hours/queue.json`), then generate covers |
 | DOC6 | Java Extensions | ✅ **PRODUCTION COMPLETE** | `posts/MAS-JAVA-EXTENSIONS` (8 posts + covers, incl. Part 7 extension crossovers added 2026-07-16, deepened 2026-07-17 to 5,100+ words with Nuclear clone-upgrade guidance, expanded MAXOBJECT diagnostics, a troubleshooting section, and a Type 5 worked example) | None |
 | DOC7 | Work Order Management | ✅ **PRODUCTION COMPLETE** | `posts/MAS-WORK-ORDER-OPS` (index + 6 posts + covers) | None |
 | DOC8 | Storekeeper Quick Wins | 🟡 **CONTENT COMPLETE, ASSETS PENDING** | `posts/MAS-SUPPLY-CHAIN` (merged playbook) | Generate 11 covers |
@@ -98,7 +98,7 @@ still pending — Part 5's is done).
 
 | Priority | Series | Source | Why it is still pending | Recommended decision |
 |---:|---|---|---|---|
-| 1 | `MAS-DATABRICKS` | DOC5 | No standalone Databricks/lakehouse series exists. Current posts mention Databricks only incidentally. | Build if analytics/lakehouse authority matters this quarter. |
+| 1 | `MAS-DATABRICKS` | DOC5 | **In progress 2026-07-17 (night-shift):** series index (Part 0) drafted with cover, outlining all 6 parts. Parts 1-6 not yet written. | Continue via the queued items in `automation/off-hours/queue.json` (databricks-01 through databricks-06). |
 | 2 | `MAS-PARTS-IDENTIFIER` | DOC2 | Directory exists but has no MDX files. Coverage today is only shallow inside `MAS-FEATURES-14/24`. | Build a short 5-part computer-vision/parts workflow series or explicitly fold into Supply Chain. |
 | 3 | `MAS-CIVIL-INFRASTRUCTURE` | DOC2 | No standalone series exists. Coverage today is inside broader industry/add-on posts. | Build only if DOT/public infrastructure audience is a target. |
 | ~~4~~ | ~~`MAS-OPTIMIZER` Part 5~~ | DOC2 | **Resolved 2026-07-16 (night-shift).** Part 5 written; nav chain confirmed intact. | Cover image still needed for Parts 1-4. |
