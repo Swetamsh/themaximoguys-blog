@@ -1,0 +1,309 @@
+---
+title: "Why Your Maximo Data Belongs in a Lakehouse"
+description: "MAS 9 ships real native analytics — Operational Dashboards, Cognos, Health, Predict, Monitor — but every one of them has a ceiling. Part 1 names those ceilings precisely and explains why a lakehouse, not another dashboard, is what sits past them."
+date: "2026-07-17"
+slug: "mas-databricks-01-why-lakehouse"
+tags: ["Maximo", "MAS 9", "Databricks", "Data Lakehouse", "Cognos Analytics", "Maximo Predict", "Maximo Health", "Data Gravity", "EAM Analytics"]
+draft: true
+tier: "developer"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-databricks-01-why-lakehouse.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Is MAS 9's native analytics actually good, or is this just a sales pitch for Databricks?"
+    answer: "It's genuinely good, and this post is not a Databricks sales pitch. Operational Dashboards replaced Start Centers with real cross-application views, Cognos Analytics replaced BIRT with a modern reporting engine, Maximo Health scores assets out of the box, Maximo Predict trains failure models without a data science team, and Maximo Monitor ingests IoT streams with built-in anomaly detection. All five are entitled inside your MAS AppPoints pool and should be your first stop. The honest problem is narrower than 'MAS analytics is weak' — it's that each of these five tools has a specific, nameable ceiling, and once your organization hits one, adding a general-purpose lakehouse is cheaper than working around the ceiling with spreadsheets and manual exports."
+  - question: "How many people can actually build reports in Cognos Analytics under MAS 9?"
+    answer: "Three. The Cognos Analytics entitlement bundled with MAS restricts administrative users who can create or edit reports and dashboards to three people, with no concurrent-user option to stretch that further — you either buy separate Cognos licensing for a fourth author or you don't get a fourth author. Starting with Maximo Manage 9.0, IBM added a bring-your-own-Cognos path: if you already hold a separate Cognos Analytics 12+ license, you can point it at MAS instead of using the bundled instance, but that just relocates the seat limit to whatever you separately licensed — it doesn't remove it as a bundled-entitlement constraint."
+  - question: "Can Maximo Predict do custom machine learning, or is Databricks always required for that?"
+    answer: "Maximo Predict ships a fixed catalog of pre-built model types — failure probability, failure date prediction, contributing-factor analysis, anomaly detection, and remaining useful life — trained on IBM's watsonx.ai infrastructure. That catalog covers a large share of predictive maintenance use cases without touching a notebook. What it does not offer is an open modeling surface: you cannot bring your own algorithm, swap in a different feature set from outside Maximo, or fold in ERP, weather, or production-line data as model inputs. When your failure pattern genuinely needs a custom model architecture or external features Predict's catalog cannot ingest, that is the specific line where a lakehouse's AutoML/MLflow surface earns its keep — not before."
+  - question: "What is 'data gravity' and why does it matter for a Maximo shop specifically?"
+    answer: "Data gravity is the tendency of applications, tools, and analysis to accumulate around wherever the bulk of your data already lives, because moving large volumes of data is expensive and copies drift out of sync. For a MAS 9 shop, your operational system of record — WORKORDER, ASSET, FAILUREREPORT, MEASUREMENT — has enormous gravity: years of history, tight referential integrity, and dozens of dependent processes. Every nightly export to a spreadsheet, every ad-hoc CSV pulled for a consultant, every parallel copy sitting in someone's Power BI dataset is a small act of fighting that gravity — and each one is a place where your asset-cost number and your finance team's asset-cost number quietly diverge. A lakehouse doesn't eliminate data gravity; it gives the copies you're already making a single governed home instead of forty ungoverned ones."
+  - question: "Does this series recommend replacing Cognos, Health, or Predict with Databricks?"
+    answer: "No, and this is the single most common overspend pattern this series exists to help you avoid. The recommended pattern is complementary: keep Cognos for your three-seat operational reporting, keep Health and Predict for out-of-the-box asset scoring and failure prediction, keep Monitor for real-time IoT alerting — and add a lakehouse specifically for the things none of them do: cross-system joins, unlimited self-service BI seats, custom ML beyond Predict's catalog, and governed long-term historical retention. Rebuilding a Cognos-equivalent dashboard in Databricks SQL for its own sake burns budget on capability you already own."
+keyTakeaways:
+  - "MAS 9 native analytics — Operational Dashboards, Cognos (3 seats), Maximo Health, Predict, and Monitor — are real, entitled, and should be your first stop before any lakehouse conversation starts"
+  - "Cognos Analytics under MAS is capped at three administrative report authors with no concurrent-license option; a 9.0+ bring-your-own-Cognos path exists but only relocates that seat limit, it doesn't remove it"
+  - "Maximo Predict's ML catalog is fixed — failure probability, failure date, contributing factors, anomaly detection, RUL — trained on watsonx.ai, with no path to custom algorithms or non-Maximo input data"
+  - "Data gravity means every uncontrolled export or parallel BI copy of Maximo data becomes a place where your numbers silently drift from the system of record — a lakehouse gives those copies one governed home instead of many"
+  - "The complementary pattern, not replacement, is the right default: MAS native analytics for day-to-day operational work, a lakehouse specifically for cross-system joins, custom ML, and BI past three seats"
+series:
+  name: "MAS DATABRICKS"
+  part: 1
+  total: 6
+tldr: "MAS 9 ships genuinely strong native analytics — Operational Dashboards, Cognos Analytics, Maximo Health, Maximo Predict, and Maximo Monitor — and every one of them is worth using first. But each has a specific, nameable ceiling: Cognos caps at three report authors, Predict's ML catalog is fixed and Maximo-only, Monitor's retention window is short, and none of the five can join Maximo data with ERP, weather, or production data. This post draws those five ceilings precisely, explains data gravity and the cost of uncontrolled data copies with real dollar figures, and positions a lakehouse as the complementary answer for what sits past the ceiling — not a replacement for what MAS already does well."
+seoTitle: "Why Maximo Data Belongs in a Lakehouse | MAS 9 + Databricks"
+seoDescription: "MAS 9 analytics limits, explained precisely: Cognos's 3-seat cap, Predict's fixed ML catalog, data gravity, and where a Databricks lakehouse earns its cost."
+targetQuestions:
+  - "What are the limitations of native MAS 9 analytics tools?"
+  - "How many users can build Cognos Analytics reports in MAS 9?"
+  - "What can't Maximo Predict do that custom machine learning can?"
+  - "What is data gravity and why does it matter for Maximo data?"
+  - "Should I add Databricks to my MAS 9 environment or is native analytics enough?"
+semanticKeywords:
+  - "MAS 9 native analytics limitations"
+  - "Cognos Analytics three administrative users"
+  - "Maximo Predict fixed model catalog"
+  - "data gravity Maximo"
+  - "cost of data copies EAM"
+  - "Maximo Health vs custom ML"
+  - "Operational Dashboard limitations MAS 9"
+  - "Maximo Monitor retention window"
+  - "cross-system analytics Maximo ERP"
+  - "watsonx.ai Maximo Predict training"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Familiarity with core Maximo Manage objects (WORKORDER, ASSET, LOCATIONS, MEASUREMENT)"
+  - "Basic exposure to MAS 9 native analytics — Operational Dashboards, Cognos, Health, Predict, Monitor"
+  - "General data-platform literacy: what a data warehouse and a data lake each do, at a high level"
+speakableSections:
+  - "The Ceiling You Hit After Go-Live"
+  - "The Five Ceilings, Named"
+  - "Data Gravity and the Cost of Copies"
+series_part: 1
+clusterSlugs:
+  - "mas-databricks-series-index"
+  - "mas-databricks-02-data-flows"
+relatedSlugs:
+  - "mas-databricks-series-index"
+  - "mas-health-series-index"
+  - "mas-predict-series-index"
+  - "mas-monitor-series-index"
+---
+
+# Why Your Maximo Data Belongs in a Lakehouse
+
+<aside>
+
+🎯 **Who this is for:** Reliability and maintenance leaders who have hit a wall with Cognos or Predict, data engineers and architects being asked to "just put it in Databricks," and any Maximo practitioner who wants the honest boundary between what MAS 9 already does well and what genuinely needs a separate platform.
+
+</aside>
+
+**Series:** Part 1 of 6 — *MAS 9 + Databricks: Building the Maximo Data Lakehouse* | **Read time:** 19 minutes
+
+---
+
+## 📖 The Ceiling You Hit After Go-Live
+
+Six months after go-live, MAS 9 feels like a real upgrade. Operational Dashboards replaced the Start Center with something that actually pulls from Monitor, Health, and Manage in one view. Cognos Analytics replaced BIRT with drag-and-drop report authoring instead of Eclipse and Java. Maximo Health scores every asset 0–100 without you writing a formula from scratch. Maximo Predict trains failure models without a data science hire. Maximo Monitor ingests sensor streams and flags anomalies before a technician would have noticed. None of that is marketing copy — it's what these tools actually do, and it's a genuinely better starting position than Maximo 7.6 gave you.
+
+And then, in a planning meeting six months in, someone asks a question that none of the five tools above can answer.
+
+*"Can we join maintenance cost against SAP financials by cost center?"*
+*"Can more than three people build a Cognos report without buying a second license?"*
+*"Can we train a failure model on our own vibration data instead of Predict's fixed catalog?"*
+*"Can we keep ten years of sensor history queryable instead of aging out of Monitor's retention window?"*
+
+The honest answer to all four, inside MAS 9 alone, is no. Not "no, with enough configuration" — no, as a matter of architecture. Each of those tools was built to do one job extremely well within one system's boundary, and every one of those four questions crosses a boundary the tool wasn't built to cross. That "no" is exactly where lakehouse conversations start — and where a lot of organizations start burning budget in the wrong direction, either building parallel Databricks copies of things MAS already does, or refusing to add anything and living with spreadsheet workarounds indefinitely.
+
+This post exists to replace both of those instincts with something more precise: a named ceiling for each native tool, and a clear statement of what sits past it.
+
+<aside>
+💡 **Key insight:** The question worth asking isn't "is MAS 9 analytics good enough?" It's "which specific ceiling did we just hit, and is a lakehouse actually the tool that gets past it, or are we reaching for Databricks to solve a problem MAS could solve if we configured it properly?" This post is written to help you answer that question honestly, tool by tool.
+</aside>
+
+---
+
+## 📊 What MAS 9 Native Analytics Actually Gives You
+
+Before naming ceilings, it's worth being precise about what each tool covers — because the temptation to under-sell native MAS analytics is just as damaging as over-selling a lakehouse. Here is the honest inventory.
+
+| Tool | What it does well | Where it lives | Entitlement model |
+|---|---|---|---|
+| **Operational Dashboards** | Role-based, cross-application views pulling from Monitor, Health, and Manage; configurable KPI cards and charts | MAS Manage | Included, no extra AppPoints |
+| **Cognos Analytics 11.2.4** | Full report authoring, interactive dashboards, scheduled distribution against the Maximo database | Bundled with MAS, or bring-your-own (9.0+) | 3 administrative report authors, no concurrent option |
+| **Maximo Health** | Configurable 0–100 health scores, risk scores, degradation curves, end-of-life projections, asset matrices | Add-on inside Manage (9.1+) | AppPoints per licensing tier |
+| **Maximo Predict** | Failure probability, failure date, contributing-factor analysis, anomaly detection, remaining useful life | Suite application, trained on watsonx.ai | AppPoints, requires historical failure data |
+| **Maximo Monitor** | Real-time IoT dashboards, threshold alerts, built-in anomaly detection, alert-to-work-order automation | Suite application | AppPoints, ingests via MQTT/REST |
+| **Maximo AI Service (Assistant)** | Natural-language Q&A over work orders, assets, and service requests; FMEA content generation | MAS 9.1 add-on, watsonx-backed | 10 AppPoints + monthly usage limit |
+
+Every row in that table is a legitimate reason to *not* reach for a lakehouse yet. If your gap is "I need a dashboard that shows work order backlog by craft," that's an Operational Dashboard configuration task, not a Databricks project. If your gap is "I need a failure prediction and I have two years of clean sensor data," that's Predict, not a custom model. The discipline this series asks of you is to check this table first, every time.
+
+---
+
+## 🚫 The Five Ceilings, Named
+
+Here is where the honesty gets specific. Each tool above has exactly one structural ceiling — not a bug, not a configuration gap you can work around with enough Application Designer time, but a boundary baked into what the tool was built to do.
+
+### 1. Operational Dashboards: bounded to MAS data, bounded to cards
+
+Operational Dashboards are not a BI platform, and IBM doesn't pretend otherwise in its own documentation. You cannot do ad-hoc exploration, arbitrary joins, or statistical analysis inside a dashboard card — you configure a query against MAS data and the card renders it. There is no path from an Operational Dashboard to a table that also contains your ERP general ledger or a weather API feed. The ceiling: **MAS data only, pre-configured views only.**
+
+### 2. Cognos Analytics: three people, one database
+
+This is the ceiling practitioners hit fastest, because it's a headcount limit, not a technical one. The Cognos Analytics entitlement bundled with MAS restricts administrative users — the people who can *create or edit* reports and dashboards — to **three**, with no concurrent-license option to stretch further. Your fourth report author either buys separate Cognos licensing or works through one of the three existing seats as a bottleneck. Starting with Maximo Manage 9.0, IBM added a bring-your-own-Cognos path: point an existing Cognos Analytics 12+ license at MAS instead of the bundled instance. That's a real option if you already have enterprise Cognos elsewhere — but it relocates the seat economics to whatever you separately licensed, it doesn't waive the constraint as a *bundled-entitlement* limit. And regardless of seat count, Cognos is scoped to the Maximo database: it does not join outward to other systems.
+
+### 3. Maximo Health: scores what MAS can see
+
+Health scores are only as good as the inputs feeding the formula, and Health's inputs are Manage's own data — asset attributes, work order history, meter readings. That's a real, useful score. It cannot see weather-driven corrosion rates, SCADA load data, or supply-chain risk on a critical spare, because those live in systems Health has no connector to. The ceiling: **Health scores what's inside MAS; it can't enrich with what's outside it.**
+
+### 4. Maximo Predict: a fixed catalog, not an open modeling surface
+
+Predict's five model types — failure probability, failure date, contributing factors, anomaly detection, remaining useful life — are trained on IBM's watsonx.ai infrastructure and cover a genuinely wide swath of predictive maintenance needs without a data scientist in the room. What they don't offer is an open surface: no custom algorithm selection, no bringing in features from outside Maximo, no hyperparameter control past what IBM exposes. If your failure pattern is well-represented by Predict's catalog and your training data lives inside Maximo, you're done — use Predict. If your model genuinely needs external features (ambient temperature curves, upstream process variables, supplier lead-time volatility) or an algorithm outside the catalog, Predict has no lever to pull. The ceiling: **fixed model types, Maximo-only training data.**
+
+### 5. Maximo Monitor: real-time strength, short historical memory
+
+Monitor is excellent at what it's built for — ingesting sensor streams, running built-in anomaly detection, and firing alerts that become work orders automatically. What it does not do is serve as a multi-year historical archive for deep trend analysis; its retention and query patterns are tuned for operational, near-term monitoring, not for a data scientist pulling five years of vibration history to retrain a model. The ceiling: **strong now, weak on history.**
+
+<aside>
+💡 **Key insight:** Notice the pattern across all five: every ceiling is a *boundary*, not a *deficiency*. Cognos isn't bad at reporting — it's scoped to three seats and one database on purpose, because IBM built it for operational reporting, not enterprise BI. The tools aren't failing to do their job; you're asking a question that was never their job.
+</aside>
+
+---
+
+## 🧱 Data Gravity and the Cost of Copies
+
+Here's a concept worth understanding before you touch a single Databricks workspace, because it explains why the workaround most teams reach for first — exporting data around the ceiling — quietly costs more than the platform they're avoiding.
+
+**Data gravity** is the tendency of applications, analysis, and tooling to accumulate around wherever the bulk of your data already sits, because moving large volumes of data is expensive and every copy you make starts drifting from the source the moment it's created. Your MAS 9 database has enormous gravity: years of `WORKORDER` history, tight referential integrity to `ASSET` and `LOCATIONS`, and dozens of downstream processes that depend on it staying consistent.
+
+Every time someone hits one of the five ceilings above and works around it with an export instead of a governed pipeline, they're fighting that gravity — badly. A maintenance analyst pulls a CSV of `WORKORDER` costs into Excel to join against a manually-copied SAP cost-center list. A consultant gets a one-time database dump to build a Power BI report that outlives the engagement. A regional office keeps its own spreadsheet of asset health scores because Cognos's three seats are all claimed by corporate. None of these are malicious. All of them are copies with no owner, no refresh schedule, and no lineage — and six months later, finance's "total maintenance cost for Q2" and the plant manager's "total maintenance cost for Q2" disagree, and nobody can say why without archaeology.
+
+This is the real cost of copies, and DOC5's benchmark figures put a number on the categories where it shows up most:
+
+| Cost category | Typical baseline (unmanaged) | With governed lakehouse + MAS 9 | Estimated savings |
+|---|---|---|---|
+| Manual analytics labor | 5 FTEs reconciling exports across tools | 2.5 FTEs (governed pipelines replace manual joins) | ~50% labor reduction |
+| Audit preparation | Ad-hoc, spreadsheet-driven trail-building | Automated lineage via a governed catalog | ~40% faster audit prep |
+| Time-to-insight | Days, waiting on a manual export-and-join cycle | Hours, querying pre-joined governed tables | ~50% faster |
+| Compliance/reconciliation risk | Numbers diverge silently across copies | Single governed source with tracked lineage | Near-eliminated discrepancy risk |
+
+These are industry benchmark ranges, not a guarantee for your organization — treat them as the shape of the savings, not a number to put in a budget line without your own baseline. But the mechanism behind them is not speculative: **an ungoverned copy costs money every time someone has to figure out which version is right.** A lakehouse doesn't eliminate data gravity — you'll still be pulling Maximo data out of Maximo. What it does is give the copies you were already making a single governed, versioned, access-controlled home instead of forty spreadsheets with no owner.
+
+<aside>
+💡 **Key insight:** If your organization is already exporting Maximo data to CSVs, personal Power BI datasets, or one-off database dumps to work around Cognos's three seats, you don't have a "should we get a lakehouse" question — you already have an ungoverned lakehouse, made of spreadsheets. The question is only whether to keep paying its hidden costs or replace it with a governed one.
+</aside>
+
+---
+
+## 🔍 Position vs. Maximo Health and Predict Native Scoring
+
+Because Health and Predict are the two native tools most likely to get displaced by a poorly-scoped Databricks project, they deserve a direct, worked comparison rather than a general statement.
+
+**Scenario:** A utility runs Maximo Health on 4,000 transformers, scoring each 0–100 based on age, condition, usage, and work history — all data Health can see natively. The reliability team wants to improve accuracy by folding in a factor Health has no access to: historical outage-correlated weather data from a third-party API, because transformer failure rates spike measurably after specific heat-and-humidity combinations.
+
+| Question | Maximo Health answer | What actually happens |
+|---|---|---|
+| Can Health read the weather API? | No — Health only reads Manage's asset, work order, and meter data | Health's score stays weather-blind by design |
+| Can you manually adjust the Health formula to approximate weather risk? | Partially — you can add a static "climate zone" attribute | Coarse, doesn't track actual conditions over time |
+| Can a lakehouse join transformer health data with historical and forecast weather? | N/A (not a Health question) | Yes — this is exactly the cross-system join Health cannot do |
+| Does this replace Health? | — | No — Health still runs the day-to-day 0–100 score inside Manage; the lakehouse produces a *supplementary* enriched risk score that feeds back in as a custom attribute |
+
+The same logic applies to Predict. If your organization has two years of clean vibration data on a known pump family and wants a failure-probability score, train it in Predict — that's precisely its catalog, and it will be running in production faster than a custom Databricks model would be validated. If your organization wants to combine vibration data with supplier lead-time volatility to decide whether to *pre-order* a spare before the predicted failure, that decision spans Maximo and your ERP — Predict has no lever for that join, and a lakehouse custom model does. Part 5 of this series builds the full decision framework for exactly this ML-vs-Predict fork; for now, the rule of thumb is simple: **if all your inputs already live in Maximo, use the native tool. The moment an input lives somewhere else, you've found your lakehouse use case.**
+
+---
+
+## 🛠️ A Worked Example: The Question Native Analytics Cannot Answer
+
+Let's make the boundary concrete with a query, not just a description. A plant reliability director asks a specific question in a budget review: *"What's our five-year trend of maintenance cost per asset class, correlated with ambient temperature in the months leading up to each failure?"*
+
+Walk that question through each native tool:
+
+- **Operational Dashboard** — can show current-period cost cards. No temperature join, no five-year trend beyond configured retention.
+- **Cognos** — could technically build this report, if one of your three seats has the bandwidth and the weather data has already been manually loaded into a table Cognos can query. It cannot pull live weather data itself.
+- **Maximo Health / Predict** — neither is a reporting tool; this question isn't in their scope at all.
+- **Maximo Monitor** — has the temperature sensor readings if you're IoT-instrumented, but its retention window isn't built for five-year trend queries.
+
+Now the same question against a governed lakehouse, where `gold.work_orders_enriched` (Maximo cost and failure data) and `bronze.weather_daily` (an external weather feed) have already been landed and joined in the medallion pipeline Part 3 of this series builds in detail:
+
+```sql
+-- Five-year maintenance cost trend by asset class,
+-- correlated with the 30-day average temperature preceding each failure
+SELECT
+    a.assetclass,
+    DATE_TRUNC('year', wo.actfinish) AS failure_year,
+    COUNT(wo.wonum)                  AS failure_count,
+    ROUND(AVG(wo.actlabcost + wo.actmatcost + wo.actservcost), 2) AS avg_cost_per_failure,
+    ROUND(AVG(w.avg_temp_30d_pre_failure), 1) AS avg_pre_failure_temp_f
+FROM gold.work_orders_enriched wo
+JOIN gold.assets a
+    ON wo.assetnum = a.assetnum
+JOIN gold.weather_correlation w
+    ON wo.assetnum = w.assetnum
+   AND wo.actfinish = w.failure_date
+WHERE wo.worktype = 'CM'                       -- corrective maintenance only
+  AND wo.actfinish >= DATEADD(YEAR, -5, CURRENT_DATE())
+GROUP BY a.assetclass, DATE_TRUNC('year', wo.actfinish)
+ORDER BY a.assetclass, failure_year;
+```
+
+That query is not exotic Databricks magic — it's a five-table-equivalent join any SQL analyst could write, running against Delta tables that were already cleaned and joined upstream. The point isn't the SQL syntax; it's that **the join itself is impossible against any single native MAS tool**, because the weather data and the five-year retention both live outside what Cognos, Health, Predict, or Monitor were built to hold. This is the shape of question that justifies Part 2's extraction patterns and Part 3's medallion build — not a general "we should modernize our analytics" instinct, but a specific, recurring question none of your five native tools can answer.
+
+---
+
+## ⚠️ When You Do NOT Need a Lakehouse Yet
+
+In the spirit of this series's honesty, here is the other half of the decision — the signals that mean you should configure harder inside MAS before reaching outward.
+
+| Signal | What it actually means | Right move |
+|---|---|---|
+| "Our Cognos reports are slow to build" | Usually an authoring skill gap, not a seat-count problem | Train your three authors; the constraint is people, not platform |
+| "We want a nicer-looking dashboard" | Aesthetic preference, not a capability gap | Configure Operational Dashboard cards further |
+| "We want Health to weight recent failures more heavily" | Formula tuning, entirely within Health's configuration | Adjust the scoring formula in Maximo Health |
+| "We have failure data only inside Maximo and want a probability score" | Exactly Predict's job | Train a Predict model — it will beat a from-scratch custom model on time-to-value |
+| "We got a one-time data request from an executive" | A single export, not a recurring analytics need | A governed one-off extract may be simpler than standing up pipelines |
+| "We need to join Maximo with a system we don't yet have API access to" | Not a Databricks problem — it's an integration/access problem first | Solve the access question before the platform question |
+
+<aside>
+💡 **Key insight:** The single biggest waste this series is written to prevent is standing up a Databricks lakehouse and then rebuilding a Cognos-equivalent dashboard inside it, at real infrastructure cost, to solve a problem that was actually a training gap or a formula tweak. Check this table honestly before Part 2.
+</aside>
+
+---
+
+## 🧠 Why It Works This Way
+
+It's worth understanding IBM's logic here, because it predicts the shape of every ceiling in this post. MAS 9's native analytics stack was built to serve people *already working inside Maximo* — a maintenance planner, a reliability engineer, a service desk coordinator — with tools scoped tightly to the Maximo data model and Maximo workflows. That tight scope is precisely what makes Health scoring fast to configure, Predict fast to train, and Monitor fast to alert: none of them had to be built as general-purpose data platforms, so they weren't, and they're better at their narrow job for it.
+
+A lakehouse is the opposite design philosophy: a general-purpose platform built to hold *any* data, join *any* systems, and support *any* analytical workload — which is exactly why it's the wrong first tool for a question Maximo's native stack already answers well, and exactly the right tool for a question that spans systems Maximo was never built to see. The two are not competing philosophies fighting for the same job. They're complementary tools solving genuinely different classes of problem, and the discipline this whole series asks of you is naming, honestly, which class of problem you actually have before you write a single line of extraction code.
+
+---
+
+## 🔧 Practical Notes Before Part 2
+
+- **Audit your existing "shadow lakehouse" first.** Before scoping a Databricks project, inventory the CSVs, personal Power BI datasets, and one-off exports your teams already maintain to work around the five ceilings above. That inventory is your real requirements list.
+- **Name the ceiling, not the symptom.** "Our reporting is bad" is a symptom. "We have four people who need to author reports and three Cognos seats" is a ceiling you can act on.
+- **Try the native fix first, and time-box it.** If Predict's catalog might cover your use case, spend a week validating that before scoping a custom model — it's dramatically cheaper if it works.
+- **Don't let the lakehouse decision become a Cognos-replacement project.** Keep Cognos, Health, Predict, and Monitor running for what they already do well; scope the lakehouse strictly to what they cannot do.
+- **Bring your extraction question to Part 2 with the ceiling already named.** Knowing you need "REST API extraction of WORKORDER for a five-year cross-system trend" is a far more actionable starting point than "we should probably get on Databricks."
+
+---
+
+## Key Takeaways
+
+- **MAS 9 native analytics is real and should be your first stop** — Operational Dashboards, Cognos, Health, Predict, and Monitor are entitled, capable tools, and most "we need a lakehouse" instincts should be tested against them first.
+- **Cognos Analytics is capped at three administrative report authors**, with no concurrent-license option; a 9.0+ bring-your-own-Cognos path exists but relocates rather than removes that constraint.
+- **Maximo Predict's ML catalog is fixed and Maximo-data-only** — five model types trained on watsonx.ai, with no open surface for custom algorithms or external features.
+- **Data gravity means uncontrolled exports quietly cost money** — every ungoverned CSV or personal BI copy is a place your numbers can silently diverge from the system of record; a lakehouse gives those copies one governed home.
+- **The complementary pattern beats the replacement pattern** — the goal is MAS native tools for day-to-day operational work, and a lakehouse specifically for cross-system joins, custom ML past Predict's catalog, and BI past three seats.
+
+---
+
+## References
+
+- [Cognos Analytics Entitlement for Maximo Application Suite (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=analytics-cognos-entitlement-maximo-application-suite)
+- [IBM Maximo Application Suite Overview (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/cd?topic=overview)
+- [Maximo Manage – Analytics: Native Options and Constraints (Maximo Secrets)](https://maximosecrets.com/2024/05/07/maximo-manage-analytics/)
+- [Data Lakehouse Architecture (Databricks)](https://www.databricks.com/product/data-lakehouse)
+- [Databricks Intelligence Platform for IoT: Predictive Maintenance and GenAI Agents (Databricks)](https://www.databricks.com/resources/demos/tutorials/lakehouse-platform/iot-and-predictive-maintenance)
+- [IBM Maximo Predict — How to Implement Predictive Maintenance Models (IBM Support)](https://www.ibm.com/support/pages/how-implement-predictive-maintenance-models-maximo-predict)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Series Index — MAS 9 + Databricks Lakehouse](/blog/mas-databricks-series-index) |
+| **Next:** | [Part 2 — Getting Maximo Data Out](/blog/mas-databricks-02-data-flows) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*
+
+<!--
+Research note for human review: IBM's Drone Operations Control Plane (announced 2026) is built on Databricks Lakebase and ingests EAM/CMMS data for risk scoring — a live example of IBM itself pairing Maximo-adjacent data with Databricks infrastructure, found during the web verification pass but not present in DOC5 (dated March 2026, predates this announcement). Worth a callout in a later part if IBM publishes more detail on the Maximo-specific integration pattern.
+-->
