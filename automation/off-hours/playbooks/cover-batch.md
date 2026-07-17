@@ -27,9 +27,16 @@ Invoke the assigned style skill and follow its workflow for each post. Derive ea
 concept from that post's actual topic — every cover in the batch must be visually distinct.
 
 Non-negotiable rules for every image:
-- `mcp__nanobanana__generate_image` with `model_tier: "pro"`, `resolution: "2k"`,
-  `thinking_level: "high"`, `aspect_ratio: "16:9"`. NEVER Flash tier. On 503, retry Pro
-  (up to 3 times, 30s apart) — never downgrade.
+- `mcp__nanobanana__generate_image` with EXACTLY `model_tier: "pro"`, `resolution: "2k"`,
+  `thinking_level: "high"`, `aspect_ratio: "16:9"`. The `model_tier` parameter is
+  MANDATORY on every single call — omitting it selects "auto" (nb2/Flash-grade), which is
+  FORBIDDEN. Never "auto", never "nb2", never "flash". After each call, check the returned
+  metadata: `model_name` must be a Gemini Pro image model and `model_tier` must be "pro" —
+  if not, delete the image and regenerate correctly. On 503, retry Pro (up to 3 times,
+  30s apart) — never downgrade.
+- Quality bar: rich, cinematic, premium rendering with real lighting, materials, and depth
+  (see existing covers in posts/MAS-WORK-ORDER-OPS/images/ for the standard). Flat,
+  simplistic, or clip-art-looking output must be regenerated with a richer prompt.
 - 80% visual / 20% text: bold visual metaphor for the post's core idea, title text of 3-8
   words, optional short subtitle, small `@themaximoguys` attribution bottom-right.
   NO bullet lists, NO tip lists, NO cheat-sheet/infographic layout (those are for social,
