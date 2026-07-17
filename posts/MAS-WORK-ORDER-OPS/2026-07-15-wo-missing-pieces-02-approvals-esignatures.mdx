@@ -78,7 +78,7 @@ relatedSlugs:
 
 ---
 
-## The Short Version
+## 📖 The Short Version
 
 Approving a work order in MAS 9 is a story of one thing that *didn't* change and three things that did.
 
@@ -88,6 +88,22 @@ Approving a work order in MAS 9 is a story of one thing that *didn't* change and
 - **Electronic signatures** can now be enforced on specific status transitions for regulated work.
 
 We're not going to re-explain the work order lifecycle here — WAPPR, APPR, INPRG, COMP, CLOSE and how work moves between them is covered in the **MAS MANAGE series, Part 3 (Work Management)**. This post is strictly about the *approval* moment: how it's triggered, where the approver sits, and what MAS 9 adds around it.
+
+---
+
+## 🧭 Where Approval Sits in the Lifecycle
+
+A quick anchor so the rest lands cleanly. In Maximo, "approval" is a **status transition** — a work order moves from **WAPPR** (Waiting on Approval) to **APPR** (Approved) — usually driven by a workflow process (the classic one is `WOAPPR`). Until a WO is `APPR`, it typically can't be scheduled, materials can't be committed against it, and a technician can't start it. Approval is the gate between *planning* and *doing*.
+
+Three things determine what happens at that gate, and MAS 9 touches each one differently:
+
+| Element | What it decides | MAS 9 status |
+|---|---|---|
+| **Routing** (Workflow Designer) | *Who* approves and *under what conditions* | **Unchanged** |
+| **Surface** (Approvals RBA) | *Where* the approver acts | **New** — replaces the Work Supervisor Work Center |
+| **Assistance** (Work Order Intelligence) | *What the approver is helped with* at the gate | **New** — watsonx failure-code recommendation |
+
+Hold that three-part frame — routing, surface, assistance — and every change below slots into place.
 
 ---
 
@@ -102,12 +118,10 @@ The **Workflow Designer application remains available and functional** in MAS 9.
 - **Communication templates** still drive your approval notifications.
 - **Workflow assignments** still show up in users' inboxes.
 
-Most importantly: **your existing 7.6 workflows carry forward during the upgrade.** The engine underneath approval is the same engine you already know. If you have a WOAPPR routing that fans out to person groups based on cost thresholds, it comes across and keeps running.
+Most importantly: **your existing 7.6 workflows carry forward during the upgrade.** The engine underneath approval is the same engine you already know. If you have a `WOAPPR` routing that fans out to person groups based on cost thresholds, it comes across and keeps running.
 
 <aside>
-
 💡 **Key insight:** The *decision logic* of approval — who approves, under what conditions, with what escalations — lives in the Workflow Designer, and that is unchanged. What MAS 9 changes is the *surface* where an approver acts on that decision, and the *intelligence* offered at the moment of the decision. Keep the two ideas separate and the rest of this post is easy.
-
 </aside>
 
 ---
@@ -123,9 +137,7 @@ Most importantly: **your existing 7.6 workflows carry forward during the upgrade
 | Sign-off on status change | Not enforced natively | **Electronic signatures** per transition on Maximo Mobile |
 
 <aside>
-
 💡 **Key insight:** Notice the pattern from Part 1 repeating. The Work Supervisor Work Center's job got *split*: intake went to the Service Request RBA (Part 1), and approval went to the Approvals RBA (here). Neither one inherited the old single-screen SR-to-WO conversion — that flow simply didn't survive the split.
-
 </aside>
 
 ---
@@ -151,9 +163,7 @@ Here is the honest limitation, and it's the same gap Part 1 flagged from the int
 If your approvers were used to triaging an incoming SR and spinning up the resulting WO without leaving one screen, that combined flow is gone. **For SR-to-WO conversion, you use the classic applications** — review in **Service Requests**, create the work order in **Work Order Tracking**. It works; it's just deliberately outside the role-based approval lane.
 
 <aside>
-
 💡 **Key insight:** Both role-based apps scope tightly to one job. The Service Request RBA does intake; the Approvals RBA does approval. Conversion — the step that bridges the two objects — is intentionally left to the classic pair. Don't hunt for a hidden conversion button in the Approvals RBA. It isn't there by design, so bake the two-app path into your SOP before go-live.
-
 </aside>
 
 ---
@@ -188,14 +198,28 @@ Work Order Intelligence is not free out of the box. Three things must be in plac
 | Requirement | Detail |
 |---|---|
 | **Maximo AI Service** | Must be deployed — budget **10 AppPoints** |
-| **Historical WO data** | You need **sufficient historical work orders** to train the model meaningfully |
+| **Historical WO data** | You need **sufficient historical work orders** (IBM guidance suggests on the order of 1,000+ classified WOs) to train the model meaningfully |
 | **AI Configuration app** | An **administrator sets it up** in the AI Configuration application |
 
 <aside>
-
 💡 **Key insight:** The model is only as good as the history you feed it. If your failure-code discipline in 7.6 was inconsistent, the recommendations will inherit that inconsistency. Treat the historical-data requirement as a *data-quality* prerequisite, not just a volume checkbox — a clean-up of your existing problem codes before training pays off in every recommendation afterward.
-
 </aside>
+
+---
+
+## 🔬 A Worked Example: One Work Order Through Approval
+
+Let's walk a single work order through the gate to make the moving parts concrete.
+
+A corrective work order, `WO2087`, is raised against pump `P-2047`: short description "P-2047 — bearing noise and vibration at drive end," with a longer note from the operator describing the sound and a rising vibration trend. The planner finishes planning and routes it into the approval workflow. `WO2087` lands in **WAPPR**.
+
+1. **The approver opens the Approvals RBA.** `WO2087` appears as a card in the pending-approvals queue, alongside the day's other requests. No hunting through a result set.
+2. **Work Order Intelligence weighs in.** Because the AI Service is deployed and the model is trained, the card shows a recommended problem code — say `BEARING-FAIL` — at **87% confidence**, presented inline. The approver didn't have to open the failure hierarchy and guess.
+3. **The approver decides.** The recommendation matches the described symptoms, so the approver **accepts** it. (Had the confidence been low, or the code wrong, they could modify or reject it — the human stays in control.) They add a comment — "Approved; expedite, vibration trending up" — and approve.
+4. **The workflow routes it.** The Workflow Designer process — unchanged from 7.6 — moves `WO2087` from **WAPPR** to **APPR** and notifies the assigned crew via the same communication template you already use.
+5. **Execution and sign-off.** The technician does the work on Maximo Mobile and moves the WO toward **COMP**. Because this asset is on a regulated line, an **electronic signature** is enforced on the **INPRG → COMP** transition — the tech signs, and the signature is stored with `WO2087`.
+
+Every status, workflow, and communication template in that flow is the same machinery you ran in 7.6. The *only* new elements are the card-based surface (step 1), the AI recommendation (step 2), and the enforced signature (step 5) — routing, in the middle, never changed.
 
 ---
 
@@ -211,11 +235,50 @@ The last piece of the approval story is enforcement, and it lives on the device.
 
 The important detail is that this is a **per-transition** control. You're not signing every status change; you're enforcing signatures exactly where your compliance regime requires them and leaving the rest frictionless.
 
+### A configuration decision table
+
+Approach electronic signatures as a small set of deliberate decisions rather than a global switch:
+
+| Decision | Typical choice | Why |
+|---|---|---|
+| Which transitions require a signature? | INPRG → COMP (and often COMP → CLOSE) | Sign at completion/closeout, where the compliance record matters |
+| Who is allowed to sign? | The assigned technician / a qualified role | The signature must attest to who actually did or verified the work |
+| What is captured? | Identity + timestamp + the signed transition | Enough to answer "who confirmed this, and when" during an audit |
+| Where is it stored? | With the work order record, in audit history | Keeps the sign-off attached to the record, not in a side log |
+| Frictionless everywhere else? | Yes — leave routine transitions unsigned | Over-signing trains reflexive sign-off and destroys audit value |
+
 <aside>
-
 💡 **Key insight:** Map your signature requirements to specific transitions *before* you configure them. Requiring a signature on INPRG→COMP is common and sensible; requiring one on every transition will slow technicians down and train them to sign reflexively — which defeats the audit value. Precision here is a feature.
-
 </aside>
+
+---
+
+## ⚠️ Edge Cases and Troubleshooting
+
+The approval flow spans a workflow engine, a role-based app, an AI service, and a mobile device — so when something looks off, it helps to know which layer to check.
+
+| Symptom | What it means | What to do |
+|---|---|---|
+| Approvers see no AI recommendation | AI Service not deployed, model untrained, or confidence below the display threshold | Confirm the AI Service (10 AppPoints) is deployed and the model is trained; check the minimum-confidence setting in AI Configuration |
+| Recommendations are consistently wrong | The training data has inconsistent or sparse failure codes | Clean up historical problem codes and retrain; low-quality history yields low-quality suggestions |
+| A WO won't leave WAPPR | The workflow routing or a person-group assignment is misconfigured, not the RBA | Debug in the Workflow Designer / workflow logs — the surface just reflects the engine's state |
+| Approvers can't find the SR-to-WO button | It doesn't exist in the Approvals RBA by design | Use the classic Service Requests + Work Order Tracking path |
+| Signature prompt never appears at COMP | The e-signature isn't enabled for that transition, or the user is on a channel that doesn't enforce it | Enable the signature on the specific transition; confirm the flow runs through Maximo Mobile where enforcement applies |
+| Signature fires on every status change | It was configured too broadly | Scope it to the exact transitions compliance requires (commonly INPRG→COMP) |
+
+The recurring diagnostic: if the *decision* is wrong (who approves, when a WO advances), look at the **Workflow Designer**; if the *experience* is wrong (no card, no AI hint, no signature prompt), look at the **RBA, AI Service, or mobile config**. The two layers fail independently.
+
+---
+
+## 🧠 Why It Works This Way
+
+MAS 9's approval design follows a deliberate principle: **keep the proven engine, modernize the surface, and add intelligence at the exact point of friction.**
+
+The engine — workflow routing — is decades-mature and encodes real business rules that organizations spent years tuning. Rewriting it would have created enormous risk for zero functional gain, so IBM left it alone. That's why your `WOAPPR` process carries forward untouched.
+
+The *surface*, by contrast, was a genuine pain point. The Work Supervisor Work Center forced approvers into a desktop screen and a persona-blended workflow. Splitting approval into its own role-based app lets it be fast, card-based, and mobile — the same persona-focused move you saw with Service Requests in Part 1, and it comes with the same trade-off: the cross-persona SR-to-WO conversion no longer has a single home.
+
+And the *intelligence* was placed with intent. Failure-code selection is the single most-skipped, most-inconsistent field in work order approval — approvers rush it or guess. Putting a watsonx recommendation exactly there, with a confidence score and a human accept/modify/reject step, targets the highest-value, lowest-risk place to add AI: it improves data quality without ever taking the decision away from a person. That "assist, don't automate" posture is the pattern to expect from MAS AI features generally.
 
 ---
 
@@ -226,6 +289,7 @@ The important detail is that this is a **per-transition** control. You're not si
 - **Scope Work Order Intelligence deliberately.** It's a licensed capability (Maximo AI Service, 10 AppPoints) with a data prerequisite. Decide whether the approval time it saves justifies the AppPoints before you deploy it.
 - **Clean failure-code history before you train.** The AI model learns from your past work orders — garbage classifications in, inconsistent recommendations out.
 - **Enforce signatures surgically.** Configure electronic signatures on the exact transitions your compliance requires (commonly INPRG→COMP), not everywhere.
+- **Train approvers on the AI's role.** Make it explicit that the recommendation is an assist, not an authority — approvers should still sanity-check a low-confidence or surprising code before accepting it.
 
 ---
 
@@ -235,6 +299,7 @@ The important detail is that this is a **per-transition** control. You're not si
 - The **Approvals Role-Based Application** replaces the Work Supervisor approval flow with a **card-based approve/reject** interface, and it's mobile-friendly — but it **cannot convert an SR to a WO** in one screen (use the classic apps).
 - **Work Order Intelligence (9.0)** uses **watsonx** to recommend the **problem/failure code with a confidence score** at approval, gated behind the **Maximo AI Service (10 AppPoints)**, sufficient historical data, and the **AI Configuration application**.
 - **Electronic signatures** can be enforced **per status transition** (e.g. INPRG→COMP) on Maximo Mobile, capturing and storing the signature with the record for **regulated industries**.
+- The mental model that keeps it all straight: **routing (unchanged) → surface (new RBA) → assistance (new AI)** — three independent layers you configure and troubleshoot separately.
 
 ---
 

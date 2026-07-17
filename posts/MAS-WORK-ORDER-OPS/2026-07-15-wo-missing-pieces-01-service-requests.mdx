@@ -76,7 +76,7 @@ relatedSlugs:
 
 ---
 
-## Where the Service Request Work Center Went
+## 📖 Where the Service Request Work Center Went
 
 You built a process around it. Requests came in, a supervisor triaged them in the **Service Request Work Center**, and the good ones became work orders — often without ever leaving that one screen. It was tidy. Then you logged into MAS 9 and the Work Center was simply *not there*.
 
@@ -88,7 +88,7 @@ But "removed" is not "abandoned." The job the Work Center did got split and mode
 2. **The Service Request Role-Based Application (RBA)** — a new React.js interface on the **Maximo Application Framework (MAF)**, the same platform as Maximo Mobile.
 3. **A dedicated Service Request mobile app** — for field submitters and self-service users.
 
-Let's map exactly what changed before we go deep on each.
+The thing to internalize up front: the Work Center was *one place that did everything*. MAS 9 replaces it with *three places, each optimized for a different job* — fast intake, deep handling, and field/self-service. Get comfortable with that split and most of the "where did it go?" confusion disappears.
 
 ---
 
@@ -105,10 +105,46 @@ Let's map exactly what changed before we go deep on each.
 | AI assistance | None | Similar-SR detection on create (**MAS 9.1**) |
 
 <aside>
-
 💡 **Key insight:** Nothing about *what a Service Request is* changed — the object, its lifecycle, and its data model are the same. What changed is *where you touch it*. The Work Center was a place; MAS 9 gives you three purpose-built surfaces instead.
-
 </aside>
+
+---
+
+## 🧱 A Quick Anchor: What a Service Request Actually Is
+
+Before we tour the new surfaces, let's ground ourselves in the object, because that object is *unchanged* and it's the constant beneath every UI. A Service Request in Maximo is a **ticket** — a row in the `TICKET` table with `CLASS = 'SR'`, sharing that table with Incidents (`INCIDENT`) and Problems (`PROBLEM`). That data continuity is why your existing SR reports, escalations, and automation scripts keep working: the UI moved, the schema didn't.
+
+Here are the fields that matter most when a request comes in, and why:
+
+| Field | Object attribute | What it captures |
+|---|---|---|
+| Service Request | `TICKETID` | The SR identifier (autonumbered) |
+| Reported By | `REPORTEDBY` | Who logged the request |
+| Affected Person | `AFFECTEDPERSON` | Who is actually impacted (often different from reporter) |
+| Summary / Description | `DESCRIPTION` | The short problem statement |
+| Details | `DESCRIPTION_LONGDESCRIPTION` | The rich-text long description (hyperlinks in 9.0+) |
+| Classification | `CLASSSTRUCTUREID` | The category that drives routing and matching |
+| Reported Priority | `REPORTEDPRIORITY` | The requester's stated urgency |
+| Internal Priority | `INTERNALPRIORITY` | The triaged, work-driving urgency |
+| Asset / Location | `ASSETNUM` / `LOCATION` | What the request is about |
+| Owner Group / Owner | `OWNERGROUP` / `OWNER` | Where the request is routed and who holds it |
+| Site | `SITEID` | The site context |
+| Status | `STATUS` | Where the request is in its lifecycle |
+
+### The SR lifecycle you already know
+
+A Service Request moves through the standard ticket status flow, and none of it changed in MAS 9:
+
+**NEW → QUEUED → INPROG → PENDING → RESOLVED → CLOSED**
+
+- **NEW** — just created, not yet triaged.
+- **QUEUED** — assigned to an owner group, waiting to be worked.
+- **INPROG** — actively being handled.
+- **PENDING** — waiting on the requester, a vendor, or a work order.
+- **RESOLVED** — handled; often the point where a WO has been created and the SR is tracking it.
+- **CLOSED** — historical, read-only.
+
+Keep this lifecycle in mind. When we talk about "converting an SR to a WO," what actually happens underneath is that an `INPROG` service request spawns a related work order and typically moves to `PENDING` or `RESOLVED` while that WO does the physical work. The UI changed how you trigger that; the state machine did not.
 
 ---
 
@@ -116,7 +152,7 @@ Let's map exactly what changed before we go deep on each.
 
 The **Service Request Role-Based Application** is the day-to-day replacement for the Work Center. If your intake coordinators lived in the Work Center, this is where they live now.
 
-What it gives you:
+### What it gives you
 
 - A **modern React.js interface** on MAF — the same framework and look-and-feel as Maximo Mobile, so the experience is consistent across desktop and device.
 - A **streamlined SR creation workflow** designed for speed, not for exhaustive field entry.
@@ -124,7 +160,15 @@ What it gives you:
 - **Status tracking with visual progress indicators**, so a requester can see where their request stands.
 - **Rich text descriptions with hyperlinks**, so the description field stops being a wall of plain text.
 
-Notice what this is optimized for: **fast, high-volume intake**. The RBA is deliberately lean. When you need the full power of the Service Request object — every field, every related tab, classification-driven routing, the works — you drop into the **classic Service Requests application** in Carbon. The two are complementary, not competing: RBA for velocity, classic for depth.
+### What it deliberately leaves out
+
+Notice what the RBA is optimized for: **fast, high-volume intake**. It is deliberately lean. It does not try to be the classic application with a new coat of paint — it exposes the handful of fields and actions that get a request captured and routed quickly, and nothing more.
+
+When you need the full power of the Service Request object — every field, every related tab, classification-driven routing, related records, the works — you drop into the **classic Service Requests application** in Carbon. The two are complementary, not competing: **RBA for velocity, classic for depth.** A coordinator triaging fifty phone-in requests an hour stays in the RBA; a service manager reworking the classification structure or handling an escalated multi-asset request opens the classic app.
+
+<aside>
+💡 **Key insight:** Configure the RBA through the **MAF Configuration** application, not Application Designer. RBAs are a different technology stack — React on MAF — so your classic Application Designer customizations for the old Work Center do **not** port over. If you customized the Service Request Work Center heavily, budget rebuild time.
+</aside>
 
 ---
 
@@ -139,12 +183,25 @@ In 7.6, the Work Supervisor Work Center let a supervisor look at an SR and creat
 You use the **classic applications together**: review and manage the request in **Service Requests**, and create the work order in **Work Order Tracking**, following the create-WO-from-SR action. It works. It's just two applications instead of one Work Center panel.
 
 <aside>
-
 💡 **Key insight:** This is a *design* gap, not a *defect*. Don't burn a week hunting for a hidden RBA button that converts SRs — it isn't there. Design your intake SOP around the classic-apps path, and train your supervisors on it before go-live so upgrade day isn't the first time they meet it.
-
 </aside>
 
 If single-screen conversion is business-critical for you, note that this same gap is why the **Approvals RBA** (Part 2 of this series) also stops short of SR-to-WO conversion. Both role-based apps intentionally scope to their lane — intake and approval respectively — and leave conversion to the classic pair.
+
+---
+
+## 🔄 A Worked Example: From Phone Call to Work Order
+
+Let's make this concrete. A facilities coordinator, Priya, takes a call: the men's restroom on the second floor of Building A has a running toilet wasting water. Here is the full path in MAS 9, field by field.
+
+1. **Capture (RBA or mobile).** Priya opens the Service Request RBA and creates a request. She sets `DESCRIPTION` = "2F Bldg A restroom — toilet running continuously," `AFFECTEDPERSON` = the facilities contact, `LOCATION` = `BLDG-A-2F-RR`, and picks a classification like `FACILITIES \ PLUMBING \ FIXTURE`. The SR is created as `SR1042` in status **NEW**.
+2. **Similar-SR check (9.1).** As she saves, MAS surfaces `SR1039` — "Bldg A 2F restroom leak" from yesterday — with a similarity score. Priya checks it: different fixture, still open but unrelated. She proceeds, and now she knows about a possible pattern in that restroom.
+3. **Triage.** The request routes to `OWNERGROUP` = `FACILITIES`. A supervisor sets `INTERNALPRIORITY` = 3 and moves the SR to **QUEUED**, then **INPROG**.
+4. **Decide it needs a work order.** This is a physical repair, not an information request, so it needs a WO. Because single-screen conversion is gone, the supervisor opens the SR in the **classic Service Requests** application and uses **Create → Work Order** (or opens **Work Order Tracking** and creates a WO originating from `SR1042`).
+5. **The WO is born.** Maximo creates `WO2087` and stamps the origin link — `ORIGRECORDID = SR1042`, `ORIGRECORDCLASS = SR` — so the work order remembers where it came from. Asset/location and description carry across. The WO starts in **WAPPR**.
+6. **The SR tracks the WO.** The service request moves to **PENDING** (or **RESOLVED**, per your SOP) while `WO2087` does the physical work. When the toilet is fixed and the WO hits **COMP**, the coordinator closes the SR.
+
+Every field name and status here is stock Maximo. The *only* thing that changed from 7.6 is step 4 — the trigger moved from one Work Center screen to the classic two-app path. Write that step into your SOP and the rest is exactly what your team already knows.
 
 ---
 
@@ -167,9 +224,7 @@ The dedicated SR mobile app is where MAS 9 quietly did the most work, and it's t
 - **Self-registration** — users can create their own accounts to submit requests, which is the feature that finally makes broad, casual self-service practical without an admin provisioning every requester.
 
 <aside>
-
 💡 **Key insight:** Self-registration (9.1) is the sleeper feature. It's the difference between "IT files tickets on behalf of everyone" and "anyone on site can raise a request from their phone." If community or tenant self-service is on your roadmap, this is the release that unlocks it.
-
 </aside>
 
 ---
@@ -178,7 +233,36 @@ The dedicated SR mobile app is where MAS 9 quietly did the most work, and it's t
 
 MAS 9.1 adds **similar-SR detection**: when a user creates a new Service Request, Maximo can surface existing requests that look similar, so duplicates get caught at the source instead of downstream. It's a small, sensible touch — not a generative feature, just pattern matching that keeps your request queue clean.
 
+Its value compounds quietly. Every duplicate it stops is a request that never has to be triaged, routed, and de-duplicated by a human downstream — and, as in Priya's call above, it can surface a recurring problem at the same location that deserves a root-cause look rather than a third patch job.
+
 Don't confuse it with **Work Order Intelligence**, the watsonx-powered feature that recommends failure codes at *work order approval*. That's a different mechanism on a different object, and it gets its own treatment in **Part 2**.
+
+---
+
+## ⚠️ Edge Cases and Troubleshooting
+
+Real intake processes hit real snags. Here is the "if you see X, it means Y, do Z" list for Service Requests in MAS 9.
+
+| Symptom | What it means | What to do |
+|---|---|---|
+| "There's no button to turn this SR into a WO in the RBA" | Single-screen conversion was intentionally removed | Open the SR in the classic Service Requests app and use Create → Work Order |
+| A power user's Work Center customizations are gone | RBAs run on MAF, not Application Designer XML | Rebuild the needed fields/actions in MAF Configuration; there is no automatic port |
+| Self-registered users can see requests they shouldn't | Self-registration + cross-user SR visibility were enabled without scoping | Restrict via security groups and site/org authorization before enabling in prod |
+| Duplicate requests keep flooding the queue | You're pre-9.1, or similar-SR detection isn't enabled | Upgrade to 9.1 and enable similar-SR detection; tune classification so matches are meaningful |
+| The SR routed to the wrong group | Classification-driven routing depends on a clean `CLASSSTRUCTUREID` | Fix the classification structure and any service-address/routing rules in the classic app |
+| Mobile submitters can't attach photos | Camera/attachment permission not granted, or pre-9.0 app | Grant device permissions; confirm the SR mobile app is 9.0+ |
+
+A recurring theme: most "the RBA can't do X" issues are resolved by remembering that the **classic application is still there for depth**, and most "why is this behaving oddly" issues trace back to classification or security scoping, not to a platform defect.
+
+---
+
+## 🧠 Why It Works This Way
+
+It's worth understanding IBM's logic, because it predicts how the rest of MAS 9 behaves. The Work Center model tried to be one screen that served every persona — the casual requester, the busy coordinator, and the deep-fidelity service manager — and it did all three jobs adequately and none of them brilliantly.
+
+The RBA model splits by persona instead of cramming them together. A field submitter gets a phone-first app with a camera and a map. A coordinator gets a lean, fast intake screen. A service manager keeps the full classic application. Each surface can now be optimized for its user without compromising the others.
+
+The cost of that clarity is exactly the gap we've been honest about: the *cross-persona* flow — a supervisor reviewing an SR **and** converting it to a WO in one motion — no longer has a home, because it spanned two personas that MAS 9 deliberately separated. That trade-off (cleaner single-persona surfaces, at the price of some cross-persona conveniences) is the pattern you'll see repeated in Approvals, dashboards, and beyond. Once you recognize it, the gaps stop feeling like oversights and start looking like a consistent design stance.
 
 ---
 
@@ -186,7 +270,9 @@ Don't confuse it with **Work Order Intelligence**, the watsonx-powered feature t
 
 - **Keep the classic app in your security groups.** The RBA is lean by design; anyone doing full-fidelity SR work (classification, complex routing, SR-to-WO conversion) needs the classic Service Requests application too.
 - **Decide your conversion SOP first.** Because single-screen conversion is gone, write down the two-app path (Service Requests → Work Order Tracking) and train supervisors on it *before* upgrade.
+- **Inventory Work Center customizations before you rebuild.** Classify each as: rebuild in MAF Configuration, achieve with an Automation Script, or retire. Don't assume everything must come across.
 - **Gate self-registration deliberately.** The 9.1 self-registration capability is powerful; decide who can self-register and what they can see before you enable it in production.
+- **Clean up classification.** Similar-SR detection, routing, and reporting all lean on `CLASSSTRUCTUREID`. A tidy classification structure pays off across every one of these features.
 - **Set expectations on the RBA vs. classic split.** Intake coordinators will ask "why are there two Service Request screens?" The answer — speed vs. depth — is worth putting in your training deck.
 
 ---
@@ -194,6 +280,7 @@ Don't confuse it with **Work Order Intelligence**, the watsonx-powered feature t
 ## Key Takeaways
 
 - The **Service Request Work Center was removed**; the **Service Request RBA** on MAF is its day-to-day replacement, with the **classic Service Requests app** (Carbon UI) for full-fidelity work.
+- The **Service Request object is unchanged** — it's still a `TICKET` row with `CLASS = 'SR'`, so your reports, escalations, and scripts carry forward; only the UI moved.
 - The **SR mobile app** gained rich text and attachments in **9.0**, and **duplication, cross-user visibility, map-based creation, and self-registration** in **9.1**.
 - **Single-screen SR-to-WO conversion did not survive** — use the classic **Service Requests + Work Order Tracking** applications together, and plan your intake SOP around it.
 - **MAS 9.1 similar-SR detection** trims duplicate requests at creation; it's distinct from **Work Order Intelligence** at approval (Part 2).

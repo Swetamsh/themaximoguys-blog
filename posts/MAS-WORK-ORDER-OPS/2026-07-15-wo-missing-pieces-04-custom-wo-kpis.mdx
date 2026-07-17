@@ -72,11 +72,11 @@ relatedSlugs:
 
 > 🎯 **Who this is for:** Maximo developers, analysts, and administrators who read Part 3, liked the operational dashboard, and then asked the obvious next question — *"but how do I build a KPI that isn't in the box?"*
 
-**Series:** Part 4 of 6 — *MAS 9 Work Order Operations: The Missing Pieces* | **Read time:** 16 minutes
+**Series:** Part 4 of 6 — *MAS 9 Work Order Operations: The Missing Pieces* | **Read time:** 20 minutes
 
 ---
 
-## Where Part 3 Ended and This Part Begins
+## 📖 Where Part 3 Ended and This Part Begins
 
 [Part 3](/blog/wo-missing-pieces-operational-dashboard) walked you through the **operational dashboard** — the Maintenance Manager dashboard, the out-of-box work order KPIs, and how to read them. That's the *consumption* side: someone already defined those KPIs, and you're placing cards and reading numbers.
 
@@ -86,23 +86,23 @@ So this post won't re-list the out-of-box KPIs or re-explain the Maintenance Man
 
 ---
 
-## What KPI Manager Actually Is
+## 🧱 What KPI Manager Actually Is
 
 The **KPI Manager application** is where every KPI in Manage lives — the ones IBM ships *and* the ones you create. A KPI, at its core, is a small, saved definition with a handful of parts:
 
-- A **name and description**.
-- A **target Maximo object** — `WORKORDER`, `PM`, or any other object you can query.
-- A **query** — a where-clause that defines the population the KPI counts or measures.
-- A **refresh interval** — how often Maximo recalculates the value.
-- **Thresholds** — the green / yellow / red bands that drive automatic coloring.
-- A **trend calculation** — a configured period so the KPI can show direction over time, not just a snapshot.
+| Element | What it does | Example |
+|---|---|---|
+| **Name / description** | The label people read on the card | `WO Aging Backlog > 30 Days` |
+| **Target object** | The Maximo object the KPI queries | `WORKORDER` |
+| **Query (where-clause)** | Defines which records count | `status = 'APPR' and targstartdate < sysdate` |
+| **Refresh interval** | How often Maximo recalculates the value | Every 15 minutes |
+| **Thresholds** | Green / yellow / red bands for auto-coloring | Green <10, Yellow 10–25, Red >25 |
+| **Trend period** | The window over which direction is computed | Rolling 12 months |
 
 That's the whole anatomy. Once a KPI is saved in KPI Manager, it becomes a reusable object that any operational dashboard can point a card at. Build it once, place it many times.
 
 <aside>
-
 💡 **Key insight:** A KPI is not a report and it's not a card. It's a *definition*. The card is just the picture frame. This separation is why one well-built backlog KPI can appear as a value tile on the manager's dashboard, a trend line on the planner's, and a color tile on the shift-handover screen — same definition, three frames.
-
 </aside>
 
 ---
@@ -120,10 +120,36 @@ Here's the seven-step path through KPI Manager for a work order KPI. Nothing her
 7. **(MAS 9.1) Point the KPI service at an external API — optionally.** In 9.1 a KPI service can call an external REST API for its data instead of running a Maximo query. More on that below.
 
 <aside>
-
 💡 **Key insight:** Treat the where-clause examples in this post as *conceptual*. The exact field names and status codes in your environment depend on your data model and your status flow — the shape is `status = ... and somedate < ...`, but validate the actual columns against your own schema before you save. A KPI that counts the wrong population looks authoritative and is quietly wrong, which is worse than no KPI at all.
-
 </aside>
+
+---
+
+## 🔬 A Worked Build: "WO Aging Backlog > 30 Days"
+
+Let's build one end to end, so the seven steps stop being abstract. The goal: a KPI that tells the planning team how much approved work has been waiting more than a month, and lights up before it becomes a problem.
+
+**Step 1 — Name it.** `WO_ Aging Backlog > 30 Days`. Description: "Approved WOs whose target start is more than 30 days in the past. Direction: DOWN is good."
+
+**Step 2 — Target object.** `WORKORDER`.
+
+**Step 3 — Where-clause (conceptual).** Approved work whose target start slipped past a month ago: `status = 'APPR' and targstartdate < (sysdate - 30) and historyflag = 0`. The `historyflag = 0` keeps closed/archived rows out — an easy detail to forget, and the reason a backlog KPI sometimes reads absurdly high.
+
+**Step 4 — Refresh interval.** 15 minutes. Planners act on this during the day, so it should feel live, but a backlog doesn't move fast enough to justify anything tighter.
+
+**Step 5 — Thresholds.** This is a count you want *low*, so red is the high number:
+
+| Band | Range | Meaning |
+|---|---|---|
+| 🟢 Green | < 10 | Backlog under control |
+| 🟡 Yellow | 10 – 25 | Watch it |
+| 🔴 Red | > 25 | Intervene — reassign or escalate |
+
+**Step 6 — Trend period.** Rolling 12 weeks, so the planner can see whether the aging backlog is trending up or being worked down over the quarter.
+
+**Step 7 — Place it.** Save the KPI, then open the operational dashboard and add a **KPI Value** card pointing at it for the manager's board, plus a **Threshold Tile** on the shared stand-up screen so the color does the talking.
+
+That's a complete, useful KPI in about ten minutes — and every one of those decisions (the 30-day cutoff, the `historyflag` filter, the direction, the bands) is a policy choice you made deliberately, not a default you inherited. That deliberateness is the difference between a KPI people trust and one they quietly ignore.
 
 ---
 
@@ -174,9 +200,7 @@ Think about what that opens up for work order operations:
 - A **weather or safety index** from an external service, so the shift-handover dashboard shows the field condition alongside the work queue.
 
 <aside>
-
 💡 **Key insight:** This is the difference between a Maximo dashboard and an *operations* dashboard. Before 9.1, everything on the board was Maximo data by definition. After 9.1, a KPI card is a display surface for any number your services can fetch as JSON — Maximo becomes the frame, not the boundary. If you're on 9.0 and this is on your roadmap, it's a concrete reason to prioritize the 9.1 step.
-
 </aside>
 
 The honest caveat: an external-API KPI is only as reliable as the endpoint behind it. A Maximo where-clause fails loudly inside your own system; a remote API can go slow or dark without warning. Own the endpoint's uptime, and set the refresh interval with that latency in mind.
@@ -187,14 +211,45 @@ The honest caveat: an external-API KPI is only as reliable as the endpoint behin
 
 Concrete beats abstract. Here are three work order KPIs worth building on day one — described conceptually, because your exact fields and codes are yours to confirm.
 
-**1. Aging backlog (> 30 days).**
-Count approved work orders whose target start has been in the past for more than a month. Conceptually `status = 'APPR' and targstartdate < (sysdate - 30)`. Thresholds: low is good, so red is a high count. Card: **KPI Value** on the manager's board, or a **Threshold Tile** for the morning stand-up.
+### Recipe 1 — Aging backlog (> 30 days)
 
-**2. Schedule compliance.**
+Count approved work orders whose target start has been in the past for more than a month (the worked build above). Conceptually `status = 'APPR' and targstartdate < (sysdate - 30)`. Thresholds: low is good, so red is a high count. Card: **KPI Value** on the manager's board, or a **Threshold Tile** for the morning stand-up.
+
+### Recipe 2 — Schedule compliance
+
 The share of scheduled work that actually got done on time. It's a percentage, so **high is good** — flip your thresholds. Best shown as a **KPI Trend** so the team sees whether the last few months are climbing or slipping.
 
-**3. Emergency-work ratio by craft.**
+### Recipe 3 — Emergency-work ratio by craft
+
 How much of each craft's work is reactive versus planned. Same underlying idea broken out across a dimension — a natural **KPI Comparison** card. It turns "we do too much firefighting" from a feeling into a number per crew.
+
+---
+
+## ⚠️ Edge Cases and Troubleshooting
+
+KPIs fail quietly — they keep showing *a* number, just the wrong one. Here's how to diagnose the common ones.
+
+| Symptom | What it means | What to do |
+|---|---|---|
+| KPI reads impossibly high | Closed/history rows aren't filtered out | Add `historyflag = 0` (or your equivalent) to the where-clause |
+| KPI shows 0 when you expect records | Where-clause is too tight, or a status code is wrong for your flow | Test the where-clause as a list query first; confirm the actual status values |
+| Dashboard glows green while the shop is on fire | Threshold direction is backwards | Flip the bands; write "up/down is good" in the description |
+| KPI card is slow, or the dashboard drags | Un-indexed columns or a heavy query on every refresh | Filter on indexed columns; lengthen the refresh interval |
+| KPI count doesn't match a report's number | Different filters, or a snapshot-vs-live timing gap | Reconcile the definitions; remember the KPI is live at its refresh interval |
+| External-API KPI shows stale or blank values (9.1) | The remote endpoint is slow, down, or changed its response | Verify the endpoint; align the refresh interval to its latency; treat it as an external dependency |
+| Two teams argue over "the backlog number" | Two KPIs, two where-clauses, same name | Standardize one governed definition and point both cards at it |
+
+The pattern: a wrong KPI is more dangerous than a missing one, because it carries the authority of a number on a dashboard. Test the where-clause as a plain list query before you trust it as a KPI.
+
+---
+
+## 🧠 Why It Works This Way
+
+Two design choices in KPI Manager are worth understanding, because they shape how you should build.
+
+**A KPI is a definition, not a display.** IBM deliberately separated the *what to measure* (the KPI) from the *how to show it* (the card). That separation is why the same aging-backlog KPI can be a value tile, a trend line, and a threshold tile across three dashboards without three definitions to maintain. Build the metric once, cleanly, and let the cards do the presentation. It also means a fix to the definition propagates everywhere the KPI is shown — one place to correct, not ten.
+
+**The external-API capability arrived in 9.1, not earlier, for a reason.** Through 9.0, tying KPIs to the Maximo object model kept them fast, governed, and trustworthy — the number always came from your own system. Opening KPIs to external JSON in 9.1 is a deliberate expansion of the dashboard from a *Maximo* view to an *operations* view, and it comes with the deliberate trade-off we flagged: you gain reach, and you take on the reliability of whatever endpoint you point at. IBM added the capability once the dashboard was mature enough to be an operational command center rather than just a Maximo report surface — which is exactly the framing from Part 3.
 
 ---
 
@@ -203,6 +258,7 @@ How much of each craft's work is reactive versus planned. Same underlying idea b
 - **Standardize naming first.** KPIs proliferate. Agree on a convention (`WO_ Aging Backlog`, `PM_ Compliance`) before ten people create three versions of the same metric.
 - **Match refresh to reality.** A number nobody acts on in real time doesn't need a 15-minute refresh. Reserve tight intervals for genuinely live operational KPIs.
 - **Decide threshold direction per KPI, explicitly.** Write "up is good" or "down is good" in the description. It prevents the glowing-green-while-on-fire failure mode.
+- **Test the where-clause as a list query first.** If it returns the right records in a result set, it'll count the right population as a KPI. If it doesn't, you've caught the error before it reached a dashboard.
 - **Govern custom KPIs like Part 3 governs dashboards.** Who owns the definition? Who can edit the where-clause? A wrong KPI definition is a silent data-quality problem — treat KPI definitions as change-controlled objects, not throwaway tweaks.
 - **Confirm your 9.1 posture before promising external-API KPIs.** The JSON-from-external-API capability is a **9.1** feature. If you're on 9.0, it's a reason to plan the step, not a thing you can wire up today.
 
@@ -213,8 +269,8 @@ How much of each craft's work is reactive versus planned. Same underlying idea b
 - **KPI Manager** is the build side of the story; **Part 3** is the consume side. A custom KPI is a named **where-clause against any Maximo object**, plus a refresh interval, thresholds, and a trend period.
 - **Color thresholds (green / yellow / red)** drive automatic card coloring — get the *direction* right per KPI or the dashboard lies to you.
 - **Match the KPI to the card:** KPI Value for "now," KPI Trend for "over time," KPI Comparison for "by dimension," and the **9.1 Threshold Tile** for "which band."
-- **MAS 9.1** lets KPI services **return JSON from an external REST API**, so a work order dashboard can show numbers that never lived in Maximo.
-- Treat where-clause examples as **conceptual** — validate the real fields and status codes against your own schema before you save.
+- **MAS 9.1** lets KPI services **return JSON from an external REST API**, so a work order dashboard can show numbers that never lived in Maximo — at the cost of owning that endpoint's reliability.
+- Treat where-clause examples as **conceptual** — validate the real fields and status codes against your own schema, and test as a list query before you trust the KPI.
 
 ---
 

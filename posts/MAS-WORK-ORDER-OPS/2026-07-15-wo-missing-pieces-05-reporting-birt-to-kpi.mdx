@@ -78,7 +78,7 @@ relatedSlugs:
 
 ---
 
-## Where Work Order Reporting Actually Stands in MAS 9
+## 📖 Where Work Order Reporting Actually Stands in MAS 9
 
 Somewhere in your MAS 9 upgrade plan there is probably a line item that reads something like *"Reporting migration: BIRT → Cognos."* And somewhere in a planning meeting, someone counted your BIRT reports, multiplied by an effort estimate, and produced a number that made everyone flinch.
 
@@ -103,9 +103,7 @@ This post is the WO-scoped version of doing it right: rationalize the catalog fi
 | Complex multi-page reports | BIRT | **Cognos Analytics** (no KPI equivalent) |
 
 <aside>
-
 💡 **Key insight:** Two facts sit side by side here and both are true. BIRT still works, *and* there is no automatic BIRT-to-Cognos migration tool. That combination is exactly why blind rebuilding is a trap — you would be doing expensive manual recreation work for reports that BIRT is still perfectly happy to run, or that shouldn't exist at all in MAS 9.
-
 </aside>
 
 ---
@@ -122,9 +120,7 @@ Four rules keep the exercise disciplined:
 4. **Validate BIRT support posture in your exact MAS version before deciding** whether to keep, replace, or retire. Support posture moves across releases; check yours rather than assuming.
 
 <aside>
-
 💡 **Key insight:** Rule 3 is the one that saves the most effort and is skipped the most often. A large share of a legacy WO report catalog exists only because Start Centers couldn't show live operational data well. MAS 9's Operational Dashboard can — so a chunk of your catalog isn't a migration candidate, it's a retirement candidate.
-
 </aside>
 
 ---
@@ -161,9 +157,7 @@ For simple WO reporting needs, KPI Manager plus the Operational Dashboard replac
 - **Complex multi-page reports → Cognos Analytics only.** Multi-page layouts with charts, sub-reports, and formatting have **no KPI equivalent.** Do not force these into cards.
 
 <aside>
-
 💡 **Key insight:** The tell for "this belongs in a KPI card, not a report" is whether anyone *acts* on the number the moment they see it. A live count of open WOs drives a staffing decision on the spot — that's a card. A quarterly cost report that gets archived and referenced later is a document — that's Cognos or a kept report. Action-in-the-moment versus distribute-and-archive is the cleanest dividing line you have.
-
 </aside>
 
 ---
@@ -172,22 +166,47 @@ For simple WO reporting needs, KPI Manager plus the Operational Dashboard replac
 
 Every work order report you own falls into one of three destinations. Run each report through these questions in order and stop at the first "yes."
 
-**Does someone consume this operationally, in near-real-time, and act on it immediately?**
+### Is it operational and acted-on-immediately?
+
+*Does someone consume this operationally, in near-real-time, and act on it immediately?*
 → **KPI Manager card** on the Operational Dashboard. Counts, trends, comparisons, and actionable detail lists all live here. This is the largest bucket and the one people underuse.
 
-**Is it a live queue or KPI that already exists on the dashboard, wearing a report's clothes?**
+### Is it a live queue or KPI wearing a report's clothes?
+
+*Is it something the dashboard already shows live?*
 → **Retire it.** Don't rebuild what the dashboard already shows live. This is the bucket people skip entirely.
 
-**Does it need scheduled distribution, print-ready or audit-grade output, or multi-table analytics — but the layout is simple enough to reproduce as-is?**
+### Does it need to stay a formal document?
+
+*Does it need scheduled distribution, print-ready or audit-grade output, or multi-table analytics — but the layout is simple enough to reproduce as-is?*
 → **Keep or rebuild it as a report.** The Work Order Detail print for job packets and compliance is the canonical example; BIRT still runs it today, so keeping is a legitimate choice while you validate your version's support posture.
 
-**Is it a complex, multi-page WO report with charts, sub-reports, or heavy formatting, or does it join many tables for analytics?**
+### Is it complex, multi-page analytics?
+
+*Is it a complex, multi-page WO report with charts, sub-reports, or heavy formatting, or does it join many tables for analytics?*
 → **Cognos Analytics.** This is the only bucket where Cognos is genuinely required, and it's smaller than most upgrade plans assume. There is no automatic BIRT-to-Cognos converter, so recreate these deliberately and prioritize by usage.
 
 <aside>
-
 💡 **Key insight:** Run this framework *before* anyone estimates the reporting migration. The number that made everyone flinch was almost certainly "every BIRT report → Cognos." After triage, the Cognos column is only the last bucket — the complex, multi-page, must-be-a-document reports — and the estimate drops accordingly.
+</aside>
 
+---
+
+## 🔬 A Worked Triage: One Team's WO Report Catalog
+
+Frameworks click when you watch them run. Here's a maintenance-reporting team taking six real work order reports through the decision framework in one sitting.
+
+1. **"Open WOs by status" (checked hourly by the supervisor).** Acted on immediately, in near-real-time → **KPI Value + Threshold Tile.** Retire the BIRT report once the card is trusted.
+2. **"Weekly overdue-WO email."** The Operational Dashboard already shows overdue WOs live → **Retire.** This is the bucket that saves the most effort and nearly got rebuilt out of habit.
+3. **"Monthly PM compliance."** A trend leadership reviews → **KPI Trend card** for the dashboard; if it also needs to go into a formal monthly pack, a lightweight **Cognos** version for distribution.
+4. **"Work Order Detail print" (taped to every job packet, signed for compliance).** Print-ready, audit-grade, simple layout → **Keep on BIRT for now**, rebuild later if the version's support posture demands it. Critical — do not disrupt it casually.
+5. **"Detailed WO cost report" (finance, multi-table, multi-page).** Complex analytics joining WO, labor, materials, and GL → **Cognos Analytics.** The genuine Cognos case, and worth doing carefully.
+6. **"Ad-hoc WO extract" (an analyst pulls it whenever asked).** Not really a report at all → **REST async CSV export.** Wire it to the export path and stop maintaining a BIRT report for it.
+
+Tally the outcome: of six reports, **two retired, two became KPI/dashboard cards, one stayed on BIRT, and only one landed in Cognos.** That ratio — a small Cognos column after triage — is the whole argument for rationalizing instead of rebuilding, made concrete.
+
+<aside>
+💡 **Key insight:** The most valuable output of a triage session isn't the "build in Cognos" list — it's the "retire" list. Every report you retire is effort you *don't* spend, forever. Teams that rebuild blindly never produce a retire list, which is exactly why their estimates are so frightening.
 </aside>
 
 ---
@@ -196,16 +215,43 @@ Every work order report you own falls into one of three destinations. Run each r
 
 Rationalization also changes *how* people get data out, because a KPI card and a queue aren't a printed report you can email. MAS 9 gives work order reporting two governed export paths.
 
-**From the Operational Dashboard:**
+### From the Operational Dashboard
 
 - **CSV export** of table and grid data — the tabular contents of a card, straight to a spreadsheet.
 - **PNG / JPG export** of chart visualizations — for a KPI Trend or Comparison chart you want to drop into a slide or a status pack.
 
-**From role-based applications:**
+### From role-based applications
 
 - **Asynchronous CSV export via the REST API** from any WO list view. The request runs asynchronously, the paginated data is combined into a **single download file**, and you get one clean CSV instead of a page-by-page pull.
 
-That REST async export is the quiet workhorse for teams who used to lean on ad-hoc BIRT reports for one-off data pulls. Because it runs through the REST API, it's the natural extraction path for automation — an RBA or an automation script (RBA) that needs a governed WO extract can trigger the async export and pick up the combined file, no BIRT report required.
+That REST async export is the quiet workhorse for teams who used to lean on ad-hoc BIRT reports for one-off data pulls. Because it runs through the REST API, it's the natural extraction path for automation — an RBA or an automation script that needs a governed WO extract can trigger the async export and pick up the combined file, no BIRT report required. (Part 6 covers that REST surface in full.)
+
+---
+
+## ⚠️ Edge Cases and Troubleshooting
+
+| Symptom | What it means | What to do |
+|---|---|---|
+| A report doesn't fit any bucket cleanly | It's serving two needs at once (operational glance + formal archive) | Split it: a KPI card for the glance, a kept/Cognos report for the archive |
+| A BIRT report errors after upgrade | It references a removed surface (a Work Center) or an old label | Repoint it to the classic app/object, or retire it if a queue/KPI now covers the need |
+| The Cognos rebuild estimate is still huge | Triage wasn't actually run — everything defaulted to Cognos | Re-triage; most of the catalog is KPI cards or retirements, not Cognos |
+| A CSV export is enormous or times out | Pulling an unfiltered WO list view | Filter the list view first; the async export combines pages, but scope still matters |
+| Two "the same" reports show different numbers | Different underlying queries, same title | Standardize one definition (same governance point as KPIs in Part 4) |
+| Users keep asking for the old printed report | The KPI card replaced it before they trusted it | Run the card and the report in parallel for a sprint, then retire the report |
+
+The recurring theme: reporting problems in MAS 9 are usually *classification* problems, not tooling problems. A report that "won't migrate cleanly" is almost always one that was doing two jobs and needs to be split, or one that should have been retired.
+
+---
+
+## 🧠 Why It Works This Way
+
+IBM's reporting stance in MAS 9 looks ambiguous until you see the intent behind it: **don't break what works, but stop using heavy reports for jobs a live surface does better.**
+
+Leaving BIRT running — rather than forcing an off switch — is a deliberate risk-reduction choice. Work order reports are woven into compliance packets, job packets, and finance processes; ripping them out on a date would create real operational harm for no functional gain. So BIRT keeps running, and you migrate on *your* timeline, by *business need*, not on a vendor deadline.
+
+At the same time, the Operational Dashboard and KPI Manager exist precisely because a huge fraction of "reports" were never really reports — they were operational monitors that BIRT and Start Centers happened to be the only tools for. Give teams a live, glanceable, color-coded dashboard and those "reports" reveal their true nature: they belong on a screen people watch, not in a document people generate. That's why the largest triage bucket is KPI cards and retirements, and the smallest is Cognos.
+
+The net design principle: **match the surface to how the information is actually consumed.** Watched-in-the-moment → dashboard. Already-live → retire. Distributed-and-archived → report or Cognos. Rationalization is just applying that principle report by report.
 
 ---
 
@@ -214,6 +260,7 @@ That REST async export is the quiet workhorse for teams who used to lean on ad-h
 - **Inventory before you migrate.** You cannot rationalize a catalog you haven't listed. Pull the full WO report inventory, tag each report by actual usage, and only then run the decision framework — priority by real usage beats priority by who shouts loudest.
 - **Don't turn BIRT off to prove a point.** BIRT still runs; keeping low-priority WO reports on BIRT during the transition is a valid phased strategy, not a failure to modernize. Validate your version's support posture and plan around it.
 - **Build the KPI cards first, retire second.** Stand up the Operational Dashboard cards that replace the operational reports, let people live on them for a sprint, *then* retire the duplicate reports. Retiring before the replacement is trusted is how you end up rebuilding reports under pressure.
+- **Produce a retire list on purpose.** It's the highest-value output of triage and the one blind rebuilds never generate.
 - **Size the Cognos column honestly.** After triage, only the complex multi-page bucket needs Cognos. Estimate the reporting migration off that column — not off the full catalog — and remember every one is a manual rebuild.
 - **Point automation at the REST async export.** For scripted or scheduled WO data extracts, the asynchronous single-file CSV export is the governed, version-safe path. Wire new extraction jobs to it instead of resurrecting ad-hoc BIRT reports.
 

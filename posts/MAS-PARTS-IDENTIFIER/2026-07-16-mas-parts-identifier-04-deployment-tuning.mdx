@@ -1,0 +1,285 @@
+---
+title: "Deployment, Training & Accuracy Tuning for Maximo Parts Identifier"
+description: "Deployment is the easy part; the training data is the work. A practitioner's playbook for piloting Maximo Parts Identifier on MAS 9 — IBM's five evaluation tasks turned into a plan, how to build and label a training image set, how to measure accuracy honestly, closing the historical-recognition feedback loop, and an evaluation posture right-sized for a niche app."
+date: "2026-07-16"
+slug: "mas-parts-identifier-deployment-tuning"
+tags: ["Maximo", "MAS 9", "Parts Identifier", "Deployment", "Machine Learning", "Accuracy", "Pilot", "EAM"]
+draft: false
+tier: "developer"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-parts-identifier-04-deployment-tuning.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "How hard is it to deploy Maximo Parts Identifier?"
+    answer: "IBM rates deployment complexity as low, with MAS being deployed as the only hard prerequisite, and estimates a small team can evaluate it in roughly 22 to 44 hours — about a week. The technical install is not where the effort goes. The effort goes into the data: collecting and labeling representative images of your parts, then testing identification accuracy against parts whose identity you already know. Plan for the data work, not the deployment."
+  - question: "How do I improve Parts Identifier's accuracy?"
+    answer: "Almost never by asking for a better model — almost always by giving it a better, broader, cleaner set of labeled images of your actual parts, photographed in realistic field conditions. Add examples of the specific families it confuses, standardize and deduplicate the item master those images map to, and feed confirmed identifications back through historical recognition so the system learns from real use. Accuracy tuning is a data discipline."
+  - question: "How long should a Parts Identifier pilot take?"
+    answer: "IBM's evaluation estimate is about a week for a small team to decide whether it fits at all. A pilot that actually proves value on your parts realistically runs longer — plan roughly four to six weeks to collect a real image set, tune on the families that matter, measure accuracy against ground truth, and reach a defensible go/no-go with a number, not a vibe."
+  - question: "How many AppPoints does Parts Identifier cost?"
+    answer: "The suite roadmap's AppPoints cost table does not publish a per-user figure specifically for Parts Identifier, so treat any number as unconfirmed and validate the exact cost and license type with your IBM representative during evaluation. Because AppPoints are a shared pool, the more useful question is not the sticker cost but whether the value on your parts justifies allocating any points to it at all."
+keyTakeaways:
+  - "Deployment is low-complexity; the real work is collecting and labeling representative training images"
+  - "IBM's five evaluation tasks (PI-1 to PI-5) are a ready-made week-one plan — quantify, target, collect, deploy, test"
+  - "Improve accuracy with better data, not a better model: broader coverage, realistic conditions, a clean item master"
+  - "Measure honestly against ground truth using top-3 success rate and confusion pairs — not a cherry-picked demo"
+  - "IBM's AppPoints table publishes no Parts Identifier cost; confirm it, and let value on your parts drive go/no-go"
+series:
+  name: "MAS PARTS IDENTIFIER"
+  part: 4
+  total: 4
+tldr: "Deploying Parts Identifier is low-complexity; proving it works is a data project. This closing part turns IBM's five evaluation tasks into a plan, lays out a training-image methodology, shows how to measure accuracy honestly against ground truth, explains the historical-recognition feedback loop, and offers a realistic four-to-six-week pilot with a metric-driven go/no-go — the right, honest posture for a niche, evaluate-later app."
+seoTitle: "Parts Identifier: Deployment & Accuracy Tuning"
+seoDescription: "A pilot playbook for Maximo Parts Identifier on MAS 9 — training-image methodology, honest accuracy measurement, the feedback loop, and a metric-driven go/no-go."
+targetQuestions:
+  - "How do I deploy Maximo Parts Identifier?"
+  - "How do I improve Parts Identifier accuracy?"
+  - "How long should a Parts Identifier pilot take?"
+  - "How many AppPoints does Parts Identifier cost?"
+  - "How do I build a training image set for part recognition?"
+semanticKeywords:
+  - "Parts Identifier deployment"
+  - "training image set labeling"
+  - "computer vision accuracy precision recall"
+  - "ground truth testing"
+  - "historical recognition feedback loop"
+  - "MAS pilot plan"
+  - "AppPoints Parts Identifier"
+  - "part recognition tuning"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Parts 1-3 for recognition, capture, and catalog integration"
+  - "Ability to run a scoped pilot with a field team"
+  - "A cleaned target parts family (see Part 3)"
+speakableSections:
+  - "The Real Work Is Data, Not Deployment"
+  - "IBM's Five Evaluation Tasks"
+  - "Measuring Accuracy Honestly"
+series_part: 4
+clusterSlugs:
+  - "mas-parts-identifier-series-index"
+  - "mas-parts-identifier-intro-ai-vision"
+relatedSlugs:
+  - "mas-parts-identifier-series-index"
+  - "mas-parts-identifier-intro-ai-vision"
+  - "mas-parts-identifier-mobile-recognition"
+  - "mas-parts-identifier-catalog-matching"
+---
+
+# Deployment, Training & Accuracy Tuning for Maximo Parts Identifier
+
+> 🎯 **Who this is for:** The person who will actually run the Parts Identifier pilot — a Maximo admin, a reliability or MRO lead, an analyst — and needs a concrete, honest plan to decide whether it earns a place, and how to make it work if it does.
+
+**Series:** Part 4 of 4 — *Maximo Parts Identifier on MAS 9* | **Read time:** 22 minutes
+
+---
+
+## 📖 The Real Work Is Data, Not Deployment
+
+If you take one thing from this final part, take this: **standing the tool up is easy; making it good is a data project.** IBM's own assessment supports the point — deployment complexity is rated **low**, the only hard prerequisite is **MAS deployed**, and a small team can run an evaluation in roughly **22–44 hours, about a week**. Nowhere in that estimate is "build a model" — because you don't. The effort lands squarely on two documented tasks: **collect sample images of common parts**, and **test identification accuracy on known parts.** Everything that determines whether Parts Identifier helps you lives in those two.
+
+This is liberating and sobering at once. Liberating, because you do not need data scientists or GPU wrangling to try it — the barrier to entry is genuinely low. Sobering, because there is no shortcut around the image work: a tool that recognizes parts is only as good as the pictures of *your* parts it has seen. Teams that treat this as an IT install and skip the image discipline get a disappointing demo; teams that treat it as a focused data exercise get a useful tool on the families they invested in.
+
+<aside>
+💡 **Key insight:** The knob you turn to improve this tool is almost never "a smarter model." It is "more and better labeled images of the parts that matter, mapped to a clean item master." Point your energy there and the accuracy follows; point it anywhere else and you will be frustrated.
+</aside>
+
+---
+
+## 🗺️ IBM's Five Evaluation Tasks, Turned Into a Plan
+
+IBM frames the evaluation as five tasks. They are a genuinely good week-one skeleton — here they are, with the effort as documented and what each really involves.
+
+| Task | What it is | Effort (documented) | What it really means |
+|---|---|---|---|
+| **PI-1** | Evaluate applicability to your operations | 2–4 hours | Interview the field team; quantify how often part-ID actually stalls work |
+| **PI-2** | Identify high-value use cases (assets with many similar-looking parts) | 4–8 hours | Pick the bounded, high-confusion family to target — bearings, seals, sensors |
+| **PI-3** | Collect sample images of common parts | 8–16 hours | The real work: photograph the chosen family across realistic conditions |
+| **PI-4** | Deploy and configure Parts Identifier | 4–8 hours | The genuinely easy part — install and wire it to the catalog |
+| **PI-5** | Test identification accuracy on known parts | 4–8 hours | Measure against ground truth; produce the number that drives go/no-go |
+
+Look at where the hours concentrate: **PI-3 (image collection) is the single largest line, and PI-4 (deploy) is one of the smallest.** That ratio *is* the message of this whole part. The plan writes itself: prove the pain is real (PI-1), scope tightly (PI-2), invest in images (PI-3), do the easy install (PI-4), and decide with a measured number (PI-5).
+
+<aside>
+⚠️ **Watch out:** The tempting mistake is to jump to PI-4 because it's the "real IT work," deploy against whatever images are lying around, and demo on cherry-picked parts. That produces a number that means nothing. Respect the order — the value of PI-4 is entirely contingent on the quality of PI-2 and PI-3 that precede it.
+</aside>
+
+---
+
+## 📸 Building the Training Set: The Methodology
+
+This is the craft that decides everything, and it is standard machine-learning data discipline applied to your storeroom. None of the following is IBM-specific model guidance — it is general practice for building a recognition dataset.
+
+### Which parts to train first
+
+Do not attempt the whole item master. Choose a **bounded family with two properties: high confusion and high cost.** High confusion means many SKUs that look alike (bearings, O-rings, sensors, hydraulic cartridges) — exactly the case where a human stalls and the tool adds the most value. High cost means getting it wrong hurts (downtime, wrong install, expedited freight). The intersection is your beachhead. Nail one family, prove the pattern, then expand family by family.
+
+### How many images, and of what
+
+The instinct to grab "one clean studio shot per part" is the classic beginner error. A model trained on pristine bench photos will fail on greasy field reality, because it never learned what the part looks like in the wild. Aim for **variety over polish**:
+
+| Dimension to vary | Why | Practical guidance |
+|---|---|---|
+| **Angle** | Field shots aren't square-on | Several angles per part, including the distinctive face |
+| **Condition** | Real parts are dirty, worn, corroded | Clean *and* grimy examples of the same part |
+| **Lighting** | Shops have glare and shadow | Bright, dim, and mixed lighting; some with mild glare |
+| **Background** | Not everything is a clean bench | Neutral backgrounds plus a few realistic cluttered ones |
+| **Distance/scale** | Framing varies | Tight and slightly wider framings |
+
+More examples per item, spread across those conditions, beats a handful of perfect ones every time. Prioritize *representative* over *pretty*.
+
+### Labeling discipline
+
+Every training image must map to the **correct, canonical item number** — which is exactly why Part 3's deduplication comes first. If your images are labeled against duplicate items, you are teaching the model to be inconsistent on purpose. Establish a simple labeling protocol: one canonical `ITEMNUM` per image, verified by someone who actually knows the part, with disputed cases set aside rather than guessed. Clean labels are as important as good photos; a great image mapped to the wrong item is worse than no image at all.
+
+<aside>
+💡 **Key insight:** The dataset is a mirror of your field conditions. If you photograph parts only clean, on a bench, in good light, the model becomes an expert at a situation your technicians never face. Deliberately include the mess — that is how you train for reality instead of for the demo.
+</aside>
+
+---
+
+## 📊 Measuring Accuracy Honestly
+
+PI-5 says test accuracy on *known* parts — parts whose true identity you already have — so you have ground truth to score against. How you measure matters as much as that you measure, because it's easy to produce a flattering-but-meaningless number.
+
+### Use a held-out, representative test set
+
+Score the tool on parts (and photos) it was **not** trained on, drawn to *represent* real field conditions — not a curated highlight reel. A model tested on its own training images will look brilliant and tell you nothing. The test set is your reality check; rig it honest.
+
+### Track the metrics that reflect real use
+
+- **Top-1 success:** the correct part is the first candidate. Nice, but not how the tool is actually used.
+- **Top-3 success:** the correct part is in the top three — which is how technicians *really* use the candidate list. This is usually the metric that matters most, because a human breaks the final tie.
+- **Confusion pairs:** *which* parts get mistaken for which. This is gold — it points you straight at the families that need more training images or better classification.
+- **Time saved per event:** the business metric. Estimated identification time before vs. after, on representative events. This is what a go/no-go should ultimately rest on.
+
+### Read the failures, not just the score
+
+A single accuracy percentage hides the useful detail. A model that's 92% overall but consistently confuses two specific bearing variants has a *specific, fixable* problem — more images of those two, or a classification attribute that separates them. Confusion analysis turns "it's not accurate enough" into "add these fifteen images," which is an action, not a verdict.
+
+<aside>
+⚠️ **Watch out:** Beware the demo that identifies ten hand-picked parts flawlessly and "proves" the tool works. That proves nothing about your catalog. Insist on a representative, held-out test and a top-3 number on the family you actually care about. A boring honest number beats an exciting dishonest one every time.
+</aside>
+
+---
+
+## 🔁 Historical Recognition: Closing the Feedback Loop
+
+The sixth documented feature — **historical recognition, learning from confirmed identifications over time** — is what turns Parts Identifier from a static tool into one that gets better under your specific conditions. Every time a technician confirms a match, that confirmation is, in effect, a new labeled example: this photo, in these real conditions, is this item. Fed back in, those confirmations sharpen exactly the families your operation touches most.
+
+Two things make the loop work in practice:
+
+- **Frictionless confirmation.** If confirming the right match (and flagging a wrong one) is one tap, the loop fills with clean signal. If it's clumsy, technicians skip it and the system stops learning. Make the loop cheap to feed.
+- **Governed feedback.** The loop is only as good as its inputs. A rushed technician confirming a *wrong* match teaches the model to be wrong with confidence. Guard against it: periodically review low-confidence confirmations and reported misses, and keep the canonical item mapping clean so confirmations reinforce good data rather than duplicates.
+
+The strategic payoff is real: the parts your team identifies most become the parts the tool identifies best, automatically, because usage and learning are the same act. But it is not magic — it is a supervised loop that rewards good confirmation hygiene and punishes sloppy input.
+
+---
+
+## 🧪 A Realistic Pilot Plan
+
+IBM's ~one-week estimate is for *deciding whether to look further*. A pilot that actually *proves value on your parts* realistically runs four to six weeks. That is not a contradiction of the doc — it's the difference between "evaluate applicability" and "validate it works well enough to keep." Here is a defensible shape.
+
+| Week | Focus | Outcome |
+|---|---|---|
+| **Week 1** | PI-1/PI-2 — quantify the pain, pick the family, clean its item-master slice | A scoped, deduplicated target family and a baseline "current identification time" number |
+| **Weeks 2–3** | PI-3 — collect representative images across conditions; deploy and wire up (PI-4) | A real training set on the target family; the tool live against a clean catalog slice |
+| **Week 4** | PI-5 — test on a held-out, representative set; analyze confusion pairs | Top-3 accuracy and time-saved figures; a prioritized "needs more images" list |
+| **Weeks 5–6** | Tune — add images for confused pairs, refine descriptions/classification, run the feedback loop with a few field users | A stabilized number and real field feedback; a go/no-go recommendation with evidence |
+
+End the pilot with a one-page decision: top-3 accuracy on the target family, estimated minutes saved per identification event, frequency of those events, and a clear recommendation. That artifact — not enthusiasm — is what a niche app deserves before it's blessed or shelved.
+
+---
+
+## 🔄 Worked Example: The Bearing Family, Tuned
+
+Close the loop on Marcus's bearing. In week 1, the team scopes the pilot to the **bearing family** — high confusion, high cost — and cleans that slice of the item master, collapsing three duplicate `6205` records into the canonical `BRG-6205-2RS` and standardizing descriptions. In weeks 2–3, they photograph the plant's common bearings across clean and greasy conditions, multiple angles, and shop lighting — a few dozen images per common SKU — and go live. In week 4, PI-5 on a held-out set shows **top-1 at 74%, top-3 at 93%**, with one stubborn confusion pair: the `2RS` (rubber seal) versus `ZZ` (metal shield) variants — precisely the tie Marcus broke by eye in Part 2.
+
+That confusion pair isn't a failure; it's a *to-do*. In weeks 5–6 the team adds targeted close-up images emphasizing the seal face of each variant and adds a seal-type attribute to the classification. Top-3 climbs, the seal confusion narrows, and — crucially — every time a technician confirms `BRG-6205-2RS` in real use, historical recognition banks another real-world example. The tool didn't need a better model. It needed clean items, representative images, and a feedback loop — the three things this series has hammered on end to end. The pilot's go/no-go rests on a real number: 93% top-3 on the bearing family, ~4 minutes saved per event, and a known path to widen it family by family.
+
+---
+
+## ⚠️ Failure Modes and Troubleshooting
+
+| Symptom | What it means | What to do |
+|---|---|---|
+| Great demo, poor field results | Trained/tested on clean bench images only | Rebuild the training set with realistic dirty, varied-condition images |
+| One family stubbornly confused | Under-represented or visually inseparable variants | Add targeted images; add a classification attribute that separates them |
+| Accuracy stalls after go-live | Feedback loop isn't being fed | Make confirmation one-tap; coach the crew to confirm and flag misses |
+| Model "learned" wrong answers | Sloppy confirmations polluted historical recognition | Review confirmations; fix labels; keep canonical items clean |
+| Impressive top-1, useless in practice | Measuring the wrong metric | Track top-3 and time-saved — how the tool is actually used |
+| Pilot can't reach a decision | No baseline or no ground-truth test | Capture "before" identification time and test on known parts, per PI-5 |
+| Nobody uses it after launch | Deployed with no owner, metric, or coaching | Assign an owner, a metric, and a capture-training session; seed early wins |
+
+The through-line, one last time: when Parts Identifier underperforms, the fix is almost always in the **data and the process** — images, labels, catalog, feedback, coaching — not in the model. That is genuinely good news, because every one of those is within your control.
+
+---
+
+## 💳 Governance, Users, and the AppPoints Reality
+
+A few honest notes on the commercial and governance side.
+
+- **AppPoints cost is not published for this app.** The suite roadmap's AppPoints cost-per-application table lists Manage tiers, Monitor, Health, Predict, Visual Inspection, Optimizer, and Civil Infrastructure — but **not a per-user figure specifically for Parts Identifier.** So do not quote a number; confirm the exact cost and license type with IBM during evaluation. Because AppPoints are a shared pool, the sharper question is whether the measured value justifies allocating *any* points here versus elsewhere in the suite.
+- **Small, defined user base.** IBM pegs the user base as limited and the team size as one to two people. Entitle deliberately — the field technicians, receiving clerks, and inventory staff who actually hit the "unknown part" moment — rather than switching it on for everyone because the points exist.
+- **Give it an owner and a metric.** A niche AI feature with no owner and no success measure becomes shelfware that quietly erodes trust in the whole suite. Name who owns it, what number defines success, and when you'll review it.
+
+<aside>
+⚠️ **Watch out:** "We have the AppPoints, so just turn it on" is how good tools become abandoned tiles. Deploy Parts Identifier the way you'd deploy any capability that must earn its slot — with an owner, a metric, a bounded user base, and a review date. The shared pool makes it *possible* to enable casually; discipline is what keeps it *worth* enabling.
+</aside>
+
+---
+
+## 🧠 Why This Posture Is Right for a Niche App
+
+It would be easy to read this series' caution as skepticism. It isn't — it's fit. IBM positions Parts Identifier as low-to-medium value, niche, limited user base, evaluate-later. The correct engineering response to that positioning is *exactly* what we've laid out: a tight, bounded, metric-driven pilot on one high-value family, funded mostly by data work you'd benefit from anyway, decided by a real number. You don't build a flagship program around a niche app, and you don't dismiss a niche app that solves a real, expensive moment. You *evaluate it honestly* — and an honest evaluation is a small investment with a clear decision at the end.
+
+And notice the consolation prize baked in: even a "no-go" pilot leaves you with a cleaner, deduplicated, better-described item-master slice and a sharper picture of where part-identification actually costs you time. For a one-to-two-person, one-week-to-look, few-weeks-to-prove commitment, that's a favorable risk profile. Right-sized effort, honest metric, useful byproducts — that is the whole point of treating a niche app like a niche app.
+
+---
+
+## 🔧 Practical Notes Before You Roll This Out
+
+- **Budget for images, not install.** PI-3 is the big line item; PI-4 is trivial. Staff and schedule accordingly.
+- **Pick one high-confusion, high-cost family** and win it before expanding. Beachhead, not boil-the-ocean.
+- **Photograph reality.** Dirty, varied angles, shop lighting, some clutter — train for the field, not the bench.
+- **Label to canonical items.** Deduplicate first (Part 3); one true `ITEMNUM` per image, verified.
+- **Measure top-3 and time-saved** on a held-out, representative set — and read the confusion pairs.
+- **Feed the loop cleanly.** One-tap confirm, coached crew, periodic review so historical recognition learns the truth.
+- **Confirm AppPoints and assign an owner + metric + review date** before it goes to production.
+
+---
+
+## Key Takeaways
+
+- **Deployment is easy; the data is the work** — IBM rates complexity low, and the effort concentrates in collecting images (PI-3) and testing accuracy (PI-5).
+- **IBM's five tasks are your week-one plan** — quantify the pain, scope a family, collect images, deploy, and measure against known parts.
+- **Improve accuracy with data, not a model** — broader, realistic, correctly-labeled images plus a clean item master; tune the specific confusion pairs.
+- **Measure honestly** — top-3 success and time-saved on a held-out representative set, with confusion analysis to guide the next round of images.
+- **Right-size the commitment** — no published AppPoints figure (confirm it), a small user base, an owner and a metric, and a metric-driven go/no-go that fits a niche, evaluate-later app.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite documentation](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Maximo Manage — item master and inventory (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo Application Suite — licensing and AppPoints (IBM Documentation)](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- Internal source: MAS Application Suite Add-Ons Roadmap, §10 (Maximo Parts Identifier), §13 (AppPoints Licensing), §14–15 (deployment phases and exploration matrix)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 3 — Catalog Matching & Inventory Integration](/blog/mas-parts-identifier-catalog-matching) |
+| **Next:** | *You have completed the series — Maximo Parts Identifier on MAS 9.* Return to the [Series Index](/blog/mas-parts-identifier-series-index). |
+
+---
+
+*Published by TheMaximoGuys | July 2026*
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS — from architecture and migration planning to the day-to-day work of configuring, extending, and running Maximo Manage. This series is the honest field guide we wish we'd had.

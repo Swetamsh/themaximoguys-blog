@@ -76,7 +76,7 @@ relatedSlugs:
 
 ---
 
-## The Integration Surface Moved — For Work Orders Specifically
+## 📖 The Integration Surface Moved — For Work Orders Specifically
 
 Here is the message that lands in your inbox after an upgrade: *"The integration team says the old work order endpoint changed — did it?"*
 
@@ -106,9 +106,7 @@ Three things to know, in order of how often you'll use them:
 | API authentication | Basic auth | **API keys** (basic auth deprecated) |
 
 <aside>
-
 💡 **Key insight:** Nothing on the *outbound-still-works* side of this table needs your attention today. The rows that matter are the deprecated ones — RMI, direct SQL, basic auth. If any of your WO integrations lean on those, they are the migration backlog. Everything else is "leave it alone."
-
 </aside>
 
 ---
@@ -167,10 +165,23 @@ Content-Type: application/json
 The `action=wsmethod:changeStatus` parameter is the important part: it routes the call through the work order's status-change method rather than blindly stamping the `status` field, so state validation and side effects behave exactly as they would in the UI.
 
 <aside>
-
 💡 **Key insight:** Prefer `wsmethod:changeStatus` over a direct write to the `status` attribute. A raw field update can bypass the transition logic; the method call honors it. When an integration "sets a work order to COMP but nothing downstream fired," a bypassed status method is usually why.
-
 </aside>
+
+### The query parameters worth knowing
+
+You'll reach for the same handful of parameters on nearly every WO call. Keep this reference close:
+
+| Parameter | What it does | Example |
+|---|---|---|
+| `lean=1` | Returns flat JSON without OSLC namespace wrappers | `lean=1` |
+| `oslc.where` | Filters the record set | `oslc.where=status="APPR"` |
+| `oslc.select` | Chooses which columns come back | `oslc.select=wonum,status,assetnum` |
+| `oslc.pageSize` | Caps records per page (paginate large sets) | `oslc.pageSize=100` |
+| `oslc.orderBy` | Sorts the result | `oslc.orderBy=-reportdate` |
+| `action=wsmethod:changeStatus` | Invokes the status-change method | on a POST to `/{workorderid}` |
+
+`oslc.select` plus `oslc.pageSize` are your two levers against slow, oversized responses — always name your columns and page large result sets rather than pulling everything at once.
 
 ### What changed from the legacy endpoints — and why
 
@@ -199,12 +210,28 @@ Here's how it fits together for work orders:
 The canonical use case is **real-time WO status sync with an ERP system**: a work order moves to COMP in Maximo, an event fires, and the ERP updates the associated cost or maintenance record within seconds — no batch job, no polling window. For high-volume WO integration, this scales better than the old JMS-based approach.
 
 <aside>
-
 💡 **Key insight:** Kafka is the answer when latency and volume both matter. If you sync a handful of WO changes a day, the REST API on a schedule is fine. If you sync thousands of status changes an hour into an ERP, that's the workload event-driven Kafka was built for. Match the mechanism to the volume — don't Kafka-ify a nightly batch.
-
 </aside>
 
 If event-driven integration is new to your team, the pattern (topics, subscribers, at-least-once delivery) is covered in depth in the **MAS INTEGRATION series** — this post just tells you that work orders are a first-class publisher on it.
+
+---
+
+## 🔬 A Worked Integration: Completed WO → ERP in Near-Real-Time
+
+Let's assemble the pieces into one realistic flow: keeping an ERP maintenance-cost record in sync the moment a work order completes.
+
+1. **A technician completes the work.** On Maximo Mobile, `WO2087` moves to **COMP**. Under the hood this is a status transition through the work order's `changeStatus` method — the same one your REST integrations use.
+2. **Maximo publishes an event.** Because a Kafka provider is configured under External Systems, the status change publishes a message to the work order Kafka topic. No poll, no batch window — the event fires on the transition.
+3. **The ERP adapter consumes it.** A subscriber on that topic (running outside Maximo) picks up the message within seconds. It reads the `wonum`, the new `status`, the `assetnum`, and the actual labor/materials totals from the payload.
+4. **The adapter enriches if needed.** If the event doesn't carry every field the ERP wants, the adapter calls back into Maximo with a lean query — `GET /api/os/mxwodetail?lean=1&oslc.where=wonum="WO2087"&oslc.select=...` — to pull the extra columns. Event to notify; REST to enrich.
+5. **The ERP updates.** The maintenance-cost record in the ERP is updated against the completed work order, seconds after the technician tapped COMP — not overnight.
+
+Notice the division of labor: **Kafka answers "when did something change?"** and **REST answers "give me the details."** Used together they replace the old nightly-batch-plus-polling pattern entirely — the event eliminates the polling, and the lean REST query eliminates the fat payloads. That pairing is the shape of most modern MAS 9 work order integrations.
+
+<aside>
+💡 **Key insight:** Don't try to make the Kafka payload carry *everything*. Let the event be a lightweight "WO2087 is now COMP" signal, and let a targeted `lean=1` REST call fetch whatever extra fields the consumer needs. Fat events are brittle; thin events plus enrichment queries are resilient.
+</aside>
 
 ---
 
@@ -224,10 +251,39 @@ Everything you built on MIF for work orders keeps running. There is no forced cu
 One environment note worth flagging: **Interface Tables depend on database access**, and in sealed or SaaS-style MAS deployments you may not have it. If your MIF integration relies on reading or writing interface tables directly, confirm your environment still exposes the database before you count on that path in a cloud upgrade.
 
 <aside>
-
 💡 **Key insight:** "MIF still works" and "build new integrations on MIF" are two different statements. The first is true; the second isn't the recommendation. Keep your working Publish Channels; don't author a brand-new one when a REST call or a Kafka topic does the job.
-
 </aside>
+
+---
+
+## ⚠️ Edge Cases and Troubleshooting
+
+Integrations fail at the seams — auth, payload shape, status logic, and delivery. Here's the WO-integration triage list.
+
+| Symptom | What it means | What to do |
+|---|---|---|
+| `401 Unauthorized` on every call | Basic auth is deprecated / disabled | Switch to an **API key** (`apikey` header or `apikey=` param) |
+| Response is a wall of `rdf:` / `spi:` prefixes | You forgot `lean=1` | Add `lean=1` to the request |
+| Status set to COMP but nothing downstream fired | You wrote the `status` field directly, bypassing the method | Use `action=wsmethod:changeStatus` so the transition logic runs |
+| Huge, slow query responses | No column projection or paging | Add `oslc.select` and `oslc.pageSize`; sort with `oslc.orderBy` |
+| Kafka consumer sees a change twice | At-least-once delivery — duplicates are expected | Make consumers **idempotent** (key on `wonum` + status + timestamp) |
+| An old integration errors after upgrade | It uses RMI, direct SQL, or basic auth | Rewrite to the JSON API + API keys — these are the deprecated rows |
+| Interface-table integration can't reach the DB | Sealed/SaaS deployment has no direct DB access | Move that flow to REST or an Enterprise Service; don't rely on interface tables |
+| A REST create "succeeds" but the WO is wrong | Missing required fields or a bad `classstructureid` | Send `siteid`, `description`, `worktype` at minimum; validate reference values |
+
+The through-line: most WO integration failures in MAS 9 are one of four things — **wrong auth (API keys), wrong payload shape (`lean=1`, projection), bypassed status logic (`changeStatus`), or non-idempotent event handling.** Check those four before you suspect anything deeper.
+
+---
+
+## 🧠 Why It Works This Way
+
+Two design decisions explain the whole shift, and understanding them makes the deprecations feel principled rather than arbitrary.
+
+**Why the object-structure API over the raw MBO endpoints.** The old `/maxrest` MBO layer let integrations touch objects close to the metal — fast, but inconsistent with how MIF processes the same data. By standardizing new integration on the **object structure** (`/api/os/`), IBM makes a REST create and a MIF inbound behave identically: same integration processing, same cross-object rules, same security. One object structure, many transports. That consistency is worth more than the raw speed of the legacy endpoint, and it's why RMI and direct SQL — the two most "close to the metal" patterns — are the ones being restricted.
+
+**Why Kafka over JMS and polling.** Polling is wasteful (most polls find nothing) and laggy (you're never fresher than your interval). JMS worked but doesn't scale to modern event volumes the way a partitioned log does. Kafka, provided by Strimzi as part of the OpenShift platform, gives work orders a durable, high-throughput, subscribe-don't-poll event stream — the right substrate for real-time sync at volume. It's the same "match the surface to how data is consumed" principle that ran through Part 5's reporting rationalization, applied to integration.
+
+The net: **REST for request/response, Kafka for events, object structures for consistency, API keys for auth.** Every deprecation on the list is just the old way of doing one of those four, being nudged toward the new way.
 
 ---
 
@@ -248,10 +304,14 @@ Pull the pieces together and the posture is refreshingly simple. You don't need 
 - **Sanity-check Interface Tables** against your deployment model if you're moving to a sealed/SaaS environment.
 
 <aside>
-
 💡 **Key insight:** Treat this like the BIRT rationalization from Part 5 — it's a triage exercise, not a rebuild. Sort every WO integration into "works, leave it," "deprecated, rewrite it," and "new, build it the MAS 9 way." Most of your catalog lands in the first bucket.
-
 </aside>
+
+---
+
+## 🏁 Wrapping Up the Series
+
+That closes the six edges. Across the series we walked the machinery *around* the work order — intake (the Service Request RBA), approval (the Approvals app, Work Order Intelligence, e-signatures), monitoring (the Operational Dashboard and custom KPIs), reporting (rationalizing BIRT), and integration (REST and Kafka). The recurring lesson held at every edge: **your work order process didn't change, but the tools around it did — and the surprises are always at the seams, never in the lifecycle.** Name the seam, and MAS 9 stops feeling like a different product and starts feeling like the same Maximo with a new cockpit.
 
 ---
 
@@ -259,7 +319,7 @@ Pull the pieces together and the posture is refreshingly simple. You don't need 
 
 - The **JSON API** at **`/api/os/mxwodetail`** with **`lean=1`** is the recommended path for all new work order integrations — query with `oslc.where`/`oslc.select`, create with a JSON POST, change status with `action=wsmethod:changeStatus`.
 - The **legacy `/maxrest` MBO endpoints, RMI access, and basic auth are deprecated**; move to the object-structure JSON API and **API keys**. **OSLC** (`/oslc/os/mxwodetail`) still works but the JSON API is preferred.
-- **Kafka events** publish WO create/update/status changes for near-real-time integration; external systems subscribe to WO topics, and **Strimzi on OpenShift** provides the broker.
+- **Kafka events** publish WO create/update/status changes for near-real-time integration; external systems subscribe to WO topics, and **Strimzi on OpenShift** provides the broker. Pair thin events with lean REST enrichment queries.
 - **MIF still works** — MXWODETAIL object structure, Publish Channels, and Enterprise Services keep running for existing integrations; IBM just isn't investing there.
 - The **migration posture** is: build new integrations on **REST/Kafka**, leave working **MIF** alone, and migrate only the genuinely deprecated pieces.
 

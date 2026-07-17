@@ -1,0 +1,255 @@
+---
+title: "The Mobile Part-Recognition Workflow in Maximo Parts Identifier"
+description: "The capture step is where Parts Identifier succeeds or fails. A practitioner's guide to the mobile photo-to-match workflow on MAS 9 — how to frame, light, and stage a part photo for a good match, how to read the candidate list, the confirm-and-verify loop, and the field edge cases that wreck accuracy."
+date: "2026-07-16"
+slug: "mas-parts-identifier-mobile-recognition"
+tags: ["Maximo", "MAS 9", "Parts Identifier", "Maximo Mobile", "Computer Vision", "Field Operations", "EAM"]
+draft: false
+tier: "developer"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-parts-identifier-02-mobile-recognition.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "How do I take a good photo for Parts Identifier?"
+    answer: "Fill the frame with the part against a plain, contrasting background; light it evenly and avoid glare and harsh shadows; shoot square-on to the most distinctive face; wipe off grime that hides markings; and hold steady for a sharp image. Most identification failures are photo failures, not model failures — the single highest-leverage skill for this tool is disciplined image capture."
+  - question: "What happens after I take the photo in Parts Identifier?"
+    answer: "The image is analyzed and matched against the trained parts catalog, and a ranked list of candidate parts comes back — each with a part number, description, manufacturer, current storeroom quantity, and an order link. The technician reviews the candidates, uses physical detail to break ties between look-alikes, and confirms the correct match. That confirmation both drives the next action (issue or order) and becomes a labeled example that improves future recognition."
+  - question: "Does Parts Identifier work offline in the field?"
+    answer: "Connectivity behavior depends on how the AI inference and catalog lookups are hosted in your MAS deployment, and IBM does not publish a single guaranteed offline mode, so validate it during your pilot. Regardless of the answer, design the field workflow to degrade gracefully: let a technician capture and queue a photo when signal is poor and resolve the match when connectivity returns, rather than blocking the repair."
+  - question: "Why did Parts Identifier return the wrong part?"
+    answer: "Usually one of three reasons: the photo was poor (glare, blur, cluttered background, hidden markings), the part is a near-identical twin of another SKU that vision alone cannot separate, or the part was never in the trained catalog so the model returned a plausible neighbor. The fix is respectively a better photo, a human tiebreak on physical detail, or adding that part to the training set."
+keyTakeaways:
+  - "Capture quality is the dominant variable — most bad matches are bad photos, not a bad model"
+  - "Frame tight, light evenly, shoot the most distinctive face square-on, and clean the part before shooting"
+  - "The output is a ranked candidate list with item number, stock, and an order link — not a single answer"
+  - "Keep the human in the loop to break ties between visually identical SKUs using physical detail"
+  - "Design the field flow to degrade gracefully when connectivity or confidence is low"
+series:
+  name: "MAS PARTS IDENTIFIER"
+  part: 2
+  total: 4
+tldr: "The photo is where Parts Identifier lives or dies. This part is a field guide to the mobile capture-to-match workflow on MAS 9 — how to frame, light, clean, and stage a part for a reliable match, how to read and act on the candidate list, the confirm-and-verify loop that keeps a human in charge of look-alikes, and the capture edge cases and troubleshooting that separate a useful tool from a frustrating one."
+seoTitle: "Parts Identifier: The Mobile Recognition Workflow"
+seoDescription: "How the mobile photo-to-match workflow works in Maximo Parts Identifier on MAS 9 — image-capture best practices, reading the candidate list, and field troubleshooting."
+targetQuestions:
+  - "How do I take a good photo for Parts Identifier?"
+  - "What is the Parts Identifier mobile workflow?"
+  - "Why did Parts Identifier return the wrong part?"
+  - "Does Parts Identifier work offline?"
+  - "How do I read the Parts Identifier candidate list?"
+semanticKeywords:
+  - "Parts Identifier mobile workflow"
+  - "part photo capture best practices"
+  - "computer vision image quality"
+  - "candidate list confidence score"
+  - "Maximo Mobile part recognition"
+  - "field part identification"
+  - "image capture lighting glare"
+  - "human in the loop verification"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 1 — the AI vision behind Parts Identifier"
+  - "Familiarity with mobile field workflows"
+  - "Access to a device camera in the field"
+speakableSections:
+  - "The Capture Step Is the Whole Ballgame"
+  - "The Nine Rules of a Good Part Photo"
+  - "Reading the Candidate List"
+series_part: 2
+clusterSlugs:
+  - "mas-parts-identifier-series-index"
+  - "mas-parts-identifier-catalog-matching"
+relatedSlugs:
+  - "mas-parts-identifier-series-index"
+  - "mas-parts-identifier-intro-ai-vision"
+  - "mas-parts-identifier-catalog-matching"
+  - "mas-parts-identifier-deployment-tuning"
+---
+
+# The Mobile Part-Recognition Workflow in Maximo Parts Identifier
+
+> 🎯 **Who this is for:** Field technicians, mobile-program owners, and the trainers who will teach a crew to use Parts Identifier well — because the difference between a match and a miss is almost always the photo.
+
+**Series:** Part 2 of 4 — *Maximo Parts Identifier on MAS 9* | **Read time:** 20 minutes
+
+---
+
+## 📸 The Capture Step Is the Whole Ballgame
+
+In Part 1 we established what the tool is and how recognition works in principle. Now we get practical, and the practical truth is blunt: **the photograph is the single biggest determinant of whether Parts Identifier helps you.** The model, the catalog, the confidence scoring — all of it operates on the image the technician hands it. A perfect model fed a blurry, back-lit photo of a greasy part against a cluttered toolbox will return confident nonsense. A modest model fed a clean, well-framed, well-lit photo will land the match.
+
+This is not a limitation unique to IBM's implementation; it is intrinsic to every visual-recognition system. The lesson for a rollout is therefore counterintuitive: your training budget should skew toward teaching *humans to take photos* far more than toward anything about the AI. The most valuable half-day in your pilot is the one where the field team learns to frame a part.
+
+The documented workflow is a clean three-step loop — technician photographs the unknown part, the AI analyzes and matches it against the trained catalog, and results come back with part number, description, manufacturer, storeroom quantity, and an order link. This part zooms all the way into step one, then walks through reading and acting on the results.
+
+<aside>
+💡 **Key insight:** Treat photo capture as a skill with a standard, not an afterthought. Publish a one-page "how to shoot a part" card, laminate it, and put it in every tool bag. The teams that do this get dramatically better hit rates than the teams that assume "just point and shoot" — same app, same model, wildly different results.
+</aside>
+
+---
+
+## 🧾 The Nine Rules of a Good Part Photo
+
+Here is the field standard. None of it is exotic; all of it is routinely ignored under time pressure, which is exactly why it needs to be a written rule.
+
+| # | Rule | Why it matters |
+|---|---|---|
+| 1 | **Fill the frame** with the part | More part pixels, less background noise for the model to be confused by |
+| 2 | **Plain, contrasting background** | A part on a rag or bench edge segments cleanly; a part in a cluttered bin does not |
+| 3 | **Even, diffuse light** | Flat lighting reveals shape and markings; harsh light creates blowout and shadow |
+| 4 | **Kill glare** | Metal parts mirror overhead lights into white spots that erase detail — change angle or shade it |
+| 5 | **Shoot the most distinctive face** | Photograph the side that carries markings, a bore, a connector — not a featureless cylinder |
+| 6 | **Square-on, not skewed** | An oblique angle distorts proportions the model relies on |
+| 7 | **Clean the part** | Wipe oil, dust, and swarf; grime hides the exact features that distinguish look-alikes |
+| 8 | **Hold steady, get it sharp** | Motion blur destroys fine detail — brace your elbow or set the part down |
+| 9 | **Include a scale cue when size disambiguates** | For families that differ mainly in size, a coin or ruler in-frame helps a human break the tie |
+
+If you teach only three of these, teach **fill the frame, kill glare, and clean the part** — they fix the majority of failed matches on shiny industrial components.
+
+### The pre-shot ritual
+
+Bake it into muscle memory as a five-second routine: **wipe, place, light, frame, steady.** Wipe the markings clean, place it on a neutral surface, get light on it without glare, frame it tight and square, hold steady, shoot. A technician who does this reflexively will out-perform the model's raw capability; a technician who snaps one-handed in a dark cabinet will blame the AI for their own input.
+
+<aside>
+⚠️ **Watch out:** The worst photos happen exactly when the stakes are highest — a 2 a.m. breakdown, cramped access, one hand on a flashlight. That is precisely when the discipline pays off. If access is impossible, remove the part (if safe) and photograph it on a bench rather than fighting a bad angle in situ.
+</aside>
+
+---
+
+## 🔄 The Full Field Loop, Step by Step
+
+Let us rejoin Marcus from Part 1 and walk the complete mobile loop with the capture done right this time. The gearbox bearing is out and in his hand.
+
+1. **Prep.** Marcus wipes the bearing faces with a rag until the (ghostly) markings and seal type are visible. He sets it on a clean shop towel — neutral, contrasting, matte.
+2. **Stage the light.** The overhead LED is throwing glare across the metal. He angles the bearing 30 degrees and shades it with his body so the surface reads as detail, not a white flare.
+3. **Frame and shoot.** He fills the frame with the bearing's sealed face — the most distinctive surface — square-on, braces his elbow on the bench, and captures a sharp image.
+4. **Submit.** Parts Identifier analyzes the image against the trained catalog.
+5. **Read the candidates.** Back come three ranked results: `BRG-6205-2RS` (top), `BRG-6205-ZZ` (close), `BRG-6305-2RS` (distant), each with description, manufacturer, on-hand quantity, and an order link.
+6. **Break the tie.** The top two are the 2RS (rubber contact seal) versus the ZZ (metal shield). Marcus looks at the physical part — rubber seals — and selects `BRG-6205-2RS`.
+7. **Act.** The result shows **3 on hand at CENTRAL, bin B-14**. He confirms the match and heads for the storeroom. Had it read zero, he would have tapped the order link (Part 3).
+8. **Confirm — and feed the loop.** His confirmation is logged as a correct identification, which is the raw material for historical recognition improving the next `6205` match (Part 4).
+
+Notice how little of that is "the AI." Steps 1–3 are craft, step 6 is human judgment, steps 7–8 are ordinary Maximo. The AI does one thing — narrow twenty possibilities to three — and the workflow around it does the rest. That is the correct division of labor, and designing your SOP to reflect it is what makes the tool trustworthy.
+
+---
+
+## 📊 Reading the Candidate List
+
+The output is deliberately a *list*, not a verdict, and using it well is a small skill of its own.
+
+### It is a shortlist, not an answer
+
+The model's job is to rank; the human's job is to choose. Train technicians to always glance at the top three, not just the first result — because for look-alike families, the correct part is frequently the second candidate, distinguished by a detail the camera under-weighted. The tool that "got it wrong" often had the right answer sitting one row down.
+
+### Use the metadata, not just the picture
+
+Each candidate carries description, manufacturer, on-hand quantity, and storeroom location. That metadata is a tiebreaker in its own right. If two candidates look identical but only one is stocked in this plant, that is strong Bayesian evidence for the stocked one — you are far more likely to be holding a part your operation actually uses. Teach technicians to fold "which one do we even carry?" into the decision.
+
+### Confidence is triage, not truth
+
+As established in Part 1, treat the confidence score as a signal about *photo-to-catalog similarity*, and route accordingly.
+
+| Situation in the list | What it is telling you | The move |
+|---|---|---|
+| One candidate far ahead of the rest | Clear visual match | Verify one distinguishing detail, confirm |
+| Two or three tightly bunched at the top | A look-alike family | Break the tie on physical detail + "do we stock it" |
+| Everything low and flat | Out-of-catalog part, or a poor photo | Retake first; if still flat, escalate to a human/manual lookup and flag it for training |
+| Top candidate looks plausible but details don't match the physical part | Confident-but-wrong | Trust your eyes over the score — reject it and retake or escalate |
+
+That last row is the one that protects you from the tool's worst failure mode: a high score on the wrong part. The standing rule for the crew is simple — **your eyes outrank the confidence percentage.**
+
+<aside>
+💡 **Key insight:** The candidate list plus inventory metadata is more powerful than either alone. "This looks like a 6205, and we stock exactly one 6205 variant in this plant" collapses an ambiguous vision problem into a near-certain answer. This is why catalog and inventory integration (Part 3) is not a bonus — it is what makes the recognition usable.
+</aside>
+
+---
+
+## 📶 Connectivity, Latency, and Graceful Degradation
+
+Field work happens in signal dead zones — basements, tank farms, remote substations, the middle of a large press line. How Parts Identifier behaves there depends on how AI inference and catalog lookups are hosted in your particular MAS deployment, and IBM does not publish a single blanket offline guarantee. So do not assume; **test it in your pilot** under realistic conditions, and design the workflow to fail soft either way.
+
+Sensible design principles regardless of the hosting answer:
+
+- **Never block the repair.** If a match can't be resolved right now, the technician should still be able to capture the photo, keep working, and resolve identity when connectivity returns.
+- **Queue, don't lose.** A captured image tied to the work order is valuable even before it's matched — it's evidence and a training candidate. Make sure it's retained.
+- **Show honest states.** "Analyzing," "no signal — queued," and "low confidence — please retake" are three different messages. Ambiguous spinners breed distrust.
+- **Have a manual fallback.** When the AI can't help, the technician needs a fast path to a human expert or a manual item-master search — one tap, not a dead end.
+
+<aside>
+⚠️ **Watch out:** The fastest way to kill adoption is a tool that hangs on a spinner in a dead zone with no fallback. Technicians abandon anything that blocks the job. Validate the poor-connectivity path *first* in your pilot, because that is where real field use will stress it hardest.
+</aside>
+
+---
+
+## ⚠️ Capture Edge Cases and Troubleshooting
+
+Real parts and real conditions generate real snags. Here is the "if you see X, it means Y, do Z" table for the capture-to-match step.
+
+| Symptom | What it means | What to do |
+|---|---|---|
+| Confident match, wrong part | A near-identical SKU won on appearance | Reject it; break the tie on physical detail (seal type, bore, connector); prefer the variant you actually stock |
+| Every candidate low-confidence | Poor photo, or part not in the catalog | Retake with the nine rules; if still flat, the part likely needs adding to the training set (Part 4) |
+| Match flips between two shots | The part is ambiguous from some angles | Shoot the most distinctive face; add a scale cue if size is the differentiator |
+| Great on the bench, poor in the field | Glare, clutter, or motion in situ | Remove the part if safe and shoot on a neutral surface; shade the glare |
+| Glare wipes out markings on shiny metal | Specular reflection of overhead light | Change angle, diffuse or shade the light, or rotate the part out of the reflection |
+| Model keeps missing one specific family | That family is under-represented in training | Collect more images of it in realistic conditions and feed the training set |
+| Right part, but it says "0 on hand" wrongly | Inventory data issue, not a vision issue | Fix the balance in Inventory; the match was correct — the catalog data was stale (Part 3) |
+| Technicians stop using it after a few misses | Early experience was poor photos + no coaching | Re-train on capture; seed early wins on a well-trained parts family to rebuild trust |
+
+The pattern across this table is the through-line of the whole series: **when the tool "fails," the fix is usually outside the model** — a better photo, a human tiebreak, cleaner inventory, or a broader training set. Diagnosing *which* of those it is, quickly, is the real field skill.
+
+---
+
+## 🧠 Why the Human Stays in the Loop
+
+It is tempting to imagine a fully automatic future — photo in, part issued, no human judgment. For industrial MRO that is the wrong target, and understanding why keeps your process honest. Vision alone cannot reliably separate parts that differ by a tolerance, a durometer, a material grade, or a seal type invisible at arm's length. Those distinctions carry real consequences — the wrong seal fails early, the wrong bearing runs hot — so the cost of a confident-but-wrong automatic answer is high.
+
+Keeping a human in the loop is therefore not a temporary crutch to be engineered away; it is the design. The model's proper role is to *compress the search* — from twenty candidates to three — and the technician's role is to *close the last gap* with physical inspection and operational context. That partnership is faster than a human alone and safer than a model alone. Design your SOP, your training, and your success metrics around the partnership, not around a fantasy of full automation.
+
+---
+
+## 🔧 Practical Notes Before You Roll This Out
+
+- **Ship a capture standard.** One laminated card, nine rules, in every tool bag. This is the highest-ROI artifact of the whole deployment.
+- **Train on capture before features.** Spend the first session teaching photos, not menus. A crew that shoots well will forgive a lot; a crew that shoots badly will quit.
+- **Make "check the top three" a rule.** Never confirm off the first candidate alone for look-alike families.
+- **Teach "eyes over score."** The confidence percentage informs; the technician decides. Reject confident-wrong matches on sight.
+- **Validate the dead-zone path.** Test poor-connectivity behavior early and make the fallback one tap, never a spinner with no exit.
+- **Close the loop deliberately.** Every confirmation is a training example — make confirming (and flagging misses) frictionless so the system actually learns (Part 4).
+
+---
+
+## Key Takeaways
+
+- **The photo dominates everything.** Most bad matches are bad photos — invest your training in capture, not in the AI.
+- **Nine rules make a good photo:** fill the frame, plain background, even light, kill glare, distinctive face, square-on, clean the part, hold steady, add a scale cue when size matters.
+- **The output is a ranked shortlist** with item number, stock, and an order link — read the top three and use inventory metadata as a tiebreaker.
+- **Confidence is triage, not truth** — the technician's eyes and operational context outrank the percentage, especially for look-alike SKUs.
+- **Design for graceful degradation** — never block a repair, queue captures in dead zones, and always offer a one-tap manual fallback.
+
+---
+
+## References
+
+- [IBM Maximo Application Suite documentation](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Maximo Mobile documentation (IBM Documentation)](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [Maximo Manage — item master and inventory (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- Internal source: MAS Application Suite Add-Ons Roadmap, §10 (Maximo Parts Identifier)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 1 — Intro & the AI Vision Behind Parts Identifier](/blog/mas-parts-identifier-intro-ai-vision) |
+| **Next:** | [Part 3 — Catalog Matching & Inventory Integration](/blog/mas-parts-identifier-catalog-matching) |
+
+---
+
+*Published by TheMaximoGuys | July 2026*
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS — from architecture and migration planning to the day-to-day work of configuring, extending, and running Maximo Manage. This series is the honest field guide we wish we'd had.

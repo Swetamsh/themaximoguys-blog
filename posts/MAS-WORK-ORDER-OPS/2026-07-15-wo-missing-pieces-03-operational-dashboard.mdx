@@ -72,11 +72,11 @@ relatedSlugs:
 
 > 🎯 **Who this is for:** Maintenance managers and Maximo administrators who ran the day from a Start Center — and want to know what the new Operational Dashboard gives them before they commit to switching.
 
-**Series:** Part 3 of 6 — *MAS 9 Work Order Operations: The Missing Pieces* | **Read time:** 15 minutes
+**Series:** Part 3 of 6 — *MAS 9 Work Order Operations: The Missing Pieces* | **Read time:** 20 minutes
 
 ---
 
-## The Strategic Replacement for Start Centers
+## 📖 The Strategic Replacement for Start Centers
 
 For years, the maintenance manager's day started in one place: the **Start Center**. Result sets for overdue work, a KPI graph or two, a few quick-launch links. It was the command center, and everyone built theirs around the same muscle memory.
 
@@ -101,9 +101,7 @@ This post is about **consuming** the dashboard — the KPIs you get for free and
 | Export | Limited | **CSV, PNG, JPG** |
 
 <aside>
-
 💡 **Key insight:** The Operational Dashboard isn't just "a prettier Start Center." It ships with real work order KPIs already defined, so a maintenance manager can get a working command center *without building a single result set*. That's the change: less assembly required.
-
 </aside>
 
 ---
@@ -125,10 +123,14 @@ There are two more IBM ships in the same family — a **Planned vs. Unplanned Ra
 
 Notice what this list is: it's the standard maintenance scorecard, made available without a build phase. The moment you enable the dashboard, these are consumable.
 
+### PM Compliance is configurable — decide what "on time" means
+
+The one out-of-the-box KPI worth a closer look is **PM Compliance**, because its number is only as meaningful as the rule behind it. The calculation is **completed-on-schedule ÷ total-scheduled**, but *what counts as "on schedule"* is configurable, and that choice is a policy decision, not a technical one.
+
+A PM with a target-finish date can be judged compliant if it's completed by that date, or you can allow a grace window — a common convention is the "10% rule," where a monthly PM completed within roughly three days of target still counts. Whatever you choose, choose it deliberately and apply it consistently, because two sites using different compliance windows can't compare their numbers. The dashboard also supports **threshold alerting** on PM compliance, so a drop below your floor can raise a signal rather than waiting to be noticed in a meeting.
+
 <aside>
-
 💡 **Key insight:** Treat the out-of-the-box KPIs as your baseline, not your ceiling. They're deliberately generic — emergency count, overdue count, PM compliance. When "overdue" or "backlog" means something specific to *your* site (a particular craft, a particular work type), that's a custom KPI, and that's Part 4. Start with these; extend later.
-
 </aside>
 
 ---
@@ -155,15 +157,55 @@ The dashboard is built from **cards**, and a handful of card types do most of th
 
 - **KPI Value** — a single metric with its trend. This is your "overdue WO count, and is it getting worse?" tile.
 - **KPI Trend** — one metric over time, e.g., PM compliance across the last 12 months. This is how you tell a slow drift from a bad day.
+- **KPI Comparison** — one metric broken out by a dimension, e.g., backlog by site, work type, or craft, as a bar chart.
 - **Work Queues** — a live count of WOs sitting in each maintenance queue (the card that connects to Work Queue Manager).
+- **Table** — a plain list of critical work orders with their key fields, for when a count isn't enough and you want the actual records.
+- **Quick Actions** — one-click launches like "Create Emergency WO" or "Open Scheduling."
 - **Threshold Tile (9.1)** — a color-coded tile that turns a number into a signal. For PM compliance: green above 90%, yellow between 75% and 90%, red below 75%. New in MAS **9.1**.
-
-Two more are worth a mention because they show up on manager dashboards: a **KPI Comparison** card (backlog broken out by site, work type, or craft) and an **External Content (9.0)** card that embeds outside analytics like Power BI or Grafana directly onto the dashboard. There's also a plain **Table** card for listing critical work orders with their key fields, and a **Quick Actions** card for one-click launches like "Create Emergency WO."
+- **External Content (9.0)** — embeds outside analytics like Power BI or Grafana directly onto the dashboard.
 
 <aside>
-
 💡 **Key insight:** The **Threshold Tile** is the card that changes the meeting. A raw "PM compliance: 82%" makes people squint. A **yellow** tile makes the room react before anyone reads the number. If you're on 9.1, wire your compliance and backlog KPIs to threshold tiles — it's the cheapest way to make a dashboard *decision-driving* instead of *informational*.
+</aside>
 
+---
+
+## 🔬 A Worked Example: A Maintenance Manager's 7 A.M.
+
+Let's make the dashboard concrete by walking one morning. Marcus runs maintenance for a mid-size plant. He's on MAS 9.1, and he's enabled the Maintenance Manager dashboard on the shared screen in the planning room.
+
+1. **The wall check.** At 7:00 a.m., the team gathers around the shared dashboard. The **PM Compliance threshold tile** is **yellow** at 83% — below the 90% green floor. Nobody had to read a number; the color started the conversation.
+2. **Drill for cause.** Marcus opens the **PM Compliance trend card** and sees the number has slid over three weeks, not overnight — a drift, not a blip. Something systemic is eating PM time.
+3. **Follow the backlog.** The **Backlog KPI card** is up 12% week over week, and the **Emergency Work Orders** count is elevated. The story writes itself: emergency work is crowding out preventive work, which is dropping compliance.
+4. **Get to records.** The **Work Queues card** shows 40+ WOs in "Overdue PMs." Marcus clicks through to the queue, sees they cluster on one craft that's been pulled onto emergency repairs, and reassigns.
+5. **Circulate the picture.** He **exports the backlog view as a PNG** and drops it in the shift-handover chat so the afternoon crew and the crews who weren't in the room see the same board.
+
+Total time: about four minutes, and no result-set building. That's the intended experience — a shared, glanceable command center where color drives attention, cards drill to records, and export closes the loop with people who weren't standing at the screen.
+
+---
+
+## ⚙️ Refresh, Performance, and Governance
+
+A dashboard that's slow or ungoverned quietly loses the room. Two things determine whether yours stays trusted.
+
+**Refresh and performance.** Each KPI card runs a query on a refresh interval. Large KPI queries against a `WORKORDER` table with millions of rows can bog the dashboard down, so:
+
+| Lever | Guidance |
+|---|---|
+| Where Clauses | Keep them tight and filter on **indexed columns** (status, siteid, dates) |
+| Refresh interval | Match it to the metric — a backlog count every 15 minutes is fine; it does not need to refresh every 30 seconds |
+| Card count per dashboard | Every card is a query; a wall of 20 heavy cards will feel sluggish — curate |
+| Query cost | Prefer counts and aggregates over cards that pull large record lists on every refresh |
+
+**Governance.** Operational Dashboards support **public** and **private** dashboards, and IBM's guidance is to *govern* that rather than treat it as a free-for-all. Establish the rules early — before people start spawning private dashboards you'll later have to reconcile:
+
+- **Card ownership** — who owns each enterprise-standard card and its definition.
+- **KPI definition standards** — one agreed definition of "overdue" and "compliant," so numbers are comparable across the org.
+- **Refresh intervals and naming conventions** — consistent, predictable, and documented.
+- **Change control** — how a shared dashboard gets modified, and by whom.
+
+<aside>
+💡 **Key insight:** The fastest way to lose trust in a dashboard is two cards that both say "overdue work" and show different numbers because they used different Where Clauses. Governance isn't bureaucracy here — it's the thing that keeps the 7 a.m. meeting arguing about the *work* instead of about *whose number is right*.
 </aside>
 
 ---
@@ -179,9 +221,7 @@ But here's the honest gap: **you cannot yet assign a dashboard to specific users
 Do not assume the personalization model is identical to Start Centers. It isn't, yet.
 
 <aside>
-
 💡 **Key insight:** This one limitation is why "strategic replacement" is doing a lot of quiet work in IBM's phrasing. The Operational Dashboard is *where things are heading*, but the security-group-driven personalization that made Start Centers the daily home for dozens of distinct roles isn't fully there in 9.1. Plan for the destination; live in the present.
-
 </aside>
 
 ### Why many teams run both side by side
@@ -205,12 +245,40 @@ This is the small feature that makes the shared-dashboard pattern work in practi
 
 ---
 
+## ⚠️ Edge Cases and Troubleshooting
+
+| Symptom | What it means | What to do |
+|---|---|---|
+| Dashboard is slow to load or refresh | Heavy KPI queries, un-indexed Where Clauses, or too many cards | Tighten Where Clauses to indexed columns, lengthen refresh intervals, curate the card count |
+| Two cards show different "overdue" counts | Different Where Clause definitions of the same concept | Standardize the KPI definition and point both cards at it (governance) |
+| Managers can't get their personal role view | Per-security-group assignment isn't available in 9.1 | Keep personalized landing pages in Start Centers; use the dashboard for shared views |
+| PM Compliance looks wrong | The compliance window/grace rule isn't what people assume | Confirm and document the on-time definition; align sites to one rule |
+| A KPI count doesn't match a report | The report and the KPI use different filters or refresh times | Reconcile the definitions; remember the KPI is a live snapshot at its refresh interval |
+| Threshold tile isn't available | You're on MAS 9.0 | Threshold Tiles are a 9.1 card type — use KPI Value with a trend until you upgrade |
+
+The through-line: most dashboard problems are either **query hygiene** (slow, mismatched counts) or **the 9.1 access model** (personalization). Neither is a defect — both are configuration and planning issues you can get ahead of.
+
+---
+
+## 🧠 Why It Works This Way
+
+It helps to understand IBM's design intent, because it explains both the strengths and the gap.
+
+Start Centers were built as **per-user, per-role personalized landing pages** — powerful, but also fragmented. Every role, sometimes every user, had a different board, and there was no natural *shared* surface for a team to look at together. The Operational Dashboard inverts that emphasis: it's designed first as a **shared, card-based command center** for scenarios where one common view is the point.
+
+That design choice explains the 9.1 limitation perfectly. The dashboard leads with *shared* because that's the gap Start Centers left — and the *personalized-per-group* capability, which Start Centers already did well, is the part still being built out. IBM prioritized the new value (a common operational board) over re-implementing the old value (per-group personalization) on day one.
+
+For you, that means the two tools are complementary *right now*, not competing. The dashboard owns the shared, glanceable, decision-in-a-meeting surface; the Start Center owns the personalized daily home. Once per-group assignment lands in a future release, the balance shifts — but planning around "shared vs. personalized" is the correct model for MAS 9.1 today.
+
+---
+
 ## 🔧 Practical Notes Before You Roll This Out
 
 - **Enable the Maintenance Manager dashboard first.** It's pre-built and it maps to what managers already watch. Turn it on, then tune cards — don't start from a blank canvas.
 - **Don't decommission Start Centers in 9.1.** The per-security-group assignment gap means your personalized role landing pages still belong in Start Centers. Run both.
 - **Point the Operational Dashboard at shared scenarios.** Shift handover, dispatch review, morning backlog. That's where a single public dashboard shines and where the personalization gap doesn't hurt.
 - **Use out-of-the-box KPIs as your day-one baseline.** Emergency, overdue, backlog, PM compliance are all ready. Save the custom, site-specific KPIs for a follow-up phase (Part 4).
+- **Agree the PM Compliance rule up front.** Pick one on-time definition and apply it everywhere, or your sites can't compare numbers.
 - **Set governance early.** Decide card ownership, KPI definition standards, refresh intervals, and naming conventions *before* people start creating private dashboards, or you'll be untangling them later.
 
 ---
@@ -219,7 +287,8 @@ This is the small feature that makes the shared-dashboard pattern work in practi
 
 - The **Operational Dashboard is IBM's strategic replacement for Start Centers** as the maintenance manager's command center — but **Start Centers still work**, so this is not a rip-and-replace.
 - You get **out-of-the-box WO KPIs** — Emergency Work Orders, Overdue WOs, Backlog, PM Compliance, MTBF, MTTR — with no build phase, plus a **pre-built, fully customizable Maintenance Manager dashboard**.
-- The card types that carry WO management are **KPI Value**, **KPI Trend**, **Work Queues**, and the 9.1 **Threshold Tile**; export runs to **CSV, PNG, and JPG**.
+- The card types that carry WO management are **KPI Value**, **KPI Trend**, **KPI Comparison**, **Work Queues**, **Table**, and the 9.1 **Threshold Tile**; export runs to **CSV, PNG, and JPG**.
+- **Query hygiene and governance** keep a dashboard fast and trusted — tight Where Clauses, sensible refresh intervals, and one agreed definition per KPI.
 - The honest limitation: **MAS 9.1 dashboards can't be assigned to specific users or security groups** and offer no fully personalized per-user view — which is exactly why **many teams run Start Centers and the Operational Dashboard side by side**.
 
 ---
