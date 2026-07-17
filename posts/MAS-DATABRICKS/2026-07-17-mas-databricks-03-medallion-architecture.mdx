@@ -1,0 +1,495 @@
+---
+title: "Building the Asset Lakehouse: Bronze, Silver, Gold for Maximo Objects"
+description: "A table-by-table medallion architecture for MAS 9 data — cleansing rules for WORKORDER, ASSET, MATUSETRANS, PM, and meter data, conformed dimensions, and gold marts for reliability and cost analytics."
+date: "2026-07-17"
+slug: "mas-databricks-03-medallion-architecture"
+tags: ["Maximo", "MAS 9", "Databricks", "Data Lakehouse", "Delta Lake", "Medallion Architecture", "Unity Catalog", "Data Modeling"]
+draft: true
+tier: "developer"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-databricks-03-medallion-architecture.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What actually belongs in the bronze layer for a Maximo lakehouse?"
+    answer: "Bronze holds the raw extract exactly as it arrived from Part 2's extraction patterns — the untouched JSON payload from MXAPIWO or MXAPIASSET, the raw Kafka event envelope, or the raw CSV from a Data Export backfill — plus a small set of ingestion metadata columns (an _ingested_at timestamp, a _source_pattern tag noting REST versus Kafka, and a _batch_id). No joins, no deduplication, no type casting beyond what's needed to land the JSON as a queryable Delta table. The discipline that matters is append-only: every pull becomes a new row, never an overwrite, so a downstream cleansing bug can always be replayed from source truth without re-querying Maximo."
+  - question: "How do you handle meter and sensor data cleansing specifically for Maximo's meter model?"
+    answer: "Maximo's Meters application defines meters as continuous, gauge, or characteristic types, and that type determines the cleansing rule, not a generic outlier filter. Continuous meters (like odometers or runtime hours) report either Delta or Actual readings, and Actual readings can roll over — a new reading value that is numerically less than the previous one is not bad data, it's a rollover, and Maximo's own Rollover flag tells you which. Silver-layer cleansing for continuous meters means respecting the Reading Type, applying the asset's configured Average Calculation Method (All, Sliding Days, Sliding Readings, or Static) exactly as Maximo would, and only then flagging genuine anomalies — a delta reading larger than physically possible for the elapsed time, for instance. Gauge and characteristic meters (pressure, temperature, a text-based condition code) get simpler treatment: null handling, unit normalization, and time-alignment to a common interval, but no rollover logic, because they don't accumulate."
+  - question: "What is a conformed dimension, and why does the gold layer need one for asset data?"
+    answer: "A conformed dimension is a single, shared reference table — dim_asset, dim_location, dim_craft — that every gold-layer fact table joins against, so that 'asset class' or 'site' means exactly the same thing whether you're looking at a cost rollup, a failure-prediction table, or a PM-effectiveness mart. Without it, each gold table tends to carry its own slightly different copy of asset attributes (one report defines 'critical asset' by ASSETTYPE, another by a custom CLASSSTRUCTURE flag), and cross-table comparisons quietly drift apart. Databricks builds conformed dimensions the same way any Kimball-style dimensional model does — a stable surrogate key, slowly changing dimension handling for attributes that change over time (an asset's criticality rating, a location's cost center), and Unity Catalog governance so every gold table references the same physical table rather than a private copy."
+  - question: "Do I need to clean every Maximo table the same way before it reaches gold?"
+    answer: "No, and treating every table identically is one of the more common wasted-effort patterns in a first lakehouse build. WORKORDER needs real enrichment — joining in ASSET, LOCATIONS, and FAILUREREPORT context that isn't in the work order record itself — because gold-layer cost and reliability metrics depend on that joined context. Reference tables like ASSET and LOCATIONS mostly need deduplication and slowly changing dimension handling, not enrichment, because they're already close to their final shape. Meter and sensor data needs time-alignment and Maximo-aware rollover handling, which is a different cleansing problem entirely from a work order join. Match the silver-layer effort to what the table actually needs — over-engineering a slowly changing reference table wastes build time that a genuinely messy transactional table needs."
+  - question: "Which gold tables are worth building first for reliability and cost analytics?"
+    answer: "Start with the two gold tables that answer questions a maintenance leader is already asking in a Cognos report or a monthly review: a maintenance cost rollup by asset class and site, and a reliability mart carrying MTBF and MTTR trends per asset. Both draw from the same silver.work_orders_enriched table this post builds, so standing up one makes the second nearly free. Resist the temptation to build a wide 'everything' gold table first — Part 4 of this series works through five concrete use cases in SQL, and each one is a narrow, purpose-built gold table, not a single sprawling one that tries to answer every question at once."
+keyTakeaways:
+  - "Bronze is a strict append-only landing zone for Part 2's raw extracts — no transformation, no deduplication, just the raw payload plus ingestion metadata, so any downstream cleansing rule can be replayed from source truth"
+  - "Silver-layer cleansing is table-specific, not uniform: WORKORDER needs a real ASSET+LOCATIONS+FAILUREREPORT enrichment join, meter data needs Maximo-aware rollover and reading-type handling, and PM records need a completion-to-failure join to compute effectiveness"
+  - "Conformed dimensions (dim_asset, dim_location, dim_craft) are the single shared reference tables every gold fact table joins against, preventing the same 'asset class' or 'critical asset' definition from silently drifting across reports"
+  - "A data-quality gate between bronze and silver — schema checks, null-critical-field checks, and a bad-batch quarantine threshold — is what makes a gold-layer number trustworthy enough for an executive dashboard, not a hope that the source data was clean"
+  - "Gold tables should each answer one named business question — a cost rollup, a reliability trend, a PM-effectiveness ranking — built from the same conformed silver tables, rather than one wide table trying to serve every report"
+series:
+  name: "MAS DATABRICKS"
+  part: 3
+  total: 6
+tldr: "Part 2 got Maximo data into a bronze Delta table. This post is where that raw JSON becomes something an executive dashboard can trust. It maps the medallion architecture table by table onto real Maximo objects: bronze as a strict append-only landing zone for REST and Kafka extracts; silver as the layer where WORKORDER gets joined to ASSET, LOCATIONS, and FAILUREREPORT into one enriched record, where meter and sensor readings get cleaned using Maximo's own meter-type semantics (continuous versus gauge versus characteristic, delta versus actual, rollover handling), and where PM completion records get joined against subsequent failures to compute PM effectiveness. It introduces conformed dimensions — dim_asset, dim_location, dim_craft — as the shared reference tables that keep 'asset class' meaning the same thing across every gold table, and closes with worked gold-layer marts for maintenance cost rollups and MTBF/MTTR reliability trends, plus the data-quality quarantine pattern that keeps bad source data from silently reaching a gold table."
+seoTitle: "Medallion Architecture for Maximo Data | MAS 9 + Databricks Part 3"
+seoDescription: "Bronze, silver, and gold mapped to real Maximo objects — WORKORDER, ASSET, MATUSETRANS, PM, and meter data — with cleansing rules and conformed dimensions."
+targetQuestions:
+  - "How do you apply the medallion architecture to Maximo work order and asset data?"
+  - "How should meter and sensor readings be cleaned in a Maximo data lakehouse?"
+  - "What is a conformed dimension and why does Maximo analytics need one?"
+  - "What gold-layer tables answer maintenance cost and reliability questions?"
+  - "How do you compute PM effectiveness from Maximo preventive maintenance records?"
+semanticKeywords:
+  - "Maximo medallion architecture"
+  - "Delta Lake bronze silver gold Maximo"
+  - "WORKORDER ASSET LOCATIONS enrichment"
+  - "Maximo meter reading cleansing"
+  - "conformed dimensions dim_asset"
+  - "PM effectiveness silver table"
+  - "gold layer maintenance cost KPI"
+  - "MTBF MTTR gold table Databricks"
+  - "Unity Catalog dimensional modeling"
+  - "data quality quarantine medallion"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 2 of this series — the four extraction patterns and how raw Maximo data lands in a bronze Delta table"
+  - "Familiarity with core Maximo Manage objects (WORKORDER, ASSET, LOCATIONS, FAILUREREPORT, MATUSETRANS, PM, MEASUREMENT)"
+  - "Basic SQL and a conceptual understanding of star-schema dimensional modeling"
+speakableSections:
+  - "The Three Layers, Applied to Maximo"
+  - "Conformed Dimensions — One Enterprise View of an Asset"
+  - "Gold Layer — Marts for Reliability and Cost"
+series_part: 3
+clusterSlugs:
+  - "mas-databricks-series-index"
+  - "mas-databricks-01-why-lakehouse"
+  - "mas-databricks-02-data-flows"
+  - "mas-databricks-04-analytics-use-cases"
+  - "mas-databricks-05-ml-vs-mas-predict"
+  - "mas-databricks-06-governance-security"
+relatedSlugs:
+  - "mas-databricks-series-index"
+  - "mas-databricks-02-data-flows"
+  - "mas-databricks-04-analytics-use-cases"
+  - "mas-reliability-series-index"
+  - "mas-health-series-index"
+---
+
+# Building the Asset Lakehouse: Bronze, Silver, Gold for Maximo Objects
+
+<aside>
+
+🎯 **Who this is for:** Data engineers building the actual pipeline past Part 2's extraction layer, analytics leads who need to know why a gold-layer number can be trusted, and any Maximo practitioner who has heard "we'll clean it in Databricks" and wants to know what that cleaning actually involves for WORKORDER, ASSET, and meter data specifically.
+
+</aside>
+
+**Series:** Part 3 of 6 — *MAS 9 + Databricks: Building the Maximo Data Lakehouse* | **Read time:** 18 minutes
+
+---
+
+## 📖 Extraction Was the Easy Part
+
+Part 2 of this series solved a real problem: getting Maximo data out of MAS 9 and into a bronze Delta table, using REST/JSON API extraction as the default, MIF over Kafka for near-real-time delivery, and an honest accounting of what "CDC" does and doesn't mean for a sealed SaaS database. That's a genuinely hard integration problem, and it's solved once you land raw `MXAPIWO` JSON in `bronze.maximo_workorder_raw` on a schedule.
+
+It is also, on its own, worthless to an executive dashboard. A raw work order record has a `wonum`, a `status` code, an `assetnum` foreign key, and not much else that answers a business question. It doesn't know what asset class that asset belongs to, whether the site is a high-criticality plant, or what the failure code actually means in plain language. Answering "what's our maintenance cost trend for pumps at the Bedford site over the last two years" requires joining that raw work order against asset master data, location hierarchy, and failure history — and doing it consistently, every time, not as a one-off analyst query that gets a slightly different answer next month.
+
+That's the gap this post closes. The medallion architecture — bronze, silver, gold — is the industry-standard answer to "how do you get from raw extracts to trustworthy business tables" in a Databricks lakehouse, and it maps unusually cleanly onto Maximo's own data model, because Maximo's Object Structures already group related business objects the way a silver-layer join would. This post works through that mapping table by table: what bronze actually holds, what real cleansing WORKORDER, meter, and PM data need in silver, how conformed dimensions keep "asset class" meaning the same thing across every downstream report, and which gold tables actually answer a reliability or cost question versus which ones are just restated bronze data wearing a nicer name.
+
+<aside>
+💡 **Key insight:** The medallion architecture isn't an abstract data-engineering pattern bolted onto Maximo — it's the same three-tier idea Maximo's own Object Structures already embody at a smaller scale. `MXAPIWO` is Maximo's version of a silver-layer join (work order plus labor, materials, and failure data pre-assembled). This post extends that same idea past what one Object Structure can hold.
+</aside>
+
+---
+
+## 📊 The Three Layers, Applied to Maximo
+
+Before mapping individual tables, it's worth being precise about what each layer's job actually is, because the single most common lakehouse-build mistake is treating "clean the data" as one undifferentiated step instead of three layers with three different jobs. Databricks' own architectural guidance is specific here: bronze captures source data exactly as it arrived, silver applies "just-enough" cleansing to create a matched, merged, and conformed enterprise view, and gold applies the final business logic and data-quality rules that make a table consumption-ready for a dashboard or a report.
+
+| Layer | Job | What changes about the data | Who queries it directly |
+|---|---|---|---|
+| **Bronze** | Land the raw extract | Nothing — append-only, schema mirrors the source JSON/CSV, plus ingestion metadata | Almost nobody; data engineers debugging a pipeline |
+| **Silver** | Clean, join, conform | Deduplication, type casting, joins across related objects, meter-type-aware cleansing, slowly changing dimension handling | Data scientists building features, analysts who need row-level detail |
+| **Gold** | Answer a business question | Aggregation, business rules, final data-quality gates, denormalized for read performance | Executives, Cognos/Power BI dashboards, ML training pipelines |
+
+Notice the direction of travel: bronze is deliberately *not* clean, because a raw, unmodified copy is what lets you replay history when a silver-layer rule turns out to be wrong six months later. Gold is deliberately *not* row-level detail, because a table built for an executive KPI dashboard should not require the dashboard tool to re-derive an aggregation it could have gotten for free. Every mapping in this post respects that direction — resist the urge to "clean a little" in bronze or "keep raw detail" in gold, because both instincts erode the reason the three layers exist separately in the first place.
+
+---
+
+## 🥉 Bronze Layer — Landing Maximo Objects As-Is
+
+Bronze's contract, restated from Part 2: hold the raw extract exactly as it arrived, whichever of the four extraction patterns produced it, with no transformation beyond adding ingestion metadata. For a Maximo lakehouse specifically, that means one bronze table per Object Structure or event source, landed via Auto Loader or Structured Streaming, never overwritten.
+
+| Bronze table | Source | Format | Ingestion metadata added |
+|---|---|---|---|
+| `bronze.maximo_workorder_raw` | `MXAPIWO` REST or Kafka Publish Channel | JSON → Delta | `_ingested_at`, `_source_pattern` (`rest` \| `kafka`), `_batch_id` |
+| `bronze.maximo_asset_raw` | `MXAPIASSET` REST | JSON → Delta | `_ingested_at`, `_source_pattern` |
+| `bronze.maximo_locations_raw` | `MXAPILOCATIONS` REST | JSON → Delta | `_ingested_at`, `_source_pattern` |
+| `bronze.maximo_failurereport_raw` | `MXAPIFAILUREREPORT` REST or Kafka | JSON → Delta | `_ingested_at`, `_source_pattern` |
+| `bronze.maximo_measurement_raw` | `MXAPIMEASUREMENT` REST or Kafka (IoT) | JSON/Avro → Delta | `_ingested_at`, `_source_pattern`, `_meter_type` (carried through, not derived) |
+| `bronze.maximo_matusetrans_raw` | `MXAPIMATUSETRANS` REST | JSON → Delta | `_ingested_at`, `_source_pattern` |
+| `bronze.maximo_pm_raw` | `MXAPIPM` REST | JSON → Delta | `_ingested_at`, `_source_pattern` |
+| `bronze.maximo_historical_backfill` | Data Export CSV (one-time) | CSV → Delta | `_ingested_at`, `_backfill_source = "data_export"` |
+
+The `_batch_id` column on `bronze.maximo_workorder_raw` is worth calling out specifically, because it's what makes bronze genuinely replayable rather than just append-only in name. If a silver-layer join is discovered six months in to have a subtle bug — say, it's dropping work orders where `FAILUREREPORT` arrived a few minutes after `WORKORDER` in a Kafka-fed pipeline — you need to be able to say "replay every batch since the bug was introduced" without re-querying Maximo, which may no longer have that historical state available at the same granularity. A batch identifier tied to the ingestion job run makes that replay a `WHERE _batch_id >= X` filter instead of a re-extraction project.
+
+```sql
+-- Bronze: no cleansing, just landed exactly as it arrived
+CREATE TABLE IF NOT EXISTS bronze.maximo_workorder_raw (
+  wonum STRING,
+  description STRING,
+  status STRING,
+  assetnum STRING,
+  siteid STRING,
+  changedate TIMESTAMP,
+  worktype STRING,
+  raw_payload STRING,          -- full JSON, in case downstream needs a field not yet promoted to a column
+  _ingested_at TIMESTAMP,
+  _source_pattern STRING,
+  _batch_id STRING
+)
+USING DELTA
+PARTITIONED BY (siteid);
+```
+
+Partitioning bronze by `siteid` rather than by ingestion date is a deliberate choice for Maximo data specifically — most silver-layer queries and most gold-layer marts filter or group by site first, and Delta Lake's file-pruning benefits from a partition column that matches the actual query pattern, not just the ingestion pattern. Keep the `raw_payload` column, too: promoting only the fields you think you need today is how a lakehouse ends up re-extracting from Maximo eighteen months later because a new gold table needs a field nobody promoted to bronze in year one.
+
+<aside>
+💡 **Key insight:** If you find yourself deduplicating, joining, or casting types inside a bronze ingestion job, stop — that logic belongs in silver. Bronze's entire value is being a boring, unopinionated copy of the source; the moment it starts making judgment calls, you lose the ability to replay history when one of those judgment calls turns out wrong.
+</aside>
+
+---
+
+## 🥈 Silver Layer — Enriching Work Orders With Real Context
+
+This is where a raw work order record becomes something a reliability engineer or a cost analyst can actually use, and it's the single highest-value silver table in the entire lakehouse, because nearly every gold-layer mart in this series traces back to it.
+
+### The WORKORDER-to-ASSET-to-LOCATIONS-to-FAILUREREPORT join
+
+A raw `bronze.maximo_workorder_raw` record carries `assetnum` and `siteid` as foreign keys, but not the asset's class, criticality rating, or location hierarchy — and it doesn't carry failure-code detail unless the Object Structure was configured to nest it. The silver enrichment join assembles all of it into one record:
+
+```sql
+CREATE OR REPLACE TABLE silver.work_orders_enriched AS
+SELECT
+  wo.wonum,
+  wo.siteid,
+  wo.status,
+  wo.worktype,
+  wo.changedate,
+  a.assetnum,
+  a.description       AS asset_description,
+  a.assettype         AS asset_class,
+  a.priority           AS asset_criticality,
+  loc.location,
+  loc.description       AS location_description,
+  loc.parent_location,
+  fr.failurecode,
+  fr.problemcode,
+  fr.causecode,
+  fr.remedycode,
+  lab.actlabhrs,
+  lab.actlabcost,
+  mat.actmatcost,
+  (COALESCE(lab.actlabcost, 0) + COALESCE(mat.actmatcost, 0)) AS total_actual_cost
+FROM bronze.maximo_workorder_raw wo
+LEFT JOIN silver.dim_asset a
+  ON wo.assetnum = a.assetnum AND wo.siteid = a.siteid
+LEFT JOIN silver.dim_location loc
+  ON a.location = loc.location AND wo.siteid = loc.siteid
+LEFT JOIN bronze.maximo_failurereport_raw fr
+  ON wo.wonum = fr.wonum
+LEFT JOIN (
+  SELECT wonum, SUM(regularhrs + premiumhrs) AS actlabhrs, SUM(actlabcost) AS actlabcost
+  FROM bronze.maximo_labtrans_raw GROUP BY wonum
+) lab ON wo.wonum = lab.wonum
+LEFT JOIN (
+  SELECT wonum, SUM(linecost) AS actmatcost
+  FROM bronze.maximo_matusetrans_raw GROUP BY wonum
+) mat ON wo.wonum = mat.wonum
+WHERE wo.status NOT IN ('CAN');  -- exclude cancelled work orders from cost/reliability analysis
+```
+
+Three details in this join matter enough to call out. First, the join to `silver.dim_asset` and `silver.dim_location` — not to bronze — is deliberate, and the conformed dimensions section below explains why: every other gold table in this series joins to the same two dimension tables, so a work order's "asset class" and a failure-prediction table's "asset class" are guaranteed to agree. Second, the labor and material subqueries aggregate at the work-order level before joining, because a work order can have many labor transactions and many material-use transactions, and joining at the raw transaction grain would fan out the row count and double-count cost — a mistake that's easy to make and produces cost numbers that are silently 3-4x too high. Third, excluding cancelled work orders happens here, in silver, not in every downstream gold query — that's what "just-enough cleansing" means in practice: apply a business rule once, in the layer built for it, instead of repeating a `WHERE status != 'CAN'` in every report that touches work orders.
+
+<aside>
+💡 **Key insight:** The most common silver-layer bug in a Maximo lakehouse isn't a missing join — it's joining at the wrong grain. Labor and material transactions are one-to-many against a work order; joining them directly instead of pre-aggregating silently multiplies cost totals. Always ask "what's the grain of this table relative to what I'm joining it to" before writing the join.
+</aside>
+
+---
+
+## 🌡️ Silver Layer — Meter and Sensor Data, Cleaned the Maximo Way
+
+Meter and sensor cleansing gets talked about in generic data-engineering terms — "time-align, remove outliers" — but Maximo's own Meters application already defines specific reading semantics that a generic outlier filter will get wrong if it ignores them, and getting this wrong produces a failure-prediction model trained on garbage.
+
+### Meter types dictate the cleansing rule
+
+Maximo's Assets application lets you associate a meter with an asset as one of three types, and the type is not cosmetic — it changes what "clean" means for that meter's readings:
+
+| Meter type | What it measures | Cleansing consideration |
+|---|---|---|
+| **Continuous** | Cumulative usage — runtime hours, odometer miles, cycle counts | Reading Type is Delta (incremental) or Actual (cumulative); Actual readings can legitimately roll over to a lower value, and Maximo's own Rollover flag marks this — a silver job that treats every value decrease as bad data will discard valid readings |
+| **Gauge** | Point-in-time measurement — pressure, temperature, vibration amplitude | No accumulation logic; time-align to a common interval and apply straightforward range/null checks |
+| **Characteristic** | Non-numeric condition — a text-based status or grade | No numeric cleansing at all; deduplicate on timestamp and validate against the configured domain of allowed values |
+
+For continuous meters specifically, Maximo also lets an administrator configure an **Average Calculation Method** — All (use every reading), Sliding Days or Sliding Readings (use a rolling window), or Static (a fixed average that never recalculates) — and a silver job computing a derived "average daily usage" feature for an ML model should replicate whichever method the asset is actually configured with, not assume one uniformly. Getting this wrong doesn't crash the pipeline; it just quietly trains a remaining-useful-life model on a usage-rate feature that doesn't match what the asset's own configuration says usage looks like.
+
+```python
+# Silver: meter-type-aware cleansing, not a generic outlier filter
+from pyspark.sql import functions as F
+from pyspark.sql.window import Window
+
+readings = spark.table("bronze.maximo_measurement_raw")
+
+continuous = readings.filter(F.col("_meter_type") == "CONTINUOUS")
+w = Window.partitionBy("assetnum", "meter").orderBy("reading_date")
+
+continuous_cleaned = (
+    continuous
+    # A lower reading is a legitimate rollover if Maximo flagged it — not a data error to discard
+    .withColumn("is_rollover", F.col("rollover_flag") == True)
+    .withColumn("prev_reading", F.lag("reading_value").over(w))
+    .withColumn(
+        "is_suspect",
+        # Flag only decreases that were NOT marked as a rollover
+        (F.col("reading_value") < F.col("prev_reading")) & (~F.col("is_rollover"))
+    )
+    .filter(~F.col("is_suspect"))  # quarantine suspects, don't silently drop — see quality gate below
+)
+
+gauge = readings.filter(F.col("_meter_type") == "GAUGE")
+gauge_aligned = (
+    gauge
+    .withColumn("reading_minute", F.date_trunc("minute", "reading_date"))
+    .groupBy("assetnum", "meter", "reading_minute")
+    .agg(F.avg("reading_value").alias("reading_value"))  # collapse sub-minute noise to a 1-minute grid
+)
+```
+
+Time-alignment for gauge and sensor data — collapsing readings to a consistent 1-minute grid, as shown above — matters for a downstream reason beyond tidiness: cross-sensor correlation (vibration rising alongside temperature, the pattern a failure-prediction model actually looks for) only works if both signals are sampled on the same clock. Two sensors reporting on independent, unaligned schedules will show spurious lag or lead in a naive join that has nothing to do with the physical relationship between them.
+
+---
+
+## 🔧 Silver Layer — Inventory Transactions and PM Effectiveness
+
+Two more silver tables round out the enrichment layer, and both answer a specific downstream gold question this series returns to.
+
+### Material usage, joined to demand and supply history
+
+`silver.inventory_demand` joins raw material-use transactions against inventory balances and purchase-order receipts, because a reorder-point recommendation needs both sides — how fast an item is actually consumed and how long it takes to resupply:
+
+| Silver table | Source joins | What it enables downstream |
+|---|---|---|
+| `silver.work_orders_enriched` | `WORKORDER` + `dim_asset` + `dim_location` + `FAILUREREPORT` + aggregated `LABTRANS`/`MATUSETRANS` | Cost rollups, reliability trends, work order intelligence |
+| `silver.sensor_aligned` | `MEASUREMENT`, time-aligned per meter type, rollover-aware | Failure prediction features, anomaly detection |
+| `silver.inventory_demand` | `INVENTORY` + `MATUSETRANS` (demand history) + PO receipts (supply history) | Reorder point recommendations, stockout risk scoring |
+| `silver.pm_effectiveness` | `PM` completion records + subsequent `FAILUREREPORT` entries within a lookback window + `MATUSETRANS`/`LABTRANS` cost | PM optimization — which PM tasks actually prevent failures |
+
+### PM effectiveness — the join that actually answers "is this PM working"
+
+`silver.pm_effectiveness` is worth a worked example because it's the join that answers a question a lot of Cognos reports can't: does completing this preventive maintenance task actually reduce subsequent failures, or is it busywork?
+
+```sql
+CREATE OR REPLACE TABLE silver.pm_effectiveness AS
+SELECT
+  pm.pmnum,
+  pm.assetnum,
+  pm.frequency,
+  pm.lastcompletiondate,
+  COUNT(fr.failurecode) AS failures_within_90_days,
+  SUM(wo.total_actual_cost) AS reactive_cost_within_90_days
+FROM bronze.maximo_pm_raw pm
+LEFT JOIN silver.work_orders_enriched wo
+  ON pm.assetnum = wo.assetnum
+  AND wo.worktype = 'CM'   -- corrective maintenance work orders only
+  AND wo.changedate BETWEEN pm.lastcompletiondate AND DATE_ADD(pm.lastcompletiondate, 90)
+LEFT JOIN bronze.maximo_failurereport_raw fr
+  ON wo.wonum = fr.wonum
+GROUP BY pm.pmnum, pm.assetnum, pm.frequency, pm.lastcompletiondate;
+```
+
+A PM task with a consistent pattern of zero `failures_within_90_days` across many assets and many completion cycles is a strong candidate for a frequency reduction — it's doing its job with room to spare. A PM task that shows failures clustering shortly *after* completion, repeatedly, across the fleet, is a candidate for a scope or procedure review, not just a frequency change — the task is running on schedule but not actually preventing the failure mode it's supposed to catch. Part 4 of this series builds the ranked, fleet-wide version of this query as one of its five worked analytics use cases; this silver table is what makes that gold-layer ranking possible without re-deriving the join every time.
+
+---
+
+## 🧭 Conformed Dimensions — One Enterprise View of an Asset
+
+Every silver join above references `silver.dim_asset` and `silver.dim_location` rather than joining directly against `bronze.maximo_asset_raw`. That's not a stylistic preference — it's the mechanism that keeps every gold table in this lakehouse agreeing with every other gold table about what an asset actually is.
+
+A **conformed dimension** is a single, shared reference table that every fact table in a star-schema model joins against for a given business entity, so "asset," "site," or "craft" carries exactly one definition across the whole lakehouse. Databricks' own dimensional-modeling guidance is explicit that this is not a legacy data-warehouse pattern being awkwardly retrofitted onto a lakehouse — Delta Lake actively supports it, with identity columns for surrogate key generation, Delta's time-travel and constraint features standing in for classic slowly changing dimension (SCD) handling, and Unity Catalog's three-level namespace (`catalog.schema.table`) as the place a conformed dimension physically lives so every downstream table references the same object instead of a private copy.
+
+```sql
+-- dim_asset: a conformed dimension, SCD Type 2 for attributes that change over time
+CREATE OR REPLACE TABLE silver.dim_asset (
+  asset_sk BIGINT GENERATED ALWAYS AS IDENTITY,   -- surrogate key, stable even if Maximo's assetnum is reused
+  assetnum STRING,
+  siteid STRING,
+  description STRING,
+  assettype STRING,        -- asset class, used consistently across every gold table
+  criticality STRING,      -- changes over time — reclassified assets need history preserved
+  location STRING,
+  __start_at TIMESTAMP,
+  __end_at TIMESTAMP,
+  __is_current BOOLEAN
+)
+USING DELTA;
+```
+
+Why this matters concretely: without a conformed `dim_asset`, it's entirely possible for `gold.maintenance_cost_kpis` to define "critical asset" using the raw `ASSETTYPE` field while `gold.failure_predictions` — built by a different analyst, six months later — defines it using a custom `CLASSSTRUCTURE` attribute instead. Both reports will look correct in isolation. Neither will agree with the other when a stakeholder asks "why does the cost report say we have 340 critical assets and the reliability report says 290," and tracking down that discrepancy after the fact costs far more than building one shared dimension up front would have. Applying `__is_current` and SCD Type 2 history to `criticality` specifically matters because an asset's criticality rating does change — a pump gets reclassified after a process change — and a gold-layer trend report needs to know what the criticality *was* at the time of a given work order, not just what it is today.
+
+<aside>
+💡 **Key insight:** If you catch two gold tables computing the same business concept — "critical asset," "asset class," "active site" — with two slightly different SQL expressions, that's the signal a conformed dimension is missing, not a coincidence to shrug off. Fix it once in `dim_asset`, not in every query that touches criticality.
+</aside>
+
+---
+
+## 🥇 Gold Layer — Marts for Reliability and Cost
+
+Gold's job, restated: answer a named business question, using the conformed silver tables above, with the final aggregation and business logic already applied so a dashboard tool doesn't have to re-derive it. Two gold tables anchor this series' reliability and cost analytics, and both are cheap to build once `silver.work_orders_enriched` and `silver.dim_asset` exist.
+
+### Maintenance cost rollup, by asset class and site
+
+```sql
+CREATE OR REPLACE TABLE gold.maintenance_cost_kpis AS
+SELECT
+  wo.siteid,
+  a.assettype AS asset_class,
+  DATE_TRUNC('month', wo.changedate) AS cost_month,
+  SUM(wo.total_actual_cost) AS total_cost,
+  COUNT(DISTINCT wo.wonum) AS work_order_count,
+  ROUND(SUM(wo.total_actual_cost) / NULLIF(COUNT(DISTINCT wo.wonum), 0), 2) AS avg_cost_per_wo
+FROM silver.work_orders_enriched wo
+JOIN silver.dim_asset a
+  ON wo.assetnum = a.assetnum AND a.__is_current = true
+GROUP BY wo.siteid, a.assettype, DATE_TRUNC('month', wo.changedate);
+```
+
+### Reliability trends — MTBF and MTTR per asset class
+
+```sql
+CREATE OR REPLACE TABLE gold.asset_reliability_kpis AS
+SELECT
+  a.assettype AS asset_class,
+  wo.siteid,
+  DATE_TRUNC('quarter', wo.changedate) AS reliability_quarter,
+  COUNT(DISTINCT wo.wonum) AS failure_count,
+  -- MTBF: total operating days in the quarter / number of failures, per asset class
+  ROUND(90.0 * COUNT(DISTINCT a.assetnum) / NULLIF(COUNT(DISTINCT wo.wonum), 0), 1) AS mtbf_days,
+  -- MTTR: average actual labor hours per corrective work order, a proxy for repair duration
+  ROUND(AVG(wo.actlabhrs), 2) AS mttr_hours
+FROM silver.work_orders_enriched wo
+JOIN silver.dim_asset a
+  ON wo.assetnum = a.assetnum AND a.__is_current = true
+WHERE wo.worktype = 'CM'
+GROUP BY a.assettype, wo.siteid, DATE_TRUNC('quarter', wo.changedate);
+```
+
+Both tables share the same two joins — `silver.work_orders_enriched` to `silver.dim_asset` — which is the payoff of building the conformed dimension and the enriched work-order table once, correctly, rather than per-gold-table. Part 4 of this series takes this same pattern and extends it to inventory and PM-effectiveness gold marts with the full worked SQL; the pattern established here — narrow, single-question gold tables built on shared silver — is what makes each of those five use cases a short addition rather than a new pipeline.
+
+<aside>
+💡 **Key insight:** A gold table that just restates bronze data with a friendlier column name isn't gold — it's bronze with a costume on. The test for a real gold table: does it answer a specific business question on its own, with the aggregation and business logic already applied, or does the consuming dashboard still have to do real work? If the dashboard still has to group, join, or compute a ratio, the aggregation belongs in gold, not in the BI tool.
+</aside>
+
+---
+
+## 🚦 Data Quality Gates — Before Bad Data Reaches Gold
+
+Every join and cleansing rule above assumes the bronze data feeding it is structurally sound, and that assumption needs a checkpoint, not blind faith. The pattern that's become standard practice in medallion implementations is a quality gate between bronze and silver: declared rules that check schema conformance and null-critical-field violations, with failures quarantined into a separate table rather than silently dropped or, worse, silently let through.
+
+```python
+from pyspark.sql import functions as F
+
+bronze_wo = spark.table("bronze.maximo_workorder_raw")
+
+# Declare the rules explicitly rather than hand-writing ad-hoc filters per pipeline
+quality_checked = bronze_wo.withColumn(
+    "_quality_flag",
+    F.when(F.col("wonum").isNull(), "MISSING_WONUM")
+     .when(F.col("assetnum").isNull() & F.col("siteid").isNull(), "MISSING_ASSET_AND_SITE")
+     .when(F.col("changedate") > F.current_timestamp(), "FUTURE_CHANGEDATE")
+     .otherwise("PASS")
+)
+
+good_records = quality_checked.filter(F.col("_quality_flag") == "PASS")
+quarantined = quality_checked.filter(F.col("_quality_flag") != "PASS")
+
+quarantined.write.format("delta").mode("append").saveAsTable("bronze.maximo_workorder_quarantine")
+
+# A single bad row is a data-entry fluke; a large failing share is a source-system problem
+fail_rate = quarantined.count() / max(quality_checked.count(), 1)
+if fail_rate > 0.05:
+    raise ValueError(f"Quarantine rate {fail_rate:.1%} exceeds 5% threshold — halting silver promotion")
+```
+
+The 5% threshold in that last block isn't an arbitrary number to copy verbatim — it's an illustration of a real principle: a single work order missing its `assetnum` is a data-entry mistake worth quarantining and moving past, but a batch where a third of records fail a key check almost always means something upstream broke (a schema change in Maximo, a bad Object Structure configuration, a partial Kafka outage), and letting that batch flow into silver and then gold produces a confidently wrong dashboard, which is worse than an obviously broken one. Set the actual threshold to match how much noise your specific tables tolerate — reference tables like `ASSET` should tolerate far less than a noisy IoT sensor feed.
+
+---
+
+## ⚠️ Common Mistakes Building the Medallion Layers
+
+- **Joining raw transaction tables at the wrong grain.** Joining `LABTRANS` or `MATUSETRANS` directly against `WORKORDER` without pre-aggregating fans out the row count and silently inflates cost totals — always aggregate one-to-many children before joining them into an enriched fact table.
+- **Treating every meter the same way.** Applying a generic "flag decreasing values as bad" rule to continuous meters discards legitimate rollover readings; check `_meter_type` and the Rollover flag before applying any anomaly rule.
+- **Skipping conformed dimensions until "later."** Two gold tables built independently, months apart, without a shared `dim_asset`, will define "critical asset" differently — and the discrepancy surfaces during a stakeholder review, not during development.
+- **Cleaning in bronze.** Deduplication, type casting beyond JSON parsing, and joins belong in silver. A bronze table that's already been "cleaned a little" can't serve as the replay source when a silver rule needs fixing later.
+- **Building one wide gold table instead of several narrow ones.** A single "everything" gold table becomes a maintenance burden the moment two different reports need slightly different aggregation grains — purpose-built, single-question gold tables are cheaper to reason about and to fix.
+- **No quarantine path for failed quality checks.** Silently dropping rows that fail a schema or null check hides the fact that something upstream is broken; a quarantine table with a fail-rate threshold turns a silent data-quality problem into a visible, actionable alert.
+
+---
+
+## 🔧 Practical Notes Before Part 4
+
+- **Build `silver.dim_asset` and `silver.work_orders_enriched` first.** Nearly every gold table in this series — cost, reliability, PM effectiveness — joins against one or both; getting these two right early makes every subsequent gold table faster to build.
+- **Match cleansing effort to what each table actually needs.** Meter data needs Maximo-aware reading-type logic; reference tables like `ASSET` mostly need SCD handling; transactional tables need grain-aware aggregation before joining.
+- **Set quarantine thresholds per table, not globally.** A 5% failure tolerance that's reasonable for noisy sensor data is far too loose for a reference table like `ASSET` where a bad record should almost never happen.
+- **Bring your gold-table wish list to Part 4 already scoped to one question each.** Part 4 works through five concrete use cases — MTBF/MTTR trends, cost rollups, slow-moving inventory, backlog aging, PM compliance — and each is a narrow gold mart built on the silver tables from this post, not a new pipeline.
+
+---
+
+## Key Takeaways
+
+1. **Bronze is a strict, append-only landing zone** — the raw extract from Part 2's four patterns, plus ingestion metadata, with no transformation, so any downstream rule can be replayed from source truth.
+2. **Silver cleansing is table-specific** — WORKORDER needs a real enrichment join against ASSET, LOCATIONS, and FAILUREREPORT; meter data needs Maximo's own reading-type and rollover semantics respected, not a generic outlier filter; PM records need a completion-to-failure join to measure effectiveness.
+3. **Conformed dimensions prevent silent disagreement between gold tables** — `dim_asset` and `dim_location`, built once with SCD Type 2 history, keep "asset class" and "critical asset" meaning the same thing everywhere they're used.
+4. **A quality gate with a quarantine table and a fail-rate threshold** turns silent bad-data problems into visible, actionable ones, and is what makes a gold-layer number trustworthy enough for an executive dashboard.
+5. **Gold tables should each answer one named question**, built from shared conformed silver tables — narrow and purpose-built beats one wide table trying to serve every report.
+
+---
+
+## References
+
+- [Databricks — What is Medallion Architecture?](https://www.databricks.com/blog/what-is-medallion-architecture)
+- [Databricks on AWS — What is the medallion lakehouse architecture?](https://docs.databricks.com/aws/en/lakehouse/medallion)
+- [Databricks — Lakehouse Data Modeling: Myths, Truths, and Best Practices](https://www.databricks.com/blog/databricks-lakehouse-data-modeling-myths-truths-and-best-practices)
+- [Databricks — Loading a Data Warehouse Data Model in Real Time with the Databricks Lakehouse](https://www.databricks.com/blog/2022/11/07/load-edw-dimensional-model-real-time-databricks-lakehouse.html)
+- [Databricks — The AUTO CDC APIs: Simplify Change Data Capture with Pipelines](https://docs.databricks.com/aws/en/ldp/cdc)
+- [Maximo Secrets — New Features in MAS 9.0 and 9.1](https://maximosecrets.com/2025/07/06/new-features-in-mas-90-and-91/)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 2 — Getting Maximo Data Out](/blog/mas-databricks-02-data-flows) |
+| **Next:** | [Part 4 — Five Analytics Use Cases](/blog/mas-databricks-04-analytics-use-cases) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*
+
+<!--
+Research note for human review: Maximo meter-type semantics (continuous/gauge/characteristic, Reading
+Type Delta vs. Actual, Rollover flag, Average Calculation Method options) were confirmed against the
+IBM Maximo Manage user-guide knowledge base (Assets application meter documentation) and match DOC5's
+medallion-architecture guidance without discrepancy — DOC5 does not itself cover meter-type-specific
+cleansing at this level of detail, so that section extends beyond DOC5 using the Manage knowledge base
+directly. The conformed-dimension and dimensional-modeling claims (Unity Catalog three-level namespace,
+identity columns for surrogate keys, SCD via Delta Lake) are drawn from current Databricks blog
+documentation and were resolved to live URLs during the web verification pass. MTBF/MTTR SQL in the
+gold-layer section is illustrative — Part 4 of this series is where the fuller, fleet-wide worked
+version of these reliability metrics belongs; this post intentionally keeps the gold-layer examples
+narrow to avoid duplicating Part 4's planned content.
+-->
