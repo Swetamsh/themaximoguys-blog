@@ -22,17 +22,38 @@ bottom of this prompt, plus its cover image. Work autonomously; nobody will answ
 - Read `content-planning/DOCS-TO-BLOGS-GAP-ANALYSIS.md` for context on where this item sits
   in the overall content plan.
 
-## Step 2 — Research (knowledge base FIRST)
+## Step 2 — Deep research (MANDATORY, minimum THREE sources — do not thin this step)
+
+Deep research is what separates these posts from AI slop. Budget at least a third of your
+run time here, BEFORE writing a single section:
 
 1. **Primary source: `knowledge_base/`.** Find the DOC file matching the item's source
    (e.g. DOC5 → `knowledge_base/DOC5_DATA_ANALYTICS_DATABRICKS_MAXIMO_ROADMAP.md`) and read
-   it thoroughly. The post must be grounded in and consistent with this research — it is
-   the reviewed, authoritative content for the series.
-2. Supplement with the SearchMaximo skill (`Skill("SearchMaximo")`) and/or web search for
-   MAS 9.x facts the knowledge base doesn't cover. Prefer IBM documentation. Collect real
-   reference URLs.
-3. Where knowledge base and web disagree, the knowledge base wins; note discrepancies in
+   ALL sections relevant to the topic — not just the first match. Extract every table,
+   number, object name, and worked example you can use.
+2. **SearchMaximo sweep (`Skill("SearchMaximo")`).** Search the 611-file IBM documentation
+   knowledge base for the post's 2-3 core topics; read the top matching docs and pull
+   version-specific facts and terminology the DOC file doesn't carry.
+3. **Web verification round.** Run at least 3 web searches: (a) current IBM documentation
+   pages for the feature, (b) recent MAS 9.x release notes/announcements touching it,
+   (c) community/practitioner sources (Maximo Secrets, Interloc, IBM Community). Collect
+   real URLs — every References entry must be a link you actually resolved.
+4. Where knowledge base and web disagree, the knowledge base wins; note discrepancies in
    an HTML comment at the bottom of the post for human review.
+
+## Depth contract (a post failing ANY of these is a failed job)
+
+- **Word count:** minimum 3,800 words for a series part (index posts: 3,000). Before
+  finishing, compare against the 2 longest sibling posts — land within 10% of the series'
+  upper range, not the bottom.
+- **Structure:** at least 7 substantive content sections; at least 3 tables; at least one
+  code/SQL/config block wherever the topic touches anything queryable or configurable;
+  worked examples with real object/field names, not abstractions.
+- **Frontmatter richness:** 5 FAQs with multi-sentence practitioner answers, 5
+  keyTakeaways, tldr, targetQuestions, semanticKeywords — matching sibling depth.
+- **References:** minimum 5 entries, at least 3 verified web URLs from the research round.
+- Length must come from researched substance (more scenarios, edge cases, tables,
+  troubleshooting), never from padding or restating.
 
 ## Step 3 — Write the post (MaximoBlog skill, mandatory)
 
