@@ -51,6 +51,12 @@ Non-negotiable rules for every image:
 - Quality bar: rich, cinematic, premium rendering with real lighting, materials, and depth
   (see existing covers in posts/MAS-WORK-ORDER-OPS/images/ for the standard). Flat,
   simplistic, or clip-art-looking output must be regenerated with a richer prompt.
+- DENSE composition, minimal empty space: the artwork must fill the canvas edge-to-edge —
+  layered scene elements, background texture/detail, supporting doodles or particles in
+  every region. Large flat empty background areas (plain cream/white/dark voids) are a
+  regeneration trigger. Write the prompt to demand a full, busy, layered scene while
+  keeping ONE clear focal metaphor and readable title (dense ≠ cluttered text — the 80/20
+  visual-to-text rule still applies).
 - 80% visual / 20% text: bold visual metaphor for the post's core idea, title text of 3-8
   words, optional short subtitle, small `@themaximoguys` attribution bottom-right.
   NO bullet lists, NO tip lists, NO cheat-sheet/infographic layout (those are for social,

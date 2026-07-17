@@ -116,6 +116,12 @@ Non-negotiable cover rules:
 - Quality bar: rich, cinematic, premium rendering with real lighting, materials, and depth
   (see existing covers in posts/MAS-WORK-ORDER-OPS/images/ for the standard). Flat,
   simplistic, or clip-art-looking output must be regenerated with a richer prompt.
+- DENSE composition, minimal empty space: the artwork must fill the canvas edge-to-edge —
+  layered scene elements, background texture/detail, supporting doodles or particles in
+  every region. Large flat empty background areas (plain cream/white/dark voids) are a
+  regeneration trigger. Write the prompt to demand a full, busy, layered scene while
+  keeping ONE clear focal metaphor and readable title (dense ≠ cluttered text — the 80/20
+  visual-to-text rule still applies).
 - 80% visual / 20% text: bold visual metaphor, title of 3-8 words, optional subtitle,
   small `@themaximoguys` attribution bottom-right. NO bullet lists, NO cheat-sheet layout.
 - Save to the exact path the post's `coverImage` frontmatter references (create the
