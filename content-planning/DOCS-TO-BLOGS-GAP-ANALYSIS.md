@@ -1,6 +1,6 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-07-17 (night-shift: MAS-OPTIMIZER Part 5 added, then deepened; MAS-JAVA-EXTENSIONS Part 7 deepened to 5,100+ words; MAS-DATABRICKS series index drafted, then Part 1 "Why Your Maximo Data Belongs in a Lakehouse" added with cover, then Part 2 "Getting Maximo Data Out: Kafka, Data Export, and CDC Patterns" added with cover, then Part 3 "Building the Asset Lakehouse: Bronze, Silver, Gold for Maximo Objects" added with cover)  
+**Updated:** 2026-07-17 (night-shift: MAS-OPTIMIZER Part 5 added, then deepened; MAS-JAVA-EXTENSIONS Part 7 deepened to 5,100+ words; MAS-DATABRICKS series index drafted, then Part 1 "Why Your Maximo Data Belongs in a Lakehouse" added with cover, then Part 2 "Getting Maximo Data Out: Kafka, Data Export, and CDC Patterns" added with cover, then Part 3 "Building the Asset Lakehouse: Bronze, Silver, Gold for Maximo Objects" added with cover, then Part 4 "Five Analytics Use Cases: Reliability, Cost, Inventory, Backlog, and PM Compliance on the Gold Layer" added with cover)  
 **Author:** Swetansh (via TheMaximoGuys AI pipeline)  
 **Source docs:** `/root/TMG_MAS9_UPGRADE/DOC1..DOC12.md`  
 **Blog root:** `/root/themaximoguys-blog/posts/`  
@@ -37,7 +37,7 @@ include references. "Production complete" means the posts also have local cover 
 | DOC2 | Suite Add-Ons | ⚠️ **MOSTLY BUILT** | Health(9), Monitor(9), Predict(9), MVI(13), Assist(7), Optimizer(5) | Parts Identifier and Civil Infrastructure still need standalone deep series if wanted |
 | DOC3 | Paid Add-Ons & Industry | ✅ **PRODUCTION COMPLETE** | `posts/MAS-FEATURES` parts 15-20, 25 | None |
 | DOC4 | Supply Chain Features | ✅ **PRODUCTION COMPLETE** | `posts/MAS-FEATURES` parts 21-25 plus `MAS-MANAGE-09` | None for feature coverage |
-| DOC5 | Data Analytics & Databricks | 🟡 **IN PROGRESS** | `posts/MAS-DATABRICKS` (index + Part 1 + Part 2 + Part 3 built 2026-07-17 with covers; Parts 4-6 pending) | Build Parts 4-6 (queued in `automation/off-hours/queue.json`), then generate remaining covers |
+| DOC5 | Data Analytics & Databricks | 🟡 **IN PROGRESS** | `posts/MAS-DATABRICKS` (index + Part 1 + Part 2 + Part 3 + Part 4 built 2026-07-17 with covers; Parts 5-6 pending) | Build Parts 5-6 (queued in `automation/off-hours/queue.json`), then generate remaining covers |
 | DOC6 | Java Extensions | ✅ **PRODUCTION COMPLETE** | `posts/MAS-JAVA-EXTENSIONS` (8 posts + covers, incl. Part 7 extension crossovers added 2026-07-16, deepened 2026-07-17 to 5,100+ words with Nuclear clone-upgrade guidance, expanded MAXOBJECT diagnostics, a troubleshooting section, and a Type 5 worked example) | None |
 | DOC7 | Work Order Management | ✅ **PRODUCTION COMPLETE** | `posts/MAS-WORK-ORDER-OPS` (index + 6 posts + covers) | None |
 | DOC8 | Storekeeper Quick Wins | 🟡 **CONTENT COMPLETE, ASSETS PENDING** | `posts/MAS-SUPPLY-CHAIN` (merged playbook) | Generate 11 covers |
