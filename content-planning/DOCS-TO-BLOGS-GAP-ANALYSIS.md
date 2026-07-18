@@ -103,6 +103,18 @@ item — its topic ("Setting Up and Training the Parts Model", slug
 4, draft:false). The job declined to write it and reported `FAILED` rather than create a second,
 conflicting Part 2. `queue.json`'s `parts-id-03..05` remain pending with the same defect and will
 fail identically until a human or `replan` job rewrites them.
+**Update 2026-07-18 (job `parts-id-03-storeroom-workflow`):** confirmed the same conflict on the
+next queued item — its brief ("End-to-end storeroom flow: photo capture, candidate matches,
+confirming the item, issuing against a work order", slug `mas-parts-identifier-03-storeroom-workflows`,
+declared `series_total: 5`) duplicates ground already covered by the already-published Part 2
+(`mas-parts-identifier-mobile-recognition` — capture, candidate list, confirm/verify) and Part 3
+(`mas-parts-identifier-catalog-matching` — inventory lookup, issuing, ordering), both `series.total
+4`, `draft:false`. Writing it would either collide with the existing Part 3 slug/number or force a
+renumbering of the live published series, which the night-shift "do not modify existing published
+posts" rule forbids. The job declined to write it and reported `FAILED`. `queue.json`'s
+`parts-id-04..05` remain pending with the same defect and will fail identically until a human or
+`replan` job rewrites them — the only real remaining gap for this series is the 5 missing cover
+images on the existing files.
 
 **Optimizer note:** `MAS-OPTIMIZER` Part 5 (`mas-optimizer-dispatching-rollout`) has been written
 (2026-07-16, night-shift), closing the structural gap the index/navigation already referenced, and
