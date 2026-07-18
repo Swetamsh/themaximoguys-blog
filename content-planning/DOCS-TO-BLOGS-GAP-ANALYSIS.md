@@ -90,6 +90,12 @@ gone stale and did not reflect it. `queue.json` still lists `parts-id-01..05` as
 describing a *different* 5-part rebuild plan (setup/training, storeroom workflow, mobile field,
 governance/AppPoints) that would duplicate/conflict with the parts already written. Those queue
 items should be replaced with 5 cover-generation items for the existing files, not run as-is.
+**Update 2026-07-18 (job `parts-id-01-what-is`):** confirmed the same conflict on the next queued
+item — its topic ("What Is the AI Parts Identifier and Why Storerooms Need It", slug
+`mas-parts-identifier-01-overview`) duplicates the already-published Part 1
+(`mas-parts-identifier-intro-ai-vision`, series.total 4). The job declined to write it and reported
+`FAILED` rather than create a second, conflicting Part 1. `queue.json`'s `parts-id-02..05` remain
+pending with the same defect and will fail identically until a human or `replan` job rewrites them.
 
 **Optimizer note:** `MAS-OPTIMIZER` Part 5 (`mas-optimizer-dispatching-rollout`) has been written
 (2026-07-16, night-shift), closing the structural gap the index/navigation already referenced, and
