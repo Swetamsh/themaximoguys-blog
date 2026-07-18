@@ -1,6 +1,6 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-07-17 (night-shift: MAS-OPTIMIZER Part 5 added, then deepened; MAS-JAVA-EXTENSIONS Part 7 deepened to 5,100+ words; MAS-DATABRICKS series index drafted, then Part 1 "Why Your Maximo Data Belongs in a Lakehouse" added with cover, then Part 2 "Getting Maximo Data Out: Kafka, Data Export, and CDC Patterns" added with cover, then Part 3 "Building the Asset Lakehouse: Bronze, Silver, Gold for Maximo Objects" added with cover, then Part 4 "Five Analytics Use Cases: Reliability, Cost, Inventory, Backlog, and PM Compliance on the Gold Layer" added with cover, then Part 5 "Custom ML in Databricks vs. Maximo Predict" drafted — content complete but cover generation blocked by a revoked/leaked nanobanana API key, needs operator credential rotation before the cover can be built)  
+**Updated:** 2026-07-18 (night-shift: MAS-OPTIMIZER Part 5 added, then deepened; MAS-JAVA-EXTENSIONS Part 7 deepened to 5,100+ words; MAS-DATABRICKS series index drafted, then Part 1 "Why Your Maximo Data Belongs in a Lakehouse" added with cover, then Part 2 "Getting Maximo Data Out: Kafka, Data Export, and CDC Patterns" added with cover, then Part 3 "Building the Asset Lakehouse: Bronze, Silver, Gold for Maximo Objects" added with cover, then Part 4 "Five Analytics Use Cases: Reliability, Cost, Inventory, Backlog, and PM Compliance on the Gold Layer" added with cover, then Part 5 "Custom ML in Databricks vs. Maximo Predict" drafted — content complete but cover generation blocked by a revoked/leaked nanobanana API key, needs operator credential rotation before the cover can be built; then Part 6 "Governance and Security for the MAS Lakehouse" (series finale) drafted 2026-07-18 — content complete, cover generation blocked by the SAME still-unrotated leaked API key, series is now content-complete end to end pending only the operator key rotation and both parts' covers)  
 **Author:** Swetansh (via TheMaximoGuys AI pipeline)  
 **Source docs:** `/root/TMG_MAS9_UPGRADE/DOC1..DOC12.md`  
 **Blog root:** `/root/themaximoguys-blog/posts/`  
@@ -20,8 +20,8 @@ word-count depth, and cover-image path checks.
 | Bucket | Count | Status |
 |---|---:|---|
 | Fully built and asset-complete | 7 source areas | DOC1, DOC3, DOC4, DOC6, DOC7, plus existing DOC2 Health/Monitor/Predict/MVI coverage |
-| Deep research/text complete, covers pending | 5 series | MAS-ASSIST, MAS-OPTIMIZER, MAS-NUCLEAR, MAS-RELIABILITY, MAS-SUPPLY-CHAIN |
-| Still pending as new deep blog work | 3 series | MAS-DATABRICKS, MAS-PARTS-IDENTIFIER, MAS-CIVIL-INFRASTRUCTURE |
+| Deep research/text complete, covers pending | 6 series | MAS-ASSIST, MAS-OPTIMIZER, MAS-NUCLEAR, MAS-RELIABILITY, MAS-SUPPLY-CHAIN, MAS-DATABRICKS |
+| Still pending as new deep blog work | 2 series | MAS-PARTS-IDENTIFIER, MAS-CIVIL-INFRASTRUCTURE |
 | Optional single-post gaps | 3 posts | DOC1 reporting, DOC1 upgrade gotchas, DOC6 extension crossovers |
 
 **Important distinction:** "content complete" below means the MDX posts exist, are long-form, and
@@ -37,7 +37,7 @@ include references. "Production complete" means the posts also have local cover 
 | DOC2 | Suite Add-Ons | ⚠️ **MOSTLY BUILT** | Health(9), Monitor(9), Predict(9), MVI(13), Assist(7), Optimizer(5) | Parts Identifier and Civil Infrastructure still need standalone deep series if wanted |
 | DOC3 | Paid Add-Ons & Industry | ✅ **PRODUCTION COMPLETE** | `posts/MAS-FEATURES` parts 15-20, 25 | None |
 | DOC4 | Supply Chain Features | ✅ **PRODUCTION COMPLETE** | `posts/MAS-FEATURES` parts 21-25 plus `MAS-MANAGE-09` | None for feature coverage |
-| DOC5 | Data Analytics & Databricks | 🟡 **IN PROGRESS** | `posts/MAS-DATABRICKS` (index + Part 1 + Part 2 + Part 3 + Part 4 built 2026-07-17 with covers; Part 5 content built 2026-07-17, cover generation blocked on nanobanana API key rotation; Part 6 pending) | Rotate the leaked nanobanana API key, generate Part 5's cover, then build Part 6 (queued in `automation/off-hours/queue.json`) |
+| DOC5 | Data Analytics & Databricks | 🟡 **CONTENT COMPLETE, ASSETS PENDING** | `posts/MAS-DATABRICKS` (index + Part 1 + Part 2 + Part 3 + Part 4 built 2026-07-17 with covers; Part 5 + Part 6 content built 2026-07-17/18, both covers blocked on the same nanobanana API key rotation) | Rotate the leaked nanobanana API key, then generate Part 5's and Part 6's covers |
 | DOC6 | Java Extensions | ✅ **PRODUCTION COMPLETE** | `posts/MAS-JAVA-EXTENSIONS` (8 posts + covers, incl. Part 7 extension crossovers added 2026-07-16, deepened 2026-07-17 to 5,100+ words with Nuclear clone-upgrade guidance, expanded MAXOBJECT diagnostics, a troubleshooting section, and a Type 5 worked example) | None |
 | DOC7 | Work Order Management | ✅ **PRODUCTION COMPLETE** | `posts/MAS-WORK-ORDER-OPS` (index + 6 posts + covers) | None |
 | DOC8 | Storekeeper Quick Wins | 🟡 **CONTENT COMPLETE, ASSETS PENDING** | `posts/MAS-SUPPLY-CHAIN` (merged playbook) | Generate 11 covers |
@@ -98,7 +98,7 @@ still pending — Part 5's is done).
 
 | Priority | Series | Source | Why it is still pending | Recommended decision |
 |---:|---|---|---|---|
-| 1 | `MAS-DATABRICKS` | DOC5 | **In progress 2026-07-17 (night-shift):** series index (Part 0) through Part 4 drafted with covers; Part 5 ("Custom ML in Databricks vs. Maximo Predict") content drafted 2026-07-17 but its cover is blocked — nanobanana returned `403 PERMISSION_DENIED: API key reported as leaked`. Part 6 not yet written. | Rotate the nanobanana API key, generate Part 5's cover, then build Part 6 (queued in `automation/off-hours/queue.json` as databricks-06). |
+| 1 | `MAS-DATABRICKS` | DOC5 | **Content complete 2026-07-18 (night-shift):** series index (Part 0) through Part 6 all drafted — the full six-part series is content-complete. Part 5 ("Custom ML vs. Maximo Predict") and Part 6 ("Governance and Security for the MAS Lakehouse") both have their covers blocked by the same `403 PERMISSION_DENIED: API key reported as leaked` nanobanana failure, confirmed still unrotated as of 2026-07-18. | Rotate the nanobanana API key, then generate Part 5's and Part 6's covers — no further content work needed for this series. |
 | 2 | `MAS-PARTS-IDENTIFIER` | DOC2 | Directory exists but has no MDX files. Coverage today is only shallow inside `MAS-FEATURES-14/24`. | Build a short 5-part computer-vision/parts workflow series or explicitly fold into Supply Chain. |
 | 3 | `MAS-CIVIL-INFRASTRUCTURE` | DOC2 | No standalone series exists. Coverage today is inside broader industry/add-on posts. | Build only if DOT/public infrastructure audience is a target. |
 | ~~4~~ | ~~`MAS-OPTIMIZER` Part 5~~ | DOC2 | **Resolved 2026-07-16 (night-shift).** Part 5 written; nav chain confirmed intact. | Cover image still needed for Parts 1-4. |

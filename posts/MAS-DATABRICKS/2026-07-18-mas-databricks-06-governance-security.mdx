@@ -1,0 +1,346 @@
+---
+title: "Governance and Security for the MAS Lakehouse: Unity Catalog, Access, Lineage"
+description: "How Unity Catalog's row filters, column masks, and lineage graph turn a Maximo-derived Databricks lakehouse into an auditable asset — mapped directly to the Maximo security groups, site/org restrictions, and data restrictions administrators already configure."
+date: "2026-07-18"
+slug: "mas-databricks-06-governance-security"
+tags: ["Maximo", "MAS 9", "Databricks", "Unity Catalog", "Data Governance", "PII", "Audit Compliance", "Security Groups", "Data Lineage", "FISMA"]
+draft: true
+tier: "developer"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-databricks-06-governance-security.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Does Unity Catalog actually replace Maximo's security groups, or do I still need to configure both?"
+    answer: "You still need both, and they're not doing the same job. Maximo's security groups control who can open the Work Order Tracking application, approve a purchase order, or edit an asset record inside Manage — that authorization never leaves MAS. Unity Catalog controls who can query the copy of that data once it lands in Databricks as a bronze, silver, or gold table. The moment a WORKORDER extract crosses the REST API into the lakehouse, Maximo's security groups stop applying to it — nothing in Manage's authorization model follows the data out. If you don't rebuild an equivalent restriction in Unity Catalog, a Databricks SQL analyst with catalog access can query pay rate data from LABTRANS or asset replacement costs that the same person's Maximo security group would never let them see inside Manage itself. This post is entirely about closing that gap."
+  - question: "What's the practical difference between a Unity Catalog row filter and a Maximo data restriction?"
+    answer: "Structurally, they're closer than most Databricks-side engineers assume. A Maximo data restriction is a conditional expression — built in the Expression Manager application, attached to a security group's Data Restrictions tab — that evaluates to true or false per record and, when true, makes an object or attribute read-only or hidden entirely; a classic example restricts an attribute so it only shows when :orgid equals a specific organization. A Unity Catalog row filter is the same idea implemented as a SQL function: it takes a row's column values as input, returns TRUE or FALSE, and Unity Catalog silently drops any row where it returns FALSE, bound to the table with ALTER TABLE ... SET ROW FILTER. The mechanism differs — Expression Manager's declarative conditions versus a SQL UDF — but the intent is identical: the same person querying the same table sees a different slice of rows depending on who they are, evaluated at query time, not baked into a separate copy of the data."
+  - question: "Where does personally identifiable information actually show up in Maximo-derived lakehouse data, and is it just in labor records?"
+    answer: "Labor transaction data is the sharpest case, but it's not the only one. LABTRANS carries the employee's labor code, hours, and — critically — the pay rate used to calculate actual labor cost on a work order, which is compensation data in a table that otherwise looks like routine maintenance history. It's not the only PII-adjacent table, though: work order long descriptions and failure narratives are free text and occasionally get filled with names, phone numbers, or incident details written by a technician who didn't think of a work order comment as a PII field; and asset records in facilities and healthcare deployments sometimes carry occupant or patient-adjacent location data through custom fields. The pattern that matters is: any table that joins LABTRANS, or that includes free-text long-description fields, needs a PII review before it's promoted past the silver layer — gold tables built for BI dashboards should already have compensation and free-text fields stripped, masked, or aggregated away."
+  - question: "What does an auditor actually check when a Databricks-derived score influenced a real maintenance decision?"
+    answer: "Three things, roughly in this order, whether the standard is SOX, 10 CFR 50, or an internal FISMA-aligned control: first, provenance — can you show, end to end, which raw Maximo records and which model version produced this specific score, which is exactly what Unity Catalog's column-level lineage graph is built to answer without a manual data-flow diagram; second, access — can you show who was authorized to see and act on the score, and does that match your documented security model, which is what row filters, column masks, and Unity Catalog's audit logs cover; third, the write-back — can you show the exact REST call that turned the score into a work order or an asset update, with a timestamp and an identity attached, since a lakehouse governance story that stops at 'we can query it' but can't account for the action taken on it doesn't satisfy an auditor asking who authorized a maintenance decision. Part 5's closed-loop pattern is what generates that last piece of evidence; this post is what makes the first two defensible."
+  - question: "Is Unity Catalog governance a one-time setup, or does it need ongoing maintenance as the lakehouse grows?"
+    answer: "Ongoing, and treating it as a one-time setup is the single most common governance failure in lakehouse programs generally, not just Maximo-adjacent ones. Row filters and column masks attach to specific tables; every new gold table built off a silver source that carries labor, cost, or free-text data needs the same masking pattern applied before it's shared, not after someone notices it wasn't. Databricks' newer attribute-based access control (ABAC) policies exist specifically to reduce this burden — a policy tied to a governed tag like pii_labor applies automatically to any table carrying that tag, rather than requiring a human to remember to reattach a row filter on every new table — but someone still has to tag new tables correctly at creation time. Audit logs also age out: Unity Catalog's audit log retention defaults to 90 days, which is far short of what most compliance regimes require for a maintenance-decision audit trail, so a lakehouse governance program needs a plan for exporting audit logs to longer-term storage from day one, not after the first request for two-year-old access history."
+keyTakeaways:
+  - "Maximo's security groups and Unity Catalog are not the same control and don't automatically inherit from each other — the moment Maximo data crosses the REST API into a bronze table, you must rebuild the equivalent restriction in Unity Catalog or the lakehouse becomes the weakest link in your access model"
+  - "Unity Catalog row filters and column masks are the direct structural analog of Maximo's Data Restrictions tab and Expression Manager conditional expressions — same intent, different mechanism (a SQL UDF bound to a table instead of a declarative condition attached to a security group)"
+  - "Column-level lineage is what makes a gold-layer score defensible — it traces a failure prediction or a health score back through every transformation to the specific raw Maximo record and model version that produced it, which is exactly what a SOX, 10 CFR 50, or FISMA-aligned audit actually asks for"
+  - "LABTRANS is the sharpest PII case in a Maximo lakehouse because it carries pay rate alongside routine labor-hours data, but free-text work order descriptions and custom asset fields carry the same risk in facilities and healthcare deployments — review any table joining LABTRANS or long-description fields before it's promoted to gold"
+  - "Governance is not a one-time setup — new gold tables need the same masking pattern applied at creation, ABAC policies keyed on governed tags reduce that burden but don't eliminate the tagging discipline, and Unity Catalog's 90-day default audit log retention means exporting logs to long-term storage has to be planned from day one, not requested after the fact"
+series:
+  name: "MAS DATABRICKS"
+  part: 6
+  total: 6
+tldr: "This is the finale of the MAS 9 + Databricks lakehouse series, and it answers the question every prior part deferred: once Maximo data leaves MAS and lands in Databricks, what stops it from becoming a governance liability? Unity Catalog is the answer — its fine-grained, column-level access control (row filters and column masks) is the direct structural analog of Maximo's own Data Restrictions tab and Expression Manager conditional expressions, just implemented as SQL user-defined functions instead of declarative conditions attached to a security group. This post maps that parity table precisely, walks a worked row-filter and column-mask implementation against the gold tables Part 3 built, traces column-level lineage from a raw WORKORDER extract to a gold-layer failure-prediction score, names exactly where PII shows up in Maximo-derived data (LABTRANS pay rate data above all), and closes with what a SOX, 10 CFR 50, or FISMA-aligned auditor actually expects to see when a lakehouse-derived score influenced a real maintenance decision."
+seoTitle: "Unity Catalog Governance for the MAS 9 Lakehouse"
+seoDescription: "Unity Catalog row filters, column masks, and lineage mapped to Maximo site/org security groups — plus PII in labor data and what auditors expect."
+targetQuestions:
+  - "How does Unity Catalog's fine-grained access control map to Maximo's security groups and site/org restrictions?"
+  - "How do you implement row filters and column masks on Databricks gold tables built from Maximo data?"
+  - "How does data lineage in Unity Catalog trace a gold-layer score back to its raw Maximo source?"
+  - "Where does PII show up in Maximo-derived lakehouse data, and how should labor transaction data be handled?"
+  - "What does an auditor expect to see when a Databricks-derived score influenced a Maximo maintenance decision?"
+semanticKeywords:
+  - "Unity Catalog row filters column masks"
+  - "Maximo security groups Unity Catalog mapping"
+  - "Unity Catalog data lineage Maximo"
+  - "Maximo data restrictions Expression Manager"
+  - "LABTRANS PII labor transaction data"
+  - "Unity Catalog audit logs compliance"
+  - "SOX 10 CFR 50 lakehouse audit"
+  - "ABAC attribute-based access control Databricks"
+  - "Maximo site organization security"
+  - "MAS 9 data governance lakehouse"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 3 of this series — the medallion architecture and named gold tables (gold.pump_failure_features, silver.work_orders_enriched) this post applies row filters and column masks to"
+  - "Part 5 of this series — the closed-loop REST write-back pattern this post's audit-evidence section builds on"
+  - "Familiarity with Maximo Security Groups application — Sites, Applications, Object Structures, and Data Restrictions tabs"
+  - "Basic SQL comfort for the row filter / column mask worked examples"
+speakableSections:
+  - "Mapping Maximo Security Groups to Unity Catalog"
+  - "Implementing Row Filters and Column Masks on Gold Tables"
+  - "What an Auditor Actually Expects to See"
+series_part: 6
+clusterSlugs:
+  - "mas-databricks-series-index"
+  - "mas-databricks-03-medallion-architecture"
+  - "mas-databricks-05-ml-vs-mas-predict"
+relatedSlugs:
+  - "mas-databricks-series-index"
+  - "mas-databricks-01-why-lakehouse"
+  - "mas-nuclear-series-index"
+---
+
+# Governance and Security for the MAS Lakehouse: Unity Catalog, Access, Lineage
+
+<aside>
+
+🎯 **Who this is for:** Data engineers and platform owners who built the extraction pipeline in Part 2 and the medallion tables in Part 3 and now have to answer "who can see this," IT and compliance leaders scoping the audit conversation for a lakehouse that touches regulated maintenance data, and Maximo security administrators who understand Security Groups and Data Restrictions cold but have never had to translate that model into a Databricks catalog.
+
+</aside>
+
+**Series:** Part 6 of 6 (Series Finale) — *MAS 9 + Databricks: Building the Maximo Data Lakehouse* | **Read time:** 16 minutes
+
+---
+
+## 🧱 The Problem — Your Security Groups Stop at the REST API
+
+Every part of this series has walked through getting Maximo data into Databricks and doing something valuable with it once it's there — extraction patterns in Part 2, the medallion architecture in Part 3, five analytics use cases in Part 4, a custom ML build in Part 5. Not one of those parts has addressed a question that becomes unavoidable the moment any of that work reaches a second user: who is actually allowed to query the data once it's in Databricks?
+
+Inside Maximo, that question already has a mature answer. A Security Group's Sites tab authorizes a user for all sites or specific ones; the Applications tab authorizes which applications and what type of access — read, insert, update, delete; the Object Structures tab authorizes which object structure APIs a user can reach for integration; the Data Restrictions tab, backed by conditional expressions built in the Expression Manager application, can make a specific object or attribute read-only or invisible based on a condition evaluated per record. A reliability engineer restricted to Site 1 cannot see Site 2's asset costs inside Manage, full stop, and that restriction has been battle-tested through every Maximo upgrade this series has referenced.
+
+None of that authorization model travels with the data. When Part 2's REST extraction pulls WORKORDER records into a bronze Delta table, the JSON payload that lands in Databricks carries the field values — it does not carry the security group that restricted who could see them in Manage. A Databricks workspace admin who grants broad `SELECT` on the bronze and silver schemas to a BI team has, without meaning to, handed that team query access to every site, every labor rate, every asset cost the Maximo extraction pulled — regardless of what those same users' Maximo security groups would ever let them see inside the source system. This isn't a hypothetical: it's the default behavior of any Unity Catalog schema with no row filters or column masks attached, and it's exactly the gap this series' index post flagged when it said governance is "not optional once Maximo data leaves MAS."
+
+<aside>
+💡 **Key insight:** A lakehouse doesn't inherit a source system's security model automatically — it inherits nothing beyond the raw field values by default. Every restriction that mattered inside Maximo has to be deliberately rebuilt inside Unity Catalog, table by table, or it silently stops existing the moment the REST extraction runs.
+</aside>
+
+This post is the series finale precisely because it's the one piece that makes every prior part defensible in front of an auditor rather than just impressive in a demo. It covers, in order: the direct structural mapping between Maximo's security model and Unity Catalog's; a worked implementation of row filters and column masks against the gold tables Part 3 and Part 5 already built; how column-level lineage traces a score back to its raw source; where PII specifically shows up in Maximo-derived data; and what an auditor checks when a lakehouse-derived score influenced a real maintenance decision.
+
+---
+
+## 🧭 The Solution — Unity Catalog as the Site/Org Security Layer's Successor
+
+The approach here is deliberate: instead of treating Unity Catalog governance as a separate Databricks-native concern with its own vocabulary, translate it directly against the Maximo security model your administrators already understand. Every Unity Catalog control introduced in this post gets tied to the specific Security Groups tab it replaces once data leaves Manage.
+
+**What this post covers, in order:**
+1. A direct parity table — Maximo Security Groups tabs mapped to Unity Catalog equivalents
+2. A worked implementation: row filters and column masks against `gold.pump_failure_features` and `silver.work_orders_enriched`
+3. Data lineage — tracing a gold-layer failure-prediction score back to its raw WORKORDER and sensor source
+4. Where PII actually lives in Maximo-derived data, with LABTRANS as the sharpest case
+5. What an auditor checks when a lakehouse score influenced a maintenance decision — provenance, access, and write-back evidence
+6. A governance rollout checklist, closing out the series
+
+---
+
+## 🔐 Mapping Maximo Security Groups to Unity Catalog
+
+Every tab on a Maximo Security Group has a direct — if not always one-to-one — Unity Catalog equivalent. Building this table once, early, is what keeps a Databricks admin from reinventing an access model Maximo administrators already validated.
+
+| Maximo Security Groups Tab | What It Controls in Manage | Unity Catalog Equivalent |
+|---|---|---|
+| **Sites** | Which sites a user can access at all; users without site access must inherit it from another group | Catalog and schema-level `GRANT SELECT`, scoped so a business-unit schema only grants to that unit's users, plus row filters keyed on a `siteid`/`orgid` column for shared tables |
+| **Applications** | Which applications (Work Order Tracking, Assets, Purchase Orders) and what access type (read/insert/update/delete) | Table and view-level `GRANT SELECT` / `GRANT MODIFY` on the corresponding gold or silver table — a BI-only schema grants `SELECT` only, never `MODIFY` |
+| **Object Structures** | Which object structure APIs a user can reach for external integration | Unity Catalog's Lakehouse Federation and API-facing views — grants on the specific views a downstream system or Databricks SQL endpoint is allowed to query |
+| **Storerooms / Labor / GL Components** | Access to inventory transactions, labor records, or general ledger data at a granular sub-application level | Column masks and row filters on the specific columns/rows carrying that data — inventory transaction tables, `silver.work_orders_enriched`'s labor columns, cost-center columns |
+| **Data Restrictions (Expression Manager)** | Conditional expressions that make an object or attribute read-only or hidden per record, e.g. an attribute restricted to `:orgid = 'EAGLENA'` | **Row filters** (hide rows) and **column masks** (obscure values) — SQL functions bound to a table, evaluated per query, functionally the same "condition true → restrict" pattern |
+| **Combination of Security Groups (OR-combination rule)** | When a user belongs to multiple groups, data restrictions combine using OR — the union of what each group individually restricts | Unity Catalog **ABAC policies** keyed on governed tags, which apply consistently across every table carrying that tag rather than requiring per-table reattachment — the closest Unity Catalog equivalent to "one restriction, many groups, applied automatically" |
+
+The last row is worth dwelling on because it's the one most Databricks-side teams get backwards. Maximo's combination rule is explicit: if a user is in two security groups and one of them restricts an attribute with a `READONLY` condition on `:orgid = 'EAGLENA'`, and the other restricts the same attribute for `:orgid = 'EAGLEUK'`, the combined restriction applies to *both* organizations — the OR operator, not AND. Unity Catalog's manually-applied row filters and column masks don't have an equivalent combination rule baked in; you're responsible for writing the SQL function's logic correctly for every group of users it needs to cover. ABAC policies, generally available as of 2026 and scaling to 10,000+ policies per metastore, close that gap by letting a policy target a governed tag rather than a specific table — the practical analog of "this restriction applies everywhere this kind of data appears," which is exactly the spirit of Maximo's Data Restrictions tab.
+
+<aside>
+💡 **Key insight:** The Maximo → Unity Catalog mapping isn't perfect, and it shouldn't be treated as a checkbox exercise — Data Restrictions in Maximo apply at the object/attribute level inside a single system with one authorization model, while a lakehouse aggregates data from Maximo, ERP, weather, and sensor sources into one flat table where the "who can see this" question has to be re-derived per column, not inherited. The mapping is a starting vocabulary, not a migration script.
+</aside>
+
+---
+
+## 🛠️ Implementing Row Filters and Column Masks on Gold Tables
+
+Take the mapping from theory to a working example against tables this series already built. Assume `gold.pump_failure_features` (Part 5's feature table) and `silver.work_orders_enriched` (Part 3's core silver table, which joins in LABTRANS labor data) both need site-scoped row restrictions and a labor-cost column mask.
+
+### Row Filter — Restricting by Site, the `:orgid` Pattern Translated
+
+Maximo's own combination-rule documentation uses `:orgid = 'EAGLENA'` as its canonical Data Restrictions example. Here's the direct Unity Catalog translation, restricting `gold.pump_failure_features` so a user only sees rows for the site(s) their group grants:
+
+```sql
+-- Row filter function: returns TRUE only for rows the caller's group is authorized to see
+CREATE OR REPLACE FUNCTION governance.site_row_filter(siteid STRING)
+RETURNS BOOLEAN
+RETURN
+  is_account_group_member('site_all_access')
+  OR siteid IN (
+    SELECT authorized_siteid
+    FROM governance.user_site_grants
+    WHERE user_email = current_user()
+  );
+
+-- Bind the filter to the gold table
+ALTER TABLE gold.pump_failure_features
+SET ROW FILTER governance.site_row_filter ON (siteid);
+```
+
+`governance.user_site_grants` is a small reference table an administrator maintains — effectively the Databricks-side equivalent of the Sites tab's per-user authorization list, kept in sync (manually or via a scheduled job) with the same site groupings Maximo's own security groups define. `is_account_group_member('site_all_access')` mirrors Maximo's "authorize group for all sites" checkbox — an escape hatch for users who genuinely need cross-site visibility, exactly as it works in the Security Groups application.
+
+### Column Mask — Obscuring Labor Cost Data
+
+`silver.work_orders_enriched` joins in LABTRANS, which means it carries labor hours and the actual pay-rate-derived labor cost per work order. A BI analyst who needs work order counts and durations has no legitimate need to see the underlying pay-rate math:
+
+```sql
+-- Column mask function: analysts see a rounded bucket, not the exact figure
+CREATE OR REPLACE FUNCTION governance.labor_cost_mask(actlabcost DOUBLE)
+RETURNS DOUBLE
+RETURN
+  CASE
+    WHEN is_account_group_member('labor_cost_full_access') THEN actlabcost
+    ELSE ROUND(actlabcost, -2)  -- bucketed to the nearest $100, not exact
+  END;
+
+-- Apply the mask to the specific column
+ALTER TABLE silver.work_orders_enriched
+ALTER COLUMN actlabcost SET MASK governance.labor_cost_mask;
+```
+
+This is the direct Unity Catalog analog of Maximo's Labor tab restriction — "grant access to all labor records, sets of labor records, or individual labor records" — implemented as a value transformation instead of a record-level grant, because a column mask can degrade precision (exact figure → rounded bucket) in a way a Maximo attribute restriction, which is binary visible/hidden, cannot.
+
+A few limitations worth knowing before scoping this work: row filters and column masks require Databricks Runtime 12.2 LTS or above, cannot be applied to views, aren't compatible with the Iceberg REST catalog or Unity REST APIs, and — importantly for a series that's leaned on Delta Lake's time-travel feature for audit purposes — deep and shallow clones and time-travel queries are not supported on tables carrying row filters or column masks. Plan your audit/time-travel strategy around unmasked lineage-and-version history in Unity Catalog's system tables (next section) rather than raw `VERSION AS OF` queries on a masked table.
+
+---
+
+## 🔍 Data Lineage — From Raw WORKORDER Extract to a Gold Failure-Prediction Score
+
+Access control answers "who can see this." Lineage answers a different, equally audit-critical question: "where did this number actually come from, and what happened to it along the way." Unity Catalog captures this automatically, at the column level, for every query run through a Databricks SQL warehouse, notebook, or job — no manual tagging or separate data-flow diagram required.
+
+Take Part 5's closed-loop example: `PUMP-4471` gets an 87% failure-probability score written back to Maximo. If a reliability engineer questions that score six months later — maybe during an incident review — the lineage path Unity Catalog reconstructs looks like this:
+
+| Stage | Table / Object | What Unity Catalog Records |
+|---|---|---|
+| 1. Raw ingestion | `bronze.workorder_raw`, `bronze.sensor_stream` | Source system (Maximo REST API, Monitor Kafka stream), ingestion job ID, timestamp |
+| 2. Cleaning | `silver.work_orders_enriched`, `silver.sensor_aligned` | Which bronze columns fed which silver columns, the transformation notebook/job that produced each |
+| 3. Feature engineering | `gold.pump_failure_features` | The exact SQL/PySpark job (Part 5's feature table build) and which silver columns it joined |
+| 4. Model scoring | MLflow-registered model, version alias `production` | Which model version scored this row, what training run produced that version, what data trained it |
+| 5. Write-back | Maximo `mxasset` custom score field via REST `PUT` | Not captured by Unity Catalog itself — this is why Part 5's closed-loop pattern needs its own request/response logging alongside Unity Catalog's lineage |
+
+Column-level lineage means you can ask, specifically, "which raw WORKORDER and sensor columns fed the vibration_avg_1d feature that fed this specific model version" and get a column-by-column answer, not just a table-level one — this is what distinguishes Unity Catalog's lineage from a generic ETL diagram. This same lineage graph is queryable directly through system tables:
+
+```sql
+-- Trace which upstream tables and columns fed a specific gold table
+SELECT source_table_full_name, source_column_name,
+       target_table_full_name, target_column_name
+FROM system.access.column_lineage
+WHERE target_table_full_name = 'gold.pump_failure_features'
+ORDER BY source_table_full_name;
+```
+
+`system.access.column_lineage` and its counterpart `system.query.history` are both exposed automatically once Unity Catalog is enabled on a metastore — no separate lineage tool license or manual instrumentation needed, which is a meaningfully lower bar than most enterprise data-catalog products this series' governance comparison would otherwise have to name.
+
+<aside>
+💡 **Key insight:** Lineage is what turns "trust the model" into "verify the model" during an audit or an incident review. A reliability engineer challenging a false-positive prediction doesn't need to trust the data science team's word that the pipeline is sound — they can trace the exact column path from raw sensor reading to the score that generated a work order, the same standard of evidence a 10 CFR 50 audit or a SOX financial-controls review already expects from any system that influences a real operational or financial decision.
+</aside>
+
+---
+
+## 🧬 PII in Labor Transaction Data — LABTRANS and the One Table That's Different
+
+Every other Maximo table this series has moved through the medallion layers — WORKORDER, ASSET, FAILUREREPORT, INVENTORY — carries operational data: what broke, when, what it cost to fix, what's in stock. LABTRANS is structurally different, and it's the table most Databricks-side data engineers underestimate, because on the surface it looks like just another operational transaction table.
+
+LABTRANS records who worked on a work order, for how many hours, at what labor code — and the labor code maps to a pay rate that determines `actlabcost`, the actual labor cost figure this post already masked above. That pay-rate-derived figure is compensation data. Joined against an employee ID, it's exactly the kind of record a GDPR or CCPA-style PII review treats as personal data, not routine maintenance history — and it flows straight into `silver.work_orders_enriched`, which every subsequent gold table in this series' medallion architecture (Part 4's cost rollups, Part 5's feature engineering) builds on.
+
+The masking pattern from the previous section — round `actlabcost` to the nearest hundred for anyone outside a `labor_cost_full_access` group — is the minimum bar, not the complete answer. A fuller PII treatment for LABTRANS-derived data follows the standard masking-technique hierarchy:
+
+| Technique | What It Does | Where It Fits for LABTRANS Data |
+|---|---|---|
+| **Data minimization** | Don't extract or retain fields you don't need | If a gold table only needs total labor hours per work order, don't carry individual `laborcode` or `craftrate` columns into it at all — aggregate before promoting to gold |
+| **Masking / bucketing** | Obscure the exact value while preserving analytical usefulness | The `ROUND(actlabcost, -2)` column mask above — usable for trend analysis, not precise enough to infer an individual's pay |
+| **Tokenization** | Replace an identifier with a reversible token stored in a secure vault | Employee ID → a token, when a downstream system genuinely needs to re-identify a specific labor record (e.g., a payroll reconciliation job) but a BI dashboard does not |
+| **Pseudonymization** | Replace direct identifiers with a stable surrogate, mapping kept separate and access-controlled | Craft/labor code retained for craft-level analytics (which craft has the highest overtime rate) without carrying the individual employee identifier at all |
+
+It's not only LABTRANS. Work order long-description and failure-narrative free-text fields are the second-sharpest case, because they're unstructured — a technician writing "called Dave at the site, he confirmed the leak" in a work order comment has put a name into a field nobody classified as PII when the schema was designed. Facilities and healthcare-adjacent Maximo deployments carry a third case through custom asset fields tracking occupant or patient-adjacent location data. None of these are hypothetical edge cases in a mature Maximo estate — they're the actual shape PII takes once real technicians and real facilities data start flowing through real work order records, and a gold-layer PII review has to check for all three, not just assume LABTRANS is the only table that matters.
+
+<aside>
+💡 **Key insight:** PII risk in a Maximo lakehouse doesn't show up where you'd design it to — it shows up in the free-text field nobody thought to classify and the joined labor table nobody thought of as compensation data. A gold-layer PII review needs to check every table's actual column list and a sample of its free-text content, not just the tables an initial governance conversation assumed were sensitive.
+</aside>
+
+---
+
+## 📋 What an Auditor Actually Expects to See
+
+Every mechanism in this post — row filters, column masks, lineage, PII handling — exists to answer one question when it actually gets asked: a lakehouse-derived score influenced a real maintenance decision, and someone with audit authority wants to know it was handled correctly. Whether that authority is a SOX financial-controls reviewer (because a maintenance cost rollup fed a capital expenditure decision), a 10 CFR 50 nuclear compliance auditor (because a predictive score influenced a safety-related maintenance schedule), or an internal FISMA-aligned security review — IBM's own MAS 9.2 AI Service component shipped explicit FISMA-Ready compliance positioning in its June 2026 release, a signal that federal-grade audit expectations are now a first-class MAS 9.x consideration, not an edge case — the auditor's checklist covers the same three things in roughly the same order.
+
+| What the Auditor Asks | What Answers It | Where This Series Built It |
+|---|---|---|
+| **Provenance** — which raw records and which model version produced this specific score? | Unity Catalog column-level lineage, traced through `system.access.column_lineage`, plus the MLflow model registry's version history | This post's lineage section; Part 5's MLflow registration step |
+| **Access** — who was authorized to see and act on this score, and does that match the documented security model? | Row filters, column masks, and Unity Catalog's automatic audit logging of every table access | This post's row-filter/column-mask implementation |
+| **Write-back** — what exact system action resulted, with a timestamp and identity attached? | The REST `PUT`/`POST` call log from the closed-loop pattern — a Maximo work order or asset-score update with a caller identity | Part 5's closed-loop REST examples |
+
+The access piece has a retention wrinkle worth planning for before an auditor asks, not after: Unity Catalog's audit logs — capturing every table access automatically through `system.access.audit` — default to 90 days of retention. A SOX or 10 CFR 50 audit trail commonly needs to reach back well past 90 days, sometimes multiple years depending on the specific record type and regulatory regime. That means the governance rollout has to include, from day one, an export job pushing `system.access.audit` (and `system.access.column_lineage`, for the same reason) into long-term storage — a separate Delta table with its own retention policy, or an external log archive — rather than assuming Unity Catalog's own retention window is sufficient for compliance purposes.
+
+<aside>
+💡 **Key insight:** An auditor doesn't ask "is your lakehouse secure" in the abstract — they ask for provenance, access, and write-back evidence on one specific decision, and they ask for it on their timeline, not yours. Building the export pipeline for lineage and audit logs before it's needed is the difference between answering that request in an afternoon and discovering the evidence aged out three months before anyone asked for it.
+</aside>
+
+---
+
+## ⚠️ Common Mistakes in Lakehouse Governance for Maximo Data
+
+- **Granting broad schema-level `SELECT` "to get the BI team unblocked" and never circling back to add row filters.** This is the single most common governance gap in Maximo-adjacent lakehouse builds — a temporary broad grant made during a pilot becomes permanent because nobody owns closing it.
+- **Assuming Maximo's security groups govern Databricks because "it's the same data."** They don't, and they never will automatically — every restriction has to be deliberately rebuilt on the Unity Catalog side, per this post's mapping table, not inherited.
+- **Masking LABTRANS's `actlabcost` column and stopping there.** Free-text long descriptions and custom facility/healthcare fields carry PII risk too — a gold-layer PII review needs to check actual column content, not just the columns an initial conversation assumed were sensitive.
+- **Treating audit log retention as Unity Catalog's default (90 days) without an export plan.** By the time a real audit request arrives asking for eighteen-month-old access history, the window to have planned for it has already closed.
+- **Applying row filters and column masks to a table, then relying on time-travel or clone operations against that same table for a separate purpose.** Both are unsupported on tables carrying row filters or column masks — plan version history and rollback strategy around unmasked source tables or Unity Catalog's own lineage system tables instead.
+- **Building the governance layer after the analytics use cases, instead of alongside them.** Every gold table this series has built since Part 3 should have had its row filter and column mask requirements scoped at creation time — retrofitting governance onto tables already in production use is slower and easier to get wrong than building it in from the first `CREATE TABLE`.
+
+---
+
+## 🔧 Closing the Series — A Governance Rollout Checklist
+
+This series opened in Part 1 with a deliberately narrow claim: MAS 9's native analytics are genuinely good, and a lakehouse conversation should start with naming their ceiling, not assuming they're inadequate. Six parts later, governance is where that argument closes the loop — because a Databricks lakehouse that duplicates MAS capability without adding proportional governance discipline isn't just wasted spend, it's a new, weaker security surface sitting next to a system whose authorization model took years to mature.
+
+For teams starting this rollout, in order:
+
+1. **Inventory before you grant.** List every gold, silver, and bronze table with a Maximo or MAS-adjacent source, and flag which ones join LABTRANS, carry free-text fields, or include cost/pricing data — before granting any schema-level access.
+2. **Build the site/org row filter first.** It's the highest-leverage single control, mirroring the Sites tab every Maximo user already has configured, and it applies broadly across nearly every gold table this series has built.
+3. **Add column masks for labor cost and any compensation-adjacent field**, using the bucketing pattern above as the default and reserving `labor_cost_full_access`-style exceptions for a genuinely small group.
+4. **Turn on the lineage and audit-log export job before the first production gold table ships**, not after the first audit request — `system.access.column_lineage` and `system.access.audit` retention is a solved problem only if someone builds the export pipeline in advance.
+5. **Revisit ABAC policies once you have more than a handful of PII-adjacent tables** — tagging tables with a governed classification tag and letting one policy apply everywhere scales better than reattaching row filters and masks table-by-table as the lakehouse grows.
+6. **Treat this checklist as a recurring review, not a launch task** — every new gold table built off Part 3's medallion pattern, every new custom ML feature table from Part 5, needs the same governance pass applied before it ships, not after someone notices it wasn't.
+
+---
+
+## Key Takeaways
+
+1. **Maximo's security groups and Unity Catalog are separate controls that don't inherit from each other** — every restriction that mattered inside Manage has to be deliberately rebuilt in Unity Catalog once data crosses the REST API, or the lakehouse becomes the weakest link in your access model.
+2. **Row filters and column masks are the direct structural analog of Maximo's Data Restrictions tab** — a SQL UDF bound to a table instead of a declarative Expression Manager condition attached to a security group, but the same "condition true, restrict the data" intent.
+3. **Column-level lineage makes a gold-layer score defensible** — tracing a failure prediction or health score back through every transformation to its raw Maximo source and model version is exactly what a SOX, 10 CFR 50, or FISMA-aligned audit expects, and Unity Catalog captures it automatically.
+4. **LABTRANS is the sharpest PII case in a Maximo lakehouse**, carrying pay-rate-derived labor cost data, but free-text descriptions and custom facility/healthcare fields carry the same risk — review actual column content, not assumptions, before promoting a table to gold.
+5. **Governance is a recurring discipline, not a launch task** — new gold tables need masking applied at creation, ABAC policies scale better than per-table reattachment, and audit log export has to be planned before the 90-day default retention window closes on evidence someone will eventually need.
+
+---
+
+## References
+
+- [Databricks on AWS — Row filters and column masks](https://docs.databricks.com/aws/en/data-governance/unity-catalog/filters-and-masks/)
+- [Databricks Blog — ABAC row filtering and column masking policies, governed tags, and data classification now GA](https://www.databricks.com/blog/abac-row-filtering-and-column-masking-policies-governed-tags-and-data-classification-are-now)
+- [Databricks on AWS — Lineage in Unity Catalog](https://docs.databricks.com/aws/en/data-governance/unity-catalog/data-lineage)
+- [Databricks on AWS — Audit log reference](https://docs.databricks.com/aws/en/admin/account-settings/audit-logs)
+- [IBM — Introducing Maximo Application Suite 9.2](https://www.ibm.com/new/announcements/introducing-maximo-application-suite-9-2)
+- [IBM Support — Maximo Application Suite AI Service Component feature release 9.2.0](https://www.ibm.com/support/pages/ibm-maximo-application-suite-ai-service-component-feature-release-920-0)
+- [Naviam — Security Features in Maximo Application Suite](https://www.naviam.io/resources/blog/security-features-in-maximo-application-suite)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 5 — Custom ML vs. Maximo Predict](/blog/mas-databricks-05-ml-vs-mas-predict) |
+| **Series Index:** | [MAS 9 + Databricks: Building the Maximo Data Lakehouse](/blog/mas-databricks-series-index) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*
+
+<!--
+Research note for human review: The Unity Catalog row filter / column mask SQL syntax
+(CREATE FUNCTION ... RETURNS BOOLEAN, ALTER TABLE ... SET ROW FILTER / SET MASK) is confirmed
+against current Databricks documentation. The Maximo `:orgid = 'EAGLENA'` OR-combination example
+and the Data Restrictions / Expression Manager mechanism are drawn directly from the Maximo Manage
+"Sites" and "Creating security groups" documentation sections in the knowledge base, not invented.
+The direct IBM Docs page for MAS 9.1's "Applying global data restrictions" (masv-and-l/cd?topic=
+groups-applying-global-data-restrictions) returned HTTP 403 to the automated fetch tool used during
+this research pass but resolved 200 to a standard browser-agent curl check — its content is
+summarized from the search-result snippet only (global data restrictions became specifiable at the
+application level starting in MAS 9.1) and was not independently read in full; flagging for a human
+to verify directly against that page. Unity Catalog's exact current audit-log default retention
+(cited here as 90 days) and the 10,000+ policies/metastore ABAC scaling figure were both confirmed
+during the web verification round but should be spot-checked against the Databricks docs at
+publish time since these figures move with product releases. The FISMA-Ready compliance detail for
+MAS 9.2's AI Service component (June 2026 release) is real and current per IBM's own release notes,
+but this post applies it illustratively to the broader lakehouse-governance audit conversation
+rather than claiming FISMA certification for Unity Catalog or Databricks itself — that claim was
+not verified and should not be implied beyond what IBM's own AI Service release notes state.
+-->
