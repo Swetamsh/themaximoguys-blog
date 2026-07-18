@@ -1,6 +1,6 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-07-18 (night-shift: MAS-OPTIMIZER Part 5 added, then deepened; MAS-JAVA-EXTENSIONS Part 7 deepened to 5,100+ words; MAS-DATABRICKS series index drafted, then Part 1 "Why Your Maximo Data Belongs in a Lakehouse" added with cover, then Part 2 "Getting Maximo Data Out: Kafka, Data Export, and CDC Patterns" added with cover, then Part 3 "Building the Asset Lakehouse: Bronze, Silver, Gold for Maximo Objects" added with cover, then Part 4 "Five Analytics Use Cases: Reliability, Cost, Inventory, Backlog, and PM Compliance on the Gold Layer" added with cover, then Part 5 "Custom ML in Databricks vs. Maximo Predict" drafted — content complete but cover generation blocked by a revoked/leaked nanobanana API key, needs operator credential rotation before the cover can be built; then Part 6 "Governance and Security for the MAS Lakehouse" (series finale) drafted 2026-07-18 — content complete, cover generation blocked by the SAME still-unrotated leaked API key, series is now content-complete end to end pending only the operator key rotation and both parts' covers)  
+**Updated:** 2026-07-18 (night-shift: MAS-OPTIMIZER Part 5 added, then deepened; MAS-JAVA-EXTENSIONS Part 7 deepened to 5,100+ words; MAS-DATABRICKS series index drafted, then Part 1 "Why Your Maximo Data Belongs in a Lakehouse" added with cover, then Part 2 "Getting Maximo Data Out: Kafka, Data Export, and CDC Patterns" added with cover, then Part 3 "Building the Asset Lakehouse: Bronze, Silver, Gold for Maximo Objects" added with cover, then Part 4 "Five Analytics Use Cases: Reliability, Cost, Inventory, Backlog, and PM Compliance on the Gold Layer" added with cover, then Part 5 "Custom ML in Databricks vs. Maximo Predict" drafted — content complete but cover generation blocked by a revoked/leaked nanobanana API key, needs operator credential rotation before the cover can be built; then Part 6 "Governance and Security for the MAS Lakehouse" (series finale) drafted 2026-07-18 — content complete, cover generation blocked by the SAME still-unrotated leaked API key, series is now content-complete end to end pending only the operator key rotation and both parts' covers; **then night-shift job `parts-id-00-index` audited MAS-PARTS-IDENTIFIER and found this section of the doc stale** — a 4-part MAS-PARTS-IDENTIFIER series (index + Parts 1-4, `posts/MAS-PARTS-IDENTIFIER/`, all `draft: false`, 3,400-4,300 words each, committed in `c429e81`) already exists and was NOT reflected here. `automation/off-hours/queue.json` still carries a stale `parts-id-00-index` item claiming "Directory exists but is empty" plus four more pending items (`parts-id-01..05`) describing a conflicting 5-part rebuild plan with different part topics. The job could not write the assigned index post — it already exists and is published, so overwriting it would violate the night-shift "do not modify existing published posts" rule. Only real remaining gap: all 5 files (index + 4 parts) have zero local cover images. This doc has been corrected below; `queue.json` itself was left untouched since the runner script owns queue state — a human or the next `replan` job should drop/rewrite `parts-id-01..05` and replace them with 5 cover-generation items for the files that already exist.)  
 **Author:** Swetansh (via TheMaximoGuys AI pipeline)  
 **Source docs:** `/root/TMG_MAS9_UPGRADE/DOC1..DOC12.md`  
 **Blog root:** `/root/themaximoguys-blog/posts/`  
@@ -9,9 +9,10 @@ word-count depth, and cover-image path checks.
 
 > Current decision state: the original DOC-to-blog backlog is mostly converted into deep blog
 > drafts. WO Missing Pieces is production-ready with covers. Assist, Optimizer, Nuclear,
-> Reliability, and Supply Chain are deep text-complete but still need cover assets before they
-> should be treated as fully published/production-complete. Databricks/Lakehouse, Parts Identifier,
-> and Civil Infrastructure remain the main unbuilt content decisions.
+> Reliability, Supply Chain, and Parts Identifier are deep text-complete but still need cover
+> assets before they should be treated as fully published/production-complete. Civil
+> Infrastructure remains the only true unbuilt content decision (Databricks is content-complete
+> pending only an API-key rotation for its last two covers).
 
 ---
 
@@ -20,8 +21,8 @@ word-count depth, and cover-image path checks.
 | Bucket | Count | Status |
 |---|---:|---|
 | Fully built and asset-complete | 7 source areas | DOC1, DOC3, DOC4, DOC6, DOC7, plus existing DOC2 Health/Monitor/Predict/MVI coverage |
-| Deep research/text complete, covers pending | 6 series | MAS-ASSIST, MAS-OPTIMIZER, MAS-NUCLEAR, MAS-RELIABILITY, MAS-SUPPLY-CHAIN, MAS-DATABRICKS |
-| Still pending as new deep blog work | 2 series | MAS-PARTS-IDENTIFIER, MAS-CIVIL-INFRASTRUCTURE |
+| Deep research/text complete, covers pending | 7 series | MAS-ASSIST, MAS-OPTIMIZER, MAS-NUCLEAR, MAS-RELIABILITY, MAS-SUPPLY-CHAIN, MAS-DATABRICKS, MAS-PARTS-IDENTIFIER |
+| Still pending as new deep blog work | 1 series | MAS-CIVIL-INFRASTRUCTURE |
 | Optional single-post gaps | 3 posts | DOC1 reporting, DOC1 upgrade gotchas, DOC6 extension crossovers |
 
 **Important distinction:** "content complete" below means the MDX posts exist, are long-form, and
@@ -34,7 +35,7 @@ include references. "Production complete" means the posts also have local cover 
 | DOC | Topic | Current verdict | Built by | Remaining decision |
 |-----|-------|-----------------|----------|--------------------|
 | DOC1 | Manage Upgrade Roadmap | ✅ **PRODUCTION COMPLETE** | `posts/MAS-MANAGE` (12 posts) | Optional: Reporting BIRT -> Cognos/KPI Manager; Upgrade Gotchas |
-| DOC2 | Suite Add-Ons | ⚠️ **MOSTLY BUILT** | Health(9), Monitor(9), Predict(9), MVI(13), Assist(7), Optimizer(5) | Parts Identifier and Civil Infrastructure still need standalone deep series if wanted |
+| DOC2 | Suite Add-Ons | ⚠️ **MOSTLY BUILT** | Health(9), Monitor(9), Predict(9), MVI(13), Assist(7), Optimizer(5), Parts Identifier(5) | Parts Identifier is content-complete (index + 4 parts), covers pending; Civil Infrastructure still needs a standalone series if wanted |
 | DOC3 | Paid Add-Ons & Industry | ✅ **PRODUCTION COMPLETE** | `posts/MAS-FEATURES` parts 15-20, 25 | None |
 | DOC4 | Supply Chain Features | ✅ **PRODUCTION COMPLETE** | `posts/MAS-FEATURES` parts 21-25 plus `MAS-MANAGE-09` | None for feature coverage |
 | DOC5 | Data Analytics & Databricks | 🟡 **CONTENT COMPLETE, ASSETS PENDING** | `posts/MAS-DATABRICKS` (index + Part 1 + Part 2 + Part 3 + Part 4 built 2026-07-17 with covers; Part 5 + Part 6 content built 2026-07-17/18, both covers blocked on the same nanobanana API key rotation) | Rotate the leaked nanobanana API key, then generate Part 5's and Part 6's covers |
@@ -80,6 +81,15 @@ These are ready for editorial review, but their frontmatter points at missing `.
 | `MAS-SUPPLY-CHAIN` | DOC8-10 | 11 | ~38.7k words | storekeeper first hour, inventory usage, receiving/barcode, cycle counts, reservations, buyer start center, PR->PO, sourcing, expedite/match-pay, lifecycle | 11 covers |
 | `MAS-RELIABILITY` | DOC11 | 8 | ~29.5k words | RCM/FMEA, MTBF/MTTR, reliability spine, analysis-to-action, APM layer, data load sequence, phased rollout | 8 covers |
 | `MAS-NUCLEAR` | DOC12 | 8 | ~20.6k words | product lineage/AppPoints, tech specs/LCO, configuration control, Maintenance Rule, CAP/tagout, regulatory crosswalk, MAS 9.2 reality | 8 covers |
+| `MAS-PARTS-IDENTIFIER` | DOC2 | 5 | ~18.7k words | what the app is and how AI vision recognition works, mobile capture-to-match workflow and photo craft, catalog matching/inventory/ordering and item-master data quality, deployment/training-image methodology/accuracy metrics/pilot design | 5 covers (index + 4 parts, 0 done) |
+
+**Parts Identifier note:** `MAS-PARTS-IDENTIFIER` (index + Parts 1-4, `posts/MAS-PARTS-IDENTIFIER/`,
+committed 2026-07-16 in `c429e81`) was found already content-complete and published (`draft: false`)
+during the 2026-07-18 night-shift run of item `parts-id-00-index` — this doc and `queue.json` had
+gone stale and did not reflect it. `queue.json` still lists `parts-id-01..05` as pending items
+describing a *different* 5-part rebuild plan (setup/training, storeroom workflow, mobile field,
+governance/AppPoints) that would duplicate/conflict with the parts already written. Those queue
+items should be replaced with 5 cover-generation items for the existing files, not run as-is.
 
 **Optimizer note:** `MAS-OPTIMIZER` Part 5 (`mas-optimizer-dispatching-rollout`) has been written
 (2026-07-16, night-shift), closing the structural gap the index/navigation already referenced, and
@@ -99,7 +109,7 @@ still pending — Part 5's is done).
 | Priority | Series | Source | Why it is still pending | Recommended decision |
 |---:|---|---|---|---|
 | 1 | `MAS-DATABRICKS` | DOC5 | **Content complete 2026-07-18 (night-shift):** series index (Part 0) through Part 6 all drafted — the full six-part series is content-complete. Part 5 ("Custom ML vs. Maximo Predict") and Part 6 ("Governance and Security for the MAS Lakehouse") both have their covers blocked by the same `403 PERMISSION_DENIED: API key reported as leaked` nanobanana failure, confirmed still unrotated as of 2026-07-18. | Rotate the nanobanana API key, then generate Part 5's and Part 6's covers — no further content work needed for this series. |
-| 2 | `MAS-PARTS-IDENTIFIER` | DOC2 | Directory exists but has no MDX files. Coverage today is only shallow inside `MAS-FEATURES-14/24`. | Build a short 5-part computer-vision/parts workflow series or explicitly fold into Supply Chain. |
+| ~~2~~ | ~~`MAS-PARTS-IDENTIFIER`~~ | DOC2 | **Resolved — already existed 2026-07-18 (night-shift discovery).** Index + Parts 1-4 are content-complete and published; this doc had gone stale claiming the directory was empty. | Generate 5 covers; correct `queue.json`'s conflicting `parts-id-01..05` rebuild items. |
 | 3 | `MAS-CIVIL-INFRASTRUCTURE` | DOC2 | No standalone series exists. Coverage today is inside broader industry/add-on posts. | Build only if DOT/public infrastructure audience is a target. |
 | ~~4~~ | ~~`MAS-OPTIMIZER` Part 5~~ | DOC2 | **Resolved 2026-07-16 (night-shift).** Part 5 written; nav chain confirmed intact. | Cover image still needed for Parts 1-4. |
 
@@ -112,6 +122,7 @@ still pending — Part 5's is done).
 | `MAS-SUPPLY-CHAIN` | 11 |
 | `MAS-RELIABILITY` | 8 |
 | `MAS-NUCLEAR` | 8 |
+| `MAS-PARTS-IDENTIFIER` | 5 (index + Parts 1-4, none done) |
 | `MAS-MANAGE` | Optional dedicated covers; current covers use existing borrowed assets |
 
 ---
@@ -120,12 +131,12 @@ still pending — Part 5's is done).
 
 1. ~~**Fix Optimizer first**~~ — done 2026-07-16 (night-shift): `mas-optimizer-dispatching-rollout`
 written as Part 5, nav chain confirmed intact end to end.
-2. **Generate covers for text-complete series:** Assist, Supply Chain, Reliability, Nuclear, and
-Optimizer can become production-complete once their `./images/*.png` assets exist (Optimizer Part 5
-cover is done; index + Parts 1-4 remain).
-3. **Choose one remaining net-new content lane:** Databricks has the strongest strategic authority
-value; Parts Identifier is the fastest; Civil Infrastructure is niche and should wait unless the
-audience is active.
+2. **Generate covers for text-complete series:** Assist, Supply Chain, Reliability, Nuclear,
+Parts Identifier, and Optimizer can become production-complete once their `./images/*.png` assets
+exist (Optimizer Part 5 cover is done; Parts Identifier has zero of 5 done).
+3. **Choose one remaining net-new content lane:** Civil Infrastructure is the only series with no
+content yet — niche, build only if a DOT/public infrastructure audience is active. Databricks and
+Parts Identifier are both content-complete and just need covers/key-rotation, not new writing.
 
 ---
 
