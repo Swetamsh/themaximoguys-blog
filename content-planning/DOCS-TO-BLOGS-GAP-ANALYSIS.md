@@ -115,6 +115,17 @@ posts" rule forbids. The job declined to write it and reported `FAILED`. `queue.
 `parts-id-04..05` remain pending with the same defect and will fail identically until a human or
 `replan` job rewrites them — the only real remaining gap for this series is the 5 missing cover
 images on the existing files.
+**Update 2026-07-18 (job `parts-id-04-mobile`):** confirmed the same conflict on the next queued
+item — its topic ("Parts Identifier in MAS Mobile: Field Technician Scenarios", slug
+`mas-parts-identifier-04-mobile-field`, declared `series_total: 5`) duplicates ground already
+covered by the already-published Part 2 (`mas-parts-identifier-mobile-recognition` — mobile
+capture, candidate matches, offline-adjacent field workflow) and collides with the part-4 slot
+already occupied by the published `mas-parts-identifier-deployment-tuning` (`series.total 4`,
+`draft:false`). Writing it would either duplicate Part 2's mobile-field ground or force a
+renumbering of the live published series, both forbidden by the night-shift rules. The job
+declined to write it and reported `FAILED`. `queue.json`'s `parts-id-05` remains pending with the
+same defect and will fail identically until a human or `replan` job rewrites it — the only real
+remaining gap for this series is still the 5 missing cover images on the existing files.
 
 **Optimizer note:** `MAS-OPTIMIZER` Part 5 (`mas-optimizer-dispatching-rollout`) has been written
 (2026-07-16, night-shift), closing the structural gap the index/navigation already referenced, and
