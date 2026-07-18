@@ -96,6 +96,13 @@ item — its topic ("What Is the AI Parts Identifier and Why Storerooms Need It"
 (`mas-parts-identifier-intro-ai-vision`, series.total 4). The job declined to write it and reported
 `FAILED` rather than create a second, conflicting Part 1. `queue.json`'s `parts-id-02..05` remain
 pending with the same defect and will fail identically until a human or `replan` job rewrites them.
+**Update 2026-07-18 (job `parts-id-02-training`):** confirmed the same conflict on the next queued
+item — its topic ("Setting Up and Training the Parts Model", slug
+`mas-parts-identifier-02-setup-training`) would duplicate the already-published Part 2
+(`mas-parts-identifier-mobile-recognition`, "The Mobile Part-Recognition Workflow", series.total
+4, draft:false). The job declined to write it and reported `FAILED` rather than create a second,
+conflicting Part 2. `queue.json`'s `parts-id-03..05` remain pending with the same defect and will
+fail identically until a human or `replan` job rewrites them.
 
 **Optimizer note:** `MAS-OPTIMIZER` Part 5 (`mas-optimizer-dispatching-rollout`) has been written
 (2026-07-16, night-shift), closing the structural gap the index/navigation already referenced, and
