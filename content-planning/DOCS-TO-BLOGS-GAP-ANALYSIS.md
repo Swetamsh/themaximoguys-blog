@@ -126,6 +126,20 @@ renumbering of the live published series, both forbidden by the night-shift rule
 declined to write it and reported `FAILED`. `queue.json`'s `parts-id-05` remains pending with the
 same defect and will fail identically until a human or `replan` job rewrites it — the only real
 remaining gap for this series is still the 5 missing cover images on the existing files.
+**Update 2026-07-18 (job `parts-id-05-governance`):** confirmed the same conflict on the final
+queued item in this set — its topic ("Accuracy, Governance, and AppPoints for Parts Identifier",
+slug `mas-parts-identifier-05-governance-apppoints`, declared `series_total: 5`) duplicates ground
+already covered by the already-published Part 4 (`mas-parts-identifier-deployment-tuning`,
+`series.total 4`, `draft:false`), which already contains a "Measuring Accuracy Honestly" section
+(top-1/top-3 success, confusion pairs), a "Historical Recognition: Closing the Feedback Loop"
+section (governed feedback, confirmation hygiene), and a dedicated "Governance, Users, and the
+AppPoints Reality" section (unpublished AppPoints cost caveat, user-base sizing, owner/metric/
+review-date guardrails) — the exact brief of this item. Writing it would force a renumbering of
+the live published series, forbidden by the night-shift rules. The job declined to write it and
+reported `FAILED`. This was the last item in the `parts-id-01..05` conflict set queued against the
+already-published 4-part series — all five have now been confirmed as stale duplicates and declined.
+`queue.json` still needs a human or `replan` job to drop `parts-id-01..05` and replace them with the
+5 real cover-generation items this series still needs.
 
 **Optimizer note:** `MAS-OPTIMIZER` Part 5 (`mas-optimizer-dispatching-rollout`) has been written
 (2026-07-16, night-shift), closing the structural gap the index/navigation already referenced, and
