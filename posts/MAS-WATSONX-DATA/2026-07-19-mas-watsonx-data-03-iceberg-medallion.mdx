@@ -1,0 +1,385 @@
+---
+title: "The Iceberg Medallion: Bronze, Silver, Gold for Maximo Objects on watsonx.data"
+description: "How Apache Iceberg's ACID transactions, schema evolution, and time-travel snapshots map onto a Bronze/Silver/Gold medallion for Maximo EAM data — with the full Db2 CREATE DATALAKE TABLE syntax, named conformed entities, and the registration mechanics that keep it all in sync."
+date: "2026-07-19"
+slug: "mas-watsonx-data-03-iceberg-medallion"
+tags: ["Maximo", "MAS 9", "watsonx.data", "Apache Iceberg", "Medallion Architecture", "Db2 Warehouse", "Data Engineering"]
+draft: true
+tier: "developer"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-watsonx-data-03-iceberg-medallion.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Why does Apache Iceberg fit Maximo's schema so much better than a plain Parquet lake would?"
+    answer: "Because Maximo's schema is never actually static, even though most architecture diagrams treat it that way. Every Database Configuration change — a new custom attribute on WORKORDER, a widened VARCHAR on a FAILUREREPORT field, a new synonym value added to a domain — is a live schema mutation happening in a production system your lakehouse doesn't control. A plain Parquet-on-S3 lake has no metadata layer to absorb that: an added column either breaks every downstream reader expecting the old schema, or forces a full table rewrite to reconcile it, and either way someone's 2am pager goes off. Iceberg's metadata layer tracks schema as a first-class, versioned concept independent of the underlying Parquet files — a Maximo attribute add, drop, rename, or type-widen becomes a metadata commit, not a rewrite, and old snapshots keep reading under the schema that was active when they were written. That's not a nice-to-have for Maximo data specifically — it's the difference between a lakehouse that survives a Maximo upgrade cycle and one that needs a re-architecture every time Database Configuration gets touched."
+  - question: "What's actually different between ASSET_DIM, WORKORDER_FACT, FAILURE_FACT, and MEASUREMENT_FACT, and why split them that way?"
+    answer: "The split follows classic dimensional-modeling logic applied to EAM data specifically. ASSET_DIM is a dimension table — slowly changing attributes of a physical asset (class, hierarchy, install date, criticality, location) that you join against, not aggregate. WORKORDER_FACT and FAILURE_FACT are transactional fact tables — one row per work order or per failure event, with foreign keys back to ASSET_DIM and measures you sum or count (labor cost, downtime hours, failure counts by code). MEASUREMENT_FACT is a special case of fact table: high-volume, time-series sensor and meter readings, usually partitioned by event time rather than by transaction date the way WORKORDER_FACT is, because the query pattern is fundamentally different — you're scanning a time window for one asset, not aggregating across sites for a month. Keeping these four separate rather than one denormalized mega-table is what lets a Gold-layer feature-engineering job join exactly the tables a given model needs (say, WORKORDER_FACT plus MEASUREMENT_FACT for a degradation model) without dragging along columns and volume the job doesn't touch."
+  - question: "Do I need to rebuild every Silver and Gold table every time a Bronze extract lands, or can Iceberg do incremental processing?"
+    answer: "Incremental, and this is one of the more underrated reasons to build on Iceberg rather than plain Parquet. Because every write creates a new immutable snapshot with its own manifest of added/deleted data files, a Silver-layer Spark job can ask Iceberg for exactly the files that changed between two snapshots — the incremental read pattern — instead of rescanning the entire Bronze table on every run. For a WORKORDER_FACT rebuild running every 15 minutes against a Bronze table with years of history, that's the difference between a job that touches megabytes of new files and one that rescans terabytes it already processed. The catch is you have to design your Silver/Gold jobs to actually use snapshot-based incremental reads rather than always querying the table's current state from scratch — Iceberg makes the capability available, it doesn't force you to use it, and a naive full-rescan pipeline will work correctly, just slower and more expensively than it needs to."
+  - question: "If I already sync data into watsonx.data as Delta tables from a Databricks-adjacent pipeline, do I have to migrate everything to Iceberg to follow this architecture?"
+    answer: "No, and forcing that migration is usually the wrong move if Delta already works for part of your pipeline. watsonx.data reads and writes both formats, and Presto can query Uniform-enabled Delta tables through the Iceberg REST Catalog API, while Spark (PySpark) queries both natively — so a hybrid 'Delta in one zone, Iceberg in another' architecture is technically supportable. What it is not is automatic: cross-catalog governance has to be reconciled deliberately, table-format-specific tooling (time travel syntax, snapshot expiry, compaction jobs) differs between the two, and 'supportable' is doing a lot of work in that sentence — it means more operational surface area, not less. For a Maximo-only lakehouse being built from scratch, standardizing on Iceberg for Bronze/Silver/Gold is the simpler default this post assumes throughout; only reach for the hybrid pattern if you're genuinely mid-migration between two platforms, not as a first choice."
+  - question: "What actually breaks if I skip the Sync metadata step after writing Iceberg files to object storage from an external Spark job?"
+    answer: "The files exist in the bucket, but watsonx.data's catalog doesn't know about them yet — you'll query the table through Presto or Spark inside watsonx.data and get stale results, or the table won't resolve at all if it was never registered in the first place. Iceberg tables register at the bucket level, meaning watsonx.data discovers Iceberg tables by scanning a bucket's metadata rather than requiring one registration call per table the way Delta and Hudi do at the table level — but 'discovers' still means someone has to trigger that discovery. That's what the Sync metadata operation in Infrastructure Manager is for: pick 'Register new objects only' after a job adds tables that never existed in the catalog before, 'Update existing objects only' after an external write changes a table watsonx.data already knows about, or 'Sync all objects' to reconcile everything — additions, updates, and deletions — in one pass. Skip it, and an external Spark job's Iceberg writes sit in the bucket looking correct to anyone who checks object storage directly, while every watsonx.data-side query against that table keeps returning the pre-write state."
+keyTakeaways:
+  - "Apache Iceberg's ACID transactions, schema evolution, and time-travel snapshots aren't generic lakehouse features being retrofitted onto Maximo data — they map directly onto three specific EAM pain points: concurrent writes from thousands of sensors and batch extracts, Database Configuration changes that would otherwise break downstream pipelines, and audit/trend queries that need to see an asset's data exactly as it looked at a point in the past"
+  - "The Silver layer isn't 'cleaned Bronze data' in the abstract — it's four named, purpose-built conformed entities (ASSET_DIM, WORKORDER_FACT, FAILURE_FACT, MEASUREMENT_FACT) with synonym-decoded standardized keys, each shaped for a specific downstream join pattern rather than one denormalized mega-table"
+  - "Iceberg tables register at the bucket level while Delta and Hudi register at the table level — a distinction that determines whether an external Spark job's writes show up automatically or need per-table registration, and it's exactly what the Sync metadata feature's three modes (register new, update existing, synchronize all) exist to reconcile"
+  - "The Db2 `CREATE DATALAKE TABLE ... STORED BY ICEBERG` statement this series' index introduced isn't a one-off example — it's the pattern a real WORKORDER-to-ASSET Silver enrichment job builds on, joining Bronze extracts and writing the result back as a first-class Iceberg table any engine in the fabric can read immediately"
+  - "None of this replaces good dimensional modeling discipline — Iceberg makes schema evolution and time travel *possible* without a rewrite, but a team that skips incremental snapshot reads or never runs Sync metadata after an external write still ends up with slow, stale, or invisible tables despite the format doing everything right underneath"
+series:
+  name: "MAS WATSONX-DATA"
+  part: 3
+  total: 6
+tldr: "Parts 1 and 2 established why watsonx.data is worth building and how Maximo data actually gets there. Part 3 answers what happens once it arrives: Bronze holds raw WORKORDER/ASSET/FAILUREREPORT/MEASUREMENT extracts exactly as received; Silver conforms them into four named entities — ASSET_DIM, WORKORDER_FACT, FAILURE_FACT, MEASUREMENT_FACT — with synonym-domain internal values decoded into standardized, groupable keys; Gold turns those into per-asset feature tables, reliability KPIs, and cost marts ready for a dashboard or a model. Apache Iceberg is what makes the medallion trustworthy at every layer: ACID transactions keep concurrent Bronze writes consistent, schema evolution absorbs a Maximo attribute change without a table rewrite, and time-travel snapshots let you query what an asset's data looked like six months ago. The post works through the full Db2 `CREATE DATALAKE TABLE ... STORED BY ICEBERG` syntax with a real WORKORDER-to-ASSET enrichment example, explains why Iceberg tables register at the bucket level while Delta and Hudi register at the table level, and covers the Sync metadata feature's three modes that keep external writes visible to the rest of the platform."
+seoTitle: "Iceberg Medallion for Maximo Data on watsonx.data"
+seoDescription: "Bronze/Silver/Gold on Apache Iceberg mapped to real Maximo tables — ACID, schema evolution, time travel, Db2 CREATE DATALAKE TABLE syntax, and Sync metadata."
+targetQuestions:
+  - "How does the medallion architecture (bronze, silver, gold) map onto Maximo data in watsonx.data?"
+  - "What are ASSET_DIM, WORKORDER_FACT, FAILURE_FACT, and MEASUREMENT_FACT in a Maximo lakehouse?"
+  - "How does Apache Iceberg schema evolution handle a Maximo attribute change without breaking pipelines?"
+  - "What is the difference between bucket-level and table-level table registration in watsonx.data?"
+  - "How do you write a Db2 CREATE DATALAKE TABLE statement for a Maximo Iceberg table?"
+semanticKeywords:
+  - "Apache Iceberg medallion architecture Maximo"
+  - "Db2 CREATE DATALAKE TABLE STORED BY ICEBERG"
+  - "ASSET_DIM WORKORDER_FACT FAILURE_FACT MEASUREMENT_FACT"
+  - "Iceberg ACID transactions schema evolution time travel"
+  - "watsonx.data Sync metadata register bucket table level"
+  - "Iceberg snapshot FOR VERSION AS OF time travel query"
+  - "synonym-decoded standardized keys silver layer"
+  - "Iceberg bucket-level Delta Hudi table-level registration"
+  - "WORKORDER ASSET enrichment Iceberg join"
+  - "Gold layer reliability KPI feature table Maximo"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 2 of this series — the three sanctioned extraction patterns (MIF, Kafka, bulk export) that fill the Bronze layer this post builds on"
+  - "Familiarity with core Maximo Manage objects (WORKORDER, ASSET, LOCATIONS, FAILUREREPORT, MEASUREMENT)"
+  - "Basic SQL literacy — CREATE TABLE, JOIN, WHERE clauses"
+  - "Helpful but not required: prior exposure to dimensional modeling (fact/dimension tables) or another lakehouse table format (Delta, Hudi)"
+speakableSections:
+  - "The Question This Post Actually Answers"
+  - "The Medallion, Mapped to Real Maximo Tables"
+  - "Why Iceberg, Specifically, for a Schema That Keeps Changing"
+clusterSlugs:
+  - "mas-watsonx-data-series-index"
+  - "mas-watsonx-data-02-data-extraction"
+  - "mas-watsonx-data-04-fit-for-purpose-engines"
+relatedSlugs:
+  - "mas-watsonx-data-series-index"
+  - "mas-watsonx-data-02-data-extraction"
+  - "mas-databricks-03-medallion-architecture"
+  - "mas-integration-series-index"
+---
+
+# The Iceberg Medallion: Bronze, Silver, Gold for Maximo Objects on watsonx.data
+
+<aside>
+
+🎯 **Who this is for:** Data engineers building the actual Silver/Gold transformation jobs, architects deciding how many conformed entities their Maximo lakehouse actually needs, and anyone who read Part 2's extraction patterns and immediately asked "okay, the data's landing in Bronze — now what turns it into something a dashboard or a model can actually use."
+
+</aside>
+
+**Series:** Part 3 of 6 — *MAS 9 + IBM watsonx.data: Building the Maximo Open Lakehouse* | **Read time:** 18 minutes
+
+---
+
+## 📖 The Question This Post Actually Answers
+
+Part 2 answered how Maximo data physically leaves Manage and lands in a Bronze Iceberg table — MIF, Kafka, or asynchronous bulk export, matched per table to its actual access pattern. That gets you raw `WORKORDER` and `ASSET` rows sitting in object storage. It does not get you a table a reliability engineer can point a dashboard at, or a feature set a watsonx.ai model can train on. The gap between "the data arrived" and "the data is usable" is exactly what the medallion architecture — Bronze, Silver, Gold — exists to close, and it's the question this post actually answers: **what specific, named tables does a Maximo Iceberg lakehouse produce at each layer, and what does Apache Iceberg itself contribute that a plain Parquet lake wouldn't?**
+
+This isn't an abstract data-engineering pattern borrowed wholesale from generic lakehouse literature. IBM has made Iceberg the primary, default table format across watsonx.data specifically because its properties — ACID transactions, schema evolution, time travel — solve problems that show up constantly in EAM data: thousands of sensors and batch extracts writing concurrently, a Maximo attribute change landing in the middle of a fiscal quarter, an auditor asking what an asset's health score looked like six months before a failure. Every mechanic this post covers is in service of making the Bronze-to-Gold pipeline trustworthy enough that a VP looking at a Gold-layer KPI dashboard doesn't have to ask "but is this actually current, and can I trust the number three months from now."
+
+<aside>
+
+💡 **Key insight:** The medallion pattern isn't three storage tiers with progressively better data — it's three tiers with progressively different *shapes*. Bronze is append-only and as-arrived. Silver is joined, deduped, and keyed for consistency. Gold is aggregated and denormalized for one specific consumption pattern. Building all three as flat copies of the same schema is the most common early mistake, and it defeats the entire point of the layering.
+
+</aside>
+
+---
+
+## 🗺️ The Medallion, Mapped to Real Maximo Tables
+
+Here's the load-bearing table this post builds from — DOC13's reference architecture translated into names you'd actually see in a Maximo schema browser:
+
+| Layer | Contents | Maximo Mapping |
+|---|---|---|
+| **Bronze** | Raw, as-arrived, append-only | `WORKORDER`, `ASSET`, `FAILUREREPORT`, `MEASUREMENT` extracts (from Part 2's MIF/Kafka/bulk export); Monitor streams; AI Service logs; OEM manuals and SOPs via Docling |
+| **Silver** | Cleansed, conformed, deduped EAM entities | `ASSET_DIM`, `WORKORDER_FACT`, `FAILURE_FACT`, `MEASUREMENT_FACT` — standardized keys, synonym-decoded codes, time-aligned sensor readings, deduplicated transactions |
+| **Gold** | Business-ready, aggregated, consumption-specific | Per-asset/per-time feature tables for predictive maintenance, reliability strategy tables, cost marts, PM effectiveness scores, executive KPI rollups |
+
+Notice what changes shape between layers, not just quality. Bronze `WORKORDER` is one row per raw extracted record, exactly as MIF or Kafka delivered it — duplicates and all, if a retry double-delivered a page. Silver's `WORKORDER_FACT` is one row per logical work order, deduplicated, with `STATUS` decoded from its synonym-domain internal value and foreign keys pointing at `ASSET_DIM`. Gold might turn that same underlying data into a single row per asset per month, with mean-time-between-failure and total cost already computed. Three layers, three different grains, on purpose.
+
+<aside>
+
+💡 **Key insight:** If your Silver-layer table has the exact same row count and grain as its Bronze source, you probably haven't conformed it yet — you've just filtered it. Real conformance changes the grain: raw event rows become one-row-per-entity facts and dimensions.
+
+</aside>
+
+---
+
+## 🥉 Bronze: What Actually Lands, Unmodified
+
+Bronze is deliberately the least interesting layer to design, because its whole job is to *not* make decisions. Every extraction method from Part 2 writes here: MIF's paged REST/JSON pulls, the Kafka connector's streaming events, and MAS 9.1's asynchronous bulk export all terminate in Bronze Iceberg tables that mirror the source system's shape as closely as possible.
+
+```
+Maximo MIF (REST/JSON, OSLC)  ─┐
+Maximo Kafka / Event Streams  ─┼─→  Bronze Iceberg tables (append-only)
+MAS 9.1 async bulk export     ─┘         WORKORDER, ASSET, FAILUREREPORT, MEASUREMENT
+```
+
+Three design rules keep Bronze from becoming a liability later:
+
+1. **Append-only, never update-in-place.** A Bronze `WORKORDER` table should accumulate every extracted version of a record as a new row (with an extraction timestamp), not overwrite the previous one. This is what lets Silver-layer dedup logic decide which version is authoritative, and it's what makes Iceberg's time-travel genuinely useful at Bronze — you can inspect exactly what a MIF poll returned at 3 AM on a specific date.
+2. **Schema stays close to source, not to destination.** Resist the urge to rename columns or apply business logic in Bronze. `STATUS` stays as the raw synonym-domain internal value here; decoding it into a human-usable label is Silver's job. Mixing transformation into extraction makes both harder to debug independently.
+3. **Partition by extraction time, not business date.** A `MEASUREMENT` Bronze table partitioned by the timestamp a Kafka event arrived — not by the meter reading's own timestamp — keeps ingestion-time troubleshooting fast even when upstream data arrives late or out of order.
+
+Monitor streams, AI Service interaction logs, and unstructured documents (OEM manuals, SOPs) processed through Docling also land in Bronze, even though they're not classic relational extracts — the layer's job is "everything as it arrived," regardless of source shape.
+
+---
+
+## 🥈 Silver: The Four Conformed Entities
+
+Silver is where the real engineering work happens, and it's also the layer most Maximo lakehouse builds under-invest in — teams tend to spend their design effort on flashy Gold-layer dashboards and treat Silver as a mechanical cleanup step. It isn't. Silver is where raw extracts become four specific, named, reusable entities:
+
+| Silver Table | Grain | Built From | Key Transformations |
+|---|---|---|---|
+| **ASSET_DIM** | One row per asset | `ASSET`, `LOCATIONS`, `CLASSSTRUCTURE` | Slowly-changing dimension; class/hierarchy/criticality standardized; synonym-decoded status |
+| **WORKORDER_FACT** | One row per work order | `WORKORDER` | Deduplicated across extraction retries; `STATUS`/`FAILURECODE`/`PROBLEMCODE` synonym-decoded; foreign key to `ASSET_DIM` |
+| **FAILURE_FACT** | One row per failure event | `FAILUREREPORT` | Symptom/cause/remedy codes decoded and standardized; linked to `WORKORDER_FACT` |
+| **MEASUREMENT_FACT** | One row per reading, time-aligned | `MEASUREMENT` | Deduped, gap-filled or flagged, time-aligned across sensors for the same asset |
+
+**Why these four and not one denormalized table.** `ASSET_DIM` is a classic dimension — attributes that describe an asset and change slowly (its class, its install date, its criticality tier). `WORKORDER_FACT` and `FAILURE_FACT` are transactional facts — one row per event, with measures you sum, count, or average, and a foreign key back to `ASSET_DIM` for every join a downstream consumer needs. `MEASUREMENT_FACT` is a fact table too, but a high-volume, time-series one with a fundamentally different query pattern — you scan a time window for one asset rather than aggregating across a site for a month — which is exactly why it's partitioned and queried differently even though it's conceptually "just another fact table." Collapsing all four into one wide table would force every consumer to pay the join and volume cost of columns they don't need.
+
+**The synonym-decoding step, concretely.** Part 2 already established why this matters for ML: a `WORKORDER.STATUS` of `COMP` might display as "Complete," "Completado," or a site-specific label depending on who's looking, but the *internal* synonym value is what MIF can return and what a Silver job needs to standardize on. Maximo administers this through the Domains application — synonym domains hold the mapping from internal value to display synonym, and that mapping is itself configurable per organization or site. A Silver-layer transformation job's decode step is functionally re-implementing that domain lookup once, centrally, so every downstream Gold table and every feature pulled into watsonx.ai sees the same stable code regardless of which site or language produced the original record. Get this step wrong — decode inconsistently, or skip it and pass through display strings instead of internal values — and `WORKORDER_FACT.STATUS` silently fragments into multiple strings meaning the same thing, and every `GROUP BY STATUS` downstream quietly undercounts.
+
+**Deduplication.** Because Bronze is append-only, the same logical work order can appear multiple times — once per MIF poll that happened to catch it, or once per Kafka retry. Silver's dedup logic typically keeps the latest version per business key (`WONUM` + `SITEID` + `ORGID` for `WORKORDER_FACT`), using Iceberg's snapshot metadata to identify which Bronze rows are newest without needing an external state store.
+
+<aside>
+
+💡 **Key insight:** `ASSET_DIM` being a dimension table, not a fact table, is a deliberate modeling choice that pays off every time a downstream job needs to join asset attributes against transactional data — you join once against a stable, deduplicated dimension instead of re-deriving "what class was this asset" from raw `ASSET` extract history every time.
+
+</aside>
+
+---
+
+## 🥇 Gold: Business-Ready, One Purpose Per Table
+
+Gold tables exist to answer one specific business question well, not to be a general-purpose queryable dataset. Where Silver is reusable across many downstream consumers, Gold is intentionally narrow and denormalized for its one consumer:
+
+| Gold Table Example | Grain | Built From | Consumed By |
+|---|---|---|---|
+| **Asset health feature table** | One row per asset per day | `ASSET_DIM` + `MEASUREMENT_FACT` + `FAILURE_FACT` | watsonx.ai predictive maintenance models |
+| **MTBF / reliability KPI mart** | One row per asset class per month | `WORKORDER_FACT` + `FAILURE_FACT` | Executive dashboards, Cognos or a BI tool |
+| **PM effectiveness score** | One row per PM per asset per cycle | `WORKORDER_FACT` (PM-type work orders) + `FAILURE_FACT` | Reliability engineering review |
+| **Cost mart** | One row per site per cost category per period | `WORKORDER_FACT` (labor/material/tool cost columns) | Finance / maintenance budget reporting |
+
+The feature table for a predictive maintenance model is the clearest example of why Gold shape matters. A model training job wants one row per asset per time window with pre-computed features — degradation rate, operating hours since last PM, rolling failure count, ambient/load factors — not a set of tables it has to join and aggregate itself on every training run. Doing that aggregation once, in a Gold-layer Spark job, and materializing it as an Iceberg table means both the model training pipeline and a Cognos dashboard querying the same underlying health signal get a consistent, already-computed answer instead of two teams independently reinventing the aggregation logic (and inevitably getting slightly different numbers).
+
+---
+
+## 🧊 Why Iceberg, Specifically, for a Schema That Keeps Changing
+
+Every layer above assumes a table format underneath it that can absorb three things Maximo lakehouses hit constantly: concurrent writes, schema drift, and the need to look backward in time. This is where Apache Iceberg stops being an implementation detail and becomes the reason the whole architecture holds together.
+
+| Iceberg Feature | Why It Matters for Maximo Data |
+|---|---|
+| **ACID transactions** | Consistent writes when thousands of sensors and batch MIF/Kafka/bulk-export jobs land concurrently in the same Bronze table |
+| **Schema evolution** | A Database Configuration change — new attribute, widened type, renamed column — doesn't break Silver/Gold jobs already running against the table |
+| **Time travel (snapshots)** | Query what an asset's health data or a work order's status looked like six months ago, for an audit, a trend comparison, or debugging a Silver job that produced a wrong number |
+| **Open format, multi-engine** | Presto, Spark, Db2, and Netezza all read the same Iceberg copy — no per-engine data duplication between the dashboard team and the ML team |
+
+**ACID transactions, concretely.** A Bronze `MEASUREMENT` table might be receiving a continuous Kafka stream from meter readings at the same moment a nightly bulk-export job is landing a historical backfill into the same table. Without transactional guarantees, that's a recipe for partial writes or readers seeing an inconsistent mix of old and new data mid-write. Iceberg's snapshot-based commits mean every write — streaming or batch — either fully lands as a new snapshot or doesn't land at all; a query running concurrently always sees one consistent, complete snapshot, never a half-written one.
+
+**Schema evolution, concretely.** Say a Maximo admin adds a new custom attribute to `WORKORDER` in Database Configuration — a common, routine change, not an edge case. On a plain Parquet lake, every downstream reader expecting the old schema either breaks or silently ignores the new column depending on how it was written, and reconciling the change usually means a full table rewrite. Iceberg tracks schema as versioned metadata independent of the underlying files: the new attribute becomes a metadata-level add, existing Parquet files keep working exactly as they are, and old snapshots continue to read under the schema that was active when they were written — supporting add, drop, rename, and (within limits) type-widening, with no side effects on data already committed. This is precisely why the medallion pattern maps cleanly onto Maximo data specifically — the source schema is not static, and Iceberg is the piece absorbing that fact so Silver and Gold jobs don't have to.
+
+**Time travel, concretely.** watsonx.data exposes Iceberg's snapshot history through a query-time syntax: `SELECT <columns> FROM <iceberg-table> FOR VERSION AS OF <snapshotRef>`. Every write, update, delete, or schema-evolution commit creates a new, complete, self-contained snapshot of the table's state at that instant. For a reliability team investigating why an asset's health score dropped, that means running the exact same Gold-layer query against a snapshot from six months ago and comparing it directly against today — not reconstructing history from a separate audit log, and not hoping someone kept a manual export from that period.
+
+<aside>
+
+💡 **Key insight:** IBM's own framing calls Iceberg "the linchpin of data sharing" across its databases and lakehouse engines — and for a Maximo shop specifically, that linchpin role is what prevents the dashboard team, the ML team, and the finance cost-mart team from each maintaining their own divergent copy of the same underlying WORKORDER history.
+
+</aside>
+
+---
+
+## 🔨 A Worked Example: WORKORDER-to-ASSET Silver Enrichment on Iceberg
+
+The series index introduced the base pattern for creating a native Iceberg table from Db2 Warehouse — one of watsonx.data's fit-for-purpose engines — by adding an `iceberg.catalog` property to a `CREATE DATALAKE TABLE` statement. Here's that same pattern extended into an actual Silver-layer job: joining Bronze `WORKORDER` against Bronze `ASSET` to produce an enriched `WORKORDER_FACT` table that carries asset context directly, rather than forcing every downstream consumer to re-join it themselves.
+
+First, the target Silver table, created directly in the watsonx.data catalog as a first-class Iceberg table:
+
+```sql
+CREATE DATALAKE TABLE iceberg.workorder_fact (
+    WORKORDERID     BIGINT,
+    WONUM           VARCHAR(20),
+    SITEID          VARCHAR(20),
+    ORGID           VARCHAR(20),
+    ASSETNUM        VARCHAR(20),
+    ASSET_CLASS     VARCHAR(50),
+    ASSET_CRITICALITY VARCHAR(20),
+    LOCATION        VARCHAR(20),
+    STATUS          VARCHAR(20),
+    STATUS_DECODED  VARCHAR(50),
+    STATUSDATE      TIMESTAMP,
+    FAILURECODE     VARCHAR(20),
+    PROBLEMCODE     VARCHAR(20),
+    LABORCOST       DECIMAL(15,2),
+    MATERIALCOST    DECIMAL(15,2),
+    TOOLCOST        DECIMAL(15,2),
+    EXTRACTED_AT    TIMESTAMP
+)
+TBLPROPERTIES('iceberg.catalog'='watsonx_data_catalog')
+STORED AS PARQUET
+STORED BY ICEBERG
+LOCATION 'DB2REMOTE://iceberg-bucket//iceberg/workorder_fact';
+```
+
+Then, the enrichment logic that populates it — a Spark job (or a Presto `INSERT ... SELECT` for smaller volumes) joining Bronze `WORKORDER` against Bronze `ASSET` on `ASSETNUM`, decoding the synonym-domain `STATUS` value, and writing the result as a new Iceberg snapshot:
+
+```sql
+INSERT INTO iceberg.workorder_fact
+SELECT
+    wo.WORKORDERID,
+    wo.WONUM,
+    wo.SITEID,
+    wo.ORGID,
+    wo.ASSETNUM,
+    a.ASSETCLASS       AS ASSET_CLASS,
+    a.CRITICALITY      AS ASSET_CRITICALITY,
+    wo.LOCATION,
+    wo.STATUS,
+    dom.SYNONYM_LABEL  AS STATUS_DECODED,
+    wo.STATUSDATE,
+    wo.FAILURECODE,
+    wo.PROBLEMCODE,
+    wo.LABORCOST,
+    wo.MATERIALCOST,
+    wo.TOOLCOST,
+    CURRENT_TIMESTAMP  AS EXTRACTED_AT
+FROM iceberg.bronze_workorder wo
+JOIN iceberg.bronze_asset a
+  ON wo.ASSETNUM = a.ASSETNUM AND wo.SITEID = a.SITEID
+LEFT JOIN iceberg.status_synonym_domain dom
+  ON wo.STATUS = dom.INTERNAL_VALUE
+WHERE wo.EXTRACTED_AT > (SELECT MAX(EXTRACTED_AT) FROM iceberg.workorder_fact);
+```
+
+Two details make this more than a generic join example. First, `TBLPROPERTIES('iceberg.catalog'='watsonx_data_catalog')` is what registers this as a first-class watsonx.data-managed Iceberg table rather than an external file Db2 merely reads — the moment that commit lands, Presto, Spark, and Netezza can all query `workorder_fact` immediately, with no export step and no second copy. Second, the `WHERE` clause filtering on `EXTRACTED_AT` is the incremental-processing pattern this format enables: rather than re-joining the entire Bronze history on every run, the job only processes rows newer than the last successful Silver write, which is exactly the kind of snapshot-aware incremental read Iceberg's metadata layer is built to support at scale.
+
+Two mechanical constraints worth knowing before you build on this pattern: direct `ALTER` on a Db2-created datalake table is restricted, reflecting Iceberg's metadata-driven schema evolution model — schema changes go through Iceberg's evolution path, not a raw Db2 `ALTER TABLE`. And Db2 Warehouse's datalake table support with the Iceberg format requires Db2 Warehouse 11.5.9 or later — worth checking against your environment before assuming this exact syntax runs unmodified.
+
+---
+
+## 🔗 Registration Granularity: Bucket-Level vs. Table-Level
+
+This is the mechanic most teams don't discover until an external Spark job's Iceberg writes mysteriously don't show up in a watsonx.data query — and it's a distinction the series index and Part 2 both flagged as a Part 3 topic, so it's worth being precise about.
+
+**Existing Iceberg tables register at the bucket level.** When you point watsonx.data's Infrastructure Manager at a storage bucket containing Iceberg tables — written by an external Spark job, for instance, entirely outside watsonx.data — it can discover and register the Iceberg tables in that bucket as a batch, because Iceberg's own metadata (the table's manifest and metadata JSON files) is self-describing enough for watsonx.data to enumerate what's there.
+
+**Delta and Hudi tables register at the table level.** Those formats don't expose the same bucket-scannable metadata convention, so each Delta or Hudi table has to be registered individually — one API call or UI action per table, rather than one operation covering everything in a bucket.
+
+| | Iceberg | Delta | Hudi |
+|---|---|---|---|
+| **Registration scope** | Bucket-level (batch discovery) | Table-level (per-table registration) | Table-level (per-table registration) |
+| **Practical effect** | New tables written externally can appear via one Sync metadata pass | Each new table needs its own registration step (e.g., the Register Delta Table API) | Each new table needs its own registration step |
+
+The practical effect: a team standardized on Iceberg for its Maximo Bronze/Silver/Gold tables gets a genuine operational win here. A Spark job that creates a brand-new Gold table this month doesn't need a corresponding "go register the new table" ticket — running Sync metadata against the bucket picks it up. A Delta-based pipeline, by contrast, needs that registration step built into the pipeline itself or remembered as a manual follow-up every time a new table gets created.
+
+---
+
+## 🔄 Sync Metadata: The Three Modes That Keep External Writes Visible
+
+Bucket-level registration only helps if something actually triggers it, and that's what the **Sync metadata** capability inside Infrastructure Manager does. It matters most in the common real-world case where an Iceberg table is written by a process *outside* watsonx.data — a standalone Spark cluster, a separate ETL tool — and watsonx.data's catalog needs to be told the object store changed without physically moving the underlying data.
+
+| Mode | What It Does | When to Use |
+|---|---|---|
+| **Register new objects only** | Adds tables that exist in the bucket but aren't yet in the watsonx.data catalog | After an external job creates a brand-new Gold or Silver table for the first time |
+| **Update existing objects only** | Refreshes metadata for tables the catalog already knows about, reflecting changes made in the bucket | After an external job appends data or evolves the schema of a table watsonx.data already tracks |
+| **Sync all objects** | Combines both — registers new objects and updates existing ones, including deletions | A full reconciliation pass, typically scheduled periodically rather than run ad hoc |
+
+For a Maximo pipeline where Silver and Gold jobs run as scheduled Spark jobs outside watsonx.data's own query engines (a common pattern once volumes get large enough that dedicated Spark cluster capacity makes sense), a practical operating rhythm is: run **Register new objects only** immediately after a job that might introduce a brand-new table, and schedule **Sync all objects** as a nightly reconciliation pass so nothing drifts silently out of sync between the bucket's actual contents and what the catalog believes is there. Skipping this step entirely doesn't corrupt anything — the Iceberg files in the bucket remain completely valid — but every watsonx.data-side query against an unregistered or stale-registered table keeps returning the old state, which is a confusing failure mode to debug if you don't know Sync metadata is the missing step.
+
+---
+
+## 🧭 Choosing the Right Layer for a New Requirement: Three Worked Scenarios
+
+**Scenario 1 — "Reliability wants a live count of overdue PMs by asset class."** This is a Gold-layer table, built from `WORKORDER_FACT` (filtered to PM-type work orders) joined against `ASSET_DIM` for class, aggregated to one row per asset class per day. It should not be a Silver query run live against `WORKORDER_FACT` on every dashboard refresh — pre-aggregating into Gold keeps the dashboard fast and keeps the aggregation logic in one place instead of embedded in a BI tool's query.
+
+**Scenario 2 — "An auditor needs to see what an asset's criticality rating was a year ago, before a classification change."** This is a time-travel query against `ASSET_DIM`'s snapshot history — `SELECT ... FROM iceberg.asset_dim FOR VERSION AS OF <snapshot-from-a-year-ago>` — not a request that needs a separate audit table maintained alongside the dimension. If `ASSET_DIM` is genuinely append-on-change (a proper slowly-changing dimension pattern) rather than updated in place, the snapshot history already contains the answer.
+
+**Scenario 3 — "A new IoT sensor type is being piloted on 50 assets and needs its readings joined against existing MEASUREMENT_FACT."** This starts in Bronze — the new sensor's raw readings land in their own Bronze table first, matching this series' rule of keeping Bronze close to source shape — and only gets conformed into `MEASUREMENT_FACT` once the pilot validates the sensor's data quality and the team decides its readings genuinely belong in the standardized fact table. Iceberg's schema evolution means adding the new sensor type's columns to `MEASUREMENT_FACT` later, once the pilot graduates, doesn't require rebuilding the table from scratch.
+
+None of these three needed a workaround or a special case — matching the requirement to the correct medallion layer, the way Part 2 matched extraction methods to tables, is most of what keeps a Maximo lakehouse's architecture legible as it grows.
+
+---
+
+## 🗺️ Practical Notes Before Part 4
+
+- **Don't skip the dedup step in Silver.** Bronze's append-only design means duplicates are expected, not a bug — `WORKORDER_FACT` and its siblings need explicit dedup logic keyed on the real business key, not an assumption that Bronze arrives clean.
+- **Build the synonym-decode step once, centrally, in Silver.** Every Gold table and every feature pulled into watsonx.ai should read already-decoded values — don't leave decoding to each downstream consumer, or you'll get the exact fragmentation problem Part 2 warned about.
+- **Run Sync metadata on a schedule, not just reactively.** If any part of your pipeline writes Iceberg files from outside watsonx.data's own engines, treat "Sync all objects" as a standing nightly job, not a step you remember only when a query looks stale.
+- **Design Gold tables around one consumer, not general reuse.** A feature table for a specific model and a KPI mart for a specific dashboard are allowed to look nothing alike, even when they're built from the same Silver sources — that's the layer doing its job, not duplication to clean up later.
+- **Bring your named Silver entities to Part 4 already stable.** The engine-routing decisions in Part 4 — which workload runs on Presto versus Spark versus Db2 Warehouse — assume `ASSET_DIM`, `WORKORDER_FACT`, `FAILURE_FACT`, and `MEASUREMENT_FACT` already exist as the stable join targets those engines query against.
+
+---
+
+## Key Takeaways
+
+- **The medallion isn't three copies of the same data at different quality levels** — Bronze, Silver, and Gold each have a different grain and shape, built for append-only capture, conformed joining, and single-purpose consumption respectively.
+- **Silver's four named entities — ASSET_DIM, WORKORDER_FACT, FAILURE_FACT, MEASUREMENT_FACT — follow standard dimensional-modeling logic applied to EAM data**, with synonym-domain decoding done once, centrally, rather than left to every downstream consumer.
+- **Apache Iceberg's ACID transactions, schema evolution, and time travel map onto three concrete Maximo problems**: concurrent sensor/batch writes, Database Configuration changes that would otherwise break pipelines, and audit/trend queries needing historical accuracy.
+- **Iceberg tables register at the bucket level while Delta and Hudi register at the table level** — a distinction that determines whether external writes need a Sync metadata pass or individual per-table registration.
+- **The Db2 CREATE DATALAKE TABLE pattern from the series index extends directly into real Silver-layer enrichment jobs** — the WORKORDER-to-ASSET join in this post is the concrete version of the pattern the index only previewed.
+
+---
+
+## References
+
+- [Creating Iceberg tables in watsonx.data — IBM Db2 Warehouse Documentation](https://www.ibm.com/docs/en/db2-warehouse?topic=watsonxdata-creating-iceberg-tables-in)
+- [Syncing external Iceberg data into watsonx.data — IBM Documentation](https://www.ibm.com/docs/en/watsonx/watsonxdata/1.1.x?topic=objects-syncing-external-iceberg-data-into-watsonxdata)
+- [What Is Apache Iceberg? — IBM Think](https://www.ibm.com/think/topics/apache-iceberg)
+- [What's new in Maximo Application Suite 9.1 — IBM Documentation](https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-whats-in-maximo-application-suite-91)
+- [Query Tag/Branch Using Time-Travel in watsonx.data — Renu Rajagopal, IBM Data and AI](https://medium.com/@rajagopal.renu/query-tag-branch-using-time-travel-in-watsonx-data-f5e355f26aea)
+- [How to Sync Externally Managed Iceberg Tables with the Catalog Integration in watsonx.data — Renu Rajagopal, IBM Data and AI](https://medium.com/@rajagopal.renu/how-to-sync-externally-managed-iceberg-tables-with-the-catalog-integration-in-watsonx-data-54fbcbe4a5b8)
+- [New Features in MAS 9.0 and 9.1 — Maximo Secrets](https://maximosecrets.com/2025/07/06/new-features-in-mas-90-and-91/)
+- DOC13: IBM watsonx.data + Maximo Roadmap — §4.3, §5.3-5.4, Apache Iceberg and Medallion Architecture (internal knowledge base, `knowledge_base/DOC13_IBM_WATSONX_DATA_MAXIMO_ROADMAP.md`)
+- Domains overview and synonym-value administration — IBM Maximo Manage documentation (internal knowledge base, `maximo_manage_Section_240_Procedure.md`, `maximo_manage_Section_249_Deleting_synonyms_of_internal_domain_values.md`, sourced from `maximo_manage.pdf`)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 2 — Getting Maximo Data into watsonx.data](/blog/mas-watsonx-data-02-data-extraction) |
+| **Next:** | [Part 4 — Fit-for-Purpose Engines](/blog/mas-watsonx-data-04-fit-for-purpose-engines) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*
+
+<!--
+Editorial note for human review: Primary source was knowledge_base/DOC13_IBM_WATSONX_DATA_MAXIMO_ROADMAP.md
+§4.3 (Apache Iceberg as the Open Table Format) and §5.3-5.4 (Reference Architecture / Medallion Architecture on
+Iceberg). SearchMaximo KB sweep found no direct Iceberg/medallion hits (expected — that's watsonx.data-product
+territory, not Maximo-product territory) but surfaced two useful internal sources for the Silver-layer synonym-
+decoding explanation: maximo_manage_Section_240_Procedure.md (Domains overview, synonym domain administration)
+and maximo_manage_Section_249_Deleting_synonyms_of_internal_domain_values.md (synonym/domain application
+mechanics). Web verification round (2026-07-19, 5 searches) added: the IBM Db2 Warehouse "Creating Iceberg
+tables in watsonx.data" doc (confirms Db2 Warehouse 11.5.9+ requirement for datalake table support — a version
+detail NOT in DOC13, added here), the IBM watsonx.data Syncing-external-Iceberg-data doc (confirms the exact
+three Sync metadata mode names — DOC13 only described the concept, not the literal UI labels), IBM Think's
+Apache Iceberg overview, the MAS 9.1 what's-new doc, two Renu Rajagopal (IBM Data and AI) Medium walkthroughs
+(the FOR VERSION AS OF time-travel query syntax and the external-Iceberg-sync procedure — DOC13 mentioned time
+travel and sync conceptually but not the literal query syntax), and a Maximo Secrets community post cross-
+checking MAS 9.1 feature claims. The WORKORDER-to-ASSET enrichment SQL in this post is a worked example built
+from documented syntax patterns (Db2 CREATE DATALAKE TABLE, standard Spark/Presto INSERT...SELECT) rather than
+a literal IBM-published code sample — human review should verify against a real Db2 Warehouse 11.5.9+/watsonx.data
+instance before treating it as copy-paste-ready. The status_synonym_domain lookup table referenced in that SQL
+is illustrative of the decode pattern, not a documented IBM system table name.
+-->
