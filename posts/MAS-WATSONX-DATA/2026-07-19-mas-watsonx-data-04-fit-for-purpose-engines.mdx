@@ -1,0 +1,367 @@
+---
+title: "Fit-for-Purpose Engines: Presto, Spark, and Db2 over One Iceberg Copy"
+description: "How watsonx.data routes interactive SQL, ETL/ML, and high-concurrency BI to different engines — Presto, Presto C++/Velox, Spark, Db2 Warehouse, Netezza — over a single Iceberg copy, with the coordinator/worker architecture, IBM's price/performance claims vs Photon, and the RU cost model."
+date: "2026-07-19"
+slug: "mas-watsonx-data-04-fit-for-purpose-engines"
+tags: ["Maximo", "MAS 9", "watsonx.data", "Presto", "Apache Spark", "Db2 Warehouse", "Data Engineering"]
+draft: true
+tier: "developer"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-watsonx-data-04-fit-for-purpose-engines.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Why does watsonx.data need five different engines instead of one fast engine like Databricks' Photon?"
+    answer: "Because IBM is explicitly betting against the idea that one execution engine can be optimal for every workload shape, and that bet is the actual architectural difference from a Photon-centric stack. A single, maximally-optimized engine has to make trade-offs: Photon is exceptional at the vectorized batch SQL and ML workloads Databricks tuned it for, but a lakehouse also has to serve ad-hoc analyst queries that touch a dozen federated sources, scheduled ETL jobs that run for hours against terabytes, and BI dashboards refreshed by hundreds of concurrent users — three workload shapes with almost opposite resource profiles. watsonx.data's answer is to keep the data in one open Iceberg copy and let Presto, Presto C++/Velox, Spark, Db2 Warehouse, and Netezza each specialize in the shape they're actually good at, provisioned and scaled independently. The cost is operational: more engines to understand, monitor, and route between. The payoff, per IBM's own benchmarking, is that the specialized engine for a given workload beats a generalist engine paying overhead for flexibility it doesn't need in that moment — and because it's all Iceberg underneath, switching which engine serves a workload later doesn't mean migrating data."
+  - question: "When should a query actually go to Presto (Java) instead of Presto C++/Velox, if Velox is faster?"
+    answer: "Velox being faster on raw execution doesn't make classic Presto (Java) obsolete — it makes the choice a maturity-versus-performance trade-off that depends on the query shape. Presto C++/Velox (Presto 2.0) is where IBM's price/performance claims against Photon live, and it's the right default for cost-sensitive, high-volume SQL that fits Velox's supported connector and function surface. Classic Presto (Java) remains the deeper, more broadly compatible engine — its federation connector ecosystem (Db2, Netezza, Kafka, MongoDB, object stores, and dozens more) and function coverage are more mature simply because Java Presto has existed far longer than the C++ rewrite. In practice: route routine, high-volume interactive SQL over Iceberg data to Presto C++/Velox for the cost win, and keep ad-hoc federated queries that reach into a connector Velox doesn't yet fully support — or that need a function Velox hasn't implemented — on classic Presto (Java). Most watsonx.data deployments run both side by side rather than picking one exclusively, exactly because the two Prestos aren't a strict upgrade path yet."
+  - question: "Does Spark's exclusive ownership of Iceberg table maintenance become a bottleneck if my Bronze/Silver/Gold jobs are also running on Spark?"
+    answer: "It can, if you schedule maintenance and transformation jobs as if they're unrelated, and that's the actual operational risk worth planning for. Iceberg table maintenance — snapshot expiration, orphan data file removal, and manifest rewriting/compaction — runs only through Spark in watsonx.data, which means the same engine tier is doing your Silver/Gold ETL, your feature-engineering jobs for watsonx.ai, and the housekeeping that keeps those same tables from accumulating small files and stale snapshots. If a nightly compaction job on WORKORDER_FACT overlaps with a Silver enrichment job writing to the same table, you're contending for the same Spark engine capacity at best and risking a metadata conflict at worst. The fix is straightforward scheduling discipline, not a different engine: stagger maintenance windows after transformation jobs complete, size the Spark engine's provisioned capacity to cover both workloads' peak rather than their average, and treat snapshot-expiry policy (how many historical snapshots you keep before expiring them) as a deliberate retention decision tied to how far back your time-travel queries actually need to reach, not a default left untouched."
+  - question: "If I have Presto, Spark, and Db2 Warehouse all provisioned in watsonx.data, am I paying Resource Unit charges for all three simultaneously even when they're idle?"
+    answer: "No — and that's the specific lever the RU model gives you that a fixed-cluster pricing model doesn't. Resource Units are metered per-second per engine, with a one-minute minimum, which means an engine that's paused or scaled to zero isn't accruing RU charges regardless of how many other engines are provisioned in the same watsonx.data instance. The practical implication is that provisioning five engines isn't inherently five times the cost — it's an invitation to actually pause the engines you're not using rather than leaving a fixed-size cluster running around the clock the way a traditional data warehouse often does by default. A Presto engine serving interactive queries during business hours, a Spark engine that only spins up for a nightly Silver/Gold batch window, and a Db2 Warehouse engine sized for BI concurrency during reporting cycles can each be scaled down or suspended outside their active windows — the discipline this rewards is aggressive scale-to-zero scheduling, and teams that leave engines warm 24/7 out of inertia are the ones who don't see the RU model's cost advantage materialize."
+  - question: "Is IBM's claim of 'less than 60% the cost of Databricks Photon' something I should build a business case around directly?"
+    answer: "Treat it as a directional signal that justifies running your own proof-of-concept, not a number you cite to a CFO as a guaranteed outcome. The figure comes from IBM's internal benchmarking — Presto C++/Velox with the IBM query optimizer against Photon, at equal query runtime, on a 100 TB TPC-DS workload running on IBM Storage Fusion HCI — which is a real, technically specific benchmark, but it's still IBM measuring IBM's own product against a competitor's, using a synthetic industry-standard benchmark (TPC-DS) rather than your actual Maximo workload's query patterns, data skew, and concurrency profile. TPC-DS is a reasonable industry proxy, but a Maximo lakehouse's actual query mix — WORKORDER_FACT joins, MEASUREMENT_FACT time-window scans, Gold-layer KPI aggregations — won't match a generic retail-analytics benchmark exactly. The right use of this number is as the reason to run a scoped side-by-side test against your own representative queries before an architecture decision leans on it, not as a substitute for that test."
+keyTakeaways:
+  - "watsonx.data's multi-engine design is a deliberate bet against one-engine-fits-all: Presto (Java), Presto C++/Velox, Spark, Db2 Warehouse, and Netezza each specialize in a different workload shape over the same Iceberg copy, rather than one vendor-tuned engine (like Databricks' Photon) handling everything"
+  - "Presto C++/Velox (Presto 2.0, v0.286) paired with IBM's own query optimizer is where IBM's price/performance claims against Photon live — up to '60% the cost' at equal runtime on a 100 TB TPC-DS benchmark — but that figure is an IBM-internal result that should trigger a scoped proof-of-concept against real Maximo query patterns, not stand in for one"
+  - "Apache Iceberg table maintenance — snapshot expiration, orphan file removal, manifest compaction — runs exclusively through Spark in watsonx.data, meaning Spark isn't just the ETL/ML engine, it's the only engine that can keep Bronze/Silver/Gold Iceberg tables from degrading over time"
+  - "Db2 Warehouse and Netezza exist specifically to absorb high-concurrency BI traffic — hundreds of Cognos or dashboard users — without that load contending with Presto's interactive analyst queries or Spark's long-running batch jobs on the same engine tier"
+  - "Resource Unit metering (USD 1/RU, per-second, one-minute minimum) turns engine-to-workload routing into a direct, measurable cost lever: a misrouted workload doesn't just run slower, it shows up as avoidable RU spend, and scale-to-zero discipline is what actually captures the model's cost advantage"
+series:
+  name: "MAS WATSONX-DATA"
+  part: 4
+  total: 6
+tldr: "Part 3 built the Bronze/Silver/Gold medallion on Apache Iceberg. Part 4 answers the next question: once ASSET_DIM, WORKORDER_FACT, FAILURE_FACT, and MEASUREMENT_FACT exist as stable Iceberg tables, which engine actually runs a given query against them? watsonx.data's core design premise is that no single query engine is optimal for every workload, so it ships five fit-for-purpose engines over one Iceberg copy: Presto (Java) for ad-hoc interactive SQL and cross-source federation, built on a coordinator/worker/resource-manager architecture; Presto C++/Velox (Presto 2.0, v0.286) with an IBM query optimizer for cost-sensitive high-performance SQL — where IBM's internal benchmarks claim under 60% the cost of Databricks' Photon at equal runtime on a 100 TB TPC-DS workload; Spark for Silver/Gold ETL, watsonx.ai feature engineering, and the only engine that can run Iceberg table maintenance (snapshot expiry, orphan-file removal, compaction); and Db2 Warehouse plus Netezza for high-concurrency BI serving hundreds of Cognos or dashboard users without contending with the other engines. The post works through a concrete EAM workload-routing table, the Resource Unit (RU) cost model — USD 1/RU, metered per-second with a one-minute minimum, and IBM's 'up to 50%' data-warehouse cost-reduction claim — and three worked scenarios for choosing an engine under real Maximo constraints."
+seoTitle: "watsonx.data Engines: Presto, Spark, Db2 for Maximo Data"
+seoDescription: "Route EAM workloads to the right watsonx.data engine — Presto, Presto C++/Velox, Spark, Db2 Warehouse, Netezza — with RU cost metering and Photon benchmark caveats."
+targetQuestions:
+  - "Which watsonx.data engine should handle a given Maximo EAM workload — Presto, Spark, or Db2 Warehouse?"
+  - "What is the difference between Presto (Java) and Presto C++/Velox in watsonx.data?"
+  - "How does IBM's price/performance claim against Databricks Photon actually work, and what are its caveats?"
+  - "Why does Iceberg table maintenance (compaction, snapshot expiry) only run through Spark in watsonx.data?"
+  - "How does watsonx.data's Resource Unit (RU) pricing model actually meter engine usage?"
+semanticKeywords:
+  - "watsonx.data fit-for-purpose query engines"
+  - "Presto coordinator worker resource manager architecture"
+  - "Presto C++ Velox v0.286 IBM query optimizer"
+  - "Databricks Photon price performance benchmark TPC-DS"
+  - "Spark Iceberg snapshot expiration orphan file removal compaction"
+  - "Db2 Warehouse Netezza high concurrency BI"
+  - "watsonx.data Resource Unit RU pricing per second"
+  - "EAM workload routing Presto Spark Db2"
+  - "Iceberg multi-engine zero-copy one data copy"
+  - "watsonx.data scale to zero cost optimization"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 3 of this series — the Bronze/Silver/Gold Iceberg medallion (ASSET_DIM, WORKORDER_FACT, FAILURE_FACT, MEASUREMENT_FACT) this post routes queries against"
+  - "Basic SQL literacy and familiarity with what an analytic query engine does"
+  - "Helpful but not required: prior exposure to distributed query engines (Presto/Trino, Spark) or data warehouse concurrency concepts"
+speakableSections:
+  - "The Question This Post Actually Answers"
+  - "Five Engines, One Iceberg Copy: The Landscape"
+  - "The Cost Argument: Resource Units and Engine Choice"
+clusterSlugs:
+  - "mas-watsonx-data-series-index"
+  - "mas-watsonx-data-03-iceberg-medallion"
+  - "mas-watsonx-data-05-ai-rag"
+relatedSlugs:
+  - "mas-watsonx-data-series-index"
+  - "mas-watsonx-data-03-iceberg-medallion"
+  - "mas-databricks-04-photon-engine"
+  - "mas-integration-series-index"
+---
+
+# Fit-for-Purpose Engines: Presto, Spark, and Db2 over One Iceberg Copy
+
+<aside>
+
+🎯 **Who this is for:** Architects deciding which engine should serve a given EAM query, platform teams sizing and scheduling watsonx.data engines, and anyone who read Part 3's medallion and immediately asked "okay, ASSET_DIM and WORKORDER_FACT exist as Iceberg tables now — which engine actually runs the query against them, and why would I pick one over another?"
+
+</aside>
+
+**Series:** Part 4 of 6 — *MAS 9 + IBM watsonx.data: Building the Maximo Open Lakehouse* | **Read time:** 16 minutes
+
+---
+
+## 📖 The Question This Post Actually Answers
+
+Part 3 answered what the Iceberg medallion produces: four named, conformed Silver entities and a set of purpose-built Gold tables, all stored as Apache Iceberg. It did not answer what actually executes a query against them, and that's not a trivial detail to skip — the same `WORKORDER_FACT` table gets queried by a reliability engineer running an ad-hoc join in a BI tool, a Spark job computing a Gold-layer feature set for a watsonx.ai model, and a Cognos dashboard refreshed by two hundred concurrent users at 8 AM on a Monday. Those three access patterns have almost nothing in common resource-wise, and this post answers the question that creates: **which of watsonx.data's five engines should handle a given EAM workload, and what does IBM's "fit-for-purpose" design actually buy you that running everything through one engine wouldn't?**
+
+This isn't a marketing distinction. IBM's stated design premise — "no single query engine is optimal for every workload" — is the specific architectural bet that separates watsonx.data from a Delta-plus-Photon stack, where one vectorized engine handles interactive queries, batch ETL, and BI concurrency alike. watsonx.data instead ships Presto (Java), Presto C++/Velox, Spark, Db2 Warehouse, and Netezza Performance Server, all reading and writing the same Iceberg tables, each provisioned and scaled independently. Getting the routing wrong doesn't just cost query latency — because of how watsonx.data prices compute, it costs real, measurable money, which is the thread this post follows through to the Resource Unit model at the end.
+
+<aside>
+
+💡 **Key insight:** "Fit-for-purpose" only pays off if you actually route workloads deliberately. Pointing every workload at whichever engine happens to be already running — usually Presto, because it's the interactive default — collapses the multi-engine architecture back into a single-engine one in practice, just with more infrastructure to manage. The engines are a toolset, not a topology you get for free by installing them.
+
+</aside>
+
+---
+
+## 🗺️ Five Engines, One Iceberg Copy: The Landscape
+
+Here's the full roster this post works from — the same table Part 2 and Part 3 referenced as "Part 4 covers this":
+
+| Engine | Role | Primary EAM Use Case |
+|---|---|---|
+| **Presto (Java)** | Distributed interactive SQL + federation | Ad-hoc analyst queries; federated joins across Db2, Netezza, Kafka, MongoDB, object stores |
+| **Presto C++ (Velox)** | Next-gen native acceleration (Presto 2.0) | Cost-sensitive, high-volume SQL over Iceberg; IBM's price/performance claims vs Photon live here |
+| **Spark** | Large-scale ETL, ML, batch, unstructured→structured | Silver/Gold transformations, watsonx.ai feature engineering, and the *only* engine that runs Iceberg table maintenance |
+| **Db2 Warehouse** | High-concurrency analytic SQL | Enterprise BI with hundreds of concurrent users over shared Iceberg data |
+| **Netezza Performance Server** | Hardware-accelerated analytics | Heavy analytical workloads that benefit from Netezza's acceleration, often alongside Db2 Warehouse |
+
+What makes this list more than five vendors bolted together is that every engine reads and writes the *same* Iceberg tables — `ASSET_DIM`, `WORKORDER_FACT`, `FAILURE_FACT`, and `MEASUREMENT_FACT` from Part 3 don't get copied per engine. A Spark job materializes a Gold feature table once; Presto, Db2 Warehouse, and Netezza can all query it immediately, because Iceberg — not any one engine — owns the table's metadata contract. That single fact is what makes "pick the right engine per workload" a real option instead of a five-way data-duplication tax.
+
+<aside>
+
+💡 **Key insight:** The alternative to fit-for-purpose engines isn't "one engine, simpler architecture" — it's usually "one engine, plus ad-hoc extracts to feed the workloads that engine handles badly." Multi-engine-over-one-copy is IBM's answer to a problem every single-engine lakehouse eventually grows anyway, just informally and without governance.
+
+</aside>
+
+---
+
+## 🔍 Presto (Java): Interactive SQL and Federation
+
+Presto is the engine most watsonx.data users touch first, because it's the default for ad-hoc interactive queries and — critically for a Maximo shop — federation across sources that were never going to land in the lakehouse wholesale. A Presto deployment inside watsonx.data has three distinct server roles:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    PRESTO DEPLOYMENT                     │
+├─────────────────────────────────────────────────────────┤
+│  COORDINATOR                                             │
+│    Parses statements, plans queries, manages workers,    │
+│    fetches results, returns them to the client            │
+├─────────────────────────────────────────────────────────┤
+│  WORKER NODES (N)                                        │
+│    Execute query fragments, fetch data from connectors,  │
+│    exchange intermediate data with each other            │
+├─────────────────────────────────────────────────────────┤
+│  RESOURCE MANAGER                                        │
+│    Aggregates data from coordinator + all workers,       │
+│    builds a global view of cluster resource usage        │
+└─────────────────────────────────────────────────────────┘
+```
+
+The **coordinator** is the brain of the deployment — it's the node a client connects to, and it owns query parsing, planning, and worker orchestration. **Worker nodes** do the actual data movement and computation, pulling from connectors and shuffling intermediate results between each other as a query executes across the cluster. The **resource manager** sits above both, aggregating usage data into a cluster-wide view so the deployment can make sane scheduling and admission decisions rather than each worker acting on local information alone.
+
+For a Maximo lakehouse, Presto's standout capability isn't raw speed — it's federation. A reliability engineer asking "show me every overdue PM this month, joined against the ERP's vendor contract data and this quarter's weather anomalies for affected sites" is describing a query that spans watsonx.data's own Iceberg tables, an external Db2 or Netezza system, and possibly a REST API or object store nobody plans to migrate. Presto's connector ecosystem — Db2, Netezza, Kafka, MongoDB, object stores, and dozens more — lets that query execute as one federated statement instead of three separate extracts stitched together manually. That's the workload Presto (Java) should keep serving even as Presto C++/Velox takes over routine high-volume SQL, because federation breadth, not raw execution speed, is Presto Java's comparative advantage inside the fit-for-purpose fleet.
+
+---
+
+## ⚡ Presto C++ / Velox: The Performance Play
+
+Presto C++ — what IBM calls Presto 2.0 — is where the multi-engine strategy gets an explicit, numbers-backed argument attached to it. It integrates **Velox**, an open-source C++ native acceleration library IBM describes as "composable across multiple compute engines," developed with contributors from Meta, IBM, Uber, and the wider community. IBM cites **Presto C++ v0.286** as the current generation of this engine, paired with an **IBM query optimizer** built on, in IBM's framing, "decades of IBM experience in query compilation, rewrite, and cost-based optimization."
+
+The reason this pairing gets its own section rather than a footnote under Presto is that it's the specific engine IBM benchmarks against Databricks' Photon — the proprietary vectorized engine that's the performance centerpiece of the Databricks stack this series' companion MAS-DATABRICKS series covers. IBM's claim, running Presto C++/Velox plus the IBM query optimizer on IBM Storage Fusion HCI against a 100 TB TPC-DS workload:
+
+| Comparison | IBM's Claim | Basis |
+|---|---|---|
+| Cost vs. Databricks Photon, equal query runtime | "Less than 60% the cost" | IBM-internal benchmark, 100 TB TPC-DS, IBM Storage Fusion HCI |
+| Price/performance vs. Photon, alternate hardware | "Better price performance" | IBM-internal benchmark, Intel Sapphire Rapids / AWS ROSA, 100 TB TPC-DS |
+| Query throughput vs. classic Presto, 5th-gen Intel Xeon | Up to 4.3× better | Intel-conducted benchmark, AVX-512 optimizations, Presto C++ v0.286 + IBM query optimizer |
+
+<aside>
+
+💡 **Key insight:** Every number in that table is a vendor-adjacent benchmark — IBM measuring itself against a competitor, or a hardware partner measuring IBM's own product against its predecessor. That doesn't make the numbers false; TPC-DS is a legitimate, widely used industry-standard benchmark. It does mean the honest use of these figures is "reason to run your own proof-of-concept," not "reason to skip one."
+
+</aside>
+
+The practical routing decision follows directly from what Velox is actually good at: cost-sensitive, high-volume SQL running repeatedly over Iceberg data — the kind of query pattern a Gold-layer KPI dashboard or a scheduled reliability report generates day after day. Velox's connector and function coverage is narrower than classic Presto's, precisely because it's a newer, purpose-built rewrite rather than a two-decade accumulation of connectors — so a query that needs a federation source or SQL function Velox doesn't yet support should stay on Presto (Java) rather than forcing a workaround. Most watsonx.data deployments run both Prestos concurrently for exactly this reason: Velox for the routine, high-volume, cost-sensitive traffic; classic Presto for the federated and functionally exotic edge cases Velox hasn't caught up to yet.
+
+---
+
+## 🔨 Spark: ETL, ML, and the Only Engine That Maintains Iceberg Tables
+
+Spark's role starts where you'd expect — Silver and Gold transformations, the WORKORDER-to-ASSET enrichment job Part 3 walked through in full, and feature engineering for watsonx.ai models — but it carries a structural responsibility the other four engines don't share at all: **Iceberg table maintenance in watsonx.data runs only through Spark.**
+
+Three specific operations fall under this exclusive scope:
+
+| Maintenance Operation | What It Does | Why It's Needed |
+|---|---|---|
+| **Snapshot expiration** | Retains only the snapshots you choose to keep, discarding the rest along with their now-unreferenced data | Every write creates a new snapshot; without expiry, a high-frequency `MEASUREMENT_FACT` table accumulates snapshot metadata indefinitely |
+| **Orphan file removal** | Deletes data files no longer referenced by any live snapshot (left behind by failed or superseded writes) | Prevents storage cost creep from files Iceberg's metadata no longer points to but that never got physically cleaned up |
+| **Manifest rewriting / compaction** | Consolidates many small data files and their manifests into fewer, larger ones | Small-file accumulation from frequent Kafka/MIF micro-batches degrades every downstream engine's read performance, not just Spark's |
+
+This isn't a preference IBM is nudging you toward — it's a structural fact about where these operations are implemented in watsonx.data today. The consequence is that Spark isn't just "the batch engine" in the fit-for-purpose lineup; it's a dependency every other engine indirectly relies on, because a `WORKORDER_FACT` table nobody ever compacts eventually degrades Presto's interactive queries and Db2 Warehouse's BI concurrency too, even though neither of those engines touched the maintenance job itself. Treat Spark's maintenance schedule as infrastructure, not an afterthought: a Bronze table fed by a continuous Kafka stream needs a standing compaction cadence, not a one-time cleanup after someone notices query latency creeping up.
+
+<aside>
+
+💡 **Key insight:** A team that scales Spark capacity for its Silver/Gold ETL jobs alone, without budgeting headroom for the maintenance jobs riding on the same engine, will eventually watch both workloads slow down together — because they're competing for the one engine tier that can do either.
+
+</aside>
+
+Beyond maintenance, Spark's other core EAM role is exactly what Part 3 assumed throughout: PySpark reading and writing both Iceberg and Delta natively, running the Silver conformance jobs that build `ASSET_DIM`/`WORKORDER_FACT`/`FAILURE_FACT`/`MEASUREMENT_FACT`, and materializing Gold-layer feature tables for watsonx.ai training runs. Docling-based document processing for OEM manuals and SOPs — the unstructured-to-structured Bronze ingestion Part 3 mentioned in passing — also runs on Spark, for the same reason: it's the engine built for large-scale, programmatic transformation rather than SQL-shaped interactive access.
+
+---
+
+## 🏢 Db2 Warehouse and Netezza: High-Concurrency BI
+
+Where Presto and Spark are workload-shape specialists, Db2 Warehouse and Netezza Performance Server exist to solve a different problem entirely: **volume of simultaneous users**, not query complexity or data scale. A Cognos dashboard refreshed by two hundred plant managers at shift-change, or a self-service BI tool with a hundred analysts running independent queries against the same Gold-layer cost mart, is a concurrency problem — and interactive query engines tuned for ad-hoc analyst SQL aren't necessarily tuned for that access pattern at that scale.
+
+Db2 Warehouse and Netezza both integrate with watsonx.data's shared metadata layer and read/write open formats (Parquet, Iceberg) directly — per IBM's own framing, this lets them "share and combine data for new insights without ETL," meaning a Db2 Warehouse engine can query a Spark-built Gold table the moment it lands, with no export or copy step. Db2 Warehouse is the more general-purpose of the two for high-concurrency analytic SQL; Netezza Performance Server adds hardware-accelerated analytics for workloads that specifically benefit from that acceleration, and IBM has extended Netezza's own integration path (including on Azure) to unify and share data with watsonx.data for exactly this kind of enterprise BI and generative-AI-adjacent workload.
+
+The routing logic for EAM specifically: a live, ad-hoc reliability query from one engineer belongs on Presto. A scheduled Cognos dashboard hit by two hundred people at 8 AM belongs on Db2 Warehouse or Netezza — not because the query itself is harder, but because serving it well means the engine has to gracefully absorb concurrent load without one user's slow query starving another's, which is a different engineering problem than "run this one federated join as fast as possible."
+
+---
+
+## 🧭 Routing Table: Which EAM Workload Goes Where
+
+Pulling the four engine sections together into the table this post exists to produce — the one a platform team can actually point a new requirement at:
+
+| EAM Workload | Engine | Why |
+|---|---|---|
+| Ad-hoc reliability engineer query joining `WORKORDER_FACT` against an external ERP system | **Presto (Java)** | Federation breadth across non-Iceberg sources; not a repeated, high-volume query worth Velox's narrower coverage |
+| Scheduled Gold-layer KPI report run daily against `WORKORDER_FACT` + `FAILURE_FACT` | **Presto C++ (Velox)** | Repeated, cost-sensitive SQL entirely over Iceberg tables — exactly Velox's sweet spot |
+| Silver-layer conformance job building `ASSET_DIM`/`WORKORDER_FACT` from Bronze | **Spark** | Large-scale batch transformation, the canonical ETL shape |
+| watsonx.ai feature engineering for a predictive maintenance model | **Spark** | Programmatic, large-scale aggregation feeding a training pipeline, not interactive SQL |
+| Nightly Iceberg compaction / snapshot expiry on `MEASUREMENT_FACT` | **Spark** | The only engine watsonx.data runs table maintenance through |
+| Cognos dashboard refreshed by 200+ plant managers at shift change | **Db2 Warehouse** | High-concurrency BI is the engine's specific design target |
+| Heavy analytical workload benefiting from hardware acceleration | **Netezza Performance Server** | Purpose-built acceleration for demanding analytic SQL at scale |
+
+None of these are hard rules enforced by watsonx.data itself — nothing stops you from running a Cognos dashboard's queries through Presto. The routing table is a cost-and-performance discipline the platform has to choose to apply, not a constraint the platform imposes for you.
+
+---
+
+## 🔌 Connecting to the Right Engine: The CPD Presto Connection
+
+Routing a workload to a specific engine is a design decision; actually pointing a BI tool, a notebook, or a downstream application at that engine is a connection-configuration detail worth being concrete about, because it's where "we decided to use Presto C++ for this" either becomes real or quietly reverts to whatever connection someone already had saved. For anything beyond a standalone Manage-with-Db2 setup, Cloud Pak for Data (CPD) on Red Hat OpenShift is the integration fabric hosting watsonx.data and watsonx.ai side by side, and CPD exposes a dedicated **watsonx.data Presto connection asset** that reads and writes both Iceberg and Delta tables through the engine you point it at.
+
+The connection parameters that matter for getting this right:
+
+```yaml
+# CPD watsonx.data Presto connection — key parameters
+connection:
+  hostname: <cpd-instance-hostname-or-ip>
+  port: 443                    # default HTTPS port for the CPD connection itself
+  instance_id: <watsonx-data-instance-name>
+  auth:
+    username: <cpd-username>
+    # either a password or an API key — API key is the recommended
+    # non-interactive credential for scheduled jobs and BI tool connections
+    api_key: <cpd-api-key>
+  engine:
+    internal_host: <presto-or-prestocpp-engine-host>
+    engine_id: <specific-engine-id>       # distinguishes Presto (Java) from Presto C++/Velox
+    engine_port: 8443                     # default port for the engine itself, distinct from the connection port
+```
+
+Two details in that configuration are exactly where routing decisions either hold or silently drift. First, `port: 443` is the CPD connection's own port — it gets you to Cloud Pak for Data, not necessarily to the specific engine you intended. The `engine_id` and `engine_port: 8443` pair is what actually selects and reaches a particular provisioned engine, which means a saved connection profile that only specifies the CPD-level port and instance ID, without an explicit engine ID, can end up hitting whichever engine CPD treats as default rather than the Presto C++/Velox engine a team deliberately provisioned for cost reasons. Second, for a standalone Manage installation with no broader watsonx integration, only the Db2 Warehouse operator needs to be installed — full CPD is specifically required once you're integrating across MAS suites and connecting to watsonx.data and watsonx.ai, which is worth knowing before assuming every Maximo-watsonx.data pairing requires the full CPD footprint.
+
+<aside>
+
+💡 **Key insight:** A routing table is a policy. A saved BI-tool connection profile with a hardcoded `engine_id` is the enforcement mechanism. Teams that get the routing table right but never audit their actual saved connections tend to discover, months later, that half their "cost-optimized Velox" dashboards have been quietly running on classic Presto the whole time.
+
+</aside>
+
+---
+
+## 💰 The Cost Argument: Resource Units and Engine Choice
+
+Every routing decision above has a direct financial consequence, because watsonx.data prices compute per engine, not per lakehouse. The unit is the **Resource Unit (RU)**: list price **USD 1 per RU**, metered **per-second**, with a **one-minute minimum** charge per billing event. IBM's headline cost claim built on this model is that watsonx.data can **"reduce data warehouse costs up to 50%"** — a figure that, per the same caveat this series has applied throughout, is an IBM product claim rather than an independently audited result.
+
+What the RU model actually rewards is precise, per-engine scheduling rather than a single monolithic cluster running continuously:
+
+```
+Fixed-cluster model (traditional DW):
+  One cluster, sized for peak load, running 24/7
+  Cost = peak_capacity × 24h × 365 days
+  (idle hours between peaks are paid for anyway)
+
+watsonx.data RU model:
+  Presto engine:        running 10h/day (business hours)   → RU × 10h
+  Presto C++ engine:     running 6h/day (scheduled reports)  → RU × 6h
+  Spark engine:          running 4h/day (nightly batch + maintenance) → RU × 4h
+  Db2 Warehouse engine:  running 3h/day (shift-change BI windows) → RU × 3h
+  (each engine scales to zero outside its active window)
+```
+
+The five-engine architecture isn't inherently five times the cost of one engine, because RU billing is per-engine-second, not a flat per-instance fee — an engine paused or scaled to zero simply isn't accruing charges, no matter how many other engines exist in the same watsonx.data instance. That means the real cost lever isn't "use fewer engines," it's "don't leave engines warm outside their active window," which is a scheduling discipline, not an architecture decision. A Db2 Warehouse engine provisioned for a once-daily reporting window and left running around the clock out of inertia gives up exactly the cost advantage the RU model exists to offer.
+
+The routing table from the previous section and the cost model here are the same decision, looked at from two angles: sending a repeated, high-volume Gold-layer report to Presto C++/Velox instead of classic Presto isn't just a performance choice — per IBM's benchmark claims, it's potentially a sub-60%-of-Photon cost outcome on that specific workload shape. Sending a once-a-day BI concurrency spike to Db2 Warehouse instead of over-provisioning Presto to absorb it is the same logic applied to a different engine pair.
+
+---
+
+## 🧭 Choosing the Right Engine for a New Requirement: Three Worked Scenarios
+
+**Scenario 1 — "Our reliability team wants to run one-off exploratory joins against `FAILURE_FACT`, our SAP-adjacent ERP, and a vendor's warranty API, a few times a week."** This is Presto (Java) territory specifically because of federation breadth and low, irregular frequency — Velox's narrower connector coverage and the workload's low repetition don't justify migrating it, and the query touches sources Presto's mature connector ecosystem already handles.
+
+**Scenario 2 — "We need a Gold-layer MTBF KPI mart refreshed every morning at 6 AM and queried by a Cognos dashboard all day by up to 150 users."** This splits into two engines, not one: the 6 AM refresh — a repeated, Iceberg-only aggregation job — runs on Presto C++/Velox or as a Spark batch job depending on its complexity, and the all-day, 150-user query load against the resulting Gold table runs on Db2 Warehouse. Routing the dashboard's concurrent traffic through the same engine that built the table would work, but it's the wrong tool for a pure-concurrency problem.
+
+**Scenario 3 — "A new sensor pilot is generating small, frequent files into a Bronze table via Kafka, and query performance against it has degraded over three months."** Before reaching for a bigger engine or more compute, this is a maintenance gap, not a routing problem — the fix is scheduling a Spark compaction job against that specific Bronze table, since small-file accumulation from frequent micro-batches is exactly what manifest rewriting and compaction exist to resolve, and no other engine in the fleet can run that job.
+
+None of these needed a workaround — matching the workload's actual shape (federation breadth, repeated cost-sensitive SQL, concurrency load, or maintenance debt) to the engine built for that shape is the entire discipline this post covers.
+
+---
+
+## 🗺️ Practical Notes Before Part 5
+
+- **Don't default every workload to whichever engine is already warm.** Presto being the interactive default makes it the easy answer for everything, which quietly collapses the fit-for-purpose architecture back into a single-engine one with extra infrastructure sitting idle.
+- **Budget Spark capacity for maintenance, not just ETL.** Snapshot expiry, orphan-file removal, and compaction ride on the same engine tier as your Silver/Gold transformation jobs — size and schedule for both, not just the one you designed for first.
+- **Treat IBM's Photon benchmark as a proof-of-concept trigger, not a citation.** The 100 TB TPC-DS numbers are real and specific, but they're IBM measuring IBM — run your own comparison against representative Maximo queries before an architecture decision leans on the headline figure.
+- **Scale to zero on purpose.** The RU model's cost advantage is captured by actually pausing engines outside their active windows, not by the pricing model alone — an engine left running 24/7 pays the fixed-cluster tax the RU model was built to avoid.
+- **Bring stable Silver entities into Part 5 already routed.** The watsonx.ai and RAG patterns in Part 5 assume Gold-layer feature tables already exist and are already being produced by the right engine, not that engine selection is still an open question at that point.
+
+---
+
+## Key Takeaways
+
+- **watsonx.data's multi-engine design is a deliberate bet against one-engine-fits-all** — Presto (Java), Presto C++/Velox, Spark, Db2 Warehouse, and Netezza each specialize in a different workload shape over the same Iceberg copy, rather than one vendor-tuned engine handling everything.
+- **Presto C++/Velox (Presto 2.0, v0.286) with the IBM query optimizer is where IBM's price/performance claims against Photon live** — up to "60% the cost" at equal runtime on a 100 TB TPC-DS benchmark — but that's an IBM-internal figure that should trigger your own proof-of-concept, not replace one.
+- **Iceberg table maintenance — snapshot expiration, orphan-file removal, manifest compaction — runs exclusively through Spark**, making Spark a structural dependency for every other engine's read performance, not just the ETL/ML engine.
+- **Db2 Warehouse and Netezza absorb high-concurrency BI traffic** so that load doesn't contend with Presto's interactive queries or Spark's batch jobs on the same engine tier.
+- **Resource Unit metering (USD 1/RU, per-second, one-minute minimum) makes engine routing a direct cost lever** — a misrouted workload shows up as avoidable RU spend, and scale-to-zero discipline is what actually captures the model's advantage.
+
+---
+
+## References
+
+- [An introduction to Presto, a query engine that powers watsonx.data — IBM Developer](https://developer.ibm.com/articles/awb-introduction-to-presto-a-query-engine-powering-watsonx-data/)
+- [Accelerating query performance with watsonx.data Presto C++ and Intel Sapphire Rapids processor on AWS — IBM](https://www.ibm.com/new/product-blog/accelerating-query-performance-with-watsonx-data-presto-c-and-intel-sapphire-rapid-processor-on-aws)
+- [Delivering superior price-performance and enhanced data management for AI with IBM watsonx.data — IBM Announcements](https://www.ibm.com/new/announcements/delivering-superior-price-performance-and-enhanced-data-management-for-ai-with-ibm-watsonx-data)
+- [IBM watsonx.data pricing — Resource Units](https://www.ibm.com/products/watsonx-data/pricing)
+- [watsonx.data Spark engine — introduction, IBM Documentation](https://www.ibm.com/docs/en/watsonxdata/standard/2.2.x?topic=spark-introduction-watsonxdata)
+- [Unify and share data across Netezza and watsonx.data for new generative AI applications — IBM Announcements](https://www.ibm.com/new/announcements/unify-and-share-data-across-netezza-and-watsonx-data-for-new-generative-ai-applications)
+- [What's new in watsonx.data — IBM Documentation](https://www.ibm.com/docs/en/watsonxdata/standard/2.3.x?topic=overview-whats-new-in-watsonxdata)
+- [New Features in MAS 9.0 and 9.1 — Maximo Secrets](https://maximosecrets.com/2025/07/06/new-features-in-mas-90-and-91/)
+- DOC13: IBM watsonx.data + Maximo Roadmap — §4.2 (Fit-for-Purpose Query Engines), §7.1 (watsonx.data vs. Databricks Head to Head) (internal knowledge base, `knowledge_base/DOC13_IBM_WATSONX_DATA_MAXIMO_ROADMAP.md`)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 3 — The Iceberg Medallion](/blog/mas-watsonx-data-03-iceberg-medallion) |
+| **Next:** | [Part 5 — watsonx.ai, Granite Models, and RAG](/blog/mas-watsonx-data-05-ai-rag) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*
+
+<!--
+Editorial note for human review: Primary source was knowledge_base/DOC13_IBM_WATSONX_DATA_MAXIMO_ROADMAP.md
+§4.2 (Fit-for-Purpose Query Engines), §7.1 (watsonx.data vs. Databricks Head to Head, including the RU
+pricing and cost-claim data points from §1 and §4.7), and §5.1 (CPD Presto connection parameters — port 443,
+engine port 8443, and the standalone-Manage-needs-only-Db2-Warehouse-operator vs. full-CPD distinction, reused
+here from the connection-configuration angle rather than the deployment-model angle Part 2 covered it from). SearchMaximo KB sweep (Presto, watsonx.data, Db2
+Warehouse, Netezza against the 611-file IBM Maximo documentation set) found no direct hits — expected, and
+consistent with Part 3's note, since engine architecture is watsonx.data-product territory, not Maximo-product
+territory. Web verification round (2026-07-19, 8 searches) added: IBM Developer's Presto introduction article
+(coordinator/worker/resource-manager role descriptions), the Presto C++/Intel Sapphire Rapids product blog and
+the "superior price-performance" announcement (both confirm the Photon cost/price-performance claims DOC13
+summarized, with added hardware-specific detail), the watsonx.data pricing page (RU definition and metering),
+the watsonx.data Spark engine introduction doc (confirms table maintenance — snapshot expiration, orphan file
+removal, manifest rewriting — runs "only through Spark," a mechanic DOC13 did not spell out explicitly), the
+Netezza/watsonx.data unification announcement, the watsonx.data "what's new" doc (confirms 2.3.x-era versioning
+current as of mid-2026), and a Maximo Secrets community post cross-checking MAS 9.1 claims (same source Part 3
+used). One discrepancy for review: an older IBM docs page (watsonxdata 1.0.x, Presto overview) states watsonx.data
+"uses version 0.279 of Presto," while DOC13 and the newer Presto C++/Intel benchmark sources cite v0.286 as the
+current generation — likely a stale older-version doc page versus current release, but human review should
+confirm the Presto version applicable to the target deployment before citing a specific version number
+externally. The RU-model cost-scheduling diagram and the three worked scenarios in this post are original
+illustrative material built from the documented pricing mechanics (per-second metering, one-minute minimum,
+scale-to-zero), not literal IBM-published examples.
+-->
