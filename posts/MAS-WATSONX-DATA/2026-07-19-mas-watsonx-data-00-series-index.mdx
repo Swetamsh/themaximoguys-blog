@@ -1,0 +1,353 @@
+---
+title: "MAS 9 + IBM watsonx.data: Building the Maximo Open Lakehouse"
+description: "A six-part series on IBM's own answer to the MAS 9 native-analytics ceiling: watsonx.data's open Iceberg lakehouse, fit-for-purpose query engines, MIF/Kafka extraction, medallion architecture, watsonx.ai and RAG, closed-loop write-back, and an honest head-to-head with Databricks."
+date: "2026-07-19"
+slug: "mas-watsonx-data-00-series-index"
+tags: ["Maximo", "MAS 9", "watsonx.data", "IBM watsonx", "Data Lakehouse", "Apache Iceberg", "Cloud Pak for Data", "EAM Analytics"]
+draft: true
+tier: "executive"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-watsonx-data-00-series-index.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Does watsonx.data replace Maximo Health, Predict, and Monitor?"
+    answer: "No, and this series is built around that distinction. Maximo Health, Predict, and Monitor are entitled, pre-built MAS 9 capabilities that read and write Maximo data directly — they remain the right first stop for asset scoring, failure prediction, and IoT anomaly detection. watsonx.data is a separate, complementary open lakehouse that earns its cost specifically where those native tools stop: joining Maximo data with ERP, weather, or years of sensor history; training custom models with external inputs Predict's fixed catalog cannot ingest; and giving more than three people self-service BI beyond Cognos's included authoring seats. Part 1 draws that line with the same MAS 9 ceiling table this index summarizes."
+  - question: "How is watsonx.data different from Databricks for a Maximo shop?"
+    answer: "Both solve the same gap — MAS 9 has no general-purpose lakehouse — but they take different architectural bets. watsonx.data standardizes on Apache Iceberg as an open table format with fit-for-purpose engines (Presto, Presto C++/Velox, Spark, Db2 Warehouse, Netezza) that all read the same Iceberg tables, which avoids coupling your data to one vendor's runtime. Databricks pairs Delta Lake with its own proprietary Photon execution engine, which is faster to adopt if you are already invested in that runtime but couples your performance story to Databricks specifically. If your organization is already IBM-standardized — Maximo, Cognos, watsonx.ai via the MAS AI Service, Red Hat OpenShift — watsonx.data reuses that footprint and support relationship. If you need the deepest managed-MLOps maturity and the widest third-party ecosystem, or you are already committed to the Databricks runtime, our companion MAS-DATABRICKS series covers that path in full. Part 6 runs the head-to-head with named tradeoffs, not a sales pitch for either."
+  - question: "What is Apache Iceberg and why does watsonx.data use it instead of Delta Lake?"
+    answer: "Apache Iceberg is an open table format that adds ACID transactions, schema evolution, hidden partitioning, and time-travel snapshots on top of plain Parquet files, and IBM has made it the default, primary table format across watsonx.data. The practical payoff for Maximo data is threefold: schema evolution means a WORKORDER or ASSET attribute change doesn't break your downstream pipelines; time travel lets you query what an asset's health data looked like six months ago for an audit or a trend comparison; and because Iceberg is an open format readable by Presto, Spark, Db2, Netezza, and even external engines like Databricks via Unity Catalog federation, you are not locked into one vendor's compute layer to read your own data. Part 3 maps Iceberg's bronze/silver/gold layers directly onto named Maximo tables — WORKORDER, ASSET, FAILUREREPORT, MEASUREMENT — with the actual conformed entity names."
+  - question: "How do I actually get data out of MAS 9 into watsonx.data?"
+    answer: "Three IBM-documented patterns, and the right one depends on latency needs, not preference. The MIF REST/JSON API over OSLC is the preferred default — it can return synonym-domain internal values, which matters for stable ML feature codes rather than customer-facing display codes, though SOAP/REST access may require moving from basic auth to API keys. Kafka streaming, using watsonx.data's Apache Kafka source connector against a Maximo-configured Kafka service, is the right pattern for near-real-time, event-driven extraction such as work-order status changes or meter readings landing straight into bronze Iceberg tables. MAS 9.1's asynchronous bulk export writes UI table data page-by-page into an S3 bucket or the MIF global directory, which suits large periodic extracts rather than continuous feeds. As with the Databricks path, direct database extraction is only available for self-managed, on-prem MAS — managed SaaS MAS seals its database from external connections. Part 2 walks each pattern with named tables, suggested extraction frequencies, and the specific columns a first bronze extract needs."
+  - question: "Should I choose watsonx.data, Databricks, or neither?"
+    answer: "Start by asking whether you have actually hit a native MAS 9 ceiling — Cognos's three-seat authoring limit, Predict's fixed model catalog, or Monitor's retention window — rather than assuming you need a lakehouse at all; Part 1 gives you that diagnostic before either platform gets evaluated. If you clear that bar and your organization is already IBM-standardized end to end (Maximo, Cognos, watsonx.ai, OpenShift), watsonx.data's open-Iceberg, fit-for-purpose-engine, one-vendor-governance story is the path of least ecosystem friction. If you need deep managed-MLOps maturity or you are already running Databricks elsewhere in the business, that platform remains a strong, legitimate choice — see the MAS-DATABRICKS series for the equivalent depth on that path. IBM's own published price/performance claims against Databricks' Photon engine are internal benchmarks, not independent third-party results, and this series says so every time it cites them rather than presenting them as settled fact."
+keyTakeaways:
+  - "watsonx.data is IBM's own open, hybrid lakehouse answer to the same MAS 9 native-analytics ceiling the MAS-DATABRICKS series addresses — this series is its IBM-native counterpart, not a rebuttal of that series"
+  - "Apache Iceberg is the open table format at watsonx.data's core, paired with fit-for-purpose engines (Presto, Presto C++/Velox, Spark, Db2 Warehouse, Netezza) that all read one copy of the data — an explicit hedge against the runtime coupling critics associate with Delta Lake plus a single vendor's engine"
+  - "Three sanctioned extraction paths move Maximo data into watsonx.data — MIF REST/JSON (OSLC, synonym-domain values), Kafka streaming, and MAS 9.1's asynchronous bulk export — with direct DB extraction limited to self-managed MAS the same way it is for Databricks"
+  - "MAS 9.1's Maximo AI Service is the sanctioned bridge from Maximo into the whole watsonx family — the same bridge this series extends when you add watsonx.data and watsonx.ai for custom ML, RAG, and closed-loop write-back"
+  - "IBM's own price/performance claims against Databricks' Photon engine are internal benchmarks (100 TB TPC-DS), not independently verified — this series flags that provenance every time it cites the numbers rather than treating them as settled fact"
+series:
+  name: "MAS WATSONX-DATA"
+  part: 0
+  total: 6
+tldr: "A six-part practitioner's guide to pairing MAS 9 with IBM watsonx.data — the IBM-native open lakehouse and the direct counterpart to the MAS-DATABRICKS series' non-IBM path. It covers why watsonx.data exists as a complement (not a replacement) to Maximo Health, Predict, Monitor, and Cognos; the open Apache Iceberg table format and its fit-for-purpose query engines (Presto, Presto C++/Velox, Spark, Db2 Warehouse, Netezza); the three sanctioned patterns for extracting Maximo data (MIF REST/JSON, Kafka, bulk export); the medallion architecture mapped onto Iceberg tables built from named Maximo objects; watsonx.ai, Granite-family models, and the Milvus/OpenSearch/OpenRAG stack for RAG over maintenance manuals and work-order text, plus closed-loop write-back into Maximo; and an honest, caveated head-to-head against Databricks and MAS-native analytics, closing with Unity-Catalog-equivalent governance via IBM Knowledge Catalog. The series treats watsonx.data and Databricks as two legitimate lakehouse paths for the same MAS 9 gap, not a right-versus-wrong choice."
+seoTitle: "MAS 9 + IBM watsonx.data Lakehouse | Series Index"
+seoDescription: "A 6-part guide to MAS 9 + IBM watsonx.data: open Iceberg lakehouse, MIF/Kafka extraction, medallion architecture, watsonx.ai/RAG, vs. Databricks."
+targetQuestions:
+  - "Should I use IBM watsonx.data with Maximo Application Suite?"
+  - "How is watsonx.data different from Databricks for MAS 9 analytics?"
+  - "How do I get Maximo data into IBM watsonx.data?"
+  - "What is Apache Iceberg and how does it apply to Maximo work order and asset data?"
+  - "Does MAS 9 have an IBM-native data lakehouse option, or only third-party ones?"
+semanticKeywords:
+  - "Maximo watsonx.data integration"
+  - "IBM open data lakehouse"
+  - "Apache Iceberg medallion architecture"
+  - "IBM Knowledge Catalog governance"
+  - "Maximo MIF REST extraction"
+  - "watsonx.data vs Databricks"
+  - "Presto C++ Velox"
+  - "Cloud Pak for Data Maximo"
+  - "bronze silver gold Iceberg tables"
+  - "watsonx.ai RAG Milvus OpenRAG"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Familiarity with core Maximo Manage objects (WORKORDER, ASSET, LOCATIONS, INVENTORY)"
+  - "Basic understanding of MAS 9 native analytics — Health, Predict, Monitor (see the MAS-HEALTH, MAS-PREDICT, and MAS-MONITOR series)"
+  - "General data-platform literacy: what a data lake, data warehouse, and ETL pipeline each do"
+  - "Helpful but not required: the MAS-DATABRICKS series, which this series treats as the non-IBM alternative path"
+speakableSections:
+  - "Why This Series Exists"
+  - "Where This Series Fits"
+  - "The Series at a Glance"
+clusterSlugs:
+  - "mas-watsonx-data-01-why-open-lakehouse"
+  - "mas-watsonx-data-02-data-extraction"
+  - "mas-watsonx-data-03-iceberg-medallion"
+  - "mas-watsonx-data-04-fit-for-purpose-engines"
+  - "mas-watsonx-data-05-ai-rag-closed-loop"
+  - "mas-watsonx-data-06-vs-databricks-governance"
+relatedSlugs:
+  - "mas-databricks-series-index"
+  - "mas-health-series-index"
+  - "mas-predict-series-index"
+  - "mas-monitor-series-index"
+  - "mas-features-series-index"
+---
+
+# MAS 9 + IBM watsonx.data: Building the Maximo Open Lakehouse
+
+<aside>
+
+🎯 **Who this is for:** Data engineers and architects scoping an IBM-native lakehouse, reliability and maintenance leaders who have hit the ceiling of Cognos and Maximo Health, IT and platform owners standardized on IBM who want a lakehouse decision that doesn't add a second vendor, and any Maximo practitioner who has heard "IBM has its own answer to Databricks" and wants to know exactly what that means for their WORKORDER and ASSET tables.
+
+</aside>
+
+**Series:** Series Index — *MAS 9 + IBM watsonx.data Lakehouse* | **6 parts** | **Total read time:** ~1.75 hours
+
+---
+
+## 📖 Why This Series Exists
+
+Every organization that upgrades from Maximo 7.6 to MAS 9 inherits a genuinely better analytics story than it had before. Operational Dashboards replace Start Centers. Cognos Analytics replaces BIRT. Maximo Health scores assets. Maximo Predict trains failure models. Maximo Monitor ingests IoT streams and detects anomalies. The AI Service, backed by watsonx, answers natural-language questions about your work orders. None of that is marketing. It is real, entitled, and worth using first.
+
+And then, six months into running MAS 9 in production, the same questions start showing up in planning meetings. *Can we join maintenance cost against SAP financials?* *Can more than three people build a Cognos report without a separate license?* *Can we train a custom failure model on our own vibration data instead of Predict's fixed catalog?* *Can we keep ten years of sensor history queryable instead of aging out of Monitor's retention window?* The honest answer to all four, inside MAS 9 alone, is no. Our MAS-DATABRICKS series already answered that gap with Databricks, the platform most MAS 9 customers are already evaluating. This series answers the identical gap with IBM's own product: **watsonx.data**, an open, hybrid data lakehouse and the data pillar of the broader watsonx platform.
+
+This series is not an anti-Databricks piece, and it is not IBM sales copy dressed up as Maximo content either. It draws the same line the Databricks series draws, from the other side of the fence: **MAS 9 native analytics is real and should be your first stop. A lakehouse — whichever vendor's — earns its cost only past a specific, nameable ceiling.** What differs here is the platform past that ceiling, and the case for it: if your shop is already IBM-standardized — Maximo, Cognos, watsonx.ai through the MAS AI Service, Red Hat OpenShift — watsonx.data reuses that footprint instead of introducing a second vendor relationship, a second support path, and a second runtime to govern.
+
+<aside>
+
+💡 **Key insight:** The organizing question of this series is the same one the Databricks series asks, answered from the IBM side: **"which of my analytics questions does MAS 9 already answer, and which ones require data MAS 9 was never built to hold — and given that I need to go past MAS 9, does staying inside the IBM stack change the answer?"** For an IBM-standardized shop, it usually does.
+
+</aside>
+
+---
+
+## 🧭 Where This Series Fits
+
+This series is deliberately about the boundary between MAS 9's native analytics stack and an IBM-native lakehouse past it. It does not re-teach Maximo Health, Predict, or Monitor from scratch, and it does not re-litigate the Databricks path our companion series already covers in depth. There is a division of labor across TheMaximoGuys content so you are never reading the same material twice:
+
+| If you want… | Read… |
+|---|---|
+| Deep, hands-on coverage of Maximo Health scoring, risk matrices, and degradation curves | **MAS-HEALTH series** |
+| Deep, hands-on coverage of Maximo Predict's ML model catalog and prediction workflows | **MAS-PREDICT series** |
+| Deep, hands-on coverage of Maximo Monitor's IoT ingestion and anomaly detection | **MAS-MONITOR series** |
+| The non-IBM lakehouse path for the identical MAS 9 analytics ceiling — Databricks, Delta Lake, Unity Catalog | **MAS-DATABRICKS series** |
+| **Where native MAS 9 analytics stops, and how to extend it with IBM's own watsonx.data lakehouse** | **This series** |
+
+<aside>
+
+💡 **Key insight:** If a stakeholder is mid-evaluation between watsonx.data and Databricks, hand them both series' Part 1 back to back — they open from the same MAS 9 ceiling table and diverge only at the platform choice. That symmetry is deliberate; it makes the two series a fair side-by-side, not a race to convince you of one answer.
+
+</aside>
+
+---
+
+## 📊 The Series at a Glance
+
+| Part | Title | Focus Area | Read Time |
+|------|-------|-----------|-----------|
+| 1 | Why watsonx.data: IBM's Open Lakehouse Answer for Maximo | Native ceiling recap; Apache Iceberg vs Delta Lake; one-vendor governance case; watsonx.ai already bridged via MAS AI Service | 16 min |
+| 2 | Getting Maximo Data into watsonx.data | MIF REST/JSON (OSLC, synonym-domain values), Kafka streaming, MAS 9.1 bulk export; Cloud Pak for Data as the integration fabric | 17 min |
+| 3 | The Iceberg Medallion | Bronze/silver/gold mapped to WORKORDER, ASSET, FAILUREREPORT, MEASUREMENT; ACID, schema evolution, time travel, Db2-Iceberg interop | 18 min |
+| 4 | Fit-for-Purpose Engines | Presto, Presto C++/Velox, Spark, Db2 Warehouse, Netezza over one Iceberg copy; when to route which EAM workload where; RU pricing | 16 min |
+| 5 | From Lakehouse to Action | watsonx.ai custom ML, AutoAI for RAG, Milvus/OpenSearch/OpenRAG over maintenance manuals and WO text; three closed-loop write-back patterns | 18 min |
+| 6 | watsonx.data vs. Databricks vs. MAS Native | Iceberg vs Delta, Presto C++ vs Photon, IKC vs Unity Catalog; decision framework; governance and PII masking (series finale) | 17 min |
+
+---
+
+## 🔑 What Makes This Series Different
+
+Three ideas run through every part. Internalize them and the series reads as one argument instead of six standalone articles.
+
+**Native-first, lakehouse-second is not a hedge — it is the architecture, regardless of vendor.** Every part follows the same sequence: name what MAS 9 already does natively, name precisely where it stops, then show the watsonx.data pattern that picks up from there. A shop that skips the "what MAS already does" step ends up rebuilding Cognos-shaped dashboards in Presto SQL for no reason — the single most common wasted-spend pattern in lakehouse projects touching an EAM system, whichever lakehouse vendor you picked.
+
+**Open by design is the specific IBM argument, and this series names it precisely instead of gesturing at it.** watsonx.data standardizes on Apache Iceberg — an open table format readable by Presto, Spark, Db2, Netezza, and even Databricks via Unity Catalog federation — rather than pairing a proprietary execution engine with a single vendor's table format. IBM's own published benchmarks claim better price-performance for Presto C++/Velox against Databricks' Photon engine at equal query runtime on a 100 TB TPC-DS workload. Those are IBM-internal benchmarks, not independent third-party results, and this series repeats that caveat every time the numbers come up — a fair comparison belongs in your own proof-of-concept, not an assumption this series makes for you.
+
+**Closed-loop is still the pattern that actually pays back, on either lakehouse.** A watsonx.data build that only produces dashboards nobody acts on is exactly as much of a cost center as an idle Databricks build. The pattern every proven case study in this space follows is closed-loop: predictions and scores write back into Maximo — as a work order, a service request, or an updated reorder point — through the MAS AI Service, direct REST calls, or watsonx Orchestrate, so the lakehouse output becomes an action inside the system your technicians already work in, not a report that sits in a folder.
+
+<aside>
+
+💡 **Key insight:** If you remember only one thing from the index, make it this: **name the ceiling, extend past it with the platform that fits your vendor posture, close the loop back into Maximo.** Every part is an application of that triad. Skip the last step and you get a beautiful Iceberg lakehouse nobody's Maximo workflow ever touches.
+
+</aside>
+
+---
+
+## 🗺️ What MAS 9 Already Gives You (and Where It Stops)
+
+Before the part-by-part guide, this table grounds the whole series in what native MAS 9 analytics actually covers today — the identical baseline the MAS-DATABRICKS series measures against, because the native ceiling does not change with your lakehouse choice.
+
+| MAS 9 Native Capability | What It Does Well | Where It Stops |
+|---|---|---|
+| **Operational Dashboards** | Role-based, cross-app views pulling from Monitor, Health, and Manage in one screen | Not a BI platform — no ad-hoc joins, no external data sources, no complex statistical analysis |
+| **Cognos Analytics** | Drag-and-drop report authoring against the Maximo database, scheduled distribution | Only 3 administrative authoring seats included; BIRT reports must be rebuilt, not migrated; hard to join non-Maximo data |
+| **Maximo Health** | Configurable 0–100 health/risk scores from asset, work order, and meter data — as of MAS 9.1, delivered as "Maximo Manage with Health" | Cannot incorporate external factors — weather, SCADA load, supply-chain risk — into the score formula |
+| **Maximo Predict** | Pre-built failure-probability, RUL, and anomaly models trained via watsonx.ai on Cloud Pak for Data | Fixed model catalog with limited customization; requires IoT data already flowing through Monitor; cannot ingest external data sources |
+| **Maximo Monitor** | Real-time IoT dashboards, built-in anomaly detection, alert-to-work-order automation via Kafka | Not built for multi-year historical trend analysis or custom ML algorithms beyond its built-in anomaly functions |
+| **Maximo AI Service / Assistant** | Natural-language Q&A against Maximo data, FMEA content generation, similarity tracking — and the sanctioned bridge into watsonx.ai | Scoped to Maximo data only; ~10-AppPoints entitlement with a monthly usage ceiling before additional watsonx licensing is required |
+
+That right-hand column is not a criticism of MAS 9 — every EAM system on the market has an equivalent list. It is the honest starting point for deciding whether your organization actually needs a lakehouse at all, or whether the gap you are feeling is really an under-used native capability. Part 1 opens with exactly that diagnostic, the same way Part 1 of the Databricks series does.
+
+---
+
+## ⚖️ watsonx.data vs. Databricks at a Glance
+
+Because this series exists specifically as the IBM-native counterpart to MAS-DATABRICKS, the index earns a direct comparison up front rather than deferring it entirely to Part 6.
+
+| Dimension | watsonx.data | Databricks |
+|-----------|--------------|------------|
+| Primary table format | **Apache Iceberg** (open, multi-engine) | Delta Lake (open format, runtime-coupled) |
+| Execution engine | Presto (Java) + **Presto C++/Velox** | **Photon** (proprietary vectorized) |
+| Governance | IBM Knowledge Catalog + semantic layer + Data Product Hub, or Apache Ranger | Unity Catalog (Databricks-centric) |
+| RAG / vector | Embedded **Milvus** + OpenSearch + **OpenRAG** (Docling/Langflow) | Own runtime + partner vector integrations |
+| AI layer | watsonx.ai — already bridged via the MAS AI Service | Mosaic AI / partner models |
+| Vendor posture | Single IBM support and licensing path (Maximo, Cognos, watsonx, OpenShift) | Separate vendor relationship alongside IBM |
+| IBM's own price/perf claim | "less than 60% the cost" of Photon at equal runtime (IBM-internal, 100 TB TPC-DS) | — |
+
+Both platforms federate to the other: watsonx.data can zero-copy federate to Databricks Unity Catalog, and Presto can query Uniform-enabled Delta tables through the Iceberg REST Catalog API. A hybrid "Delta in Databricks, Iceberg in watsonx.data" architecture is technically feasible for organizations mid-migration between the two — but it requires deliberately reconciling governance across both catalogs; it does not happen automatically. Part 6 expands this table into a full decision framework, including when the honest answer is "stay on MAS native a while longer."
+
+---
+
+## 🔧 One Concrete Example: Iceberg in Practice
+
+The series stays grounded in real syntax, not slideware, starting with the index. Here is how Db2 Warehouse — one of watsonx.data's fit-for-purpose engines — creates a native Iceberg table directly inside the watsonx.data catalog, the kind of statement Part 3 and Part 4 build on repeatedly:
+
+```sql
+CREATE DATALAKE TABLE iceberg.db2exported (
+    WORKORDERID   BIGINT,
+    WONUM         VARCHAR(20),
+    SITEID        VARCHAR(20),
+    ORGID         VARCHAR(20),
+    ASSETNUM      VARCHAR(20),
+    LOCATION      VARCHAR(20),
+    STATUS        VARCHAR(20),
+    STATUSDATE    TIMESTAMP,
+    FAILURECODE   VARCHAR(20),
+    PROBLEMCODE   VARCHAR(20),
+    LABORCOST     DECIMAL(15,2),
+    MATERIALCOST  DECIMAL(15,2),
+    TOOLCOST      DECIMAL(15,2)
+)
+STORED AS PARQUET
+STORED BY ICEBERG
+LOCATION 'DB2REMOTE://iceberg-bucket//iceberg/db2exported';
+```
+
+That single `STORED BY ICEBERG` clause is the practical difference this series keeps coming back to: the table Db2 just created is immediately queryable by Presto, Spark, and Netezza without a copy, an export job, or a second pipeline — because Iceberg, not any one engine, owns the table's metadata contract. Note the `iceberg.catalog` property requirement and that direct `ALTER` from Db2 is restricted, reflecting Iceberg's metadata-driven schema evolution model — a detail Part 3 covers with the full WORKORDER-to-ASSET enrichment example.
+
+---
+
+## 🧩 Part-by-Part Guide
+
+### Part 1: Why watsonx.data — IBM's Open Lakehouse Answer for Maximo
+
+**[Read Part 1 — Why watsonx.data](/blog/mas-watsonx-data-01-why-open-lakehouse)** · 16 minutes
+
+The IBM-native case, built the same way Part 1 of the Databricks series is: name the native ceiling, then show why an open Iceberg lakehouse with fit-for-purpose engines and one-vendor governance closes it for an IBM-standardized shop.
+
+**You learn:** the same "do we actually need this" diagnostic, applied before an IBM purchase instead of a Databricks one; how Apache Iceberg's open format differs architecturally from Delta Lake's runtime coupling to Photon; how the MAS AI Service already bridges Maximo into watsonx.ai, and why that matters for adoption cost; and where this series explicitly hands off to MAS-DATABRICKS for shops that are not IBM-standardized.
+
+### Part 2: Getting Maximo Data into watsonx.data
+
+**[Read Part 2 — Getting Maximo Data In](/blog/mas-watsonx-data-02-data-extraction)** · 17 minutes
+
+The extraction architecture question, answered for watsonx.data specifically: MIF REST/JSON over OSLC, the Kafka source connector, and MAS 9.1's asynchronous bulk export — plus why Cloud Pak for Data is the fabric that makes any of them practical at scale.
+
+**You learn:** how MIF's synonym-domain internal values matter for ML feature stability; the exact Cloud Pak for Data Presto connection parameters (port 443, engine port 8443); why a standalone Manage install only needs the Db2 Warehouse operator while cross-suite watsonx integration needs full CPD; and the named bronze-layer WORKORDER columns and suggested extraction frequencies this series works from throughout.
+
+### Part 3: The Iceberg Medallion
+
+**[Read Part 3 — The Iceberg Medallion](/blog/mas-watsonx-data-03-iceberg-medallion)** · 18 minutes
+
+Bronze, silver, gold — mapped table by table onto real Maximo objects on Apache Iceberg, with the ACID, schema-evolution, and time-travel mechanics that make the gold layer trustworthy enough for an executive dashboard.
+
+**You learn:** the full `ASSET_DIM`, `WORKORDER_FACT`, `FAILURE_FACT`, `MEASUREMENT_FACT` silver-layer conformed entities and their synonym-decoded standardized keys; how Iceberg's schema evolution absorbs a Maximo attribute change without breaking downstream Spark jobs; the bucket-level-versus-table-level registration distinction between Iceberg and Delta/Hudi tables; and how the `Sync metadata` feature's three modes keep external changes reconciled.
+
+### Part 4: Fit-for-Purpose Engines
+
+**[Read Part 4 — Fit-for-Purpose Engines](/blog/mas-watsonx-data-04-fit-for-purpose-engines)** · 16 minutes
+
+IBM's core design premise — no single query engine is optimal for every workload — worked through for EAM specifically: Presto for interactive analyst queries and federation, Presto C++/Velox for cost-sensitive high-performance SQL, Spark for ETL/ML/table maintenance, and Db2 Warehouse/Netezza for high-concurrency BI.
+
+**You learn:** the Presto coordinator/worker/resource-manager architecture and when federation beats a full extract; what Presto C++ v0.286 and the IBM query optimizer actually change versus classic Presto; which EAM workloads (silver/gold transformations, feature engineering, reliability KPIs) route to which engine and why; and how Resource Unit (RU) metering — USD 1/RU, per-second, one-minute minimum — turns engine choice into a real cost lever.
+
+### Part 5: From Lakehouse to Action
+
+**[Read Part 5 — From Lakehouse to Action](/blog/mas-watsonx-data-05-ai-rag-closed-loop)** · 18 minutes
+
+Where the Iceberg lakehouse stops being a reporting layer and starts producing decisions: watsonx.ai custom ML over gold-layer features, AutoAI for RAG, the Milvus/OpenSearch/OpenRAG stack for maintenance-manual and work-order-text retrieval, and three concrete closed-loop write-back patterns into Maximo.
+
+**You learn:** how to train and serve a custom PdM or RUL model on watsonx.ai where Maximo Predict's fixed catalog stops; how Docling converts OEM manuals and SOPs into an AI-ready RAG corpus for a troubleshooting agent; the three write-back methods — AI Service-mediated, direct REST (`POST /os/mxwo`, `PUT /os/mxitem`), and watsonx Orchestrate via the `IBM/maximo-wxo-integration` reference repo; and why "use both Predict and custom watsonx.ai models" is usually the right answer, not a replacement decision.
+
+### Part 6: watsonx.data vs. Databricks vs. MAS Native — Choosing the IBM-Native Path (and Governing It)
+
+**[Read Part 6 — Choosing and Governing the IBM-Native Path](/blog/mas-watsonx-data-06-vs-databricks-governance)** · 17 minutes (Series Finale)
+
+The decision framework this whole series has been building toward, paired with the governance layer that turns any Iceberg lakehouse from a data-sprawl liability into an auditable enterprise asset.
+
+**You learn:** the full, caveated head-to-head — Iceberg vs. Delta, Presto C++/Velox vs. Photon, IBM Knowledge Catalog vs. Unity Catalog, Milvus/OpenRAG vs. Databricks' vector integrations — with IBM's internal benchmarks clearly labeled as such; a scored decision matrix for choosing watsonx.data, Databricks, or staying MAS-native a while longer; how IBM Knowledge Catalog's row/column policies map onto Maximo's site/org security groups; and where labor transaction data (LABTRANS) carries PII that needs IKC masking before an auditor ever asks.
+
+---
+
+## 🧭 Recommended Reading Paths
+
+### Data Engineer / Architect
+**"I own the pipeline and the platform."**
+Read **Part 2 → Part 3 → Part 4.** Start with extraction patterns, then the Iceberg medallion mapping, then the engine strategy — the three parts that determine whether the platform is buildable and cost-controlled.
+
+### Reliability / Maintenance Leader
+**"I own uptime, cost, and the maintenance budget."**
+Read **Part 1 → Part 5 → Part 6.** Start with the honest case for adding a lakehouse, then the concrete AI/RAG use cases, then the decision framework — skip the engine plumbing unless you need it.
+
+### IT / Platform Owner
+**"I own the license decision and the vendor roadmap."**
+Read **Part 1 → Part 6 → Part 4.** Start with the ceiling MAS 9 native analytics actually has, then the watsonx.data-versus-Databricks-versus-native decision in Part 6, then the RU cost model in Part 4.
+
+### Data Scientist / ML Engineer
+**"I own the models."**
+Read **Part 3 → Part 5 → Part 4.** Start with what the gold layer actually contains, then watsonx.ai model training and RAG, then the engine choices that determine how fast your features actually materialize.
+
+---
+
+## 💡 Key Themes Across the Series
+
+**MAS 9 native analytics is genuinely good — and genuinely bounded, regardless of which lakehouse you add.** Cognos, Health, Predict, Monitor, and the AI Service are real capabilities worth using fully before any lakehouse conversation starts. Every part in this series names their specific ceiling instead of hand-waving past them, because a watsonx.data build that duplicates entitled MAS capability overspends exactly the way a redundant Databricks build does.
+
+**Open table format is the specific IBM argument — and this series shows the syntax, not just the slogan.** Apache Iceberg's ACID transactions, schema evolution, and time travel are demonstrated with real Db2, Presto, and Spark statements throughout Parts 2 through 4, not asserted as a feature-list bullet.
+
+**Extraction method depends on your deployment model, not preference.** MIF REST/JSON is the default; Kafka suits near-real-time needs; bulk export handles large periodic pulls; direct DB extraction only exists for self-managed MAS because SaaS MAS seals its database — identical constraints to the Databricks series, because the constraint comes from MAS, not the lakehouse vendor.
+
+**Closed-loop is what separates a working lakehouse from an expensive reporting layer, on either platform.** Every AI use case in Part 5 should end with a REST or Orchestrate call back into Maximo — a work order, a service request, an updated reorder point — not just a chart nobody acts on.
+
+**IBM's own benchmark claims are labeled as IBM-internal every time this series cites them.** The Photon price/performance comparison, the "up to 50%" data-warehouse cost reduction, and the "less than 60% the cost" claim are all IBM's own published figures on IBM-chosen workloads (100 TB TPC-DS). This series treats them as directional inputs to your own proof-of-concept, never as independently verified fact.
+
+---
+
+## 🧰 How to Use This Series
+
+- **Scoping a lakehouse business case?** Use Part 1's diagnostic to separate "we need a lakehouse" from "we're under-using MAS Health and Predict" before either an IBM or a Databricks dollar is committed.
+- **Already evaluating Databricks and want the IBM-native alternative on the table?** Read this index alongside the MAS-DATABRICKS index — both open from the identical MAS 9 ceiling table, so the platform comparison starts from the same baseline.
+- **Building the actual pipeline?** Parts 2 through 4 give you the extraction method, the Iceberg medallion structure, and the engine strategy in enough table-level detail to start a Phase 1 build.
+- **Justifying the spend to a maintenance VP?** Part 5's closed-loop use cases connect directly to the reliability and cost metrics that VP already tracks in MAS-RELIABILITY and MAS-HEALTH reporting.
+- **Preparing for a data governance or compliance review?** Part 6's IBM Knowledge Catalog mapping is written to survive an auditor's question about Maximo-derived data the same way the MAS-DATABRICKS series' Unity Catalog mapping does for that platform.
+
+---
+
+## References
+
+- [IBM watsonx.data — open data lakehouse product page](https://www.ibm.com/products/watsonx-data)
+- [watsonx.data FAQs — architecture, engines, storage (IBM Cloud Docs)](https://cloud.ibm.com/docs/watsonxdata?topic=watsonxdata-faqs)
+- [IBM watsonx.data — Superior price-performance and enhanced data management announcement](https://www.ibm.com/new/announcements/delivering-superior-price-performance-and-enhanced-data-management-for-ai-with-ibm-watsonx-data)
+- [IBM Documentation — Db2 Warehouse creating Iceberg tables in watsonx.data](https://www.ibm.com/docs/en/db2-warehouse?topic=watsonxdata-creating-iceberg-tables-in)
+- [IBM Documentation — MAS AI Service overview](https://www.ibm.com/docs/en/masv-and-l/cd?topic=ons-ai-service)
+- [IBM/maximo-wxo-integration — Maximo AI Assistant reference repository (GitHub)](https://github.com/IBM/maximo-wxo-integration)
+
+---
+
+## Start the Series
+
+Begin with **[Part 1 — Why watsonx.data: IBM's Open Lakehouse Answer for Maximo](/blog/mas-watsonx-data-01-why-open-lakehouse)**, or jump to the part your role needs using the reading paths above. Evaluating the non-IBM path in parallel? Start the companion **[MAS-DATABRICKS series](/blog/mas-databricks-series-index)** at its own Part 1 for the identical ceiling, answered with Databricks instead.
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*
+
+<!--
+Editorial note for human review: This index post was drafted before Parts 1-6 exist (per queue
+brief, mirroring how the MAS-DATABRICKS index was drafted before its own parts). Part links above
+point to the planned slugs in automation/off-hours/queue.json (watsonx-data-01 through
+watsonx-data-06); they will 404 until those posts land. Source: knowledge_base/DOC13_IBM_WATSONX_
+DATA_MAXIMO_ROADMAP.md. Per DOC13's own provenance notes: the "< 60% the cost of Photon" and "up to
+50% data warehouse cost reduction" figures are IBM-internal benchmarks (100 TB TPC-DS), not
+independently verified — carried into this post with that caveat intact rather than as settled
+fact. DOC13 also flags that some MAS-9.1-specific "watsonx.data reference architecture" messaging
+traces partly to community channels rather than primary IBM docs, and that Granite-model specifics
+and watsonx.governance depth were thin in its research base (see companion DOC14) — worth a fact
+check pass against current IBM documentation before this series moves out of draft.
+-->
