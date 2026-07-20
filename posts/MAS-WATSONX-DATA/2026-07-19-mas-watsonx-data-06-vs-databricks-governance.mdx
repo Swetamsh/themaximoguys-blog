@@ -1,0 +1,401 @@
+---
+title: "watsonx.data vs. Databricks vs. MAS Native: Choosing the IBM-Native Path (and Governing It)"
+description: "The series finale: a caveated head-to-head — Iceberg vs. Delta, Presto C++/Velox vs. Photon, IBM Knowledge Catalog vs. Unity Catalog, Milvus/OpenRAG vs. Databricks vector search — plus how IKC and Apache Ranger govern Maximo-derived data, LABTRANS PII masking, and watsonx.governance lineage."
+date: "2026-07-19"
+slug: "mas-watsonx-data-06-vs-databricks-governance"
+tags: ["Maximo", "MAS 9", "watsonx.data", "Databricks", "IBM Knowledge Catalog", "Apache Iceberg", "Data Governance", "watsonx.governance", "PII"]
+draft: true
+tier: "developer"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-watsonx-data-06-vs-databricks-governance.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Is watsonx.data actually cheaper than Databricks, or is that just IBM marketing?"
+    answer: "It's a real number from a real benchmark, but it's IBM's own benchmark, and that distinction matters more than the headline figure. IBM's published claim is that Presto C++/Velox on watsonx.data delivers equal query runtime at less than 60% of the cost of Databricks' Photon engine, derived from a 100 TB TPC-DS workload. Dig into the infrastructure and the comparison gets murkier: IBM's test ran on 1 master plus 75 worker nodes (1,009 vCPUs, 18 TB memory) on newer Intel Sapphire Rapids hardware, benchmarked against Databricks' publicly published 100 TB TPC-DS results from 2021 on 1 master plus 256 worker nodes (2,112 vCPUs, 16.1 TB memory) — different node counts, different hardware generations, five years apart. That's not evidence the claim is false; it's evidence the comparison isn't apples-to-apples, and IBM's own documentation doesn't hide the setup details, which is more transparency than most vendor benchmarks offer. Treat '<60% the cost' as a credible directional signal that Presto C++/Velox is genuinely competitive, not as a number you can put in a business case without running your own proof-of-concept on your own workload."
+  - question: "Do we need Unity Catalog AND IBM Knowledge Catalog if we're running both watsonx.data and Databricks?"
+    answer: "In a genuine hybrid architecture, yes — and this is the least-discussed cost of running both platforms rather than picking one. Unity Catalog governs what a query engine can see in Databricks' Delta tables; IBM Knowledge Catalog (or Apache Ranger, via watsonx.data's Common Policy Gateway) governs what a query engine can see in watsonx.data's Iceberg tables. Neither catalog is aware of the other's policies by default. Zero-copy federation — watsonx.data reading Unity Catalog via the Iceberg REST Catalog API, or Presto querying Uniform-enabled Delta tables — moves data across the boundary but does not carry governance across it; a row filter defined in Unity Catalog does not automatically re-apply when the same data is queried through watsonx.data's Presto engine. Organizations genuinely running both platforms need someone accountable for reconciling the two policy sets by hand, table by table, which is real, ongoing operational overhead most hybrid-architecture proposals underestimate until the first audit asks 'is the masking rule on this federated table the same on both sides?'"
+  - question: "Should IBM Knowledge Catalog or Apache Ranger be the policy engine for a Maximo-fed watsonx.data instance?"
+    answer: "The honest answer is 'it depends on what your organization already runs, not which one is objectively better,' because watsonx.data's Common Policy Gateway (CPG) is architected specifically so this isn't a one-way door — it's a plugin interface that lets IBM Knowledge Catalog, Apache Ranger, or Collibra all serve as the policy engine, decoupling the governance decision from the lakehouse decision. IBM Knowledge Catalog is the tighter native integration: it enforces data policies at query execution across every engine reading the same Iceberg tables, ties directly into watsonx.governance's model lineage, and is the path with the least new tooling for a shop with no existing Ranger footprint. Apache Ranger is the right call when your organization already runs Ranger for Hadoop-era or open-source data platforms — reusing that policy investment avoids standing up a second, IBM-specific governance tool — but go in aware of Ranger's documented gaps for this use case, most notably that its column masking does not support integer or bigint data types, which matters directly for numeric Maximo fields like `reorderpoint`, `laborcost`, or a failure-probability score that a masking policy might need to obscure. For a shop with zero existing governance tooling and Maximo as the primary source, IKC is the lower-friction default; for a shop already standardized on Ranger elsewhere, extend it rather than introduce a second policy engine, and test the integer/bigint masking gap against your actual gold tables before committing."
+  - question: "Where does PII actually show up in a Maximo-fed lakehouse, and is LABTRANS the only table to worry about?"
+    answer: "LABTRANS is the sharpest case because it's the one table every Maximo shop has that carries direct compensation data — labor code, hours, and the pay rate used to calculate actual labor cost on a work order — sitting inside what otherwise looks like routine maintenance history, which is exactly the kind of table that gets promoted to a gold-layer cost dashboard without a second thought. It is not the only one, though. Work order long descriptions and failure narratives are free text, and technicians occasionally write a name, a phone number, or an incident detail into a field nobody classified as PII when the object structure was designed. Facilities and healthcare deployments carry occupant- or patient-adjacent location data through custom asset fields that look like ordinary location hierarchy to anyone who hasn't read the field definitions closely. The practical rule this series keeps coming back to: any table joining LABTRANS, or carrying a free-text long-description column, needs a PII review before it's promoted past the silver layer — a gold table built for a BI dashboard should already have compensation and free-text fields masked, aggregated, or dropped, not reviewed after a masking policy request arrives from legal."
+  - question: "If we're already IBM-standardized, is watsonx.data automatically the right call, or could staying MAS-native still be the answer?"
+    answer: "IBM-standardization is a real, legitimate tiebreaker once you've cleared the bar for needing a lakehouse at all — but it's the second question, not the first, and skipping straight to 'which lakehouse' is the most common wasted-spend pattern this whole series has named repeatedly. Part 1's diagnostic still applies here at the finale: if the actual pain is Cognos's three-author-seat limit, Predict's fixed model catalog, or Monitor's retention window, the fix might be using more of what MAS 9 already licenses, not standing up a second platform at all. Once you've genuinely hit that ceiling — cross-domain joins MAS was never built for, a custom ML model Predict's catalog doesn't cover, self-service BI for more than a handful of named authors — then yes, an IBM-standardized shop (Maximo, Cognos, watsonx.ai via the MAS AI Service, Red Hat OpenShift) gets real, quantifiable value from watsonx.data reusing that footprint: one support contract, one identity model, one governance tool instead of two. The decision framework later in this post scores that tradeoff explicitly rather than assuming the IBM answer wins by default."
+keyTakeaways:
+  - "Iceberg vs. Delta and Presto C++/Velox vs. Photon aren't a strictly-better-strictly-worse comparison — Iceberg trades some ecosystem maturity for genuine multi-engine openness, and IBM's '<60% the cost of Photon' claim is a credible but IBM-run benchmark on infrastructure that doesn't fully match Databricks' own published test, worth validating in your own proof-of-concept before it goes in a business case"
+  - "IBM Knowledge Catalog and Apache Ranger both plug into watsonx.data through the Common Policy Gateway, which decouples the lakehouse choice from the governance-tool choice — pick IKC as the lower-friction native default, or extend an existing Ranger footprint, but know Ranger's column masking doesn't support integer/bigint types before you rely on it for numeric Maximo fields"
+  - "Maximo's Security Groups model — Sites, Applications, Object Structures, Storerooms/Labor/GL Components, and the Data Restrictions tab's conditional expressions — maps directly onto IKC/Ranger row and column policies the same way it maps onto Unity Catalog, just implemented as data protection rules instead of SQL row filters"
+  - "LABTRANS pay-rate data is the sharpest PII case in a Maximo-fed lakehouse, and watsonx.data's three masking methods — Redact, Substitute, Obfuscate — applied once in the catalog enforce consistently whether the query runs through Presto, Spark, or a connected Db2 Warehouse instance"
+  - "The decision isn't watsonx.data-versus-Databricks in the abstract — it's watsonx.data when you're IBM-standardized and value one-vendor governance, Databricks when you need the deepest managed-MLOps maturity or you're already invested in that runtime, and staying MAS-native when the real gap is under-used entitlement, not a missing lakehouse — this closing framework scores all three honestly"
+series:
+  name: "MAS WATSONX-DATA"
+  part: 6
+  total: 6
+tldr: "The series finale answers the question every prior part deferred to here: watsonx.data, Databricks, or neither? This post runs the full head-to-head with named tradeoffs, not a sales pitch — Apache Iceberg vs. Delta Lake's table-format bet, Presto C++/Velox vs. Photon's execution-engine bet (including the honest caveats behind IBM's '<60% the cost' benchmark), IBM Knowledge Catalog vs. Unity Catalog as governance layers, and Milvus/OpenRAG vs. Databricks' vector search for RAG. It closes with a scored decision framework for choosing watsonx.data, Databricks, or staying MAS-native a while longer, then pivots to governance: how IKC and Apache Ranger (both pluggable through watsonx.data's Common Policy Gateway) map Maximo's Security Groups and Data Restrictions onto row and column policies, a worked LABTRANS pay-rate masking example, and how watsonx.governance's lineage and AI Factsheets close the loop on every model and RAG pipeline Part 5 described."
+seoTitle: "watsonx.data vs. Databricks vs. MAS Native — Decision Guide"
+seoDescription: "Iceberg vs. Delta, Presto C++ vs. Photon, IBM Knowledge Catalog vs. Unity Catalog. A scored decision framework plus LABTRANS PII masking and governance."
+targetQuestions:
+  - "Should I choose watsonx.data, Databricks, or stay on MAS-native analytics?"
+  - "How does Apache Iceberg compare to Delta Lake for a Maximo lakehouse?"
+  - "What's the real difference between Presto C++/Velox and Databricks Photon?"
+  - "How does IBM Knowledge Catalog govern Maximo data compared to Unity Catalog?"
+  - "How do you mask PII in LABTRANS labor transaction data inside watsonx.data?"
+semanticKeywords:
+  - "watsonx.data vs Databricks decision framework"
+  - "Apache Iceberg vs Delta Lake comparison"
+  - "Presto C++ Velox vs Databricks Photon benchmark"
+  - "IBM Knowledge Catalog vs Unity Catalog"
+  - "watsonx.data Common Policy Gateway Apache Ranger"
+  - "LABTRANS PII masking watsonx.data"
+  - "data protection rules Redact Substitute Obfuscate"
+  - "watsonx.governance AI Factsheets lineage"
+  - "Maximo Security Groups Data Restrictions mapping"
+  - "MAS native analytics ceiling lakehouse decision"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 3 of this series — the Iceberg medallion (ASSET_DIM, WORKORDER_FACT, FAILURE_FACT, MEASUREMENT_FACT) this post applies governance policies to"
+  - "Part 5 of this series — the watsonx.ai, RAG, and closed-loop patterns whose outputs watsonx.governance tracks here"
+  - "Helpful but not required: the MAS-DATABRICKS series, especially its own governance finale, for the Unity Catalog side of this comparison"
+speakableSections:
+  - "The Question This Post Actually Answers"
+  - "watsonx.data vs. Databricks: The Honest Head-to-Head"
+  - "The Decision Framework"
+clusterSlugs:
+  - "mas-watsonx-data-series-index"
+  - "mas-watsonx-data-05-ai-rag-closed-loop"
+relatedSlugs:
+  - "mas-watsonx-data-series-index"
+  - "mas-watsonx-data-05-ai-rag-closed-loop"
+  - "mas-databricks-06-governance-security"
+  - "mas-databricks-series-index"
+---
+
+# watsonx.data vs. Databricks vs. MAS Native: Choosing the IBM-Native Path (and Governing It)
+
+<aside>
+
+🎯 **Who this is for:** IT and platform owners weighing watsonx.data against Databricks (or against doing neither), architects who need a defensible, caveated comparison instead of a vendor slide, and governance and compliance leads who need to know exactly how Maximo's own security model carries — or doesn't — into an Iceberg lakehouse.
+
+</aside>
+
+**Series:** Part 6 of 6 (Series Finale) — *MAS 9 + IBM watsonx.data: Building the Maximo Open Lakehouse* | **Read time:** 19 minutes
+
+---
+
+## 📖 The Question This Post Actually Answers
+
+Five parts in, this series has made an IBM-native case: an open Iceberg lakehouse, fit-for-purpose engines that share one copy of the data, and watsonx.ai turning Gold-layer features into predictions, RAG answers, and Maximo write-backs. None of that is worth much without an honest answer to the question every one of those parts deferred: **why watsonx.data instead of Databricks, and how do you actually govern either one once Maximo's own security model stops traveling with the data?**
+
+This post answers both halves. The first half is the head-to-head this series' index promised from Part 1 — Apache Iceberg against Delta Lake, Presto C++/Velox against Photon, IBM Knowledge Catalog against Unity Catalog, Milvus/OpenRAG against Databricks' vector search — with IBM's own benchmark claims labeled as exactly that, IBM's own benchmark claims, every time they come up. The second half is the governance work an IBM-native choice still owes you: mapping Maximo's Security Groups and Data Restrictions onto IKC or Apache Ranger policies, a worked LABTRANS masking example, and how watsonx.governance closes the loop on the models and RAG pipelines Part 5 built.
+
+<aside>
+
+💡 **Key insight:** A platform comparison that only compares features is marketing with extra steps. This one names where IBM's numbers come from, where the benchmarks aren't apples-to-apples, and where "it depends on what you already run" is the real answer — because that's what actually survives a procurement review.
+
+</aside>
+
+---
+
+## ⚖️ watsonx.data vs. Databricks: The Honest Head-to-Head
+
+### Apache Iceberg vs. Delta Lake
+
+Both are open table formats solving the same underlying problem — ACID transactions, schema evolution, and time travel on top of plain Parquet files — and both are genuinely open-source, which makes this less of an "open vs. closed" argument than marketing on either side sometimes implies. The real difference is architectural posture. **watsonx.data standardizes on Apache Iceberg** as its primary, default table format, and every fit-for-purpose engine in Part 4 — Presto, Presto C++/Velox, Spark, Db2 Warehouse, Netezza — reads the same Iceberg tables without a copy or a translation layer. **Databricks pairs Delta Lake with Photon**, its own proprietary vectorized execution engine; Delta itself is an open format, but the fastest, most-optimized path through it runs on Databricks' runtime specifically.
+
+Neither format locks you out of the other entirely. watsonx.data can zero-copy federate to Databricks' Unity Catalog, and Presto can query Uniform-enabled Delta tables through the Iceberg REST Catalog API — Delta Lake's Universal Format (Uniform) writes Iceberg-compatible metadata alongside the native Delta log specifically to enable this. A hybrid "Delta in Databricks, Iceberg in watsonx.data" architecture is technically feasible for an organization mid-migration between the two, but it is not automatic: every governance policy has to be reconciled across both catalogs by hand, a cost the FAQ above names directly.
+
+| Dimension | Apache Iceberg (watsonx.data) | Delta Lake (Databricks) |
+|---|---|---|
+| Governing project | Apache Software Foundation, multi-vendor contributors | Linux Foundation, Databricks-led |
+| Multi-engine reads | Native across Presto, Spark, Db2, Netezza, and external engines | Native in Databricks; cross-engine via Uniform/Delta Sharing |
+| Runtime coupling | Table format decoupled from any one execution engine | Delta + Photon is the fastest path; other engines read Delta but not at Photon speed |
+| Time travel / snapshots | Iceberg snapshot isolation | Delta transaction log versioning |
+| Maximo-relevant win | A WORKORDER attribute change absorbs cleanly across every reading engine without a per-engine schema fix | Deep, mature integration with Databricks' own MLflow/Mosaic AI tooling |
+
+### Presto C++/Velox vs. Photon
+
+This is the execution-engine half of the same bet, and it's where IBM's headline cost claim lives. **Presto C++**, built on the open-source **Velox** library (a C++ native acceleration layer designed to be composable across compute engines — Meta and IBM are both contributors), is Presto's move from a JVM-based engine to native code, chasing the same 3-4x performance ceiling that Photon and Apache DataFusion are chasing from their own starting points. **Photon** is Databricks' proprietary vectorized engine, tightly integrated with Delta and the rest of the Databricks runtime.
+
+IBM's own published benchmark states Presto C++/Velox delivers equal query runtime at **less than 60% the cost** of Photon, based on a 100 TB TPC-DS workload. Read the infrastructure details before repeating that number in a business case: IBM's test ran Presto C++ v0.286 on 1 master plus 75 worker nodes (1,009 vCPUs, 18 TB memory) on newer Intel Sapphire Rapids hardware; the Databricks side of the comparison is Databricks' own **publicly published 2021 100 TB TPC-DS results** on 1 master plus 256 worker nodes (2,112 vCPUs, 16.1 TB memory) — a different node count, a different hardware generation, five years apart. That gap doesn't mean the claim is wrong; it means it's an IBM-run comparison against a public but dated baseline, not a live, symmetric bake-off, and IBM's own documentation discloses the setup rather than hiding it.
+
+```
+IBM'S BENCHMARK SETUP                          DATABRICKS' PUBLISHED BASELINE
+─────────────────────────────                  ──────────────────────────────
+Presto C++ v0.286                               Photon (2021 published results)
+1 master + 75 workers                           1 master + 256 workers
+1,009 vCPUs / 18 TB memory                      2,112 vCPUs / 16.1 TB memory
+Intel Sapphire Rapids (current-gen)             2021-era hardware baseline
+100 TB TPC-DS                                   100 TB TPC-DS
+                    ↓                                        ↓
+        "< 60% the cost of Photon at equal runtime" — IBM's own framing
+        Directionally credible. Not a symmetric, independently-run bake-off.
+```
+
+| Dimension | Presto C++ / Velox | Photon |
+|---|---|---|
+| Ownership | Open-source (PrestoDB Foundation, IBM/Meta contributors) | Proprietary, Databricks-only |
+| Target workload | Interactive SQL, cost-sensitive high-performance analytics | Databricks-native SQL and DataFrame workloads |
+| Runs on | Any watsonx.data-attached engine over Iceberg | Databricks runtime over Delta |
+| IBM's cost claim | "<60% the cost of Photon at equal runtime" (IBM benchmark, 100 TB TPC-DS) | — |
+| Caveat | Benchmarked against Databricks' own dated public results, not a live symmetric test | Databricks' own published TPC-DS baseline is from 2021 |
+
+<aside>
+
+💡 **Key insight:** "IBM benchmarks say X" is not the same claim as "X is independently verified." This series has repeated that caveat in every part that touches the Presto C++/Photon comparison, and it's worth repeating one final time at the finale: run your own proof-of-concept on your own query mix before either number goes in front of a budget committee.
+
+</aside>
+
+### IBM Knowledge Catalog vs. Unity Catalog
+
+Governance is the dimension where the two platforms' philosophies diverge most visibly. **Unity Catalog** is Databricks-centric — a single, deeply integrated governance layer built specifically for the Databricks runtime, with row filters and column masks implemented as SQL user-defined functions bound to a table. **watsonx.data** takes a pluggable stance: its **Common Policy Gateway (CPG)** is a lightweight, downloadable interface that lets **IBM Knowledge Catalog, Apache Ranger, or Collibra** all serve as the policy engine, selectable per deployment rather than fixed to one vendor's tool. When IKC is the selected engine, it governs data across every Presto catalog and enforces its policies at query execution time, regardless of which fit-for-purpose engine issued the query.
+
+That flexibility comes with a decision to make, not a free pass. IKC ties natively into watsonx.governance's model lineage and is the lowest-friction default for a shop with no existing policy-engine investment. Apache Ranger is the right call for a shop already running it elsewhere — reusing that investment instead of introducing IBM-specific tooling — but Ranger's column masking has a documented gap: it does not support integer or bigint column types, which matters directly the moment a masking policy needs to touch a numeric Maximo field like `reorderpoint`, `laborcost`, or a Part 5 RUL model's failure-probability score.
+
+| Dimension | IBM Knowledge Catalog (or Ranger via CPG) | Unity Catalog |
+|---|---|---|
+| Architecture | Pluggable policy engine (IKC, Ranger, or Collibra) via Common Policy Gateway | Single, native Databricks-integrated catalog |
+| Enforcement point | At query execution, consistently across Presto, Spark, Db2 | At query execution, within the Databricks runtime |
+| Masking mechanism | Data protection rules: Redact, Substitute, Obfuscate | Row filters and column masks as SQL UDFs |
+| Vendor flexibility | Bring your own policy engine, avoid lock-in | Databricks-native by design |
+| AI governance tie-in | Native link to watsonx.governance (lineage, AI Factsheets) | Native link to Databricks' Mosaic AI governance |
+| Known limitation | Ranger column masking doesn't support integer/bigint types | Row filter/column mask logic must be hand-written per table (no built-in OR-combination rule) |
+
+### Milvus/OpenRAG vs. Databricks Vector Search
+
+Part 5 covered watsonx.data's RAG stack in depth; the comparison worth naming here is the vector-retrieval layer specifically. **watsonx.data's embedded Milvus** vector database — built on FAISS, ANNOY, and HNSW-family libraries — is designed for similarity search across datasets running into the billions of vectors, paired with **OpenSearch** for hybrid keyword-plus-semantic retrieval and **OpenRAG** (Docling + Langflow) for the document-conversion and orchestration layers Part 5 walked in detail. **Databricks Mosaic AI Vector Search** (formerly Databricks Vector Search) is built natively into the Databricks Data Intelligence Platform, uses HNSW for approximate nearest-neighbor search with an L2 distance metric, and — like watsonx.data's OpenSearch layer — supports hybrid keyword-plus-vector retrieval rather than pure vector similarity alone.
+
+Functionally, both stacks solve the same RAG-retrieval problem competently; the meaningful difference is integration surface, not raw capability. Milvus/OpenRAG is the natural choice when the rest of your pipeline already lives in watsonx.data and you want retrieval, governance, and the Iceberg tables under one platform; Mosaic AI Vector Search is the natural choice for a team already building on Databricks' MLflow and Unity-Catalog-governed feature store, where the vector index inherits the same access controls as everything else in the workspace.
+
+---
+
+## 🧭 The Decision Framework
+
+Collapsing the head-to-head into a call you can actually make. This is the same three-way framing Part 1 and the series index opened with, scored explicitly instead of left as a gut call.
+
+| Signal | Weight Toward |
+|---|---|
+| You're IBM-standardized (Maximo, Cognos, watsonx.ai via AI Service, Red Hat OpenShift) and want one support/licensing path | **watsonx.data** |
+| You want an open table format with no single-vendor runtime coupling for future flexibility | **watsonx.data** |
+| Cost control via engine choice (RU metering, right-sizing Presto vs. Presto C++ vs. Spark) matters more than raw peak throughput | **watsonx.data** |
+| Your RAG corpus is manuals + WO text and fits the Docling/Milvus/OpenRAG pattern | **watsonx.data** |
+| You need the deepest, most mature managed-MLOps ecosystem (MLflow, Mosaic AI, the widest third-party integration catalog) | **Databricks** |
+| You're already running production workloads on the Databricks runtime elsewhere in the business | **Databricks** |
+| Your data science team already has deep Photon/Spark-on-Databricks tuning expertise | **Databricks** |
+| The actual pain is Cognos's 3-author-seat limit, Predict's fixed catalog ceiling, or Monitor's retention window — not a missing lakehouse | **Stay MAS-native** |
+| You need Health scoring, Monitor real-time alerting, Predict quick-start models, or Assistant Q&A on Maximo-only data | **Stay MAS-native** |
+| Nobody on the team can commit to owning either platform's governance layer long-term | **Stay MAS-native, revisit later** |
+
+Score your own environment against this table honestly before a vendor conversation starts, not during one. Most mixed answers point toward watsonx.data specifically when the "IBM-standardized" and "cost control via engine choice" rows both hit — that combination is where an IBM-native shop's existing footprint does the most work for the least incremental spend.
+
+```
+              ┌─────────────────────────────────────┐
+              │   Have you hit a NAMED MAS 9 ceiling? │
+              └───────────────────┬───────────────────┘
+                        NO        │        YES
+                         ▼        │         ▼
+              ┌──────────────┐    │   ┌─────────────────────────┐
+              │ Stay MAS-native│   │   │ IBM-standardized shop?   │
+              │ (Part 1's      │   │   └──────────┬──────────────┘
+              │  diagnostic)   │   │      YES      │      NO
+              └──────────────┘    │       ▼        │       ▼
+                                  │  ┌──────────┐   │  ┌───────────────┐
+                                  │  │watsonx.data│  │  │ Databricks     │
+                                  │  │            │   │  │ runtime already │
+                                  │  └──────────┘   │  │ invested / need  │
+                                  │                 │  │ deepest MLOps    │
+                                  │                 │  └───────────────┘
+```
+
+<aside>
+
+💡 **Key insight:** "Which lakehouse" is the second question, always. The first question — asked identically at the top of this series' Part 1, the MAS-DATABRICKS series' Part 1, and again right here at the finale — is whether you've actually hit a named MAS 9 ceiling. Skipping that step is the single most common overspend pattern in lakehouse projects touching an EAM system, regardless of which platform gets picked next.
+
+</aside>
+
+---
+
+## 🔐 Governing the Lakehouse: Mapping Maximo Security to IKC and Ranger
+
+Everything above assumes the platform decision is made. None of it matters if the governance layer isn't built, because a lakehouse inherits nothing from Maximo's own authorization model by default — not automatically, not partially, not by any mechanism short of someone deliberately rebuilding it. The moment a `WORKORDER` record crosses the MIF REST extraction Part 2 built, the JSON payload carries field values. It does not carry the security group that restricted who could see them inside Manage.
+
+Maximo's own security model is built around **Security Groups**, configured with a specific sequence: authorize sites on the Sites tab, authorize applications and access types on the Applications tab, authorize object structure APIs for external sharing, authorize storeroom/labor/GL component access, and — the tab that matters most here — the **Data Restrictions tab**, where conditional expressions restrict access to objects, attributes, and collections per record (a documented example: an attribute restricted to be read-only whenever `:orgid = 'EAGLENA'`). When a user belongs to multiple security groups, Maximo's combination rule is an explicit **OR**: the union of what each group individually restricts applies to the combined authorization, not the intersection.
+
+| Maximo Security Groups Tab | What It Controls in Manage | IKC / Ranger Equivalent |
+|---|---|---|
+| **Sites** | Which sites/orgs a user or group can see records for | Data protection rule scoped to a `siteid`/`orgid` column, or a Ranger row-level policy keyed the same way |
+| **Applications** | Which applications and access types (read/save/delete) a user is granted | Catalog-level grants on the Presto catalog or schema exposing that data downstream |
+| **Object Structures** | Which object structure APIs external integrations can reach | Grants on the specific Iceberg tables/views a downstream system or BI tool is allowed to query |
+| **Storerooms / Labor / GL Components** | Sub-application access to inventory, labor, or general ledger data | Column-level data protection rules (masking) on the specific columns carrying that data |
+| **Data Restrictions (Expression Manager)** | Conditional expressions making an object/attribute read-only or hidden per record | IKC data protection rules (row/column) or Ranger row-level filters and column masking policies |
+| **OR-combination across multiple groups** | Union of restrictions applies when a user is in more than one group | No automatic combination rule in IKC/Ranger by default — each policy has to be written to account for overlapping group membership explicitly |
+
+That last row deserves the same caution the MAS-DATABRICKS series' governance finale gives Unity Catalog: this mapping is a starting vocabulary for translating a Maximo administrator's mental model into lakehouse terms, not a migration script. Maximo's Data Restrictions apply inside one system with one authorization model; a lakehouse aggregates Maximo data alongside ERP, weather, and sensor sources into flat Iceberg tables where "who can see this" has to be re-derived per column, not inherited from the source.
+
+<aside>
+
+💡 **Key insight:** watsonx.data's Common Policy Gateway is what makes this mapping portable — the same Data Restrictions vocabulary translates whether the policy engine on the other end is IKC, Ranger, or (per IBM's own framing) Collibra. Pick the engine based on what your organization already operates, not because one is architecturally superior for Maximo data specifically; none of the three has a Maximo-specific advantage here.
+
+</aside>
+
+---
+
+## 🎭 Worked Example: Masking LABTRANS Pay-Rate Data
+
+Taking the mapping from vocabulary to something you can actually configure, against the same tables this series has built throughout: `silver.WORKORDER_FACT` joins in labor data from `LABTRANS`, which means it carries hours worked and the pay-rate-derived labor cost per work order — routine maintenance history sitting next to genuine compensation data. A reliability analyst querying work order duration and count has no legitimate need to see the underlying pay-rate math.
+
+watsonx.data's IKC-backed data protection rules support three masking methods, applied once in the catalog and enforced consistently regardless of which engine issues the query — Presto, Spark, or a connected Db2 Warehouse instance all see the same masked result:
+
+| Masking Method | What It Does | Fits This Use Case When |
+|---|---|---|
+| **Redact** | Replaces every character with a fixed character (commonly `X`) | The value must be fully hidden, not just obscured — a raw pay rate for an analyst role with no compensation-viewing authorization |
+| **Substitute** | Replaces the value with data that doesn't match the original format | A downstream system needs *a* value in the field (for join compatibility) but never the real one |
+| **Obfuscate** | Replaces the value with a similarly-formatted but different value | Preserves realistic-looking data for testing/demo environments without exposing real figures |
+
+```sql
+-- Illustrative IKC data protection rule against watsonx.data's
+-- silver.WORKORDER_FACT, masking the LABTRANS-derived labor cost column
+-- for any role without the LABOR_COST_VIEWER classification.
+
+-- 1. Classify the sensitive column (done in IKC's catalog UI or API)
+--    Column: silver.WORKORDER_FACT.LABORCOST
+--    Data class: "Compensation Data"
+
+-- 2. Data protection rule (masking action)
+--    Criteria: Data Class = "Compensation Data"
+--    Method: Redact
+--    Exempt: role = LABOR_COST_VIEWER (planners, payroll integration service accounts)
+
+-- Enforcement is identical regardless of the querying engine:
+SELECT wonum, siteid, assetnum, status, laborcost
+FROM iceberg.silver.workorder_fact
+WHERE siteid = 'BEDFORD';
+
+-- Analyst without LABOR_COST_VIEWER sees:
+--   wonum   | siteid  | assetnum | status | laborcost
+--   WO-4471 | BEDFORD | P-4471   | INPRG  | XXXXXXXX
+
+-- Planner with LABOR_COST_VIEWER sees the real value unmasked.
+```
+
+The rule is defined once, against the column, in the catalog — not once per engine, not once per dashboard. That's the concrete payoff of IKC (or Ranger) governing "all data in Presto catalogs," as DOC13 frames it: a Cognos-replacement BI tool connecting through Db2 Warehouse, a data scientist's notebook querying through Spark, and an ad-hoc Presto SQL session all see the same masked `laborcost` column without three separate masking implementations to keep in sync.
+
+<aside>
+
+⚠️ **Common pitfall:** Masking a column doesn't retroactively protect data already copied into a gold-layer aggregate built before the rule existed. If `gold.maintenance_cost_summary` was built from unmasked `silver.WORKORDER_FACT` before a LABTRANS masking policy went live, that gold table needs to be rebuilt from the now-governed silver source, not assumed safe because the source column is masked going forward.
+
+</aside>
+
+---
+
+## 🧬 watsonx.governance: Closing the Loop on Every Model This Series Built
+
+Part 5 produced real artifacts: custom PdM/RUL models trained on Gold-layer features, RAG pipelines over maintenance manuals, and write-back automations creating work orders. Every one of those is exactly what **watsonx.governance** — IBM's "enterprise AI assurance layer," recognized as a Leader in the 2026 Gartner Magic Quadrant for AI Governance platforms — is built to track.
+
+- **Governance Graph** — a living map connecting AI assets to policies, risks, and regulatory requirements across environments, so a Part 5 RUL model isn't a standalone artifact nobody else can find.
+- **AI Factsheets** — IBM's own framing calls these "nutrition labels" for models: automatically logged creation data, training datasets, performance metrics, deployment context, lifecycle status, and version history, generated without a human manually maintaining a spreadsheet.
+- **Model inventory dashboard** — a consolidated view of every tracked asset, including third-party or open-weight models (relevant directly to Part 5's Granite-vs-gpt-oss-120b routing question, since both need to be inventoried regardless of which one is currently serving a feature).
+- **Watson OpenScale monitors** — accuracy and fairness tracking for classical ML (a custom RUL model), and PII/toxicity/groundedness guardrails for GenAI (the RAG troubleshooting agent Part 5 walked end to end), plus drift evaluation so a model trained on last year's failure patterns gets flagged before it silently degrades.
+- **OpenPages Model Risk Governance** — GRC workflows and risk-assessment scoring integrated with the Governance Graph, the piece that turns "we have a model" into "we can show a risk committee we assessed the model."
+
+**Maximo relevance, concretely:** every FMEA recommender, similarity classifier, and Assistant prompt AI Service already runs can be registered in watsonx.governance for Factsheet documentation and OpenScale monitoring; a custom Part 5 RUL model gets the same lineage trail back to the `MEASUREMENT_FACT` and `FAILURE_FACT` tables it trained against; and a RAG troubleshooting agent gets a guardrail ensuring it never recommends deferring safety-critical maintenance past a defined limit — the specific governance case a maintenance organization has to get right before trusting AI output next to live equipment.
+
+| Governance Layer | What It Covers | Answers Which Audit Question |
+|---|---|---|
+| **IKC / Ranger (data)** | Row/column policies on Iceberg tables — who can query what | "Who was authorized to see the data behind this score?" |
+| **watsonx.governance (AI)** | Model lineage, Factsheets, OpenScale drift/fairness/groundedness | "What model produced this score, on what data, and is it still valid?" |
+| **Closed-loop write-back (Part 5)** | The REST call or AI Service action that turned a score into a Maximo action | "What action did this score actually trigger, and who approved it?" |
+
+Stack all three and a lakehouse-derived recommendation is defensible end to end: provenance from IKC/Ranger's access logs, model validity from watsonx.governance's Factsheets and drift monitors, and the action itself from Part 5's write-back audit trail. Missing any one of the three is exactly the gap an auditor asking "who authorized this maintenance decision" will find first.
+
+---
+
+## 🗺️ Closing the Series: A Rollout Checklist
+
+Six parts in, the pattern that should feel repetitive by now is the point: name the native ceiling, extend past it deliberately, close the loop back into Maximo, govern what you built. A practical order for actually doing it:
+
+1. **Run Part 1's diagnostic before any platform conversation.** If the gap is under-used MAS 9 entitlement — Cognos seats, Predict's catalog, Monitor's retention window — fix that first; it's cheaper than any lakehouse.
+2. **Score the decision framework above honestly**, weighted by your actual IBM-standardization level and existing platform investments, not by which vendor pitched last.
+3. **Stand up IKC or Ranger governance in Phase 1, not Phase 5.** DOC13's own implementation roadmap places governance hardening in the foundation phase alongside the first Bronze extract — retrofitting masking after a gold table is already in three dashboards is materially harder than building it in from the start.
+4. **Run the LABTRANS PII review before the first silver-layer build**, not after a compliance request. Any table joining labor data or carrying free-text long descriptions gets the review before promotion to gold.
+5. **Register every Part 5 model and RAG pipeline in watsonx.governance as it's built**, not retroactively — Factsheets generated at creation time are complete; Factsheets backfilled months later rely on someone's memory of what training data was actually used.
+6. **Revisit the decision framework annually.** A "stay MAS-native" answer today is a data point, not a permanent conclusion — Predict's catalog grows, Cognos licensing changes, and the ceiling that didn't exist last year may exist now.
+
+<aside>
+
+💡 **Key insight:** The series' last word is the same as its first: a lakehouse — watsonx.data, Databricks, or anything else — earns its cost only past a real, nameable ceiling, and it only pays back when its output closes the loop back into a Maximo action a technician or planner actually sees. Everything in between — Iceberg vs. Delta, IKC vs. Unity Catalog, Milvus vs. Mosaic AI — is implementation detail in service of that one requirement.
+
+</aside>
+
+---
+
+## Key Takeaways
+
+- **Iceberg vs. Delta and Presto C++/Velox vs. Photon are legitimate, close competitions, not a rout** — Iceberg trades some Databricks-native tooling maturity for genuine multi-engine openness, and IBM's "<60% the cost of Photon" claim is credible but was benchmarked against Databricks' own dated public results on different infrastructure, not a live symmetric test.
+- **IBM Knowledge Catalog and Apache Ranger both plug into watsonx.data via the Common Policy Gateway** — pick based on existing tooling investment, not a claimed Maximo-specific advantage, and check Ranger's integer/bigint column-masking gap against your actual numeric fields before committing to it.
+- **Maximo's Security Groups tabs — Sites, Applications, Object Structures, Storerooms/Labor/GL, Data Restrictions — map directly onto IKC/Ranger row and column policies**, the same way they map onto Unity Catalog on the Databricks side, with data protection rules (Redact, Substitute, Obfuscate) as the concrete masking mechanism.
+- **LABTRANS pay-rate data is the sharpest PII case in a Maximo-fed lakehouse**, but free-text work order descriptions and custom asset fields carry the same risk — review any table joining LABTRANS or long-description columns before it's promoted past silver.
+- **The three-way decision — watsonx.data, Databricks, or stay MAS-native — should be scored, not assumed**, and watsonx.governance's Factsheets, lineage, and OpenScale monitors are what make every model and RAG pipeline this series built defensible in front of an auditor, not just impressive in a demo.
+
+---
+
+## References
+
+- [IBM watsonx.data — Superior price-performance and enhanced data management announcement](https://www.ibm.com/new/announcements/delivering-superior-price-performance-and-enhanced-data-management-for-ai-with-ibm-watsonx-data)
+- [Accelerating query performance with watsonx.data Presto C++ and Intel Sapphire Rapids on AWS — IBM](https://www.ibm.com/new/product-blog/accelerating-query-performance-with-watsonx-data-presto-c-and-intel-sapphire-rapid-processor-on-aws)
+- [Enabling Apache Ranger policy resources — IBM watsonx.data documentation](https://www.ibm.com/docs/en/watsonxdata/standard/2.0.x?topic=integrations-enabling-apache-ranger-policy-resources)
+- [Masking data (Watson Knowledge Catalog) — IBM Cloud Pak for Data as a Service documentation](https://dataplatform.cloud.ibm.com/docs/content/wsj/governance/masking-data.html)
+- [IBM watsonx.governance product page](https://www.ibm.com/products/watsonx-governance)
+- [IBM watsonx.data's integrated vector database — unify, prepare, and deliver your data for AI](https://www.ibm.com/new/announcements/ibm-watsonx-data-vector-database-ai-ready-data-management)
+- [What's new in Maximo Application Suite 9.1 — IBM Documentation](https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-whats-in-maximo-application-suite-91)
+- DOC13: IBM watsonx.data + Maximo Roadmap — §4.4 (Governance: IKC & watsonx.governance), §7.1-7.3 (Head-to-Head, Decision Framework, Complementary Architecture) (internal knowledge base, `knowledge_base/DOC13_IBM_WATSONX_DATA_MAXIMO_ROADMAP.md`)
+- DOC14: The IBM watsonx Platform: A Field Guide for Maximo Teams — §7 (watsonx.governance) (internal knowledge base, `knowledge_base/DOC14_IBM_WATSONX_PLATFORM_FIELD_GUIDE.md`)
+- Maximo Manage documentation — Creating security groups, Data Restrictions tab (internal knowledge base, `maximo_manage_Section_163_Creating_security_groups.md`, `maximo_manage_Section_165_About_this_task.md`)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 5 — From Lakehouse to Action](/blog/mas-watsonx-data-05-ai-rag-closed-loop) |
+| **Series Index:** | [MAS 9 + IBM watsonx.data: Building the Maximo Open Lakehouse](/blog/mas-watsonx-data-series-index) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | July 2026*
+
+<!--
+Editorial note for human review: Primary source was knowledge_base/DOC13_IBM_WATSONX_DATA_MAXIMO_ROADMAP.md
+§4.4 (Governance: IBM Knowledge Catalog & watsonx.governance, including the LABTRANS PII framing) and §7.1-7.3
+(the watsonx.data vs. Databricks head-to-head table, decision framework, and complementary-architecture diagram
+this post expands), plus knowledge_base/DOC14_IBM_WATSONX_PLATFORM_FIELD_GUIDE.md §7 (watsonx.governance: AI
+Factsheets, OpenScale, OpenPages, Governance Graph). SearchMaximo KB sweep (data restrictions, expression
+manager, security groups, PII across the Maximo documentation set at
+/root/TMG_RFP_DRAFTER/baseline/knowledge-base/ibm_userguides_markdown) found no direct watsonx.data/Iceberg/IKC/
+Ranger hits (expected — same watsonx.data-product-vs-Maximo-product-documentation gap Parts 3 and 4 found), but
+surfaced maximo_manage_Section_163_Creating_security_groups.md and _Section_165_About_this_task.md, the primary
+sources for the Security Groups tab sequence (Sites/Applications/Object Structures/Storerooms-Labor-GL/Data
+Restrictions/Users) this post's Maximo-to-IKC/Ranger mapping table is built from. Web verification round
+(2026-07-19, 8 searches) confirmed and materially extended DOC13's claims: the watsonx.data Common Policy Gateway
+(CPG) — a detail DOC13 did not carry — that makes IKC, Apache Ranger, and Collibra all pluggable policy engines
+rather than IKC being the only option; Ranger's documented column-masking limitation on integer/bigint types;
+the three watsonx.data masking methods (Redact, Substitute, Obfuscate) and that a masking rule defined once in
+the catalog enforces consistently across Presto, Spark, and Db2 Warehouse; the precise infrastructure specs
+behind IBM's Presto C++/Photon benchmark claim (1+75 nodes, Sapphire Rapids, vs. Databricks' own 2021-published
+1+256-node 100TB TPC-DS baseline) — the most significant finding of this research round, since DOC13 stated the
+"<60% the cost" claim without the underlying node/hardware-generation mismatch, which this post now flags
+explicitly as the honesty caveat the FAQ and engine-comparison section both lead with; the Milvus-vs-Mosaic-AI-
+Vector-Search architectural comparison (both HNSW-family, hybrid-search-capable, differing mainly in platform
+integration); and watsonx.governance's 2026 Gartner Magic Quadrant Leader recognition. The Maximo Security
+Groups → IKC/Ranger mapping table and the LABTRANS masking worked SQL example are original illustrative material
+assembled from the documented mechanism descriptions (IKC data protection rules, Maximo's Data Restrictions tab
+and OR-combination rule), not literal IBM-published examples — the same illustrative-example provenance pattern
+Part 5's write-back JSON examples and the MAS-DATABRICKS governance finale's row-filter SQL both used. The
+Common Policy Gateway detail and the Ranger integer/bigint limitation were not present in either DOC13 or DOC14
+and are carried into this post from the web verification round specifically because they materially change how
+a reader should evaluate the IKC-vs-Ranger choice DOC13's §4.4 only gestured at.
+-->
