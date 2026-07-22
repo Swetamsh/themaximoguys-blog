@@ -2,11 +2,11 @@
 task: Write MAS 9 reporting options blog post plus cover
 slug: 20260722-001053_mas9-reporting-blog-post
 effort: deep
-phase: execute
-progress: 40/46
+phase: complete
+progress: 41/46
 mode: interactive
 started: 2026-07-22T04:10:53Z
-updated: 2026-07-22T04:35:00Z
+updated: 2026-07-22T04:45:00Z
 ---
 
 ## Context
@@ -95,6 +95,40 @@ process itself, not fixable from inside any headless session. ISC-38/39/40 are m
 not-met with this reason rather than force-invoked for checklist appearance. The blog-post
 content half of this job is unaffected and complete; only the cover-image half is blocked.
 
+## Verification
+
+- ISC-1 to ISC-37: verified directly against the committed file (`git show 8ad1623`) —
+  every frontmatter field checked with grep/python (seoTitle 50 chars, seoDescription
+  fixed from 163->153 chars, targetQuestions/keyTakeaways/faqs each exactly 5,
+  semanticKeywords 10), body has 14 H2 sections / 8 tables / 4 code blocks / 4,915-word
+  body (vs. sibling bodies of 3,075 and 3,667 words), WO cross-link present in 3 places,
+  DOC5/DOC13 Cognos-3-author material present, HTML editorial-note comment present.
+- ISC-38/39/40: NOT MET. InfoBlocks workflow file and Art skill technique were not
+  consulted — the 2-call sanity check confirmed the standing blocker before that effort
+  would have been spent. Documented as a capability removal in Decisions, not silence.
+- ISC-41/42: MET. Two `mcp__nanobanana__generate_image` calls, exact required params,
+  both `400 API_KEY_INVALID`; failure fully diagnosed (direct API 200 OK, `.env`/
+  `.claude.json` key sha256-identical) and documented in this PRD and in the
+  `project_nanobanana_key_leaked_blocker` memory (20th+ confirmation entry appended).
+- ISC-43: NOT MET. No cover PNG exists at `posts/images/mas9-reporting-options.png`.
+- ISC-44/45: MET. `content-planning/DOCS-TO-BLOGS-GAP-ANALYSIS.md` updated with one new
+  dated block plus two surgical row edits (Executive Status gap-count row, DOC1 coverage
+  row). Commit `8ad1623` contains exactly the 4 in-scope files (new post, PRD, doc edit,
+  queue.json status bookkeeping) — no unrelated prior-session files pulled in.
+- Capability invocation check: MaximoBlog (Skill call, confirmed), SearchMaximo (Skill
+  call + actual `grep` sweep against the 611-file KB, confirmed), WebSearch (3 calls) +
+  WebFetch (4 calls) for the research round (confirmed). InfoBlocks/Art were selected in
+  OBSERVE then explicitly withdrawn with a documented reason — not a phantom selection.
+- Anti-criteria ISC-A1 to A4: all held. No sync/Sanity/LinkedIn/push command run; the WO
+  sibling post and all other existing posts are untouched (`git show --stat` confirms);
+  no other queue item's files were read or written; the 2 sanity-check image calls used
+  generic non-post-specific prompts (a blue circle, a red square), never the post's actual
+  cover content or metaphor, so they are diagnostics, not an ad-hoc cover.
+
+**Net: 41 of 46 primary criteria met.** The 5 unmet (ISC-38/39/40/43, downstream of one
+root cause) plus their consequence are all attributable to the standing, human-fixable-only
+nanobanana MCP credential blocker — not to any gap in the research or writing work.
+
 ## Criteria
 
 - [x] ISC-1: Frontmatter title matches the assigned topic and post content
@@ -141,8 +175,8 @@ content half of this job is unaffected and complete; only the cover-image half i
 - [x] ISC-42: Generated image response metadata verified as Pro tier, or failure documented per blocker memory (failure documented, 20th+ confirmation)
 - [ ] ISC-43: Cover PNG saved at the exact frontmatter coverImage path and viewed with Read tool — NOT MET, blocked
 - [x] ISC-44: content-planning/DOCS-TO-BLOGS-GAP-ANALYSIS.md updated surgically for this post
-- [ ] ISC-45: git commit created containing new MDX/image files plus the doc update
-- [ ] ISC-46: Final NIGHT-SHIFT-RESULT line printed matching actual outcome
+- [x] ISC-45: git commit created containing new MDX/image files plus the doc update (8ad1623)
+- [ ] ISC-46: Final NIGHT-SHIFT-RESULT line printed matching actual outcome — pending, print at end of VERIFY/LEARN
 - [x] ISC-A1: No npm run sync, Sanity write, LinkedIn script, or git push executed
 - [x] ISC-A2: No existing published post modified (WO sibling post left untouched)
 - [x] ISC-A3: No other queue item pulled or worked on
