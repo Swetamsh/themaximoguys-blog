@@ -1,6 +1,35 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-07-21 (night-shift job `covers-admin-b`: assigned to generate remaining MAS-ADMIN covers per the "NEW GAP DISCOVERED" note below. On-disk check found all 10 MAS-ADMIN covers (series index + Parts 1-9) already present in both `posts/MAS-ADMIN/images/` and `public/images/mas-admin/`, committed since `f7a7474` (2026-02-06) with Part 9 added later in `75e3453`. The 2026-07-20 PM full-repo scan that flagged MAS-ADMIN as a gap was mistaken — MAS-ADMIN is, and was, COVER-COMPLETE. No images generated, no post content touched. `covers-admin-a` (which also ran against this same non-existent gap and reported blocked-key failures) can be retired along with this item. MAS-CIVIL-INFRASTRUCTURE and MAS-PARTS-IDENTIFIER from that same scan were NOT re-verified by this job and should still be treated as open gaps pending their own check.)
+**Updated:** 2026-07-22 (night-shift job `single-mas9-reporting`: filled the last of DOC1's
+"optional single-post gaps" — drafted `posts/2026-07-22-mas9-reporting-options.mdx`,
+"Reporting Options in MAS 9: Cognos, BIRT, Dashboards, and Beyond" (draft, standalone,
+~4,900-word body, 14 sections, 8 tables, 4 code/config blocks). This is the platform-wide
+reporting landscape piece — a four-tier stack (BIRT / Operational Dashboard + KPI Manager /
+Cognos Analytics / Beyond via watsonx.data-Databricks) with a routing decision framework —
+explicitly distinct from and cross-linked to the existing WO-scoped
+`posts/MAS-WORK-ORDER-OPS/...-05-reporting-birt-to-kpi.mdx`, which already owns work-order
+report triage in detail. Research drew on DOC1 §5/§13 plus a SearchMaximo sweep of the
+611-file Maximo docs KB that found real config detail neither DOC1 nor the WO post carried —
+the MXCOGNOS system properties/end-point table, the COGNOSUSERS security group requirement,
+and KPI Manager's Select/Where/Calculation Type/Caution At/Alert At/Cron Task fields — plus
+a 5-source web verification round (IBM's Cognos-in-MAS and report-migration doc pages,
+Maximo Secrets' Manage Analytics and MAS 9.0 Operational Dashboard posts, a Maximo Minute
+LinkedIn piece on the MAS 9.1 KPI-to-Work-Queue drill-through, and an Interloc Solutions post
+on Cognos-on-CP4D) that added the 3-author/no-concurrent Cognos entitlement detail, the
+MAS 8.9->9.1 card-by-release timeline, and Cognos Assistant's natural-language dashboard
+authoring. One knowledge-base/web nuance (BIRT report-component carry-forward during a MAS
+version upgrade vs. the still-absent BIRT-to-Cognos conversion tool) is flagged in an HTML
+comment in the post for human review. Cover generation was attempted (2-call nanobanana Pro
+sanity check before any InfoBlocks prompt engineering, per standing guidance) and blocked by
+the SAME still-unrotated-in-headless-sessions `400 API_KEY_INVALID` error documented in the
+`project_nanobanana_key_leaked_blocker` memory — 20th+ confirmation, direct API 200 OK and
+`.env`/`.claude.json` keys sha256-identical, failure isolated to the MCP process. No image
+generated; `posts/images/mas9-reporting-options.png` does not yet exist. This closes the
+"DOC1 reporting" line item in the Executive Status table's
+"Optional single-post gaps" row — DOC1 upgrade gotchas and DOC6 extension crossovers remain
+open, unrelated to this job.)
+
+**Prior update — 2026-07-21 (night-shift job `covers-admin-b`: assigned to generate remaining MAS-ADMIN covers per the "NEW GAP DISCOVERED" note below. On-disk check found all 10 MAS-ADMIN covers (series index + Parts 1-9) already present in both `posts/MAS-ADMIN/images/` and `public/images/mas-admin/`, committed since `f7a7474` (2026-02-06) with Part 9 added later in `75e3453`. The 2026-07-20 PM full-repo scan that flagged MAS-ADMIN as a gap was mistaken — MAS-ADMIN is, and was, COVER-COMPLETE. No images generated, no post content touched. `covers-admin-a` (which also ran against this same non-existent gap and reported blocked-key failures) can be retired along with this item. MAS-CIVIL-INFRASTRUCTURE and MAS-PARTS-IDENTIFIER from that same scan were NOT re-verified by this job and should still be treated as open gaps pending their own check.)
 
 **Updated:** 2026-07-20 PM (INTERACTIVE COVER RUN — 34 covers generated and verified in one afternoon session, post key-rotation: MAS-ASSIST 7/7, MAS-NUCLEAR 8/8, MAS-RELIABILITY 8/8, MAS-SUPPLY-CHAIN 11/11. Four parallel Artist agents, direct `gemini-3-pro-image` API (2K, 16:9), styles per queue (SketchNote/BlueprintBoard/DanKoeStyle/SketchNote), every PNG 2752x1536 + 256px thumb, each viewed and verified (attribution, density, no cheat-sheet layouts); zero regenerations needed. Pre-existing images checksum-verified untouched; no .mdx modified. These four series are now COVER-COMPLETE. Queue items covers-assist-a/b, covers-supply-chain-a/b, covers-reliability-a/b, covers-nuclear-a/b marked done. Remaining cover work stays with tonight's night-shift per operator: covers-watsonx-a/b (7), covers-optimizer (5), covers-databricks-56 (2). NEW GAP DISCOVERED by full-repo scan: MAS-ADMIN (10), MAS-CIVIL-INFRASTRUCTURE (6), and MAS-PARTS-IDENTIFIER (5) posts also reference cover paths that do not exist on disk — 21 uncovered posts outside any queue item; also the civil-0x content items in queue.json are stale (posts already exist on disk) and will burn night-shift ticks on duplicate-declines unless re-pointed at covers instead.)
 
@@ -47,7 +76,7 @@ word-count depth, and cover-image path checks.
 | Fully built and asset-complete | 7 source areas | DOC1, DOC3, DOC4, DOC6, DOC7, plus existing DOC2 Health/Monitor/Predict/MVI coverage |
 | Deep research/text complete, covers pending | 8 series | MAS-ASSIST, MAS-OPTIMIZER, MAS-NUCLEAR, MAS-RELIABILITY, MAS-SUPPLY-CHAIN, MAS-DATABRICKS, MAS-PARTS-IDENTIFIER, MAS-WATSONX-DATA |
 | Still pending as new deep blog work | 1 series | MAS-CIVIL-INFRASTRUCTURE |
-| Optional single-post gaps | 3 posts | DOC1 reporting, DOC1 upgrade gotchas, DOC6 extension crossovers |
+| Optional single-post gaps | 2 posts | DOC1 upgrade gotchas, DOC6 extension crossovers (DOC1 reporting built 2026-07-22) |
 
 **Important distinction:** "content complete" below means the MDX posts exist, are long-form, and
 include references. "Production complete" means the posts also have local cover assets resolved on disk.
@@ -58,7 +87,7 @@ include references. "Production complete" means the posts also have local cover 
 
 | DOC | Topic | Current verdict | Built by | Remaining decision |
 |-----|-------|-----------------|----------|--------------------|
-| DOC1 | Manage Upgrade Roadmap | ✅ **PRODUCTION COMPLETE** | `posts/MAS-MANAGE` (12 posts) | Optional: Reporting BIRT -> Cognos/KPI Manager; Upgrade Gotchas |
+| DOC1 | Manage Upgrade Roadmap | ✅ **PRODUCTION COMPLETE** | `posts/MAS-MANAGE` (12 posts) + `posts/2026-07-22-mas9-reporting-options.mdx` (standalone, draft, content complete, cover blocked on nanobanana key) | Optional: Upgrade Gotchas |
 | DOC2 | Suite Add-Ons | ⚠️ **MOSTLY BUILT** | Health(9), Monitor(9), Predict(9), MVI(13), Assist(7), Optimizer(5), Parts Identifier(5) | Parts Identifier is content-complete (index + 4 parts), covers pending; Civil Infrastructure still needs a standalone series if wanted |
 | DOC3 | Paid Add-Ons & Industry | ✅ **PRODUCTION COMPLETE** | `posts/MAS-FEATURES` parts 15-20, 25 | None |
 | DOC4 | Supply Chain Features | ✅ **PRODUCTION COMPLETE** | `posts/MAS-FEATURES` parts 21-25 plus `MAS-MANAGE-09` | None for feature coverage |
