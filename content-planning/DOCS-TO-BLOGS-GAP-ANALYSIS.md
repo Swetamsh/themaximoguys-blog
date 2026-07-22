@@ -1,6 +1,39 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-07-22 (night-shift job `single-mas9-reporting`: filled the last of DOC1's
+**Updated:** 2026-07-22 (night-shift job `single-mas9-upgrade-gotchas`: filled the remaining
+DOC1 "optional single-post gap" — drafted `posts/2026-07-22-mas9-upgrade-gotchas.mdx`, "MAS 9
+Upgrade Gotchas: What Actually Breaks and How to Prepare" (draft, standalone, ~4,530-word
+body, 12 sections, 5 tables, 4 code/config blocks). Covers four upgrade-derailing gotchas in
+depth — Work Center-to-RBA migration (no tooling, a full functional-gap table sourced from
+DOC1 §4 plus corroborating real-world gaps like missing overtime marking and SR-to-WO
+one-step conversion), the MAS 9.1 Java 17 mandate (recompilation, JPMS reflection blocks,
+vendor-code risk), RMI's structural (not just policy) failure in containerized/Kubernetes
+networking, and admin mode's real all-user/cron-suspending/cluster-shutdown behavior — plus a
+pre-upgrade checklist and post-upgrade troubleshooting table. Research drew on DOC1 §2.2/§4/
+§10/§12.7/§17/Appendix A plus a SearchMaximo sweep of the 611-file Maximo docs KB that
+surfaced the exact `Modes_of_configuring_the_database` admin-mode mechanics (cluster
+shutdown/restart via `mxe.adminmode.stopstartclusters`, the `Can Log in During Admin Mode`
+permission) and the Java 17/BIRT 4.16 `Technical_updates` section neither DOC1 nor the prior
+reporting post had cited, plus a 6-search web verification round (IBM's own Java 17 transition
+support announcement, an IBM Community 7.6-to-MAS-9 upgrade checklist, Maven Asset
+Management's field report on what actually broke on Java 17, a second IBM Community
+practitioner checklist for a 7.6.1.3 project, and Maximo Secrets' MAS 9.0 gotchas post) that
+added the RMI/Kubernetes-networking technical explanation, the confirmed vendor-code-was-the-
+real-Java-17-breakage finding, and several field-reported RBA functionality gaps (no overtime
+marking, no pick lists, AppPoints logout-consumption gotcha) that corroborate and extend DOC1's
+own gap table. One detail (DB2 11.5 SE / Oracle 19.3+ / SQL Server 2019+ version minimums) is
+sourced from a single practitioner blog rather than corroborated against DOC1 or the KB and is
+flagged in an HTML comment for human review. Cover generation was attempted once through the
+mandated SketchNote CheatSheet + nanobanana Pro pipeline (two-column survival-guide layout:
+"What Breaks" vs. "How to Prep") and blocked by the SAME still-unrotated-in-headless-sessions
+`400 API_KEY_INVALID` error documented in `project_nanobanana_key_leaked_blocker` — 21st+
+confirmation. No image generated; `posts/images/mas9-upgrade-gotchas.png` does not yet exist.
+This closes the "DOC1 upgrade gotchas" line item in the Executive Status table's "Optional
+single-post gaps" row — DOC6 extension crossovers is the only item remaining there, though
+DOC6's own Coverage Matrix row already shows "None" remaining, suggesting that line item may
+itself be stale and worth a human recheck.)
+
+**Prior update — 2026-07-22** (night-shift job `single-mas9-reporting`: filled the last of DOC1's
 "optional single-post gaps" — drafted `posts/2026-07-22-mas9-reporting-options.mdx`,
 "Reporting Options in MAS 9: Cognos, BIRT, Dashboards, and Beyond" (draft, standalone,
 ~4,900-word body, 14 sections, 8 tables, 4 code/config blocks). This is the platform-wide
@@ -76,7 +109,7 @@ word-count depth, and cover-image path checks.
 | Fully built and asset-complete | 7 source areas | DOC1, DOC3, DOC4, DOC6, DOC7, plus existing DOC2 Health/Monitor/Predict/MVI coverage |
 | Deep research/text complete, covers pending | 8 series | MAS-ASSIST, MAS-OPTIMIZER, MAS-NUCLEAR, MAS-RELIABILITY, MAS-SUPPLY-CHAIN, MAS-DATABRICKS, MAS-PARTS-IDENTIFIER, MAS-WATSONX-DATA |
 | Still pending as new deep blog work | 1 series | MAS-CIVIL-INFRASTRUCTURE |
-| Optional single-post gaps | 2 posts | DOC1 upgrade gotchas, DOC6 extension crossovers (DOC1 reporting built 2026-07-22) |
+| Optional single-post gaps | 1 post | DOC6 extension crossovers (DOC1 reporting built 2026-07-22; DOC1 upgrade gotchas built 2026-07-22, content complete, cover blocked on nanobanana key) |
 
 **Important distinction:** "content complete" below means the MDX posts exist, are long-form, and
 include references. "Production complete" means the posts also have local cover assets resolved on disk.
@@ -87,7 +120,7 @@ include references. "Production complete" means the posts also have local cover 
 
 | DOC | Topic | Current verdict | Built by | Remaining decision |
 |-----|-------|-----------------|----------|--------------------|
-| DOC1 | Manage Upgrade Roadmap | ✅ **PRODUCTION COMPLETE** | `posts/MAS-MANAGE` (12 posts) + `posts/2026-07-22-mas9-reporting-options.mdx` (standalone, draft, content complete, cover blocked on nanobanana key) | Optional: Upgrade Gotchas |
+| DOC1 | Manage Upgrade Roadmap | ✅ **PRODUCTION COMPLETE** | `posts/MAS-MANAGE` (12 posts) + `posts/2026-07-22-mas9-reporting-options.mdx` + `posts/2026-07-22-mas9-upgrade-gotchas.mdx` (both standalone, draft, content complete, covers blocked on nanobanana key) | None — both optional single-post gaps now built; only local cover assets remain, blocked on the key rotation |
 | DOC2 | Suite Add-Ons | ⚠️ **MOSTLY BUILT** | Health(9), Monitor(9), Predict(9), MVI(13), Assist(7), Optimizer(5), Parts Identifier(5) | Parts Identifier is content-complete (index + 4 parts), covers pending; Civil Infrastructure still needs a standalone series if wanted |
 | DOC3 | Paid Add-Ons & Industry | ✅ **PRODUCTION COMPLETE** | `posts/MAS-FEATURES` parts 15-20, 25 | None |
 | DOC4 | Supply Chain Features | ✅ **PRODUCTION COMPLETE** | `posts/MAS-FEATURES` parts 21-25 plus `MAS-MANAGE-09` | None for feature coverage |
