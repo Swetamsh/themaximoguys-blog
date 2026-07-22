@@ -1,6 +1,27 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-07-22 (night-shift job `single-mas9-upgrade-gotchas`: filled the remaining
+**Updated:** 2026-07-22 (night-shift job `replan-20260722`: full audit reconciling this plan
+against `posts/`, `knowledge_base/`, and `automation/off-hours/queue.json`. Found and corrected
+two stale entries: (1) MAS-CIVIL-INFRASTRUCTURE was listed as "still pending as new deep blog
+work" / "no standalone series exists" — it actually has all 6 files (index + Parts 1-5) built and
+committed on disk, with 0 of 6 covers; (2) the "Pending Asset Work" table still listed MAS-ASSIST
+(7), MAS-SUPPLY-CHAIN (11), MAS-RELIABILITY (8), and MAS-NUCLEAR (8) as missing covers, but all
+four were completed in the 2026-07-20 PM interactive run and MAS-ADMIN's 10 covers were confirmed
+present in `public/images/mas-admin/` by the 2026-07-21 `covers-admin-b` job — none of that had
+been reflected here. Confirmed all 14 knowledge-base documents (DOC1-DOC14) now have blog
+coverage, with DOC14 absorbed as background research into MAS-WATSONX-DATA rather than needing
+its own series — no net-new series remain. The only real backlog left is cover-image generation,
+entirely blocked on the non-transient nanobanana `API_KEY_INVALID` credential failure (21+
+consecutive night-shift confirmations); every series-level cover gap already has a `failed`
+cover-batch item in `queue.json` and was correctly NOT re-queued. One genuine new gap found: the
+2 standalone DOC1 posts built earlier tonight (`mas9-reporting-options.mdx`,
+`mas9-upgrade-gotchas.mdx`) have zero cover coverage and no existing queue item — `posts/images/`
+is empty — so 2 new `pending` cover-batch items were appended: `covers-single-mas9-reporting`
+(InfoBlocks, matching the style already chosen in that post's blocked cover attempt) and
+`covers-single-mas9-upgrade-gotchas` (SketchNote CheatSheet, ditto). No blog posts or images were
+written by this job. See §1, §2, and §4 below for the corrected tables.)
+
+**Prior update — 2026-07-22** (night-shift job `single-mas9-upgrade-gotchas`: filled the remaining
 DOC1 "optional single-post gap" — drafted `posts/2026-07-22-mas9-upgrade-gotchas.mdx`, "MAS 9
 Upgrade Gotchas: What Actually Breaks and How to Prepare" (draft, standalone, ~4,530-word
 body, 12 sections, 5 tables, 4 code/config blocks). Covers four upgrade-derailing gotchas in
@@ -106,10 +127,10 @@ word-count depth, and cover-image path checks.
 
 | Bucket | Count | Status |
 |---|---:|---|
-| Fully built and asset-complete | 7 source areas | DOC1, DOC3, DOC4, DOC6, DOC7, plus existing DOC2 Health/Monitor/Predict/MVI coverage |
-| Deep research/text complete, covers pending | 8 series | MAS-ASSIST, MAS-OPTIMIZER, MAS-NUCLEAR, MAS-RELIABILITY, MAS-SUPPLY-CHAIN, MAS-DATABRICKS, MAS-PARTS-IDENTIFIER, MAS-WATSONX-DATA |
-| Still pending as new deep blog work | 1 series | MAS-CIVIL-INFRASTRUCTURE |
-| Optional single-post gaps | 1 post | DOC6 extension crossovers (DOC1 reporting built 2026-07-22; DOC1 upgrade gotchas built 2026-07-22, content complete, cover blocked on nanobanana key) |
+| Fully built and asset-complete | 9 source areas | DOC1(Manage), DOC3, DOC4, DOC6, DOC7, plus existing DOC2 Health/Monitor/Predict/MVI coverage, plus MAS-ASSIST, MAS-SUPPLY-CHAIN, MAS-RELIABILITY, MAS-NUCLEAR, MAS-ADMIN, MAS-DATABRICKS Parts 00-04 (covers verified on disk 2026-07-20/21 PM runs; see corrected Pending Asset Work table in §4) |
+| Deep research/text complete, covers pending | 6 series | MAS-OPTIMIZER (1 of 6 covers done), MAS-DATABRICKS Parts 05-06, MAS-PARTS-IDENTIFIER (0 of 5), MAS-WATSONX-DATA (0 of 7), MAS-CIVIL-INFRASTRUCTURE (0 of 6 — see corrected DOC2 row below), 2 standalone DOC1 single-posts (mas9-reporting-options, mas9-upgrade-gotchas) |
+| Still pending as new deep blog work | 0 series | none — MAS-CIVIL-INFRASTRUCTURE was previously listed here in error; it is content-complete on disk (index + 5 parts, `posts/MAS-CIVIL-INFRASTRUCTURE/`, committed) and only needs covers. Corrected 2026-07-22 (night-shift replan). |
+| Optional single-post gaps | 1 post, ambiguous | DOC6 extension crossovers — flagged by the 2026-07-22 upgrade-gotchas job as possibly stale since DOC6's own Coverage Matrix row already shows "None" remaining; unresolved, needs human recheck, not queued |
 
 **Important distinction:** "content complete" below means the MDX posts exist, are long-form, and
 include references. "Production complete" means the posts also have local cover assets resolved on disk.
@@ -121,7 +142,7 @@ include references. "Production complete" means the posts also have local cover 
 | DOC | Topic | Current verdict | Built by | Remaining decision |
 |-----|-------|-----------------|----------|--------------------|
 | DOC1 | Manage Upgrade Roadmap | ✅ **PRODUCTION COMPLETE** | `posts/MAS-MANAGE` (12 posts) + `posts/2026-07-22-mas9-reporting-options.mdx` + `posts/2026-07-22-mas9-upgrade-gotchas.mdx` (both standalone, draft, content complete, covers blocked on nanobanana key) | None — both optional single-post gaps now built; only local cover assets remain, blocked on the key rotation |
-| DOC2 | Suite Add-Ons | ⚠️ **MOSTLY BUILT** | Health(9), Monitor(9), Predict(9), MVI(13), Assist(7), Optimizer(5), Parts Identifier(5) | Parts Identifier is content-complete (index + 4 parts), covers pending; Civil Infrastructure still needs a standalone series if wanted |
+| DOC2 | Suite Add-Ons | ⚠️ **MOSTLY BUILT** | Health(9), Monitor(9), Predict(9), MVI(13), Assist(7, covers done), Optimizer(6, 1 of 6 covers done), Parts Identifier(5, 0 covers), Civil Infrastructure(6, 0 covers) | Parts Identifier and Civil Infrastructure are both content-complete, covers pending — corrected 2026-07-22: Civil Infrastructure already has all 6 files on disk (index + Parts 1-5, `posts/MAS-CIVIL-INFRASTRUCTURE/`, committed), it is NOT an unbuilt series as prior audits stated |
 | DOC3 | Paid Add-Ons & Industry | ✅ **PRODUCTION COMPLETE** | `posts/MAS-FEATURES` parts 15-20, 25 | None |
 | DOC4 | Supply Chain Features | ✅ **PRODUCTION COMPLETE** | `posts/MAS-FEATURES` parts 21-25 plus `MAS-MANAGE-09` | None for feature coverage |
 | DOC5 | Data Analytics & Databricks | 🟡 **CONTENT COMPLETE, ASSETS PENDING** | `posts/MAS-DATABRICKS` (index + Part 1 + Part 2 + Part 3 + Part 4 built 2026-07-17 with covers; Part 5 + Part 6 content built 2026-07-17/18, both covers blocked on the same nanobanana API key rotation) | Key rotated 2026-07-20 — `covers-databricks-56` queued; generate Part 5 + Part 6 covers (SketchNote, match 00-04) |
@@ -245,22 +266,39 @@ still pending — Part 5's is done).
 
 | Priority | Series | Source | Why it is still pending | Recommended decision |
 |---:|---|---|---|---|
-| 1 | `MAS-DATABRICKS` | DOC5 | **Content complete 2026-07-18 (night-shift):** series index (Part 0) through Part 6 all drafted — the full six-part series is content-complete. Part 5 ("Custom ML vs. Maximo Predict") and Part 6 ("Governance and Security for the MAS Lakehouse") both have their covers blocked by the same `403 PERMISSION_DENIED: API key reported as leaked` nanobanana failure, confirmed still unrotated as of 2026-07-18. | Key rotated 2026-07-20 — `covers-databricks-56` queued; generate Part 5's and Part 6's covers — no further content work needed for this series. |
-| ~~2~~ | ~~`MAS-PARTS-IDENTIFIER`~~ | DOC2 | **Resolved — already existed 2026-07-18 (night-shift discovery).** Index + Parts 1-4 are content-complete and published; this doc had gone stale claiming the directory was empty. | Generate 5 covers; correct `queue.json`'s conflicting `parts-id-01..05` rebuild items. |
-| 3 | `MAS-CIVIL-INFRASTRUCTURE` | DOC2 | No standalone series exists. Coverage today is inside broader industry/add-on posts. | Build only if DOT/public infrastructure audience is a target. |
-| ~~4~~ | ~~`MAS-OPTIMIZER` Part 5~~ | DOC2 | **Resolved 2026-07-16 (night-shift).** Part 5 written; nav chain confirmed intact. | Cover image still needed for Parts 1-4. |
+| 1 | `MAS-DATABRICKS` | DOC5 | **Content complete 2026-07-18 (night-shift):** series index (Part 0) through Part 6 all drafted — the full six-part series is content-complete. Part 5 ("Custom ML vs. Maximo Predict") and Part 6 ("Governance and Security for the MAS Lakehouse") both have their covers blocked by the same `403 PERMISSION_DENIED: API key reported as leaked` / `API_KEY_INVALID` nanobanana failure, confirmed still unrotated as of 2026-07-21 (`covers-databricks-56` failed run). | `covers-databricks-56` remains queued (failed, non-transient auth block) — leave for human key-rotation fix, generate Part 5's and Part 6's covers — no further content work needed for this series. |
+| ~~2~~ | ~~`MAS-PARTS-IDENTIFIER`~~ | DOC2 | **Resolved — already existed 2026-07-18 (night-shift discovery).** Index + Parts 1-4 are content-complete and published; this doc had gone stale claiming the directory was empty. | `covers-parts-id` queued (failed, non-transient auth block) — generate 5 covers once key is fixed; `queue.json`'s conflicting `parts-id-01..05` rebuild items have all failed/declined and need no further action. |
+| ~~3~~ | ~~`MAS-CIVIL-INFRASTRUCTURE`~~ | DOC2 | **Resolved — already existed, corrected 2026-07-22 (night-shift replan).** Index + Parts 1-5 are content-complete on disk (`posts/MAS-CIVIL-INFRASTRUCTURE/`, committed); this doc previously and incorrectly claimed no standalone series existed. | `covers-civil` queued (failed, non-transient auth block) — generate 6 covers once key is fixed. No further content work needed. |
+| ~~4~~ | ~~`MAS-OPTIMIZER` Part 5~~ | DOC2 | **Resolved 2026-07-16 (night-shift).** Part 5 written; nav chain confirmed intact. | `covers-optimizer` queued (failed, non-transient auth block) — cover images still needed for index + Parts 1-4 (Part 5's is done). |
+| 5 | 2 standalone DOC1 posts | DOC1 | `mas9-reporting-options.mdx` and `mas9-upgrade-gotchas.mdx` (both built 2026-07-22, night-shift) are content-complete but have zero cover assets — `posts/images/` is currently empty. | `covers-single-mas9-reporting` and `covers-single-mas9-upgrade-gotchas` queued 2026-07-22 (night-shift replan) at priority 4. |
 
 ### Pending Asset Work
 
-| Series | Missing local covers |
-|---|---:|
-| `MAS-ASSIST` | 7 |
-| `MAS-OPTIMIZER` | 5 (Part 5 cover done; Parts 1-4 + index still pending) |
-| `MAS-SUPPLY-CHAIN` | 11 |
-| `MAS-RELIABILITY` | 8 |
-| `MAS-NUCLEAR` | 8 |
-| `MAS-PARTS-IDENTIFIER` | 5 (index + Parts 1-4, none done) |
-| `MAS-MANAGE` | Optional dedicated covers; current covers use existing borrowed assets |
+**Corrected 2026-07-22 (night-shift replan) against actual on-disk PNG counts** — several rows below
+were stale, claiming covers were still missing for series that the 2026-07-20 PM interactive run and
+2026-07-21 `covers-admin-b` run had already completed.
+
+| Series | Missing local covers | Status |
+|---|---:|---|
+| `MAS-ASSIST` | 0 | ✅ done (7/7, verified 2026-07-20 PM run) |
+| `MAS-SUPPLY-CHAIN` | 0 | ✅ done (11/11, verified 2026-07-20 PM run) |
+| `MAS-RELIABILITY` | 0 | ✅ done (8/8, verified 2026-07-20 PM run) |
+| `MAS-NUCLEAR` | 0 | ✅ done (8/8, verified 2026-07-20 PM run) |
+| `MAS-ADMIN` | 0 | ✅ done (10/10, verified in `public/images/mas-admin/`, `covers-admin-b` 2026-07-21) |
+| `MAS-OPTIMIZER` | 5 | index + Parts 1-4 pending; Part 5 done. `covers-optimizer` queued, failed on key block. |
+| `MAS-PARTS-IDENTIFIER` | 5 | index + Parts 1-4, none done. `covers-parts-id` queued, failed on key block. |
+| `MAS-DATABRICKS` | 2 | Parts 05-06 only (00-04 done). `covers-databricks-56` queued, failed on key block. |
+| `MAS-WATSONX-DATA` | 7 | index + Parts 1-6, none done. `covers-watsonx-a/b` queued, failed on key block. |
+| `MAS-CIVIL-INFRASTRUCTURE` | 6 | index + Parts 1-5, none done. `covers-civil` queued, failed on key block. |
+| 2 standalone DOC1 posts | 2 | `mas9-reporting-options`, `mas9-upgrade-gotchas`. Newly queued 2026-07-22: `covers-single-mas9-reporting`, `covers-single-mas9-upgrade-gotchas`. |
+| `MAS-MANAGE` | 0 | Optional dedicated covers; current covers intentionally use borrowed MAS-FEATURES assets. |
+
+**All of the above cover gaps except the 2 new standalone-post items are already represented in
+`queue.json` as `failed` cover-batch items blocked on the same non-transient nanobanana
+`API_KEY_INVALID` / "key reported as leaked" credential failure (21+ consecutive confirmations across
+night-shift jobs as of 2026-07-22) — per the night-shift replan rule, failed items are only re-added
+when the failure looks transient (timeout, 503), so none of these were duplicated. This is a
+credential-rotation blocker for a human operator, not a work gap.**
 
 ---
 
@@ -268,12 +306,17 @@ still pending — Part 5's is done).
 
 1. ~~**Fix Optimizer first**~~ — done 2026-07-16 (night-shift): `mas-optimizer-dispatching-rollout`
 written as Part 5, nav chain confirmed intact end to end.
-2. **Generate covers for text-complete series:** Assist, Supply Chain, Reliability, Nuclear,
-Parts Identifier, and Optimizer can become production-complete once their `./images/*.png` assets
-exist (Optimizer Part 5 cover is done; Parts Identifier has zero of 5 done).
-3. **Choose one remaining net-new content lane:** Civil Infrastructure is the only series with no
-content yet — niche, build only if a DOT/public infrastructure audience is active. Databricks and
-Parts Identifier are both content-complete and just need covers/key-rotation, not new writing.
+2. **Fix the nanobanana key block:** every remaining gap in this plan as of 2026-07-22 is a cover
+image, and every queued cover-batch item is failing on the same non-transient
+`API_KEY_INVALID`/"key reported as leaked" credential error across 21+ consecutive night-shift runs.
+No further blog-writing work remains anywhere in the plan — a human operator rotating/reconnecting the
+nanobanana MCP credential (see `project_nanobanana_key_leaked_blocker` memory) is the single blocker
+to closing out Optimizer, Parts Identifier, Databricks 05-06, watsonx.data, Civil Infrastructure, and
+the 2 standalone DOC1 posts.
+3. **No net-new content lanes remain.** Every knowledge-base document (DOC1-14 plus the supply-chain
+roadmap email) now has blog coverage; DOC14 was absorbed as background research into MAS-WATSONX-DATA
+rather than needing its own series. Civil Infrastructure — previously miscategorized as unbuilt — is
+also content-complete. The backlog is now covers-only.
 
 ---
 
