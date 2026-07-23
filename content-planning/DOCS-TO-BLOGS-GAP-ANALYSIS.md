@@ -1,6 +1,23 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-07-22 (night-shift job `replan-20260722`: full audit reconciling this plan
+**Updated:** 2026-07-22 (night-shift job `replan-20260722`, second run same night: re-audited
+`knowledge_base/` (14 docs, unchanged), `posts/` (all 5 partially-built series — MAS-OPTIMIZER,
+MAS-PARTS-IDENTIFIER, MAS-DATABRICKS, MAS-WATSONX-DATA, MAS-CIVIL-INFRASTRUCTURE — re-verified
+contiguous part numbering 0..N with no structural/navigation gaps), and `queue.json` (50 items:
+17 done, 26 failed, 7 skipped, 0 pending) against this doc's tables. Every table below already
+matched reality; no rewrite needed. Every remaining cover gap (Optimizer 5, Parts-Identifier 5,
+Databricks 05-06, watsonx-data 7, Civil-Infrastructure 6, 2 standalone DOC1 posts — 27 covers
+total) is already represented by a `failed` cover-batch item, and every one of those failures is
+the same documented non-transient nanobanana `API_KEY_INVALID`/"key reported as leaked"
+credential block (21+ confirmations across night-shift jobs spanning 2026-07-19 through
+2026-07-22). Per the replan rule, non-transient failures are not re-queued. `databricks-05-ml-vs-predict`
+and `databricks-06-governance` are also `failed` in queue.json but confirmed content-complete on
+disk (`posts/MAS-DATABRICKS/2026-07-17-mas-databricks-05-ml-vs-mas-predict.mdx` and
+`2026-07-18-mas-databricks-06-governance-security.mdx` both exist) — failed status is the
+cover-mandatory rule, not missing content. Result: 0 new queue items added this run — the content
+plan is fully queued and every open item is correctly parked on the human key-rotation blocker.)
+
+**Prior update — 2026-07-22** (night-shift job `replan-20260722`, first run same night: full audit reconciling this plan
 against `posts/`, `knowledge_base/`, and `automation/off-hours/queue.json`. Found and corrected
 two stale entries: (1) MAS-CIVIL-INFRASTRUCTURE was listed as "still pending as new deep blog
 work" / "no standalone series exists" — it actually has all 6 files (index + Parts 1-5) built and
