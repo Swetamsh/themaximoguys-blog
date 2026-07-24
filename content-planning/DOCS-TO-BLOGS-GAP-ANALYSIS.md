@@ -1,6 +1,21 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-07-22 (night-shift job `replan-20260722`, second run same night: re-audited
+**Updated:** 2026-07-23 (night-shift job `replan-20260723`: independently re-audited
+`knowledge_base/` (14 DOCs, unchanged), `posts/` (mdx and cover-PNG counts per series re-verified
+against every table below, all matched), and `queue.json` (50 items: 17 done, 26 failed, 7
+skipped, 0 pending — unchanged). Additionally dispatched an Explore agent to directly re-check
+`series.part`/`series.total` frontmatter contiguity across all 5 partially-built series
+(MAS-OPTIMIZER, MAS-PARTS-IDENTIFIER, MAS-DATABRICKS, MAS-WATSONX-DATA,
+MAS-CIVIL-INFRASTRUCTURE) rather than trust the prior audit's claim — confirmed PASS on all
+five (contiguous 0..N numbering, consistent `series.total`, no duplicate/missing parts). Every
+remaining cover gap (27 covers total) is still represented by a non-transient `failed`
+cover-batch item blocked on the same nanobanana `API_KEY_INVALID` credential issue (22+
+confirmations, unrotated since 2026-07-20). `parts-id-01..05` remain correctly un-re-queued
+(non-transient content-duplicate declines, not key-blocked). No net-new knowledge_base docs, no
+structural gaps, no new posts. Result: 0 new queue items added — the content plan remains fully
+queued, every open item correctly parked on the human key-rotation blocker.)
+
+**Prior update — 2026-07-22** (night-shift job `replan-20260722`, second run same night: re-audited
 `knowledge_base/` (14 docs, unchanged), `posts/` (all 5 partially-built series — MAS-OPTIMIZER,
 MAS-PARTS-IDENTIFIER, MAS-DATABRICKS, MAS-WATSONX-DATA, MAS-CIVIL-INFRASTRUCTURE — re-verified
 contiguous part numbering 0..N with no structural/navigation gaps), and `queue.json` (50 items:
