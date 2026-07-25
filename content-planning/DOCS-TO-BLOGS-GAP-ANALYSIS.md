@@ -1,6 +1,18 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-07-23 (night-shift job `replan-20260723`: independently re-audited
+**Updated:** 2026-07-24 (night-shift job `replan-20260724`: re-audited `knowledge_base/` (14
+DOCs + supply-chain email, unchanged), `posts/` (all 5 partially-built series — MAS-OPTIMIZER,
+MAS-PARTS-IDENTIFIER, MAS-DATABRICKS, MAS-WATSONX-DATA, MAS-CIVIL-INFRASTRUCTURE — re-verified
+contiguous `series.part`/`series.total` frontmatter, no structural gaps), and `queue.json` (50
+items: 17 done, 26 failed, 7 skipped, 0 pending, no duplicate ids) against every table below —
+all matched, no drift since the 2026-07-23 audit. Every remaining cover gap (27 covers total)
+remains correctly represented by a non-transient `failed` cover-batch item blocked on the same
+nanobanana `API_KEY_INVALID` credential issue (23+ confirmations, unrotated since 2026-07-20).
+No net-new knowledge_base docs, no structural gaps, no new posts. Result: 0 new queue items
+added — the content plan remains fully queued, every open item correctly parked on the human
+key-rotation blocker.)
+
+**Prior update — 2026-07-23** (night-shift job `replan-20260723`: independently re-audited
 `knowledge_base/` (14 DOCs, unchanged), `posts/` (mdx and cover-PNG counts per series re-verified
 against every table below, all matched), and `queue.json` (50 items: 17 done, 26 failed, 7
 skipped, 0 pending — unchanged). Additionally dispatched an Explore agent to directly re-check
