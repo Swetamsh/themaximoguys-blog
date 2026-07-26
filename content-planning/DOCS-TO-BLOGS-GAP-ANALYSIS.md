@@ -1,16 +1,19 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-07-24 (night-shift job `replan-20260724`: re-audited `knowledge_base/` (14
-DOCs + supply-chain email, unchanged), `posts/` (all 5 partially-built series — MAS-OPTIMIZER,
-MAS-PARTS-IDENTIFIER, MAS-DATABRICKS, MAS-WATSONX-DATA, MAS-CIVIL-INFRASTRUCTURE — re-verified
-contiguous `series.part`/`series.total` frontmatter, no structural gaps), and `queue.json` (50
-items: 17 done, 26 failed, 7 skipped, 0 pending, no duplicate ids) against every table below —
-all matched, no drift since the 2026-07-23 audit. Every remaining cover gap (27 covers total)
-remains correctly represented by a non-transient `failed` cover-batch item blocked on the same
-nanobanana `API_KEY_INVALID` credential issue (23+ confirmations, unrotated since 2026-07-20).
-No net-new knowledge_base docs, no structural gaps, no new posts. Result: 0 new queue items
-added — the content plan remains fully queued, every open item correctly parked on the human
-key-rotation blocker.)
+**Updated:** 2026-07-25 (night-shift job `replan-20260725`: re-audited `knowledge_base/` (14
+DOCs + supply-chain email, byte-count unchanged, no new documents), `posts/` (spot-checked
+on-disk mdx/cover counts per series against every table below — MAS-WATSONX-DATA 7 mdx/0 covers,
+MAS-DATABRICKS 05-06 still missing covers (00-04 present), MAS-PARTS-IDENTIFIER 5 mdx/0 covers,
+MAS-CIVIL-INFRASTRUCTURE 6 mdx/0 covers, MAS-OPTIMIZER 6 mdx/1 cover (Part 5), MAS-ADMIN 10/10
+covers confirmed still complete, 2 standalone DOC1 posts still 0 covers — all matched, no drift
+since the 2026-07-24 audit), and `queue.json` (50 items: 17 done, 26 failed, 7 skipped, 0
+pending, no duplicate ids, `git status` confirms no posts/content-planning/knowledge_base files
+changed since the prior replan commit `5ccd6d5`) against every table below — all matched. Every
+remaining cover gap (27 covers total) remains correctly represented by a non-transient `failed`
+cover-batch item blocked on the same nanobanana `API_KEY_INVALID` credential issue (24+
+confirmations, unrotated since 2026-07-20). No net-new knowledge_base docs, no structural gaps,
+no new posts. Result: 0 new queue items added — the content plan remains fully queued, every
+open item correctly parked on the human key-rotation blocker.)
 
 **Prior update — 2026-07-23** (night-shift job `replan-20260723`: independently re-audited
 `knowledge_base/` (14 DOCs, unchanged), `posts/` (mdx and cover-PNG counts per series re-verified
