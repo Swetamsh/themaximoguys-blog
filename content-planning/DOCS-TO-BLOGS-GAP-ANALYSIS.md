@@ -1,6 +1,30 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-07-25 (night-shift job `replan-20260725`: re-audited `knowledge_base/` (14
+**Updated:** 2026-07-26 (night-shift job `replan-20260726`: independently re-audited
+`knowledge_base/` (`ls knowledge_base/*.md | wc -l` = 15 = 14 DOCs + supply-chain email,
+unchanged), `posts/` (direct bash re-scan of every series dir's mdx/png counts plus a
+coverImage-target existence check reproduced the documented 27-cover gap exactly: Optimizer 5,
+Parts-Identifier 5, Databricks 05-06, watsonx-data 7, Civil-Infrastructure 6, 2 standalone DOC1
+posts; MAS-ADMIN's apparent "missing" covers were a false positive from resolving its
+root-relative `/images/mas-admin/...` coverImage paths against the wrong base — confirmed all
+10 present under `public/images/mas-admin/`), and `queue.json` (50 items: 17 done, 26 failed, 7
+skipped, 0 pending, `git diff --stat` confirms no `posts/`/`knowledge_base/`/`content-planning/`
+files changed since the prior replan commit `7884ff7`; re-read every failed item's `.note` field
+— all `exit=0` content-complete-but-cover-blocked or explicit `API_KEY_INVALID`, none transient)
+against every table below — all matched. Additionally dispatched an Explore agent to re-check
+`series.part`/`series.total` frontmatter contiguity across all 5 partially-built series — PASS
+on all five (contiguous 0..N numbering, consistent `series.total`, no duplicate/missing parts,
+no file missing series frontmatter). Minor non-blocking note: MAS-WATSONX-DATA lacks the
+redundant flat `series_part:` key that the other 4 partial series carry alongside the nested
+`series.part` field — not a rendering issue (nested field is what's contiguous/consistent) and
+not queued as work absent evidence any build tooling reads the flat field. Every remaining cover
+gap (27 covers total) remains correctly represented by a non-transient `failed` cover-batch item
+blocked on the same nanobanana `API_KEY_INVALID` credential issue (25+ confirmations, unrotated
+since 2026-07-20). No net-new knowledge_base docs, no structural gaps, no new posts. Result: 0
+new queue items added — the content plan remains fully queued, every open item correctly parked
+on the human key-rotation blocker.)
+
+**Prior update — 2026-07-25** (night-shift job `replan-20260725`: re-audited `knowledge_base/` (14
 DOCs + supply-chain email, byte-count unchanged, no new documents), `posts/` (spot-checked
 on-disk mdx/cover counts per series against every table below — MAS-WATSONX-DATA 7 mdx/0 covers,
 MAS-DATABRICKS 05-06 still missing covers (00-04 present), MAS-PARTS-IDENTIFIER 5 mdx/0 covers,
