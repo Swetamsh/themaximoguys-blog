@@ -1,6 +1,24 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-07-26 (night-shift job `replan-20260726`: independently re-audited
+**Updated:** 2026-07-27 (night-shift job `replan-20260727`: independently re-audited
+`knowledge_base/` (15 files, 14 DOCs + supply-chain email, unchanged), `posts/` (re-scanned
+every series dir's mdx/png counts including MAS-MANAGE's 12 posts, whose coverImage frontmatter
+was individually resolved against its borrowed `MAS-FEATURES/images/*.png` targets — all 12
+resolve to existing files, confirming this is not a gap), and `queue.json` (50 items: 17 done,
+26 failed, 7 skipped, 0 pending; `git diff --stat b6240c6 HEAD -- posts/ knowledge_base/
+content-planning/ automation/off-hours/queue.json` confirms zero changes to any of those paths
+since the prior replan commit, i.e. no ticks ran overnight). Re-read every failed item's `.note`
+field and a sample of the underlying job logs directly (`logs/night-shift-*.log`) rather than
+trusting prior summaries alone — confirmed all cover-batch failures are the same non-transient
+nanobanana `API_KEY_INVALID`/`403 leaked-key` credential block (26+ confirmations, unrotated
+since 2026-07-20), and all `parts-id-01..05` failures are correctly-declined content duplicates
+of the already-published 4-part MAS-PARTS-IDENTIFIER series, not key-blocked. Every remaining
+cover gap (27 covers total) remains correctly represented by an existing failed queue item. No
+net-new knowledge_base docs, no structural gaps, no new posts. Result: 0 new queue items added —
+the content plan remains fully queued, every open item correctly parked on the human
+key-rotation blocker.)
+
+**Prior update — 2026-07-26** (night-shift job `replan-20260726`: independently re-audited
 `knowledge_base/` (`ls knowledge_base/*.md | wc -l` = 15 = 14 DOCs + supply-chain email,
 unchanged), `posts/` (direct bash re-scan of every series dir's mdx/png counts plus a
 coverImage-target existence check reproduced the documented 27-cover gap exactly: Optimizer 5,
