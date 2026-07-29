@@ -1,6 +1,22 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-07-27 (night-shift job `replan-20260727`: independently re-audited
+**Updated:** 2026-07-28 (night-shift job `replan-20260728`: `git diff --stat 7a406ba HEAD --
+posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty —
+zero byte changes to any of those paths since the prior replan commit, confirming no ticks
+ran overnight and every finding in the 2026-07-27 entry below still holds without needing a
+fresh manual re-scan. Independently re-verified `knowledge_base/` file count (`ls
+knowledge_base/*.md | wc -l` = 15, unchanged) and `queue.json` (50 items via `.items`, not
+`.queue` — 17 done, 26 failed, 7 skipped, 0 pending, `jq empty` passes, no duplicate `id`
+values). The nanobanana `API_KEY_INVALID` headless-session blocker (22+ confirmations
+through 2026-07-22 per the `project_nanobanana_key_leaked_blocker` memory) remains
+unresolved and un-tested this run — this job's scope is audit-only and does not generate
+images, so the blocker's live status was not re-probed. Every one of the 27 remaining covers
+stays correctly represented by its existing `failed` cover-batch queue item. No net-new
+knowledge_base docs, no structural gaps, no new posts. Result: 0 new queue items added — the
+content plan remains fully queued, every open item correctly parked on the human
+key-rotation/MCP-reconnect blocker.)
+
+**Prior update — 2026-07-27** (night-shift job `replan-20260727`: independently re-audited
 `knowledge_base/` (15 files, 14 DOCs + supply-chain email, unchanged), `posts/` (re-scanned
 every series dir's mdx/png counts including MAS-MANAGE's 12 posts, whose coverImage frontmatter
 was individually resolved against its borrowed `MAS-FEATURES/images/*.png` targets — all 12
