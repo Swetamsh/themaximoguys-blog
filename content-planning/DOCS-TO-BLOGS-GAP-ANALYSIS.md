@@ -1,6 +1,25 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-07-30 (night-shift job `replan-20260730`: `git diff --stat 040d80e HEAD --
+**Updated:** 2026-07-31 (night-shift job `replan-20260731`: `git diff --stat 2a5beec HEAD --
+posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty —
+zero byte changes to any of those paths since the prior replan commit, confirming no ticks ran
+overnight and every finding in the 2026-07-30 entry below still holds without needing a fresh
+manual re-scan. Independently re-verified `knowledge_base/` file count (`ls knowledge_base/*.md
+| wc -l` = 15, unchanged), `queue.json` (`jq empty` passes, 50 items, 17 done / 26 failed / 7
+skipped / 0 pending, no duplicate `id` values via `jq -r '.items[].id' | sort | uniq -d`), and
+re-scanned every `posts/*/` series directory's mdx/png-cover counts directly via bash — all 19
+series dirs (plus `THINK-MAS` and the flat `images/` dir) matched the prior audit exactly, and
+`posts/images/` (the 2 standalone DOC1 singles) remains empty, confirming both still have 0
+covers. The nanobanana `API_KEY_INVALID` headless-session blocker remains unresolved and
+un-tested this run per job scope (audit-only, no image generation) — same as every replan since
+2026-07-27. Every one of the 27 remaining covers (Optimizer 5, Databricks 05-06, Parts-Identifier
+5, watsonx-data 7, Civil-Infrastructure 6, 2 standalone MAS-9 singles) stays correctly
+represented by its existing `failed` cover-batch queue item. No net-new knowledge_base docs, no
+structural gaps, no new posts. This is the 9th consecutive replan with zero disk drift. Result: 0
+new queue items added — the content plan remains fully queued, every open item correctly parked
+on the human key-rotation/MCP-reconnect blocker.)
+
+**Prior update — 2026-07-30** (night-shift job `replan-20260730`: `git diff --stat 040d80e HEAD --
 posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty —
 zero byte changes to any of those paths since the prior replan commit, confirming no ticks ran
 overnight and every finding in the 2026-07-29 entry below still holds without needing a fresh
