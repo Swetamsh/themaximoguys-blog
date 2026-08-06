@@ -1,6 +1,29 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-08-04 (night-shift job `replan-20260804`: `git diff --stat ac853b3 HEAD --
+**Updated:** 2026-08-05 (night-shift job `replan-20260805`: `git diff --stat 994e4c5 HEAD --
+posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty —
+zero byte changes to any of those paths since the prior replan commit, confirming no ticks ran
+overnight and every finding in the 2026-08-04 entry below still holds without needing a fresh
+manual re-scan. Independently re-verified `knowledge_base/` file count (`ls knowledge_base/*.md
+| wc -l` = 15, unchanged), `queue.json` (`jq empty` passes, 50 items via `.items`, 17 done / 26
+failed / 7 skipped / 0 pending, no duplicate `id` values), and re-listed every `posts/*/` series
+directory (all 19 series dirs plus `THINK-MAS` and the flat `images/` dir) and every series'
+mdx-file count directly via bash — all matched the prior audit's set exactly, no new or removed
+directories or files. Checked the `MEMORY/WORK/` directory (newest entry still
+`20260727-213739_init-improve-claude-md`, unchanged since the last several replans) and the
+`project_nanobanana_key_leaked_blocker` memory plus the most recent night-shift logs
+(`logs/night-shift-replan-20260804-20260804-231002.log`) for any operator note about the
+nanobanana key rotation or MCP reconnect — none found; the `API_KEY_INVALID` headless-session
+blocker remains unresolved and un-tested this run per job scope (audit-only, no image
+generation) — same as every replan since 2026-07-27. Every one of the 27 remaining covers
+(Optimizer 5, Databricks 05-06, Parts-Identifier 5, watsonx-data 7, Civil-Infrastructure 6, 2
+standalone MAS-9 singles) stays correctly represented by its existing `failed` cover-batch queue
+item. No net-new knowledge_base docs, no structural gaps, no new posts. This is the 14th
+consecutive replan with zero disk drift. Result: 0 new queue items added — the content plan
+remains fully queued, every open item correctly parked on the human key-rotation/MCP-reconnect
+blocker.)
+
+**Prior update — 2026-08-04** (night-shift job `replan-20260804`: `git diff --stat ac853b3 HEAD --
 posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty —
 zero byte changes to any of those paths since the prior replan commit, confirming no ticks ran
 overnight and every finding in the 2026-08-03 entry below still holds without needing a fresh
