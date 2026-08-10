@@ -1,6 +1,26 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-08-08 (night-shift job `replan-20260808`: `git diff --stat c26d149 HEAD --
+**Updated:** 2026-08-09 (night-shift job `replan-20260809`: `git diff --stat cbf6242 HEAD --
+posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty —
+zero byte changes to any of those paths since the prior replan commit, and `git log --oneline
+cbf6242..HEAD` shows no commits at all, confirming no ticks ran overnight and every finding in
+the 2026-08-08 entry below still holds. Independently re-verified `knowledge_base/` file count
+(`ls knowledge_base/*.md | wc -l` = 15, unchanged), `queue.json` (`jq empty` passes, 50 items,
+17 done / 26 failed / 7 skipped / 0 pending, no duplicate `id` values), and re-listed every
+`posts/*/` series directory (all 19 series dirs plus `THINK-MAS` and the flat `images/` dir,
+plus the 4 standalone flat posts) — matched the prior audit's set exactly, no new or removed
+directories or files. Re-read the `project_nanobanana_key_leaked_blocker` memory directly —
+last entry still 2026-07-22 (22nd+ confirmation), no operator note of a key rotation or MCP
+reconnect since; the `API_KEY_INVALID` headless-session blocker remains unresolved and
+un-tested this run per job scope (audit-only, no image generation). Every one of the 27
+remaining covers (Optimizer 5, Databricks 05-06, Parts-Identifier 5, watsonx-data 7,
+Civil-Infrastructure 6, 2 standalone MAS-9 singles) stays correctly represented by its existing
+`failed` cover-batch queue item. No net-new knowledge_base docs, no structural gaps, no new
+posts. This is the 18th consecutive replan with zero disk drift. Result: 0 new queue items
+added — the content plan remains fully queued, every open item correctly parked on the human
+key-rotation/MCP-reconnect blocker.)
+
+**Prior update — 2026-08-08** (night-shift job `replan-20260808`: `git diff --stat c26d149 HEAD --
 posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty —
 zero byte changes to any of those paths since the prior replan commit, and `git log --oneline
 c26d149..HEAD` shows no commits at all, confirming no ticks ran overnight and every finding in
