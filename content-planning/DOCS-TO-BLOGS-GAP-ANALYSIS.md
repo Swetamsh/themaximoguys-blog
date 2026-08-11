@@ -1,336 +1,44 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-08-09 (night-shift job `replan-20260809`: `git diff --stat cbf6242 HEAD --
-posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty —
-zero byte changes to any of those paths since the prior replan commit, and `git log --oneline
-cbf6242..HEAD` shows no commits at all, confirming no ticks ran overnight and every finding in
-the 2026-08-08 entry below still holds. Independently re-verified `knowledge_base/` file count
-(`ls knowledge_base/*.md | wc -l` = 15, unchanged), `queue.json` (`jq empty` passes, 50 items,
-17 done / 26 failed / 7 skipped / 0 pending, no duplicate `id` values), and re-listed every
-`posts/*/` series directory (all 19 series dirs plus `THINK-MAS` and the flat `images/` dir,
-plus the 4 standalone flat posts) — matched the prior audit's set exactly, no new or removed
-directories or files. Re-read the `project_nanobanana_key_leaked_blocker` memory directly —
-last entry still 2026-07-22 (22nd+ confirmation), no operator note of a key rotation or MCP
-reconnect since; the `API_KEY_INVALID` headless-session blocker remains unresolved and
-un-tested this run per job scope (audit-only, no image generation). Every one of the 27
-remaining covers (Optimizer 5, Databricks 05-06, Parts-Identifier 5, watsonx-data 7,
-Civil-Infrastructure 6, 2 standalone MAS-9 singles) stays correctly represented by its existing
-`failed` cover-batch queue item. No net-new knowledge_base docs, no structural gaps, no new
-posts. This is the 18th consecutive replan with zero disk drift. Result: 0 new queue items
-added — the content plan remains fully queued, every open item correctly parked on the human
-key-rotation/MCP-reconnect blocker.)
-
-**Prior update — 2026-08-08** (night-shift job `replan-20260808`: `git diff --stat c26d149 HEAD --
-posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty —
-zero byte changes to any of those paths since the prior replan commit, and `git log --oneline
-c26d149..HEAD` shows no commits at all, confirming no ticks ran overnight and every finding in
-the 2026-08-07 entry below still holds. Independently re-verified `knowledge_base/` file count
-(`ls knowledge_base/*.md | wc -l` = 15, unchanged), `queue.json` (`jq empty` passes, 50 items,
-17 done / 26 failed / 7 skipped / 0 pending, no duplicate `id` values), and re-listed every
-`posts/*/` series directory (all 19 series dirs plus `THINK-MAS` and the flat `images/` dir,
-plus the 4 standalone flat posts) — matched the prior audit's set exactly, no new or removed
-directories or files. Re-read the `project_nanobanana_key_leaked_blocker` memory directly —
-last entry still 2026-07-22 (22nd+ confirmation), no operator note of a key rotation or MCP
-reconnect since; the `API_KEY_INVALID` headless-session blocker remains unresolved and
-un-tested this run per job scope (audit-only, no image generation). Every one of the 27
-remaining covers (Optimizer 5, Databricks 05-06, Parts-Identifier 5, watsonx-data 7,
-Civil-Infrastructure 6, 2 standalone MAS-9 singles) stays correctly represented by its existing
-`failed` cover-batch queue item. No net-new knowledge_base docs, no structural gaps, no new
-posts. This is the 17th consecutive replan with zero disk drift. Result: 0 new queue items
-added — the content plan remains fully queued, every open item correctly parked on the human
-key-rotation/MCP-reconnect blocker.)
-
-**Prior update — 2026-08-07** (night-shift job `replan-20260807`: `git diff --stat 075c2f4 HEAD --
-posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty —
-zero byte changes to any of those paths since the prior replan commit, confirming no ticks ran
-overnight and every finding in the 2026-08-06 entry below still holds. Independently
-re-verified `knowledge_base/` file count (`ls knowledge_base/*.md | wc -l` = 15, unchanged),
-`queue.json` (`jq empty` passes, 50 items, 17 done / 26 failed / 7 skipped / 0 pending, no
-duplicate `id` values), and re-listed every `posts/*/` series directory (all 19 series dirs
-plus `THINK-MAS` and the flat `images/` dir, plus the 4 standalone flat posts) — matched the
-prior audit's set exactly, no new or removed directories or files. Re-read the
-`project_nanobanana_key_leaked_blocker` memory directly — last entry still 2026-07-22 (22nd+
-confirmation), no operator note of a key rotation or MCP reconnect since; the `API_KEY_INVALID`
-headless-session blocker remains unresolved and un-tested this run per job scope (audit-only,
-no image generation). Every one of the 27 remaining covers (Optimizer 5, Databricks 05-06,
-Parts-Identifier 5, watsonx-data 7, Civil-Infrastructure 6, 2 standalone MAS-9 singles) stays
-correctly represented by its existing `failed` cover-batch queue item. No net-new
-knowledge_base docs, no structural gaps, no new posts. This is the 16th consecutive replan
-with zero disk drift. Result: 0 new queue items added — the content plan remains fully queued,
-every open item correctly parked on the human key-rotation/MCP-reconnect blocker.)
-
-**Prior update — 2026-08-06** (night-shift job `replan-20260806`: `git diff --stat f69161a HEAD --
-posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty —
-zero byte changes to any of those paths since the prior replan commit, confirming no ticks ran
-overnight and every finding in the 2026-08-05 entry below still holds. Independently
-re-verified `knowledge_base/` file count (`ls knowledge_base/*.md | wc -l` = 15, unchanged),
-`queue.json` (`jq empty` passes, 50 items, 17 done / 26 failed / 7 skipped / 0 pending, no
-duplicate `id` values), and re-listed every `posts/*/` series directory (all 19 series dirs
-plus `THINK-MAS` and the flat `images/` dir, plus the 4 standalone flat posts) — matched the
-prior audit's set exactly, no new or removed directories or files. Re-read the
-`project_nanobanana_key_leaked_blocker` memory directly — last entry still 2026-07-22 (22nd+
-confirmation), no operator note of a key rotation or MCP reconnect since; the `API_KEY_INVALID`
-headless-session blocker remains unresolved and un-tested this run per job scope (audit-only,
-no image generation). Every one of the 27 remaining covers (Optimizer 5, Databricks 05-06,
-Parts-Identifier 5, watsonx-data 7, Civil-Infrastructure 6, 2 standalone MAS-9 singles) stays
-correctly represented by its existing `failed` cover-batch queue item. No net-new
-knowledge_base docs, no structural gaps, no new posts. This is the 15th consecutive replan
-with zero disk drift. Result: 0 new queue items added — the content plan remains fully queued,
-every open item correctly parked on the human key-rotation/MCP-reconnect blocker.)
-
-**Prior update — 2026-08-05** (night-shift job `replan-20260805`: `git diff --stat 994e4c5 HEAD --
-posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty —
-zero byte changes to any of those paths since the prior replan commit, confirming no ticks ran
-overnight and every finding in the 2026-08-04 entry below still holds without needing a fresh
-manual re-scan. Independently re-verified `knowledge_base/` file count (`ls knowledge_base/*.md
-| wc -l` = 15, unchanged), `queue.json` (`jq empty` passes, 50 items via `.items`, 17 done / 26
-failed / 7 skipped / 0 pending, no duplicate `id` values), and re-listed every `posts/*/` series
-directory (all 19 series dirs plus `THINK-MAS` and the flat `images/` dir) and every series'
-mdx-file count directly via bash — all matched the prior audit's set exactly, no new or removed
-directories or files. Checked the `MEMORY/WORK/` directory (newest entry still
-`20260727-213739_init-improve-claude-md`, unchanged since the last several replans) and the
-`project_nanobanana_key_leaked_blocker` memory plus the most recent night-shift logs
-(`logs/night-shift-replan-20260804-20260804-231002.log`) for any operator note about the
-nanobanana key rotation or MCP reconnect — none found; the `API_KEY_INVALID` headless-session
-blocker remains unresolved and un-tested this run per job scope (audit-only, no image
-generation) — same as every replan since 2026-07-27. Every one of the 27 remaining covers
-(Optimizer 5, Databricks 05-06, Parts-Identifier 5, watsonx-data 7, Civil-Infrastructure 6, 2
-standalone MAS-9 singles) stays correctly represented by its existing `failed` cover-batch queue
-item. No net-new knowledge_base docs, no structural gaps, no new posts. This is the 14th
-consecutive replan with zero disk drift. Result: 0 new queue items added — the content plan
-remains fully queued, every open item correctly parked on the human key-rotation/MCP-reconnect
-blocker.)
-
-**Prior update — 2026-08-04** (night-shift job `replan-20260804`: `git diff --stat ac853b3 HEAD --
-posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty —
-zero byte changes to any of those paths since the prior replan commit, confirming no ticks ran
-overnight and every finding in the 2026-08-03 entry below still holds without needing a fresh
-manual re-scan. Independently re-verified `knowledge_base/` file count (`ls knowledge_base/*.md
-| wc -l` = 15, unchanged), `queue.json` (`jq empty` passes, 50 items via `.items`, 17 done / 26
-failed / 7 skipped / 0 pending, no duplicate `id` values), and re-listed every `posts/*/` series
-directory — all 19 series dirs (plus `THINK-MAS` and the flat `images/` dir) matched the prior
-audit's set exactly, no new or removed directories or files (`git status --porcelain posts/
-knowledge_base/ automation/off-hours/queue.json` empty). Checked the most recent `MEMORY/WORK/`
-entries (through `20260727-213739_init-improve-claude-md`) and the latest night-shift log
-(`logs/night-shift-replan-20260804-20260804-231002.log`) for any operator note about the
-nanobanana key rotation or MCP reconnect — none found; the `API_KEY_INVALID` headless-session
-blocker remains unresolved and un-tested this run per job scope (audit-only, no image
-generation) — same as every replan since 2026-07-27. Every one of the 27 remaining covers
-(Optimizer 5, Databricks 05-06, Parts-Identifier 5, watsonx-data 7, Civil-Infrastructure 6, 2
-standalone MAS-9 singles) stays correctly represented by its existing `failed` cover-batch queue
-item. No net-new knowledge_base docs, no structural gaps, no new posts. This is the 13th
-consecutive replan with zero disk drift. Result: 0 new queue items added — the content plan
-remains fully queued, every open item correctly parked on the human key-rotation/MCP-reconnect
-blocker.)
-
-**Prior update — 2026-08-03** (night-shift job `replan-20260803`: `git diff --stat 7a10aaa HEAD --
-posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty —
-zero byte changes to any of those paths since the prior replan commit, confirming no ticks ran
-overnight and every finding in the 2026-08-02 entry below still holds without needing a fresh
-manual re-scan. Independently re-verified `knowledge_base/` file count (`ls knowledge_base/*.md
-| wc -l` = 15, unchanged), `queue.json` (`jq empty` passes, 50 items via `.items`, 17 done / 26
-failed / 7 skipped / 0 pending, no duplicate `id` values via `jq -r '.items[].id' | sort |
-uniq -d`), and re-listed every `posts/*/` series directory — all 19 series dirs (plus
-`THINK-MAS` and the flat `images/` dir) matched the prior audit's set exactly, no new or removed
-directories. Spot-checked the four largest text-complete-but-cover-blocked series directly
-(MAS-DATABRICKS: 7 mdx / 5 covers, Parts 05-06 still missing; MAS-WATSONX-DATA: 7 mdx / 0 covers;
-MAS-CIVIL-INFRASTRUCTURE: 6 mdx / 0 covers; MAS-PARTS-IDENTIFIER: 5 mdx / 0 covers, series.total:4
-confirms the 5-file index+4-part structure is correct and complete, not missing a Part 5) plus
-MAS-OPTIMIZER (6 mdx / 1 cover) and MAS-ADMIN (10 mdx / 10 covers, still fully complete) — all
-matched the documented gap counts exactly. The nanobanana `API_KEY_INVALID` headless-session
-blocker remains unresolved and un-tested this run per job scope (audit-only, no image
-generation) — same as every replan since 2026-07-27. Every one of the 27 remaining covers
-(Optimizer 5, Databricks 05-06, Parts-Identifier 5, watsonx-data 7, Civil-Infrastructure 6, 2
-standalone MAS-9 singles) stays correctly represented by its existing `failed` cover-batch queue
-item. No net-new knowledge_base docs, no structural gaps, no new posts. This is the 12th
-consecutive replan with zero disk drift. Result: 0 new queue items added — the content plan
-remains fully queued, every open item correctly parked on the human key-rotation/MCP-reconnect
-blocker.)
-
-**Prior update — 2026-08-02** (night-shift job `replan-20260802`: `git diff --stat 82b6589 HEAD --
-posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty —
-zero byte changes to any of those paths since the prior replan commit, confirming no ticks ran
-overnight and every finding in the 2026-08-01 entry below still holds without needing a fresh
-manual re-scan. Independently re-verified `knowledge_base/` file count (`ls knowledge_base/*.md
-| wc -l` = 15, unchanged), `queue.json` (`jq empty` passes, 50 items via `.items`, 17 done / 26
-failed / 7 skipped / 0 pending, no duplicate `id` values via `jq -r '.items[].id' | sort |
-uniq -d`), and re-listed every `posts/*/` series directory — all 19 series dirs (plus
-`THINK-MAS` and the flat `images/` dir) matched the prior audit's set exactly, no new or removed
-directories. The nanobanana `API_KEY_INVALID` headless-session blocker remains unresolved and
-un-tested this run per job scope (audit-only, no image generation) — same as every replan since
-2026-07-27. Every one of the 27 remaining covers (Optimizer 5, Databricks 05-06, Parts-Identifier
-5, watsonx-data 7, Civil-Infrastructure 6, 2 standalone MAS-9 singles) stays correctly
-represented by its existing `failed` cover-batch queue item. No net-new knowledge_base docs, no
-structural gaps, no new posts. This is the 11th consecutive replan with zero disk drift. Result: 0
-new queue items added — the content plan remains fully queued, every open item correctly parked
-on the human key-rotation/MCP-reconnect blocker.)
-
-**Prior update — 2026-08-01** (night-shift job `replan-20260801`: `git diff --stat f12456a HEAD --
-posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty —
-zero byte changes to any of those paths since the prior replan commit, confirming no ticks ran
-overnight and every finding in the 2026-07-31 entry below still holds without needing a fresh
-manual re-scan. Independently re-verified `knowledge_base/` file count (`ls knowledge_base/*.md
-| wc -l` = 15, unchanged), `queue.json` (`jq empty` passes, 50 items, 17 done / 26 failed / 7
-skipped / 0 pending, no duplicate `id` values via `jq -r '.items[].id' | sort | uniq -d`), and
-re-scanned every `posts/*/` series directory's mdx/png-cover counts directly via bash (including
-resolving MAS-MANAGE's borrowed `../MAS-FEATURES/images/*.png` targets and MAS-ADMIN's
-root-relative `/images/mas-admin/...` paths against their actual on-disk locations) — all 19
-series dirs (plus `THINK-MAS` and the flat `images/` dir) matched the prior audit exactly, and
-`posts/images/` (the 2 standalone DOC1 singles) remains empty, confirming both still have 0
-covers. The nanobanana `API_KEY_INVALID` headless-session blocker remains unresolved and
-un-tested this run per job scope (audit-only, no image generation) — same as every replan since
-2026-07-27. Every one of the 27 remaining covers (Optimizer 5, Databricks 05-06, Parts-Identifier
-5, watsonx-data 7, Civil-Infrastructure 6, 2 standalone MAS-9 singles) stays correctly
-represented by its existing `failed` cover-batch queue item. No net-new knowledge_base docs, no
-structural gaps, no new posts. This is the 10th consecutive replan with zero disk drift. Result: 0
-new queue items added — the content plan remains fully queued, every open item correctly parked
-on the human key-rotation/MCP-reconnect blocker.)
-
-**Prior update — 2026-07-31** (night-shift job `replan-20260731`: `git diff --stat 2a5beec HEAD --
-posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty —
-zero byte changes to any of those paths since the prior replan commit, confirming no ticks ran
-overnight and every finding in the 2026-07-30 entry below still holds without needing a fresh
-manual re-scan. Independently re-verified `knowledge_base/` file count (`ls knowledge_base/*.md
-| wc -l` = 15, unchanged), `queue.json` (`jq empty` passes, 50 items, 17 done / 26 failed / 7
-skipped / 0 pending, no duplicate `id` values via `jq -r '.items[].id' | sort | uniq -d`), and
-re-scanned every `posts/*/` series directory's mdx/png-cover counts directly via bash — all 19
-series dirs (plus `THINK-MAS` and the flat `images/` dir) matched the prior audit exactly, and
-`posts/images/` (the 2 standalone DOC1 singles) remains empty, confirming both still have 0
-covers. The nanobanana `API_KEY_INVALID` headless-session blocker remains unresolved and
-un-tested this run per job scope (audit-only, no image generation) — same as every replan since
-2026-07-27. Every one of the 27 remaining covers (Optimizer 5, Databricks 05-06, Parts-Identifier
-5, watsonx-data 7, Civil-Infrastructure 6, 2 standalone MAS-9 singles) stays correctly
-represented by its existing `failed` cover-batch queue item. No net-new knowledge_base docs, no
-structural gaps, no new posts. This is the 9th consecutive replan with zero disk drift. Result: 0
-new queue items added — the content plan remains fully queued, every open item correctly parked
-on the human key-rotation/MCP-reconnect blocker.)
-
-**Prior update — 2026-07-30** (night-shift job `replan-20260730`: `git diff --stat 040d80e HEAD --
-posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty —
-zero byte changes to any of those paths since the prior replan commit, confirming no ticks ran
-overnight and every finding in the 2026-07-29 entry below still holds without needing a fresh
-manual re-scan. Independently re-verified `knowledge_base/` file count (`ls knowledge_base/*.md
-| wc -l` = 15, unchanged), `queue.json` (`jq empty` passes, 50 items, 17 done / 26 failed / 7
-skipped / 0 pending, no duplicate `id` values via `jq -r '.items[].id' | sort | uniq -d`), and
-re-read every failed item's `.note` field directly — all still `exit=0`
-content-complete-but-cover-blocked or explicit `API_KEY_INVALID`, none transient, none
-re-queued. Also re-confirmed all 20 `posts/` series directories' mdx counts match the prior
-audit exactly (no new/removed files). The nanobanana `API_KEY_INVALID` headless-session blocker
-remains unresolved and un-tested this run per job scope (audit-only, no image generation) —
-note: this interactive session shows an `nanobanana` MCP connection available, but that does
-not confirm the separate headless night-shift script's MCP env is fixed, and probing it would
-require generating an image, which is out of scope for a replan job. Every one of the 27
-remaining covers (Optimizer 5, Databricks 05-06, Parts-Identifier 5, watsonx-data 7,
-Civil-Infrastructure 6, 2 standalone MAS-9 singles) stays correctly represented by its existing
-`failed` cover-batch queue item. No net-new knowledge_base docs, no structural gaps, no new
-posts. This is the 8th consecutive replan with zero disk drift. Result: 0 new queue items
-added — the content plan remains fully queued, every open item correctly parked on the human
-key-rotation/MCP-reconnect blocker.)
-
-**Prior update — 2026-07-29** (night-shift job `replan-20260729`: `git diff --stat 914b6de HEAD --
-posts/ knowledge_base/ automation/off-hours/queue.json` returned empty — zero byte changes to
-any of those paths since the prior replan commit, confirming no ticks ran overnight and every
-finding in the 2026-07-28 entry below still holds without needing a fresh manual re-scan.
+**Updated:** 2026-08-10 (night-shift job `replan-20260810`: `git diff --stat c354b24 HEAD --
+posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty and
+`git log --oneline c354b24..HEAD` shows no commits at all, confirming no ticks ran overnight.
 Independently re-verified `knowledge_base/` file count (`ls knowledge_base/*.md | wc -l` = 15,
 unchanged), `queue.json` (`jq empty` passes, 50 items, 17 done / 26 failed / 7 skipped / 0
-pending, no duplicate `id` values via `jq -r '.items[].id' | sort | uniq -d`), and re-read every
-failed item's `.note` field directly — all still `exit=0` content-complete-but-cover-blocked or
-explicit `API_KEY_INVALID`, none transient, none re-queued. The nanobanana `API_KEY_INVALID`
-headless-session blocker remains unresolved and un-tested this run per job scope (audit-only,
-no image generation). Every one of the 27 remaining covers (Optimizer 5, Databricks 05-06,
-Parts-Identifier 5, watsonx-data 7, Civil-Infrastructure 6, 2 standalone MAS-9 singles) stays
-correctly represented by its existing `failed` cover-batch queue item. No net-new
-knowledge_base docs, no structural gaps, no new posts. This is the 7th consecutive replan with
-zero disk drift. Result: 0 new queue items added — the content plan remains fully queued, every
-open item correctly parked on the human key-rotation/MCP-reconnect blocker.)
+pending, no duplicate `id` values), and re-listed every `posts/*/` series directory (all 19
+series dirs plus `THINK-MAS` and the flat `images/` dir, plus the 4 standalone flat posts) —
+matched the prior audit's set exactly, no new or removed directories or files. Spot-checked
+that every "failed" blog-post-type queue item (`watsonx-data-*`, `parts-id-*`,
+`databricks-05/06`, `single-mas9-*`) has its corresponding `.mdx` present on disk under
+`posts/` — confirmed content-complete, `failed` status reflects the cover-mandatory rule only,
+not missing content. Re-read the `project_nanobanana_key_leaked_blocker` memory directly — last
+entry still 2026-07-22 (22nd+ confirmation), no operator note of a key rotation or MCP reconnect
+since; the `API_KEY_INVALID` headless-session blocker remains unresolved and un-tested this run
+per job scope (audit-only, no image generation). Every one of the 27 remaining covers (Optimizer
+5, Databricks 05-06, Parts-Identifier 5, watsonx-data 7, Civil-Infrastructure 6, 2 standalone
+MAS-9 singles) stays correctly represented by its existing `failed` cover-batch queue item. No
+net-new knowledge_base docs, no structural gaps, no new posts. This is the 19th consecutive
+replan with zero disk drift. **Housekeeping this run:** compacted 17 near-duplicate "zero
+drift" daily entries (2026-07-23 through 2026-08-09) below into a single summary paragraph —
+full text of each is preserved in git history (commits `c354b24` back through `33f51c8`); no
+table content (§1-6) was changed, since all tables already matched reality. Result: 0 new queue
+items added — the content plan remains fully queued, every open item correctly parked on the
+human key-rotation/MCP-reconnect blocker.)
 
-**Prior update — 2026-07-28** (night-shift job `replan-20260728`: `git diff --stat 7a406ba HEAD --
-posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty —
-zero byte changes to any of those paths since the prior replan commit, confirming no ticks
-ran overnight and every finding in the 2026-07-27 entry below still holds without needing a
-fresh manual re-scan. Independently re-verified `knowledge_base/` file count (`ls
-knowledge_base/*.md | wc -l` = 15, unchanged) and `queue.json` (50 items via `.items`, not
-`.queue` — 17 done, 26 failed, 7 skipped, 0 pending, `jq empty` passes, no duplicate `id`
-values). The nanobanana `API_KEY_INVALID` headless-session blocker (22+ confirmations
-through 2026-07-22 per the `project_nanobanana_key_leaked_blocker` memory) remains
-unresolved and un-tested this run — this job's scope is audit-only and does not generate
-images, so the blocker's live status was not re-probed. Every one of the 27 remaining covers
-stays correctly represented by its existing `failed` cover-batch queue item. No net-new
-knowledge_base docs, no structural gaps, no new posts. Result: 0 new queue items added — the
-content plan remains fully queued, every open item correctly parked on the human
-key-rotation/MCP-reconnect blocker.)
-
-**Prior update — 2026-07-27** (night-shift job `replan-20260727`: independently re-audited
-`knowledge_base/` (15 files, 14 DOCs + supply-chain email, unchanged), `posts/` (re-scanned
-every series dir's mdx/png counts including MAS-MANAGE's 12 posts, whose coverImage frontmatter
-was individually resolved against its borrowed `MAS-FEATURES/images/*.png` targets — all 12
-resolve to existing files, confirming this is not a gap), and `queue.json` (50 items: 17 done,
-26 failed, 7 skipped, 0 pending; `git diff --stat b6240c6 HEAD -- posts/ knowledge_base/
-content-planning/ automation/off-hours/queue.json` confirms zero changes to any of those paths
-since the prior replan commit, i.e. no ticks ran overnight). Re-read every failed item's `.note`
-field and a sample of the underlying job logs directly (`logs/night-shift-*.log`) rather than
-trusting prior summaries alone — confirmed all cover-batch failures are the same non-transient
-nanobanana `API_KEY_INVALID`/`403 leaked-key` credential block (26+ confirmations, unrotated
-since 2026-07-20), and all `parts-id-01..05` failures are correctly-declined content duplicates
-of the already-published 4-part MAS-PARTS-IDENTIFIER series, not key-blocked. Every remaining
-cover gap (27 covers total) remains correctly represented by an existing failed queue item. No
-net-new knowledge_base docs, no structural gaps, no new posts. Result: 0 new queue items added —
-the content plan remains fully queued, every open item correctly parked on the human
-key-rotation blocker.)
-
-**Prior update — 2026-07-26** (night-shift job `replan-20260726`: independently re-audited
-`knowledge_base/` (`ls knowledge_base/*.md | wc -l` = 15 = 14 DOCs + supply-chain email,
-unchanged), `posts/` (direct bash re-scan of every series dir's mdx/png counts plus a
-coverImage-target existence check reproduced the documented 27-cover gap exactly: Optimizer 5,
-Parts-Identifier 5, Databricks 05-06, watsonx-data 7, Civil-Infrastructure 6, 2 standalone DOC1
-posts; MAS-ADMIN's apparent "missing" covers were a false positive from resolving its
-root-relative `/images/mas-admin/...` coverImage paths against the wrong base — confirmed all
-10 present under `public/images/mas-admin/`), and `queue.json` (50 items: 17 done, 26 failed, 7
-skipped, 0 pending, `git diff --stat` confirms no `posts/`/`knowledge_base/`/`content-planning/`
-files changed since the prior replan commit `7884ff7`; re-read every failed item's `.note` field
-— all `exit=0` content-complete-but-cover-blocked or explicit `API_KEY_INVALID`, none transient)
-against every table below — all matched. Additionally dispatched an Explore agent to re-check
-`series.part`/`series.total` frontmatter contiguity across all 5 partially-built series — PASS
-on all five (contiguous 0..N numbering, consistent `series.total`, no duplicate/missing parts,
-no file missing series frontmatter). Minor non-blocking note: MAS-WATSONX-DATA lacks the
-redundant flat `series_part:` key that the other 4 partial series carry alongside the nested
-`series.part` field — not a rendering issue (nested field is what's contiguous/consistent) and
-not queued as work absent evidence any build tooling reads the flat field. Every remaining cover
-gap (27 covers total) remains correctly represented by a non-transient `failed` cover-batch item
-blocked on the same nanobanana `API_KEY_INVALID` credential issue (25+ confirmations, unrotated
-since 2026-07-20). No net-new knowledge_base docs, no structural gaps, no new posts. Result: 0
-new queue items added — the content plan remains fully queued, every open item correctly parked
-on the human key-rotation blocker.)
-
-**Prior update — 2026-07-25** (night-shift job `replan-20260725`: re-audited `knowledge_base/` (14
-DOCs + supply-chain email, byte-count unchanged, no new documents), `posts/` (spot-checked
-on-disk mdx/cover counts per series against every table below — MAS-WATSONX-DATA 7 mdx/0 covers,
-MAS-DATABRICKS 05-06 still missing covers (00-04 present), MAS-PARTS-IDENTIFIER 5 mdx/0 covers,
-MAS-CIVIL-INFRASTRUCTURE 6 mdx/0 covers, MAS-OPTIMIZER 6 mdx/1 cover (Part 5), MAS-ADMIN 10/10
-covers confirmed still complete, 2 standalone DOC1 posts still 0 covers — all matched, no drift
-since the 2026-07-24 audit), and `queue.json` (50 items: 17 done, 26 failed, 7 skipped, 0
-pending, no duplicate ids, `git status` confirms no posts/content-planning/knowledge_base files
-changed since the prior replan commit `5ccd6d5`) against every table below — all matched. Every
-remaining cover gap (27 covers total) remains correctly represented by a non-transient `failed`
-cover-batch item blocked on the same nanobanana `API_KEY_INVALID` credential issue (24+
-confirmations, unrotated since 2026-07-20). No net-new knowledge_base docs, no structural gaps,
-no new posts. Result: 0 new queue items added — the content plan remains fully queued, every
-open item correctly parked on the human key-rotation blocker.)
-
-**Prior update — 2026-07-23** (night-shift job `replan-20260723`: independently re-audited
-`knowledge_base/` (14 DOCs, unchanged), `posts/` (mdx and cover-PNG counts per series re-verified
-against every table below, all matched), and `queue.json` (50 items: 17 done, 26 failed, 7
-skipped, 0 pending — unchanged). Additionally dispatched an Explore agent to directly re-check
-`series.part`/`series.total` frontmatter contiguity across all 5 partially-built series
-(MAS-OPTIMIZER, MAS-PARTS-IDENTIFIER, MAS-DATABRICKS, MAS-WATSONX-DATA,
-MAS-CIVIL-INFRASTRUCTURE) rather than trust the prior audit's claim — confirmed PASS on all
-five (contiguous 0..N numbering, consistent `series.total`, no duplicate/missing parts). Every
-remaining cover gap (27 covers total) is still represented by a non-transient `failed`
-cover-batch item blocked on the same nanobanana `API_KEY_INVALID` credential issue (22+
-confirmations, unrotated since 2026-07-20). `parts-id-01..05` remain correctly un-re-queued
-(non-transient content-duplicate declines, not key-blocked). No net-new knowledge_base docs, no
-structural gaps, no new posts. Result: 0 new queue items added — the content plan remains fully
-queued, every open item correctly parked on the human key-rotation blocker.)
+**Prior updates — 2026-07-23 through 2026-08-09** (17 consecutive night-shift replan jobs,
+each independently re-verifying `knowledge_base/` file count (15, unchanged throughout),
+`queue.json` integrity (50 items, 17 done / 26 failed / 7 skipped / 0 pending, no duplicate
+`id` values), and `posts/` series directory structure via `git diff --stat` against the prior
+replan commit — every single run found zero drift from the 2026-07-22 baseline below, and the
+nanobanana `API_KEY_INVALID` headless-session blocker (see `project_nanobanana_key_leaked_blocker`
+memory, static at its 2026-07-22 22nd-confirmation entry throughout this entire streak)
+unresolved in every run. A few of these runs did extra verification work worth noting: the
+2026-07-23 and 2026-07-26 runs each dispatched an Explore agent to independently re-check
+`series.part`/`series.total` frontmatter contiguity across all 5 partially-built series (PASS
+both times); the 2026-08-03 run spot-checked on-disk mdx/cover counts directly for the six
+largest gap series. None found any table content in this doc out of date. Full text of each
+daily entry is preserved in git history — see commits `c354b24` (2026-08-09) back through
+`33f51c8` (2026-07-23) for the individual audit write-ups.)
 
 **Prior update — 2026-07-22** (night-shift job `replan-20260722`, second run same night: re-audited
 `knowledge_base/` (14 docs, unchanged), `posts/` (all 5 partially-built series — MAS-OPTIMIZER,
