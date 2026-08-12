@@ -1,0 +1,398 @@
+---
+title: "The AI Layer in MAS 9.2: What IBM Documented, What It Only Announced, and What Nobody Can Verify Yet"
+description: "IBM framed MAS 9.2 around asset-first AI and agentic workflows. This is an evidence-tiered assessment of what that actually means — the agentic Maximo Assistant, the Maximo MCP server, AI-generated insights with confidence scores, RAG lease extraction, watsonx Orchestrate in Maximo IT, and AI Service AppPoint tracking — separating what product documentation confirms from what only the announcement claims."
+date: "2026-08-12"
+slug: "mas-92-ai-features"
+tags: ["Maximo", "MAS 9", "MAS 9.2", "AI Service", "Maximo Assistant", "MCP", "watsonx Orchestrate", "AppPoints", "EAM"]
+draft: true
+tier: "developer"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-92-05-ai-layer.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What does agentic actually mean for Maximo Assistant in MAS 9.2?"
+    answer: "IBM's documentation says the assistant can now act as a single agent that analyzes your requests and works across a defined set of AI tools to answer them. The operative difference from a chatbot is tool selection — the assistant decides which capability to invoke based on your question, rather than answering from one retrieval corpus. The phrase defined set matters too: it is a bounded tool registry, not open-ended autonomy."
+  - question: "What is the Maximo MCP server and what can I build with it?"
+    answer: "MCP is the Model Context Protocol, an open standard for exposing tools to AI agents in a shape any compliant agent runtime can discover and call. IBM's documentation states you can create custom AI tools using Maximo Manage automation scripts, object structures or workflows, and connect your own tools and agents to the Maximo MCP server. In practice that turns existing Manage artefacts into callable tools for AI you already run."
+  - question: "Do the AI features in MAS 9.2 consume AppPoints?"
+    answer: "AI Service AppPoint consumption is now trackable on licensing dashboards — from the AI configuration application, choose Actions then Check AppPoints and find AI Service in the Instances table. That is a genuine change: AI consumption becomes a measurable licensing line item. What IBM does not publish is a per-feature AppPoint ratio, so you can measure consumption after enablement but you cannot model it in advance from the documentation."
+  - question: "Does MAS 9.2 AI Service run IBM Granite or an OpenAI model?"
+    answer: "IBM documents this. Under the January 2026 Feature Channel: "You can now use the gpt-oss-120b model for mcc, pcc, fmea, and nl2oslc model templates," with IBM Granite 3.2 8b Instruct deprecated as of 25 November 2025. Three corrections to the version usually repeated: it is an option with a migration path rather than a forced replacement, it covers four templates including the AI assistant itself, and the Granite deprecation date is November 2025. It also arrived via the Feature Channel, so SaaS customers had it in production from January 2026 while self-hosted customers got it at 9.2 GA in June."
+  - question: "Which MAS 9.2 AI capabilities are documented versus only announced?"
+    answer: "Documented in IBM product documentation: agentic Maximo Assistant, AI-generated asset and alert insights, RAG lease extraction in Real Estate and Facilities, the Maximo MCP server, the redesigned AI configuration application, AppPoint tracking, testing guidance, watsonx Orchestrate in Maximo IT, the assistant on Maximo Mobile, on-device visual inspection and natural-language what-if analysis. Announcement-only: Maximo Condition Insight, AI in Field Service Management, AI-assisted incident classification, and document abstraction beyond leases."
+keyTakeaways:
+  - "The Maximo MCP server is the most architecturally consequential AI item in 9.2 — it makes Maximo a callable tool provider for AI you already run"
+  - "Agentic Maximo Assistant means tool selection across a defined set of tools, not open-ended autonomy — and the boundary is the thing to understand"
+  - "AI-generated alert insights carry a high, medium or low confidence score, which is what makes them operationalisable as policy rather than case-by-case review"
+  - "AI Service AppPoint consumption is now trackable on licensing dashboards, turning AI into a measurable cost line — but IBM publishes no per-feature ratio"
+  - "The Granite-to-gpt-oss-120b switch is real and documented — but it is optional, covers four templates, and reached SaaS and self-hosted customers five months apart"
+series:
+  name: "MAS 9.2"
+  part: 5
+  total: 7
+tldr: "IBM positioned MAS 9.2 around asset-first AI and agentic workflows. Assessed against the documentation, a lot of it holds up: the Maximo Assistant genuinely becomes an agent over a defined tool set, IBM ships an MCP server so customers can expose Manage automation scripts, object structures and workflows as AI tools, insights carry high/medium/low confidence scores, Real Estate and Facilities gets RAG lease extraction with field-level source traceability, and Maximo IT gets a watsonx Orchestrate agent with a human review gate. AI Service AppPoint consumption is now measurable. But several announced capabilities are not in the documentation, and the widely repeated Granite-to-GPT-OSS model swap could not be verified."
+seoTitle: "MAS 9.2 AI Features: Documented vs Announced"
+seoDescription: "An evidence-tiered look at AI in MAS 9.2: agentic Maximo Assistant, the Maximo MCP server, confidence-scored insights, RAG leases, AppPoint tracking."
+targetQuestions:
+  - "What AI features are in MAS 9.2?"
+  - "What is the Maximo MCP server?"
+  - "What does agentic Maximo Assistant do?"
+  - "Do MAS 9.2 AI features consume AppPoints?"
+  - "Which MAS 9.2 AI capabilities are actually available?"
+semanticKeywords:
+  - "agentic Maximo Assistant"
+  - "Maximo MCP server"
+  - "Model Context Protocol Maximo"
+  - "AI-generated asset insights"
+  - "AI-generated alert insights"
+  - "AI Service AppPoints"
+  - "RAG lease abstraction"
+  - "watsonx Orchestrate Maximo IT"
+  - "AI configuration application"
+  - "Maximo asset-first AI"
+  - "confidence score Maximo insights"
+  - "MAS 9.2 AI Service"
+proficiencyLevel: "advanced"
+dependencies:
+  - "Working knowledge of MAS architecture and how add-ons and suite applications relate"
+  - "Familiarity with Maximo Manage automation scripts and object structures"
+  - "A basic understanding of how large language models are invoked through tools or APIs"
+  - "Awareness that AI Service is a separately licensed MAS component"
+---
+
+# Asset-First AI, Assessed: The AI Layer in MAS 9.2
+
+> 🎯 **Who this is for:** Maximo architects, integration developers and platform owners who have to decide, this quarter, which parts of the 9.2 AI story are buildable and which are a roadmap slide.
+
+**Series:** Part 5 of 7 — *MAS 9.2* | **Read time:** 21 minutes
+
+---
+
+## 📖 The Claim IBM Made, and How to Test It
+
+IBM announced Maximo Application Suite 9.2 on **25 June 2026**, and the framing was unmistakable. The release is positioned around **"asset-first AI"** — AI embedded into reliability, maintenance, field service, safety and operations workflows — plus **"agentic workflows"**. A promotional webinar followed on 30 June. If you read only the announcement, 9.2 is an AI release with some platform work attached.
+
+That framing creates a specific problem for anyone who has to plan against it. Announcement copy and product documentation are two different genres written by two different teams for two different purposes. The announcement describes the direction of a product. The documentation describes what shipped. Most of the time they overlap. In 9.2 they overlap substantially — but not completely, and the gaps are exactly where implementation plans go wrong.
+
+So this post does something slightly unusual: it sorts every AI capability in the release into evidence tiers before assessing any of them.
+
+- **Tier 1 — documented.** The capability appears in IBM's published product documentation for a 9.2 component. These are confirmed. You can plan against them, and where the documentation is thin, you at least know a product team wrote a page about it.
+- **Tier 2 — announced only.** The capability appears in IBM's announcement post but we could not find it in the corresponding product documentation. These are almost certainly real — IBM does not invent features in launch posts — but "real" and "shipped in the build you are about to install" are different statements. Treat Tier 2 as directionally true and schedule-unsafe.
+- **Announced only.** Named in IBM's launch material but not in the product documentation we could read. Real, almost certainly — but not yet something to build a business case on.
+
+Two things worth saying up front, so this does not read as a takedown. First, most of the 9.2 AI layer is Tier 1. This is a substantive release, not a marketing exercise. Second — and this is the interesting finding — **three capabilities that the announcement listed, and that you would reasonably assume were announcement-only, are in fact documented.** They are just documented in a *different product's* what's-new page than the one you would think to check. If you audit the release by reading only the suite-level what's-new, you will underestimate it.
+
+---
+
+## 📊 The AI Layer at a Glance
+
+Here is the whole AI surface of MAS 9.2, sorted by evidence tier, with the product it lives in and what we can say about AppPoint consumption.
+
+| Capability | Lives in | Evidence tier | AppPoints |
+|---|---|---|---|
+| Agentic Maximo Assistant | Manage / AI Service | **Tier 1 — documented** | AI Service, trackable |
+| Maximo MCP server | AI Service / Manage | **Tier 1 — documented** | AI Service, trackable |
+| AI-generated asset insights | Manage, Health | **Tier 1 — documented** | AI Service, trackable |
+| AI-generated alert insights | Manage Tickets, Monitor | **Tier 1 — documented** | AI Service, trackable |
+| RAG lease abstraction | Real Estate and Facilities | **Tier 1 — documented** | Requires AI Service |
+| Incident solution generation | Maximo IT | **Tier 1 — documented** | Not stated (watsonx Orchestrate) |
+| Maximo Assistant on Mobile | Maximo Mobile | **Tier 1 — documented** | AI Service, trackable |
+| On-device visual inspection | MVI + Mobile (iOS) | **Tier 1 — documented** | Not stated |
+| Natural-language what-if analysis | Maximo Optimizer | **Tier 1 — documented** | Not stated |
+| Redesigned AI configuration app | Suite admin | **Tier 1 — documented** | n/a (it *is* the meter) |
+| AI Service AppPoint tracking | Licensing dashboards | **Tier 1 — documented** | n/a |
+| Maximo Condition Insight | Not stated | **Tier 2 — announced** | Unknown |
+| AI in Field Service Management | Not stated | **Tier 2 — announced** | Unknown |
+| AI-assisted incident classification | Presumably Maximo IT | **Tier 2 — announced** | Unknown |
+| Abstraction beyond leases | Future | **Tier 2 — announced** | Unknown |
+| gpt-oss-120b for mcc, pcc, fmea, nl2oslc | AI Service | **Documented** (Jan 2026 Feature Channel) | Yes — AI Service AppPoints |
+
+One honesty note on the AppPoints column. IBM confirms that AI Service AppPoint consumption is now trackable on licensing dashboards. IBM does **not** publish per-feature AppPoint ratios or a cost delta for 9.2 beyond the new tracking. "Trackable" is a real and useful change; it is not the same as "priced transparently in advance." More on that later, because it changes how you should pilot.
+
+<aside>
+💡 **Key insight:** The three capabilities most likely to be misfiled as vapour — the assistant on mobile, on-device visual inspection, and natural-language what-if analysis — are all documented. They are just documented in the Maximo Mobile, MVI and Optimizer what's-new pages respectively. Read the component pages, not just the suite page.
+</aside>
+
+---
+
+## 🤖 Agentic Maximo Assistant: What "Agent" Actually Means Here
+
+Start with IBM's own sentence, because the precision matters. The documentation says the assistant **"can now act as a single agent that analyzes your requests and works across a defined set of AI tools"** to answer them. The example prompts IBM gives are:
+
+- *"What assets need my attention?"*
+- *"How is asset [number] doing?"*
+- *"How do I do [task] in Maximo Manage?"*
+
+Two halves of that sentence carry all the weight, and they pull in opposite directions.
+
+**"A single agent that analyzes your requests."** This is the genuine architectural change. A chatbot takes your question, retrieves from one corpus, and generates an answer. There is one path through the system, and it is the same path every time. An agent inserts a decision: the model first works out *what kind of question this is* and *which capability can answer it*, invokes that capability, reads what comes back, and may invoke another before it answers you. The reasoning step happens before the retrieval step rather than after it.
+
+You can see this directly in the three example prompts, which are deliberately chosen to be three different shapes:
+
+| Example prompt | What it actually requires | Data it touches |
+|---|---|---|
+| "What assets need my attention?" | Fan-out and ranking across a fleet, with no object named | Asset condition, work history, alerts |
+| "How is asset [number] doing?" | Single-entity summarisation for a named record | One asset and its related records |
+| "How do I do [task] in Maximo Manage?" | Product documentation question answering | IBM documentation corpus, not your data |
+
+That third one is the tell. Answering "how do I do this in Manage" requires a completely different corpus from answering "how is this pump doing" — one is IBM's documentation, the other is your production database. A single retrieval pipeline cannot serve both well. The fact that IBM lists all three as example prompts for one assistant is the strongest evidence that a router genuinely sits in front, choosing between tools.
+
+**"Across a defined set of AI tools."** This is the boundary, and it is the half that most commentary skips. The assistant is not autonomously deciding what to do in your Maximo instance. It selects from a registry someone defined. That is the right design for an EAM system — an agent with unbounded action in a system of record for safety-critical assets is not a feature, it is an incident waiting to happen — but it means the honest question to ask about the agentic assistant is not *"how smart is it?"* It is **"what is in the tool set, and can I see it?"**
+
+This also changes the failure mode you should test for, and it is worth being blunt about. A chatbot fails visibly: it says something obviously wrong, or it says it does not know. An agent fails quietly, by selecting the wrong tool and then answering fluently and confidently from the wrong data. The answer looks identical in shape to a correct one. Your UAT for the assistant should therefore not be "does it give good answers" — it will — but "does it pick the right tool for ambiguous questions, and does it tell me which one it picked?"
+
+One more documented detail that the suite what's-new does not mention: **the assistant is available in the Maximo Mobile app**, provided the assistant is configured for Manage and the user has permission to access it. IBM's Mobile 9.2 documentation notes it currently works **online only** — no offline assistant. For a mobile technician population working in areas with poor connectivity, that constraint is not a footnote, it is the deployment plan.
+
+---
+
+## 🔌 The Maximo MCP Server: The Most Consequential Item in the Release
+
+If you read one thing in the 9.2 AI documentation, read this one. IBM's what's-new says customers can **create custom AI tools using Maximo Manage automation scripts, object structures, or workflows, and connect their own tools and agents to the Maximo MCP server.**
+
+That single sentence changes the direction of AI integration with Maximo, and it deserves unpacking in three parts.
+
+### What MCP is
+
+The Model Context Protocol is an open standard for exposing capabilities to AI systems in a uniform shape. A server declares a set of tools — each with a name, a description, and a typed input schema. A client, which is whatever agent runtime you are using, connects to the server, discovers the tools, and can then call them on the model's behalf and feed the results back into the model's context. The protocol is transport-agnostic and vendor-neutral: the point of it is that the same server works with any compliant client.
+
+The important property for our purposes is the direction of dependency. The server does not know or care which model is calling it. It publishes an interface; the intelligence lives on the other side.
+
+### Why an EAM vendor shipping one matters
+
+Historically, "AI in Maximo" meant IBM chose the model, IBM chose the use case, IBM chose the surface, and you either enabled it or you did not. Every AI capability discussed in this post except one follows that pattern. The MCP server inverts it. **Maximo stops being a place where IBM's AI lives and becomes a tool provider that any AI can call.**
+
+Concretely, that means the following Manage artefacts — which you already have, already govern and already know how to test — become the raw material for AI tools:
+
+| Manage artefact | What it becomes as an AI tool | Realistic first use |
+|---|---|---|
+| Object structure | A structured read (or write) over Maximo data | "Fetch this asset with its meters, open work orders and failure history" |
+| Automation script | An action or computation with your business logic in it | "Calculate the risk score", "create a follow-up work order" |
+| Workflow | A process invocation that respects your routing and approvals | "Route this record for approval through the standard path" |
+
+That table is the most practical thing in this post. It means the skill you need in order to build MAS 9.2 AI tooling is *Maximo skill*, not machine learning skill. The team that already writes your automation scripts can build the tool layer. This is a much shorter path to value than "hire a data science team", and it is the reason we rate MCP above the assistant in significance.
+
+### What it concedes, and why that is healthy
+
+There is a strategic reading here that is worth stating plainly without over-reading it. IBM's announcement frames 9.2 around agentic workflows and acknowledges that organisations use a variety of AI solutions. Shipping an MCP server is that acknowledgement expressed as architecture. IBM is accepting that a large share of its customers will run agents IBM did not build, on models IBM did not train, and that the useful thing to sell them is *access to Maximo* rather than a captive assistant.
+
+For customers, that is straightforwardly good. It reduces the cost of being wrong about which AI vendor wins.
+
+### The governance question you must answer first
+
+An MCP tool built on an object structure inherits the permissions of whatever identity the integration runs as. An MCP tool built on an automation script can do whatever that script can do. Your agent's blast radius is the union of everything you expose — and unlike a human user, an agent will attempt combinations of tool calls nobody thought to test.
+
+Three rules we would apply to a first implementation:
+
+1. **Read-only first tranche.** Ship a set of query tools, run them for a cycle, and understand what agents actually ask for before you expose anything that writes.
+2. **One identity per tool set, least privilege.** Do not run the MCP surface as a general integration superuser because it was convenient in a proof of concept.
+3. **Log every tool invocation with its arguments.** When an agent produces a wrong answer, the only way to diagnose it is to see which tools it called and what they returned.
+
+IBM does not publish a catalogue of pre-built tools here, which means the design responsibility — and the security responsibility — is yours. That is the trade-off for the flexibility.
+
+---
+
+## 🧠 AI-Generated Insights and the Confidence Score Nobody Is Talking About
+
+MAS 9.2 adds **AI-generated asset insights and alert insights** that combine asset condition, maintenance history and failure data into a view of risk with recommended actions, surfaced where you are already working — reviewing an asset, or responding to an alert.
+
+The Manage documentation is more specific about the alert side, and the specifics matter. The engine analyses **alert content, asset details, work history and meter data** to produce contextual information, trend analysis and recommended actions. Insights are viewable in the new **Tickets** application, and you can **create pre-filled work orders directly from the recommendations**. Monitor 9.2 generates alert insights of its own and can send alerts through to Manage so they are reviewed in Tickets, which gives you a coherent pipeline: **Monitor detects, Manage triages, a work order comes out the other end.** Maximo Health surfaces insights on the Health tab of the reorganised assets and locations dashboard.
+
+But the single most operationally important detail is one line in the Manage what's-new: **each insight includes a confidence score of high, medium or low**, indicating how strongly the system supports its analysis.
+
+Here is why that one line changes more than the insights themselves do.
+
+Without a confidence score, every AI recommendation arrives with identical standing. Your planners must review all of them at the same depth, because there is no signal telling them which ones deserve scrutiny. In practice that means either everything gets a cursory glance — which is how bad recommendations become work orders — or the feature quietly gets ignored because reviewing it costs more than it saves.
+
+A score lets you write policy instead. Something like:
+
+| Confidence | What IBM says it means | A defensible operational rule |
+|---|---|---|
+| High | The analysis is strongly supported by the data | Planner may create the pre-filled work order without a second reviewer |
+| Medium | Moderately supported | Requires reliability engineer review before a work order is raised |
+| Low | Weakly supported | Treated as a prompt to investigate, never as a recommendation to act on |
+
+Two cautions before you copy that table into a procedure.
+
+**First, the score is not a probability.** IBM defines it as how strongly the system supports its own analysis — an internal measure of evidence, not a calibrated likelihood that the asset will fail. Do not convert high/medium/low into percentages, and do not put those percentages into an SLA or a risk register. That is a fabrication your auditors will eventually find.
+
+**Second, calibrate it yourself before you automate anything.** Run a shadow period — a quarter is reasonable for most maintenance cycles — where insights are recorded alongside what actually happened, but do not drive action. At the end you will know your own precision at each confidence band on your own asset base, which is the only number that should govern an automation threshold. This is unglamorous and it is the difference between an AI feature that survives its first bad recommendation and one that gets switched off.
+
+---
+
+## 📄 RAG Document Extraction: Leases First, Manuals Maybe
+
+Maximo Real Estate and Facilities 9.2 adds **AI document extraction for lease documents**, using retrieval-augmented generation to read uploaded lease documents and populate the fields of a lease abstract. **Configurable extraction rules define which fields AI is allowed to populate.**
+
+The REF documentation adds the operational constraints, and they are the kind of detail that decides whether a pilot succeeds:
+
+- Up to **5 documents per lease**, each a maximum of **15 MB**, in **PDF or DOCX** format.
+- **AI Service must be deployed** — this is not a standalone REF feature.
+- After AI populates the values, you can **select any field to see its source location within the document**.
+- You **review and edit the fields before the draft lease abstract record is created**.
+
+Read those last two points again, because they are the reason this feature is credible rather than reckless. Lease data feeds lease accounting. Lease accounting feeds financial statements. An AI that silently wrote extracted values into a lease abstract would be a control failure regardless of how accurate it was, because nobody could evidence how a number got there. **Field-level source traceability plus a mandatory human review before record creation is what makes an extraction feature auditable.** It is a better-designed control than most homegrown document automation we have seen in this space.
+
+The practical planning points are the constraints. Real lease packs are frequently more than five documents and frequently larger than 15 MB — amendments, exhibits, scanned side letters. Before you scope a lease abstraction programme, sample your actual document population against those two limits, because the remediation work is document preparation, not configuration.
+
+On the wider ambition: IBM's announcement positions lease abstraction as the **starting point** for broader document abstraction, naming **OEM manuals, inspection procedures and licensing agreements** as future targets. That is Tier 2 — announcement only, not in the documentation — so do not build a manuals digitisation business case on it yet. What you *can* take from the documented version is the pattern: configurable extraction rules, field-level provenance, human sign-off before record creation. If IBM extends this to OEM manuals, that shape is very likely to come with it, and designing your document governance around it now costs nothing.
+
+---
+
+## 🎫 watsonx Orchestrate in Maximo IT: A Background Agent With a Review Gate
+
+Maximo IT 9.2 is where the release gets closest to a genuine autonomous workflow, and it is instructive that this is also where IBM was most careful.
+
+The documented behaviour has two modes. On demand, the AI agent **provides a detailed summarisation of open incidents and a suggested resolution when prompted**. In the background, **a watsonx Orchestrate agent analyses incident work log entries and generates a solution record in Maximo IT** when an incident reaches **Resolved**. **Service agents then review and publish** the generated solution.
+
+Three observations.
+
+**The review gate is the design decision that matters.** A generated solution record is a draft until a human publishes it. IBM could have shipped this fully automatic and it would have demoed better. It would also have been wrong. A knowledge base poisons fast: a plausible but incorrect solution record does not sit inertly, it gets found by the next agent handling a similar incident, gets applied, fails, and burns trust in every other record in the base. **A wrong solution record is worse than no solution record**, and the review gate is what stops that failure mode.
+
+**The gate has an owner cost, and it is the thing that will kill your rollout.** If nobody is accountable for the review queue, what you get is a growing pile of unpublished AI drafts and zero benefit — plus a service desk that now believes AI in Maximo IT does not work. Assign the reviewer role, set a service level on the queue, and instrument it, *before* you enable the feature. This is a process deployment wearing a technology deployment's clothes.
+
+**Note the runtime.** This capability names **watsonx Orchestrate**, not AI Service. That is worth flagging because it means the MAS 9.2 AI layer is not one engine with one licence and one skill set — it is several. Your architecture diagram needs both boxes, your licensing conversation needs both line items, and the people who can support one cannot necessarily support the other. If you are building an AI enablement plan for 9.2, do not assume "we turned on AI Service" means the Maximo IT capability is available.
+
+The announcement also lists **AI-assisted incident classification**. The documentation describes summarisation and solution generation, not classification. That specific capability stays in Tier 2.
+
+---
+
+## ⚙️ The Operational Layer: Configuration, AppPoints, and the Testing Guidance
+
+The least discussed part of the 9.2 AI story is the part your finance and operations colleagues will care about most.
+
+**The AI configuration application was redesigned.** It now shows model status, allows one-click enablement of capabilities, and provides access to AppPoint usage dashboards. In practice this converts AI enablement from a scattered set of admin tasks into a single console — which also means it becomes a single place to audit what is switched on.
+
+**AI Service AppPoint consumption is now trackable.** From the AI configuration application, choose **Actions > Check AppPoints** and locate **AI Service** in the Instances table. At suite level, 9.2 also adds an **AppPoints usage dashboard** giving real-time licence usage tracking across applications, users and time periods.
+
+This is the item we would most like to see discussed more, because it changes the shape of the AI conversation inside an organisation in three specific ways:
+
+1. **AI becomes a measurable cost line rather than a feature flag.** In most enterprise software, AI is something you bought or did not buy, and consumption is invisible. Making AI Service an AppPoint-consuming instance with a dashboard means someone can be given a budget and held to it.
+2. **Enablement becomes a finance conversation, not just an admin toggle.** That sounds like friction and it is actually protection — features that cost visible money get owners, review and justification. Features that appear free get switched on and then blamed.
+3. **You can attribute consumption.** Usage tracked across applications, users and time periods is the raw material for asking which AI capability is actually earning its keep after six months.
+
+Now the honest limitation. IBM publishes the tracking; **IBM does not publish per-feature AppPoint ratios or the licensing-cost delta at 9.2** beyond the new dashboard and AI Service tracking. So you can measure consumption once you have enabled something, but you cannot model it in advance from the documentation. The correct response is a deliberately small first enablement — one capability, one site, one measured month — before you commit to a suite-wide AI programme. Anyone telling you they can forecast your 9.2 AI AppPoint spend from public information is guessing.
+
+Finally, **IBM documentation now includes testing guidance and best practices for AI features**, including common findings and guidance on fine-tuning performance. It is easy to skim past this as documentation housekeeping. It is not. A vendor publishing a testing methodology for its AI features is a vendor telling you, correctly, that these features have behaviour that must be validated in your environment rather than assumed from the datasheet. Build an explicit AI test pass into your 9.2 UAT, use IBM's guidance as its skeleton, and record the results — they become your baseline for detecting drift after the next Feature Channel update.
+
+---
+
+## 🧬 The Model Question, Answered
+
+There is a claim about MAS 9.2's AI that circulates widely: that IBM swapped its own Granite model for an OpenAI open-weights model. It is substantially true, IBM documents it, and the details matter more than the headline.
+
+From IBM's Feature Channel what's-new, under **January 2026**:
+
+> *"You can now use the gpt-oss-120b model for mcc, pcc, fmea, and nl2oslc model templates. The nl2oslc model template is for the AI assistant. If you are already using a Granite model and need to move to gpt-oss-120b, see Changing to gpt-oss-120b models. **IBM Granite 3.2 8b Instruct is deprecated as of 25 November 2025.**"*
+
+Three details in that sentence correct the version of this story you have probably heard:
+
+| The common claim | What IBM actually documents |
+|---|---|
+| Granite was **replaced** | *"You can now use"* — gpt-oss-120b is an **option**, with a documented migration path. Existing Granite deployments were not force-switched |
+| It covered **three** capabilities | **Four** templates: `mcc` (Maintenance Cause Classification), `pcc` (Predictive Cause-Effect Correlation), `fmea`, and **`nl2oslc` — the AI assistant itself** |
+| Granite was removed in **February 2026** | **IBM Granite 3.2 8b Instruct was deprecated as of 25 November 2025** — earlier, and deprecation rather than removal |
+
+And the detail almost everyone misses: **this landed in the January 2026 Feature Channel, not in 9.2.0 GA.** Combined with the Feature Channel's non-production status for self-hosted customers, that produces a genuinely split timeline:
+
+| Deployment model | When gpt-oss-120b became usable in production |
+|---|---|
+| **MAS as a Service (SaaS)** | **January 2026** — IBM operates the environment, so Feature Channel content is live |
+| **Customer-managed (self-hosted)** | **25 June 2026**, at 9.2 GA — the Feature Channel is non-production for you |
+
+<aside>💡 <strong>Key insight:</strong> "When did Maximo change AI models?" has two correct answers five months apart, and which one applies to you depends on your deployment model, not your version number.</aside>
+
+Why this is worth getting exactly right rather than approximately right:
+
+- **Footprint.** A 120-billion-parameter model and an 8-billion-parameter model have materially different GPU, memory and node requirements. For a customer-managed cluster this is a capacity-planning input, not trivia.
+- **Model governance.** Regulated utilities, nuclear, defence and public-sector organisations often constrain which model families may process operational data. "We run IBM Granite" and "we run an OpenAI open-weights model" are different answers on a compliance questionnaire — and if you migrated, the answer changed on a specific date you can now cite.
+- **Deprecation is not removal.** Granite 3.2 8b Instruct being deprecated as of 25 November 2025 means it is on a clock, not gone. If you are still on it, you have a migration to plan and IBM has published the path.
+
+Still worth asking IBM in writing: the **AI Service model bill of materials for the exact version you deploy**. The documentation tells you what you *can* use; only your deployment tells you what you *are* using.
+
+## 🔍 What We Could Not Verify
+
+Two gaps remain in the AI picture, and both are narrower than the model question turned out to be:
+
+| Claim | Status | What would settle it |
+|---|---|---|
+| Maximo Condition Insight; AI in Field Service Management; AI-assisted incident classification; document abstraction beyond leases | **Announced, not in the documentation we could read** | The corresponding component what's-new page |
+| AppPoint ratios or licensing-cost changes for AI at 9.2 | **Not located** | An IBM licensing document stating per-capability AppPoint consumption |
+
+None of these make 9.2 a weaker release. They make it a release you should plan against with the documented set, and treat the rest as upside.
+
+---
+
+## ✅ How to Plan Around This
+
+Seven moves, in the order we would actually make them.
+
+1. **Split your own roadmap deck into the two tiers.** If a capability is Tier 2, it does not get a delivery date. This one discipline prevents most of the credibility damage that AI programmes do to themselves.
+2. **Enable AI Service in a deliberately narrow scope and measure AppPoints for a month** before committing to anything suite-wide. You cannot forecast the cost from documentation, so buy the number with a small experiment.
+3. **Build the MCP tool layer read-only first.** Query tools, one least-privilege identity, full invocation logging. Expose writes only after you have seen a cycle of what agents actually ask for.
+4. **Assign an owner and a service level to the Maximo IT solution-record review queue before enabling it.** An unreviewed queue converts a good feature into evidence that AI does not work here.
+5. **Shadow-run insights for a quarter and calibrate the confidence bands on your own assets.** Then, and only then, write the automation threshold into a procedure.
+6. **Add an AI test pass to your 9.2 UAT** using IBM's published testing guidance, and keep the results as a drift baseline for future Feature Channel updates.
+7. **Ask IBM in writing for the AI Service model bill of materials.** If your governance framework cares about model provenance, this is a gating item, not a curiosity.
+
+---
+
+## Key Takeaways
+
+- **The Maximo MCP server is the most consequential AI item in 9.2.** Automation scripts, object structures and workflows become AI tools, which means your existing Maximo team can build the tool layer without a data science hire.
+- **Agentic means tool selection over a defined set**, not autonomy. The right question is what is in the tool set — and the failure mode to test for is the agent choosing the wrong tool and answering confidently.
+- **The high/medium/low confidence score on alert insights is what makes them operationalisable.** It is an evidence measure, not a probability — calibrate it on your own assets before automating anything.
+- **AI Service AppPoint consumption is now trackable**, turning AI into a measurable cost line. IBM publishes no per-feature ratio, so measure with a small enablement rather than forecasting.
+- **Several announced capabilities are not documented, and the Granite-to-GPT-OSS model swap is unverified.** Plan against the documented set; ask IBM directly for the model bill of materials.
+
+---
+
+## ❓ Frequently Asked Questions
+
+**What does "agentic" actually mean for Maximo Assistant in MAS 9.2?**
+
+IBM's documentation says the assistant can now act as a single agent that analyzes your requests and works across a defined set of AI tools to answer them. The operative difference from a chatbot is tool selection — the assistant decides which capability to invoke based on your question, rather than answering from one retrieval corpus. The phrase "defined set" matters too: it is a bounded tool registry, not open-ended autonomy.
+
+**What is the Maximo MCP server and what can I build with it?**
+
+MCP is the Model Context Protocol, an open standard for exposing tools to AI agents in a shape any compliant agent runtime can discover and call. IBM's documentation states you can create custom AI tools using Maximo Manage automation scripts, object structures or workflows, and connect your own tools and agents to the Maximo MCP server. In practice that turns existing Manage artefacts into callable tools for AI you already run.
+
+**Do the AI features in MAS 9.2 consume AppPoints?**
+
+AI Service AppPoint consumption is now trackable on licensing dashboards — from the AI configuration application, choose Actions then Check AppPoints and find AI Service in the Instances table. That is a genuine change: AI consumption becomes a measurable licensing line item. What IBM does not publish is a per-feature AppPoint ratio, so you can measure consumption after enablement but you cannot model it in advance from the documentation.
+
+**Does MAS 9.2 AI Service run IBM Granite or an OpenAI model?**
+
+Either, and IBM documents the switch. Under the January 2026 Feature Channel: *"You can now use the gpt-oss-120b model for mcc, pcc, fmea, and nl2oslc model templates,"* with **IBM Granite 3.2 8b Instruct deprecated as of 25 November 2025**. It is an option with a documented migration path rather than a forced replacement, it covers four templates including the AI assistant, and because it arrived via the Feature Channel, SaaS customers had it in production from January 2026 while self-hosted customers got it at 9.2 GA. Ask IBM for the model bill of materials for the version you actually deploy. 
+
+**Which MAS 9.2 AI capabilities are documented versus only announced?**
+
+Documented in IBM product documentation: agentic Maximo Assistant, AI-generated asset and alert insights, RAG lease extraction in Real Estate and Facilities, the Maximo MCP server, the redesigned AI configuration application, AppPoint tracking, testing guidance, watsonx Orchestrate in Maximo IT, the assistant on Maximo Mobile, on-device visual inspection and natural-language what-if analysis. Announcement-only: Maximo Condition Insight, AI in Field Service Management, AI-assisted incident classification, and document abstraction beyond leases.
+
+---
+
+## References
+
+- [Introducing Maximo Application Suite 9.2 (IBM Announcements)](https://www.ibm.com/new/announcements/introducing-maximo-application-suite-9-2)
+- [What's new in Maximo Application Suite 9.2 (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-whats-in-maximo-application-suite-92)
+- [What's new in Maximo Manage 9.2 (IBM Documentation)](https://www.ibm.com/docs/SSLPL8_cd/com.ibm.mam.doc/overview/c_wn_manage_92.html)
+- [What's new in Maximo Mobile 9.2 (IBM Documentation)](https://www.ibm.com/docs/SSLPL8_cd/com.ibm.mam.doc/overview/c_wn_mobile_92.html)
+- [What's new in Maximo IT 9.2 (IBM Documentation)](https://www.ibm.com/docs/SSQ914_cd/com.ibm.sccd.doc/Overview/whats_new_9.2.html)
+- [What's new in Maximo Monitor 9.2 (IBM Documentation)](https://www.ibm.com/docs/SSQR84_cd/iot/overview/whats_new_92.html)
+- [What's new in Maximo Real Estate and Facilities 9.2 (IBM Documentation)](https://www.ibm.com/docs/SSZBD7_cd/topics/mref_whats_new_92.html)
+- [What's new in Maximo Visual Inspection 9.2 (IBM Documentation)](https://www.ibm.com/docs/SSRU69_cd/base/whats_new_92.html)
+- [What's new in Maximo Health and Predict 9.2 (IBM Documentation)](https://www.ibm.com/docs/SS7PRM_cd/com.ibm.ah.doc/overview/whats_new_92.html)
+
+---
+
+## Series Navigation
+
+**Part 5 of 7** · [← Previous: Outside Manage — The Suite Applications](/blog/mas-92-suite-applications) · [Next: The MAS 9.2 Upgrade Watch-List →](/blog/mas-92-upgrade-watchlist)
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | August 2026*

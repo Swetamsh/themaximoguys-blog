@@ -1,0 +1,491 @@
+---
+title: "What's New Outside Manage: The Rest of MAS 9.2"
+description: "Monitor 9.2 drops its IoT Platform dependency and becomes stand-alone. MVI removes Caffe and Darknet and retroactively drops NVIDIA Pascal GPUs. Health, Predict, Maximo IT, Real Estate and Facilities, HSE, Oil & Gas and AIP all shipped real changes. Here's the product-by-product breakdown, and which ones force work on upgrade."
+date: "2026-08-12"
+slug: "mas-92-suite-applications"
+tags: ["Maximo", "MAS 9", "MAS 9.2", "Maximo Monitor", "Maximo Visual Inspection", "Maximo Health", "Maximo Predict", "Maximo IT", "Real Estate and Facilities", "HSE", "Oil and Gas", "Asset Investment Planning", "Upgrade"]
+draft: true
+tier: "admin"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-92-04-outside-manage.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Does Maximo Monitor 9.2 still need the IoT Platform?"
+    answer: "Not usually. Monitor 9.2 removes its dependency on the IoT Platform and operates stand-alone as the single system of record for gateway, device and API key management, with authentication and authorisation handled centrally inside Monitor. IoTP becomes optional and is deployed only when you need MQTT-based ingestion, and then only as a reduced, lightweight runtime that keeps the essential messaging components. If you ingest by HTTP or CSV, you do not need it at all."
+  - question: "What happens to my Monitor device and gateway registry during the 9.2 upgrade?"
+    answer: "IBM migrates it. Device, gateway and authentication data is moved into the Monitor database during upgrade, which eliminates the duplicate registries that existed when Monitor and the IoT Platform each held their own copy. All authentication tokens are then managed and stored directly within Monitor, and every ingestion source authenticates directly against the Monitor data source. Treat it as a data migration event and validate device connectivity immediately after cutover."
+  - question: "Which GPUs are unsupported in Maximo Visual Inspection 9.2?"
+    answer: "NVIDIA Pascal series GPUs, which includes the P100, are not supported in Maximo Visual Inspection 9.2 and later. Critically, support has also been removed from earlier releases through fix packs, so staying on an older MVI version is not a workaround if you apply fixes. If your inference or training hosts are Pascal-based, that is a hardware procurement item on your upgrade plan, not a configuration item."
+  - question: "Do I have to retrain my Maximo Visual Inspection models for 9.2?"
+    answer: "If they were trained on Caffe or Darknet, yes. MVI 9.2 transitions model training to TensorFlow and PyTorch and removes the Caffe and Darknet frameworks entirely. Older architectures including SSD and GoogleNet are deprecated rather than removed, so they still run but should be treated as living on borrowed time. Inventory every deployed model by framework and architecture before you schedule the upgrade."
+  - question: "Is the Self Service Center still available in Maximo IT 9.2?"
+    answer: "It is deprecated in Maximo IT 9.2. IBM directs organisations to transition to the Self Serve application instead, which is where the 9.2 investment went — service bundling lets users submit multiple services in one request, chats gained sound notifications, and end users can now report issues against an IT-OT Service. Deprecated means still present but no longer the strategic path, so plan the migration rather than waiting for removal."
+keyTakeaways:
+  - "Monitor 9.2 removes its IoT Platform dependency and becomes a stand-alone system of record — the biggest architectural change in the release"
+  - "MVI 9.2 removes Caffe and Darknet, deprecates SSD and GoogleNet, and drops NVIDIA Pascal GPUs including the P100 retroactively through fix packs"
+  - "Health and Predict reorganise the Assets and locations dashboard into functional tabs with drag-and-drop cards, AI insights and probability of failure analysis"
+  - "Maximo IT deprecates Self Service Center in favour of Self Serve, and adds a watsonx Orchestrate agent that writes solution records from incident work logs"
+  - "HSE and Oil & Gas received an identical 9.2 payload: emissions and compliance, related records, and Maximo Mobile integration"
+series:
+  name: "MAS 9.2"
+  part: 4
+  total: 7
+tldr: "Most of the MAS 9.2 conversation is about Manage, and most of the engineering happened elsewhere. Monitor 9.2 severs its dependency on the IoT Platform and becomes a stand-alone system of record for devices, gateways and API keys — an infrastructure reduction and a migration event at once. Visual Inspection carries the release's densest set of breaking changes, including a retroactive end of support for NVIDIA Pascal GPUs. Health, Predict, Maximo IT, Real Estate and Facilities, HSE, Oil & Gas and Asset Investment Planning all shipped substantive work. This post covers each, and flags which ones force action on upgrade."
+seoTitle: "MAS 9.2 Outside Manage: Monitor, MVI, Health, IT"
+seoDescription: "MAS 9.2 beyond Manage: Monitor drops IoTP, MVI removes Caffe/Darknet and Pascal GPUs, plus Health, Predict, Maximo IT, REF, HSE and AIP changes."
+targetQuestions:
+  - "What's new in Maximo Monitor 9.2?"
+  - "Does Maximo Monitor 9.2 still need the IoT Platform?"
+  - "What changed in Maximo Visual Inspection 9.2?"
+  - "Which GPUs are not supported in MVI 9.2?"
+  - "What's new in Maximo IT 9.2?"
+semanticKeywords:
+  - "Maximo Monitor 9.2 stand-alone architecture"
+  - "IoT Platform optional MQTT ingestion"
+  - "Edge Data Collector fallback system"
+  - "CSV file ingestion Monitor"
+  - "resource-based access control Monitor"
+  - "MVI Caffe Darknet removed"
+  - "NVIDIA Pascal P100 end of support"
+  - "probability of failure analysis Maximo Health"
+  - "Self Service Center deprecated Self Serve"
+  - "watsonx Orchestrate Maximo IT"
+  - "RAG lease abstraction Real Estate and Facilities"
+  - "Asset Investment Planning Strategies rename"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Familiarity with which MAS applications your organisation has activated beyond Manage"
+  - "Basic understanding of how Maximo Monitor ingests device data today"
+  - "Awareness that MAS applications version independently within a suite release"
+  - "Working knowledge of your MVI model inventory if you run Visual Inspection"
+---
+
+# What's New Outside Manage: The Rest of MAS 9.2
+
+> 🎯 **Who this is for:** MAS administrators and platform owners who run more than Maximo Manage — and who have read three 9.2 summaries that all stopped at the Tickets application.
+
+**Series:** Part 4 of 7 — *MAS 9.2: What Actually Shipped* | **Read time:** 21 minutes
+
+---
+
+## 📖 The Half of MAS 9.2 Nobody Demos
+
+Here is the pattern you have probably noticed. Every MAS 9.2 briefing, every partner webinar, every LinkedIn carousel opens with Manage. Tickets, Alerts, AI-generated insights, calibration accuracy validation. All real, all covered in Part 3 of this series. And then the deck ends.
+
+Meanwhile, if you run Maximo Monitor, the single most consequential architectural change in the entire 9.2 release is sitting in your upgrade path and almost nobody has told you about it. If you run Maximo Visual Inspection, there is a hardware support removal in this release that reaches backwards into versions you already have installed. If you run Maximo IT, an application your users log into every day has been deprecated.
+
+This is not IBM hiding anything — all of it is published in the product what's-new pages. It is a marketing gravity problem. Manage is the biggest product, so Manage gets the airtime, and the suite applications get a bullet each.
+
+That is a problem for you specifically, because the suite applications are where the *forced work* lives. Manage 9.2 is largely additive: new applications appear, existing ones gain fields, and your day-one experience is "more things exist now." Outside Manage, 9.2 contains framework removals, hardware end-of-support, an application deprecation, and a registry migration. Those are not features you can adopt at your leisure. They are gates.
+
+So this post is the other half of the release. Product by product, what actually changed, and — the question that matters when you are building an upgrade plan — whether it forces work on you or simply waits until you are ready.
+
+We will not re-cover Manage or Optimizer (that is Part 3), and we will not do the cross-cutting AI story in depth (that is Part 5). Where a suite application shipped its own AI feature, it is covered here, because it belongs to the product.
+
+---
+
+## 🛰️ Monitor 9.2: The Biggest Architectural Change in the Release
+
+Start here, because nothing else in 9.2 is this structural.
+
+**Maximo Monitor 9.2 removes its dependency on the IoT Platform.** IBM's own words in the Monitor 9.2 what's-new are that Monitor "introduces a re-architected IoT integration" that "removes the dependency on IoT Platform (IoTP)." Monitor now operates as a stand-alone application and serves as the **single system of record for gateway, device and API key management**, with all authentication and authorisation handled centrally within Monitor.
+
+If you have deployed Monitor on the classic stack, you know what that sentence is worth. Until 9.2, Monitor and the IoT Platform each carried part of the story. Devices and gateways were registered on one side, Monitor consumed them on the other, tokens existed in more than one place, and every conversation about "which system owns this device" ended in a diagram. That duplication is what 9.2 removes.
+
+### What happens to IoTP
+
+IoTP does not disappear. It becomes **optional**, and it deploys only when MQTT-based ingestion is required — and even then, as a **reduced, lightweight runtime that retains only the essential messaging components**. IBM's framing is that this "reduces infrastructure footprint, improves reliability, and supports multiple ingestion methods with a consistent security model."
+
+Read that as two distinct outcomes that arrive together:
+
+1. **An infrastructure reduction.** If your ingestion is HTTP or, new in 9.2, CSV-based, you no longer need the IoT Platform at all. If you do need MQTT, what you deploy is materially smaller than what you run today.
+2. **A migration event.** Device, gateway and authentication data is **migrated into the Monitor database during upgrade**. That is a data movement operation on production identity and connectivity records, and it happens as part of the upgrade whether or not you planned for it.
+
+The second point deserves the weight. This is not a feature you opt into after upgrading. If you are on the multi-tenant IoT Platform stack today, your registry is moving, your tokens are being consolidated into Monitor, and every ingestion source will authenticate directly against the Monitor data source afterwards. Plan validation of device connectivity as a post-cutover gate, not as something you check next sprint.
+
+| Concern | Monitor before 9.2 | Monitor 9.2 |
+|---|---|---|
+| IoT Platform | Required dependency | **Optional** — MQTT ingestion only |
+| IoTP footprint when deployed | Full platform | **Reduced, lightweight** messaging runtime |
+| System of record for devices and gateways | Split across Monitor and IoTP | **Monitor only** |
+| API key management | IoTP-side | **Monitor only** |
+| Authentication and authorisation | Split | **Centralised in Monitor** |
+| Device and gateway registry | Duplicated | **Single registry**, migrated at upgrade |
+| Ingestion options | MQTT, HTTP | MQTT, HTTP, **CSV files** |
+
+### Centralised gateway and device management
+
+The practical face of the new architecture is built-in management. Monitor 9.2 gives you the ability to **create and manage gateways and devices and view recent device events** directly, which IBM describes as eliminating the strict need for a separate IoT tool. All authentication tokens are managed and stored inside Monitor.
+
+For a Monitor administrator this collapses a two-console workflow into one. For a security reviewer, it collapses two token stores into one — which is a better answer than the one you have been giving in audits.
+
+### CSV file ingestion: the quietly important one
+
+Monitor 9.2 adds **CSV-based data ingestion** as a flexible alternative to real-time streaming protocols, aimed squarely at Asset Performance Management and Condition-Based Maintenance use cases. Files are ingested periodically from accessible storage locations: **IBM Cloud Object Storage, AWS S3 buckets, or Persistent Volumes**.
+
+This matters more than it sounds. A very large amount of real industrial condition data does not arrive as a stream. It arrives as a nightly export from a historian, a vibration analysis run, a lab result, a spreadsheet from a contractor. Until now, getting that into Monitor meant building something. Now there is a supported path.
+
+IBM supports three ingestion methods, and they map cleanly onto three different jobs:
+
+| Method | Intended for | Notes |
+|---|---|---|
+| **Monitor UI upload** | Smaller datasets, configuration files, ad hoc or one-time imports | Manual, subject to UI upload limits |
+| **APIs** | Automated workflows and batch-based ingestion | The integration path |
+| **External systems (e.g. Edge Data Collector)** | High-volume ingestion | Writes CSV directly to a Cloud Object Storage bucket, **bypassing UI and API upload limits** |
+
+Ingestion behaviour depends on the configured storage type — Persistent Volume or Cloud Object Storage — so that decision is an architecture choice, not a preference.
+
+### The Edge Data Collector fallback system
+
+This is the feature that will matter most to anyone with genuinely remote sites. The **Edge Data Collector fallback system** provides data buffering and automatic fallback on edge devices, explicitly designed to help ensure continuous collection and **zero data loss after the detection period** during network outages and connection failures.
+
+The mechanism is a three-tier publisher chain with a scheduled retry:
+
+| Tier | Publisher | Behaviour |
+|---|---|---|
+| **Primary** | MQTT **or** Cloud Object Storage | Normal operating path |
+| **Secondary** | Cloud Object Storage **or** Persistent Volume | Engaged on primary failure |
+| **Tertiary** | Persistent Volume | Last-resort local persistence |
+| **Recovery** | — | **Automatic retry to primary every 1 hour** |
+
+Note the honest wording IBM uses: zero data loss *after the detection period*. There is a window between a connection failing and the collector recognising it. That is a real engineering constraint, not a footnote, and it is the right way to describe a fallback system. If your compliance position depends on continuous capture, the detection window is the number to ask IBM about for your topology.
+
+### Resource-based access control
+
+Monitor 9.2 adds **resource-based access control (RBAC)**, which determines what a user can *see* based on rules defined against specific resource types. Rather than granting access to all available data, you can restrict users to a permitted subset. It applies to the common Monitor resource types: **assets, locations, systems, organizations, sites, device types, devices, and gateways**, and the permitted resources are returned in the user profile.
+
+IBM is precise about how this relates to what you already have, and so should you be: resource-based access control **complements role-based access control, it does not replace it**. Role-based permissions decide what actions a user can perform. Resource-based access control decides what data they can see. You need both, and the distinction is worth writing into your security design document verbatim, because it is exactly the kind of thing that gets conflated in a handover.
+
+For any organisation running Monitor across multiple sites, business units or contractor populations, this closes a genuine gap. "Everyone with the Monitor role sees every asset" has been an uncomfortable answer for a long time.
+
+### AI-generated alert insights and hierarchy dashboards
+
+Two analytics additions round out the release.
+
+**AI-generated alert insights** help detect meaningful patterns and data gaps across assets, locations and devices. You configure frequency-based alerts using **AlertByOccurrencesCount** and no-data alerts using **NoDataAlert**. When the configured conditions are met, Monitor triggers the alert and can **send it to Maximo Manage, where you review the AI-powered insight in the Tickets application**.
+
+That last hop is the interesting part, and it is the clearest example in 9.2 of the suite behaving like a suite rather than a bundle. A device stops reporting, Monitor raises a NoDataAlert, and the resulting insight lands in front of a planner in the new Manage Tickets application — the same application covered in Part 3. Monitor detects, Manage acts. Two products, one workflow, no integration project.
+
+**Hierarchy dashboards** show aggregated data from child resources on parent resource dashboards, and work across locations, assets, systems, sites and organizations. The design point IBM emphasises is what it avoids: you build combined views **without creating new KPIs or duplicating data**. Anyone who has maintained a shadow set of roll-up KPIs purely to make a site-level dashboard work will recognise the maintenance burden being removed.
+
+---
+
+## 👁️ Maximo Visual Inspection 9.2: Read This Before You Schedule Anything
+
+MVI 9.2 has the highest breaking-change density in the release. If you run Visual Inspection, this section is your upgrade plan.
+
+### The framework transition
+
+MVI 9.2 modernises the underlying model training infrastructure by **transitioning to TensorFlow and PyTorch**. IBM's stated goals are improved performance and accuracy, long-term maintainability, a standardised training experience across all model types, and enhanced security through updated libraries and regular patches.
+
+The cost of that modernisation is explicit:
+
+| Item | Status in MVI 9.2 | What it means for you |
+|---|---|---|
+| **TensorFlow, PyTorch** | Supported frameworks | The target state for all training |
+| **Caffe** | **Removed** | Models must be rebuilt |
+| **Darknet** | **Removed** | Models must be rebuilt |
+| **SSD architecture** | **Deprecated** | Still runs; plan migration |
+| **GoogleNet architecture** | **Deprecated** | Still runs; plan migration |
+| **Edge deployment (TensorRT, CoreML)** | **Continued support** | Existing deployment workflows survive |
+
+Removed and deprecated are different words and you should treat them differently. Caffe and Darknet are gone — anything trained on them needs to be retrained on a supported framework. SSD and GoogleNet are deprecated, meaning they still work in 9.2 but are on notice.
+
+The practical instruction is simple and unglamorous: **inventory every deployed model by framework and architecture before you commit to an upgrade date.** That inventory is the difference between a two-week upgrade and a two-quarter one, and it is the kind of thing nobody has written down because nobody needed it until now.
+
+### The retroactive hardware removal
+
+<aside>
+⚠️ <strong>Hardware warning — NVIDIA Pascal GPUs:</strong> NVIDIA Pascal series GPUs, <strong>including the P100</strong>, are not supported in Maximo Visual Inspection 9.2 and later. IBM states that <strong>support is also removed from earlier releases through fix packs</strong>. This is a retroactive hardware support removal — it reaches into MVI versions you already have installed. Staying on an older MVI release is not a workaround if you continue to apply fix packs.
+</aside>
+
+That callout is the single most operationally disruptive line in the MAS 9.2 documentation set, and it is buried in a product what's-new page that most MAS administrators never open.
+
+Think through what it actually implies. Ordinarily, the answer to "we are not ready for the new version" is "stay where you are." That answer does not hold here, because the removal was back-ported. Your options collapse to: replace Pascal-generation hardware, or freeze MVI fix packs and accept the security and support consequences of doing so.
+
+If your inference hosts or training servers are P100-based — and plenty of MVI deployments from the original wave are — this is a **procurement line item with a lead time**, not a configuration change you handle during the upgrade weekend. Start that conversation now, and start it with whoever owns the capital budget rather than whoever owns the cluster.
+
+### The additive half of MVI 9.2
+
+Set against the breaking changes, MVI 9.2 shipped genuinely useful capability.
+
+**Model validation with ground truth data** is new. You can use ground truth data to validate the accuracy of trained models and identify whether retraining would improve accuracy, measured with **precision, recall and Intersection over Union (IoU)**. Validation is available for image classification and object detection models, and IBM notes that bounding boxes are used for all object detection evaluation.
+
+This is quietly the most valuable feature in the product. "Is this model still good enough?" has historically been answered by feel, or by waiting for a bad inspection outcome. Now there is a metric, and a defensible basis for the retraining decision.
+
+**Resource sharing** lets you share data sets and models with other users. The shared user gains access to work with that dataset or model, individual permissions still control what each user may do, and the result is that teams stop duplicating resources across accounts. Anyone who has watched three data scientists each keep a private copy of the same 40 GB dataset will appreciate the storage bill alone.
+
+**Visual prompting** gains usability work: tooltips that provide context in-flow, links to product documentation and videos for in-context guidance, and UI consistency improvements across screens.
+
+**Visual Inspection in IBM Maximo Mobile** is the headline for field teams. Quality inspectors can capture images and perform **real-time inspections using trained AI models directly on iOS devices**. Note the platform specificity — IBM names iOS. If your field estate is Android, confirm your position before you build a rollout plan around this.
+
+---
+
+## 🩺 Maximo Health and Predict 9.2: The Dashboard Rebuild
+
+Health and Predict 9.2 is mostly additive, which makes it the easiest product in this post to plan for — and one of the most visibly changed on day one, because the dashboard your reliability engineers use every morning has been reorganised.
+
+### The Assets and locations dashboard, restructured
+
+The dashboard is now grouped into **functional tabs**, which IBM frames as reducing clutter and streamlining access to key performance indicators:
+
+| Tab | Contains |
+|---|---|
+| **Health** | Health scores, plus the Insights card with AI-generated analysis |
+| **Strategy** | Maintenance strategy information |
+| **Alerts and Meters** | New alert cards, meter comparison, incident history |
+| **Reliability** | Reliability metrics |
+| **Asset life** | Lifecycle and end-of-life information |
+| **Predict** | Predictive analytics — shown only if Predict is enabled |
+
+On top of that structure, cards are **configurable by drag and drop** — reliability engineers can add, remove and rearrange cards to build the view they actually work from. Combined with the tabs, this is the first version of this dashboard that a user can genuinely make their own.
+
+### New analysis capability
+
+**New asset health models for electrical transmission and distribution assets** compute health, risk, criticality, effective age and end-of-life probability scores. For utilities and grid operators this is the substantive news in the release — it extends the default model library into T&D asset classes rather than requiring you to build them.
+
+**AI-generated insights** appear on the Health tab's Insights card, delivering AI-powered analysis of an asset's performance covering key trends, potential risks and upcoming maintenance requirements.
+
+**Probability of failure (PoF) analysis** is new, estimating how likely an asset or asset group is to fail as it ages, to support decisions about repair, refurbishment and replacement timing. This is the analysis that turns a health score into a budget conversation.
+
+**New alert cards** let you view and manage open alerts for assets and locations directly on the Alerts and meters tab.
+
+**Incident history** on the asset or location details page displays all incidents linked to that asset or location, and clicking an incident ID **redirects you to the corresponding record in the Incidents (HSE) application in Maximo Manage**. That cross-product link is worth noting: it means a Health user investigating a poor score can see the safety events behind it without leaving their workflow — provided HSE is deployed.
+
+### The administrator-facing improvements
+
+Several 9.2 items are aimed squarely at whoever maintains the Health configuration rather than whoever reads the dashboards:
+
+- **Dynamic weights visibility** on the asset details page — you can now see the specific weights applied when calculating a health score, which makes scoring explainable instead of opaque.
+- **Deterministic ID generation and searchable names** for scoring groups, scores, drivers and factors. IDs are generated from component names in a standardised format, so the **same ID is created in development, test and production**. This removes a long-standing dependency on migration manager to keep IDs consistent, and lets analysts reference readable IDs in notebook-based calculations across environments.
+- **Custom Python libraries in Health notebooks** — load custom utility libraries directly into Watson Studio Health notebook templates via the health library (HealthLib) option, without packaging them as Python wheels.
+- **Scoring group hierarchies** — create parent-child relationships between scoring groups so dependent asset scores are calculated in the correct order.
+- **Meter comparison** — select up to six meters, view historical data in tabular and graphical form over a chosen date range, and download it as CSV.
+- **Improved scoring performance** through a batch processing and multi-threading architecture, with configurable batch size and thread count system properties for tuning against large asset and location workloads.
+
+If you have ever lost a day to health score IDs differing between test and production, the deterministic ID generation item alone justifies reading the Health 9.2 page in full.
+
+---
+
+## 🖥️ Maximo IT 9.2: An Agentic Agent and a Deprecation
+
+Maximo IT 9.2 continues IBM's stated direction of managing not just IT assets but the broader portfolio of IT and OT services delivered to the business. In practice, the release splits into new capability, a set of workflow enhancements, and one deprecation you need to plan around.
+
+### The deprecation first
+
+**The Self Service Center application is deprecated in Maximo IT 9.2.** IBM encourages organisations to transition to the **Self Serve** application, which it describes as providing an improved and modernised self-service experience for submitting and managing service requests.
+
+Deprecated is not removed — Self Service Center still functions in 9.2. But this is the clearest possible signal about where the investment is going, and the 9.2 feature list confirms it: every self-service enhancement in this release landed in Self Serve. Treat the migration as scheduled work with a deadline you set, rather than waiting for a release that sets one for you.
+
+### Agentic AI for incident handling
+
+Maximo IT 9.2 adds **agentic AI incident summarisation and knowledge creation**. The mechanics, as documented:
+
+- The AI agent provides a **detailed summarisation of open incidents with suggested resolution** when prompted.
+- A **watsonx Orchestrate agent runs in the background** analysing incident work log entries.
+- When an incident reaches **Resolved**, the agent **generates a solution record** in Maximo IT.
+- **Service agents review and publish** the generated solution.
+
+The design decision worth calling out is the human gate. The agent writes the draft; a person publishes it. That is the right shape for knowledge management, where an unreviewed auto-generated solution article is worse than no article at all. The broader agentic story across the suite is Part 5's territory, but this one belongs to Maximo IT because it is wired into a specific status transition in a specific product.
+
+### New and enhanced applications
+
+| Change | What it does | Type |
+|---|---|---|
+| **Software Tracking** | Track software licences, enable allocations, maintain entitlement records — updated for cloud-based software lifecycle governance | Updated application |
+| **Service Offerings** | Any user, not only administrators, can design and publish service catalog offerings — extended beyond IT to HR, Legal, Finance, OT | New application |
+| **Service bundling** | Submit multiple service requests in a single transaction in Self Serve | Self Serve enhancement |
+| **Services View — Reliability tab** | Service performance and operational metrics inside the Service View application | New tab |
+| **IBM MaaS360 integration** | Automated asset discovery and synchronisation of managed devices into Maximo IT | New integration |
+| **IT-OT Service support** | Service field extended to Change, Problem, Solution and Release, and to Self Serve issue reporting | Cross-app enhancement |
+| **IT Details tab in Assets** | Displays automatically when Maximo IT is installed — no manual classification setup | Usability |
+| **Service Delivery scope** | Now supports Service Request records alongside Incidents, and both can be created directly from the workspace | Workflow |
+| **Self Service Center** | **Deprecated** — transition to Self Serve | **Deprecation** |
+
+Two of those deserve a second look. The **Service Offerings** application removes the administrator bottleneck from catalog management, and IBM is explicit that the intent is to push offerings well beyond IT into any part of the business that wants a request channel. And the **Service Delivery** expansion to Service Requests means agents finally work incidents and requests in one workspace instead of switching applications — a small change that quietly removes a daily irritation.
+
+Maximo IT 9.2 also supports **Java 25**, aligning it with the Manage and Optimizer platform move covered in Part 3, and picks up the focused left navigation experience that displays applications directly in the left panel with per-user personalisation, still respecting Security Group access.
+
+---
+
+## 🏢 Real Estate and Facilities 9.2: AI Abstraction and Upgrade Tooling
+
+Maximo Real Estate and Facilities 9.2 has an unusual shape for a MAS release — a marquee AI feature sitting next to a set of upgrade tools that exist because REF customers are, very often, TRIRIGA customers mid-migration.
+
+### AI lease abstraction
+
+You can now **use AI to create a lease abstract** by uploading up to **five documents per lease**, each a maximum of **15 MB**, in **PDF or DOCX** format, and having AI populate key values. This requires AI Service to be deployed.
+
+The detail that makes this credible rather than a demo: after AI populates the values, you can **select any field to view its source location in the document**, then review and edit before creating the draft lease abstract record. Field-level provenance is exactly what a lease administrator needs to trust an extracted value, and its absence is why most document-extraction features never make it into production use.
+
+IBM has positioned RAG-based lease abstraction as the beginning of broader document abstraction across the suite. Part 5 takes up that thread.
+
+### Upgrade and migration tooling
+
+This is the practical half of REF 9.2, and it is aimed at reducing the cost of the upgrades REF customers keep having to do:
+
+- **Combine multiple Object Migration import packages** into a single consolidated package, reducing the number of packages to manage.
+- **Filter Object Migration packages to non-IBM objects** when copying, so you focus on custom objects only.
+- **Configure Application Object Migration installation during activation** — choose manual, load-only, or automatic installation to control when application upgrades are applied.
+- **The User Migration Tool is now included in the application.** It migrates users and their licence entitlements from an existing IBM TRIRIGA environment, and **no longer needs to be downloaded and installed separately from IBM Fix Central**.
+- **A timezone migration tool** adjusts nonrelative date field values when the application server timezone changes, detecting the change automatically at server startup and migrating affected data using concurrent processing.
+
+That timezone tool is the kind of feature that only exists because it hurt somebody badly. If you have ever moved an application server between regions and watched date fields shift underneath you, you know exactly which problem it solves.
+
+### Everything else in REF 9.2
+
+- **Integration with Maximo Manage** — synchronise location and asset data between the applications and create Manage work orders from REF service requests. The integration is mostly preconfigured and uses cluster certificates, so no separate authentication configuration is required, and it includes a Manage Integration Manager application for mapping properties and buildings to sites and systems.
+- **Native S3 object storage support** for file-based integrations in Data Integrator and Integration Object, as a replacement for SFTP, with file encryption at rest using AES-256-GCM or RSA with hybrid AES-256-GCM.
+- **Dynamic space planning** — floor plan markup saved separately from the original drawing, creating space assessments directly from a scenario, and applying space assessment people-updates back into scenarios.
+- **Reserve app** — time picker matching the user's profile format, Outlook delegate synchronisation, **automatic room check-in using IoT occupancy sensors** when integrated with Maximo Monitor and connected Cisco Webex devices, and cancel-and-replace for reservations including recurring series.
+- **Lease administration** — month-end security lockout to prevent lease changes during close, and a Bulk Download Report for multiple lease records as a single BIRT report.
+- **Capital projects** — currency now aligned with and autopopulated from the mandatory primary location.
+- **Platform** — IBM Semeru JDK 21 (up from JDK 17), Amazon RDS for Db2 support for customer-managed AWS deployments (licences not included in REF entitlement), sessions stored in the database and shared across UI pods so a pod failure does not force re-login, and the common MAS application header.
+
+---
+
+## ⛑️ HSE and Oil & Gas 9.2: The Same Three Areas, Deliberately
+
+Maximo Health, Safety and Environment 9.2 and Maximo Oil & Gas 9.2 received **the same payload**, organised under the same three headings: emissions and compliance management, related records management, and integration with IBM Maximo Mobile. If you run one, you already know what the other got.
+
+That symmetry is worth naming rather than glossing over. It tells you these capabilities were built once in the shared safety layer and surfaced in both industry solutions, which in turn tells you something useful about how IBM is now investing in industry solutions — shared capability first, industry specialisation second.
+
+**Emissions and compliance management** brings three things:
+
+- A new **Waste management application** for tracking waste from generation through storage, handling and final disposal — managing storage, monitoring amounts by location, reporting production, and linking waste data to inspections, risk assessments, regulations and certifications.
+- A new **Companies application** in the Safety module for managing safety-related information about contractors, vendors and other companies.
+- **Automatic CO₂e calculation for fugitive emissions** using the **Envizi greenhouse gas API**. A new Emission gas type field appears in the Incident events table; you select a gas type and enter the amount and unit of measure, and on save Manage sends the details to Envizi, which calculates the CO₂e value and returns it. The CO₂e amount and unit fields populate automatically, removing manual or spreadsheet-based calculation.
+
+**Related records management** brings two:
+
+- **AI-powered incident categorization** in the Tickets application. A **multi-class classifier (MCC) model** analyses incident summaries and details to suggest values for **Incident Type** and **Incident Category**. The model is trained on your organisation's historical incident data, and as you type in the Summary or Details field it returns **multiple suggestions ranked by confidence level** for you to review and select. IBM's stated benefit is reducing manual effort on high-frequency, low-consequence incidents and improving consistency for trend analysis.
+- **Improved inspection assignments** — assign inspections to specific individuals or groups so unassigned inspections stop downloading to every mobile device. New owner and owner-group fields in inspection results drive routing, and the change lands across **Access Permits, Audit and Surveys, Incidents, Operator Rounds in Operator Log, Risk Assessments, Management of Change, and Waste management**. Each of those also gains a **Related Inspections** section under the Related Records tab.
+
+**Maximo Mobile integration** brings two more:
+
+- A new **Permit to work mobile application**, integrated with the existing HSE and Oil & Gas permit processes, so technicians can initiate Permit to work requests at the job site with the approval, validation and control mechanisms intact.
+- **Maps in Incident reporter** — preview existing incident details from a map, or add a new incident associated to an asset or location directly from it.
+
+Both products also gain **predefined domains in Locations**: Subunit/Component Code and Maintainable Item/Part Code can now be selected from the same domains used in Work Order Tracking, under the Failure Analysis tab, instead of being open text fields. **No additional configuration is required.** That is a small change with a large payoff for anyone whose failure analysis reporting has been undermined by free-text entry — and it is free.
+
+---
+
+## 💰 Asset Investment Planning 9.2: Closed-Loop Planning
+
+<aside>
+⚠️ <strong>Reported, not confirmed:</strong> The AIP 9.2 details below come from an IBM search-result summary of the AIP what's-new rather than from the primary page itself, which we could not read in August 2026. Everything else in this post was read directly from cached IBM primary documentation. <strong>What would settle it:</strong> reading the Asset Investment Planning 9.2 what's-new topic directly on IBM Documentation. Verify before you build a plan on these specifics.
+</aside>
+
+With that caveat stated plainly, the reported shape of AIP 9.2 is **closed-loop planning** — closing the gap between an optimised scenario and executed work:
+
+- **Publish optimised scenarios to a global investment plan.**
+- **Generate intervention work orders** from the published plan.
+- **Re-optimise strategies** as conditions change.
+- **Link Job Plans as intervention templates**, so planned interventions inherit real, existing work definitions rather than abstract cost lines.
+- **Scenario favoriting and custom names** for managing multiple scenarios.
+- **"Strategic Plans" is renamed "Strategies."**
+
+The Job Plan linkage is the conceptually significant item if it holds up. Investment planning tools have always struggled at the boundary where a modelled intervention becomes an actual scheduled job; tying interventions to Job Plans is the mechanism that closes it.
+
+The rename from Strategic Plans to Strategies is minor in engineering terms and non-trivial in training terms — it is the sort of change that generates support tickets in week one and is entirely preventable with one line in a release note to users.
+
+---
+
+## 📋 Product by Product: What Changed, and Does It Force Work?
+
+This is the table to lift into your upgrade planning document.
+
+| Product | What changed in 9.2 | Forces work on upgrade? |
+|---|---|---|
+| **Monitor** | IoTP dependency removed; stand-alone system of record; CSV ingestion; EDC fallback; resource-based access control; AI alert insights; hierarchy dashboards | **Yes** — device, gateway and auth data migrates into the Monitor database; validate connectivity post-cutover |
+| **Visual Inspection** | TensorFlow/PyTorch transition; Caffe and Darknet removed; SSD and GoogleNet deprecated; ground truth validation; resource sharing; iOS mobile inspection | **Yes, twice** — retrain Caffe/Darknet models, **and** replace NVIDIA Pascal GPUs including P100 (removal is retroactive via fix packs) |
+| **Health and Predict** | Dashboard reorganised into functional tabs; drag-and-drop cards; electrical T&D health models; AI insights; alert cards; incident history; PoF analysis; deterministic IDs | **No** — additive; expect user retraining on the new dashboard layout |
+| **Maximo IT** | Agentic AI incident summarisation and solution generation via watsonx Orchestrate; Software Tracking; Service Offerings; service bundling; Reliability tab; MaaS360; Java 25 | **Yes** — **Self Service Center is deprecated**; plan the move to Self Serve |
+| **Real Estate and Facilities** | AI lease abstraction; Manage integration; native S3; Object Migration consolidation; User Migration Tool built in; timezone migration tool; Semeru JDK 21 | **Mostly no** — mostly enabling tooling; check the JDK 21 move and any S3/SFTP transition |
+| **HSE** | Waste management and Companies applications; Envizi CO₂e calculation; AI incident categorization; inspection assignments; Permit to work mobile; maps in Incident reporter | **No** — additive; MCC model needs your historical incident data to be useful |
+| **Oil & Gas** | Identical payload to HSE | **No** — additive |
+| **Asset Investment Planning** | Closed-loop planning; intervention work orders; Job Plans as templates; **"Strategic Plans" renamed "Strategies"** *(reported, not confirmed)* | **Verify first** — then plan user communication for the rename |
+
+---
+
+## 🧭 How to Read This Release If You Run More Than Manage
+
+Five rules, in the order they should hit your plan.
+
+1. **Inventory before you schedule.** Every forced item in this post is discovered by an inventory, not by an upgrade run: MVI models by framework, MVI hosts by GPU generation, Monitor devices and gateways, Self Service Center users. Do the inventory first and the upgrade date becomes a fact rather than a guess.
+
+2. **Treat the Monitor upgrade as a data migration, not a version bump.** Device, gateway and authentication data moves into the Monitor database. Build a post-cutover validation gate that proves every ingestion source still authenticates and still delivers. Do not let "Monitor came up" stand in for "data is flowing."
+
+3. **Escalate the Pascal GPU issue today.** It is the only item in MAS 9.2 with a hardware procurement lead time, and it is also the only one where staying on your current version does not protect you, because the removal was back-ported through fix packs.
+
+4. **Deprecations are scheduled work with no date attached.** Self Service Center in Maximo IT, and SSD and GoogleNet in MVI, all still work. That is exactly what makes them easy to forget until the release that removes them lands. Put a date on each one yourself.
+
+5. **Check add-on availability before you commit.** IBM's upgrade documentation is blunt about this: before upgrading you must consider whether your MAS applications and add-ons are available for upgrade, and if they are no longer available, you must deactivate and delete them. For anyone running the long tail of industry solutions, that sentence is the real gate — and it is Part 6's subject in full.
+
+The theme connecting Monitor, MVI and Maximo IT in this release is consolidation. One registry instead of two. Two frameworks instead of four. One self-service application instead of two. Each is a simplification that arrives as a cost, then pays back afterwards. That is a reasonable trade — but only if you meet the cost deliberately, on a date you chose.
+
+---
+
+## Key Takeaways
+
+- **Monitor 9.2 removes its IoT Platform dependency** and becomes the stand-alone single system of record for gateways, devices and API keys. IoTP survives only as an optional lightweight runtime for MQTT ingestion.
+- **The Monitor upgrade migrates your device, gateway and authentication data** into the Monitor database. Plan connectivity validation as a cutover gate.
+- **MVI 9.2 removes Caffe and Darknet, deprecates SSD and GoogleNet, and drops NVIDIA Pascal GPUs including the P100** — with that hardware removal back-ported into earlier releases through fix packs.
+- **Maximo IT deprecates Self Service Center in favour of Self Serve**, and adds a watsonx Orchestrate agent that drafts solution records from incident work logs for human review and publication.
+- **Health, Predict, REF, HSE, Oil & Gas and AIP are largely additive** — real capability, but no forced work beyond user retraining and the AIP "Strategies" rename.
+
+---
+
+## References
+
+- [What's new in Maximo Monitor 9.2 (IBM Documentation)](https://www.ibm.com/docs/en/SSQR84_cd/iot/overview/whats_new_92.html)
+- [What's new in Maximo Visual Inspection 9.2 (IBM Documentation)](https://www.ibm.com/docs/SSRU69_cd/base/whats_new_92.html)
+- [What's new in Maximo Health 9.2 and Maximo Predict 9.2 (IBM Documentation)](https://www.ibm.com/docs/en/mhmpmh-and-p-u/cd)
+- [What's new in Maximo IT V9.2 (IBM Documentation)](https://www.ibm.com/docs/SSQ914_cd/com.ibm.sccd.doc/Overview/whats_new_9.2.html)
+- [What's new in Maximo Real Estate and Facilities 9.2 (IBM Documentation)](https://www.ibm.com/docs/en/SSZBD7_cd/topics/mref_whats_new_92.html)
+- [What's new in Maximo Health, Safety and Environment 9.2 (IBM Documentation)](https://www.ibm.com/docs/en/SS5GME_cd/hse/overview/whats_new_hse_92.html)
+- [What's new in Maximo Oil & Gas 9.2 (IBM Documentation)](https://www.ibm.com/docs/en/SSLL9G_cd/oil/overview/whats_new_oil_92.html)
+- [What's new in IBM Maximo Application Suite 9.2 (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-whats-in-maximo-application-suite-92)
+- [Introducing Maximo Application Suite 9.2 (IBM Announcements)](https://www.ibm.com/new/announcements/introducing-maximo-application-suite-9-2)
+
+---
+
+## ❓ Frequently Asked Questions
+
+### Does Maximo Monitor 9.2 still need the IoT Platform?
+
+Not usually. Monitor 9.2 removes its dependency on the IoT Platform and operates stand-alone as the single system of record for gateway, device and API key management, with authentication and authorisation handled centrally inside Monitor. IoTP becomes optional and is deployed only when you need MQTT-based ingestion, and then only as a reduced, lightweight runtime that keeps the essential messaging components. If you ingest by HTTP or CSV, you do not need it at all.
+
+### What happens to my Monitor device and gateway registry during the 9.2 upgrade?
+
+IBM migrates it. Device, gateway and authentication data is moved into the Monitor database during upgrade, which eliminates the duplicate registries that existed when Monitor and the IoT Platform each held their own copy. All authentication tokens are then managed and stored directly within Monitor, and every ingestion source authenticates directly against the Monitor data source. Treat it as a data migration event and validate device connectivity immediately after cutover.
+
+### Which GPUs are unsupported in Maximo Visual Inspection 9.2?
+
+NVIDIA Pascal series GPUs, which includes the P100, are not supported in Maximo Visual Inspection 9.2 and later. Critically, support has also been removed from earlier releases through fix packs, so staying on an older MVI version is not a workaround if you apply fixes. If your inference or training hosts are Pascal-based, that is a hardware procurement item on your upgrade plan, not a configuration item.
+
+### Do I have to retrain my Maximo Visual Inspection models for 9.2?
+
+If they were trained on Caffe or Darknet, yes. MVI 9.2 transitions model training to TensorFlow and PyTorch and removes the Caffe and Darknet frameworks entirely. Older architectures including SSD and GoogleNet are deprecated rather than removed, so they still run but should be treated as living on borrowed time. Inventory every deployed model by framework and architecture before you schedule the upgrade.
+
+### Is the Self Service Center still available in Maximo IT 9.2?
+
+It is deprecated in Maximo IT 9.2. IBM directs organisations to transition to the Self Serve application instead, which is where the 9.2 investment went — service bundling lets users submit multiple services in one request, chats gained sound notifications, and end users can now report issues against an IT-OT Service. Deprecated means still present but no longer the strategic path, so plan the migration rather than waiting for removal.
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 3 — Inside Manage: What Actually Changed](/blog/mas-92-manage-features) |
+| **Next:** | [Part 5 — The AI Layer in MAS 9.2](/blog/mas-92-ai-features) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo teams plan version moves with evidence, not vendor slides. Every fact in this post traces to IBM primary documentation cached and cited above.
+
+*Published by TheMaximoGuys | August 2026*

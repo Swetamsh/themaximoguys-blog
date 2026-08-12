@@ -1,0 +1,435 @@
+---
+title: "MAS 9.0 vs 9.1 vs 9.2: The Honest Comparison"
+description: "A dimension-by-dimension comparison of Maximo Application Suite 9.0, 9.1 and 9.2 — platform and navigation, AI, applications, Java and database prerequisites, and support lifecycle — built only from IBM's own pages, with every claim we could not verify flagged as such."
+date: "2026-08-12"
+slug: "mas-92-vs-91-vs-90"
+tags: ["Maximo", "MAS 9", "MAS 9.2", "MAS 9.1", "MAS 9.0", "Maximo Manage", "Upgrade", "Version Comparison", "EAM"]
+draft: true
+tier: "admin"
+author: "Venkat Achanta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-92-02-version-comparison.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What is the biggest difference between MAS 9.1 and MAS 9.2?"
+    answer: "Two things, and neither is a feature. First, 9.2 removes user synchronisation entirely — user and group data now lives only in the Maximo Manage relational database, and the user management APIs deprecated in 9.1 are gone. Second, the Java runtime jumps from Java 17 to Java 25 for both Maximo Manage and Maximo Optimizer. Everything else — the agentic assistant, Tickets, Alerts — is additive. Those two are structural, and they are what break integrations."
+  - question: "Which Java version does each MAS release use?"
+    answer: "IBM's Maximo Manage what's-new pages state it plainly: Manage 9.1 migrated to Java 17, and Manage 9.2 migrates to Java 25, with Maximo Optimizer moving to Java 25 alongside it. The Manage 9.0 what's-new page does not carry a Java migration note at all. The same pages record BIRT moving from 4.16 at 9.1 to 4.21 at 9.2, which is the companion change most reporting teams care about."
+  - question: "What happened to Maximo Assist?"
+    answer: "It was renamed IBM Maximo Collaborate starting in MAS 9.1. In MAS 9.2 Collaborate is deprecated as a suite add-on and becomes an add-on inside Maximo Manage instead. As part of that move, the Expert Groups and Technicians applications migrate to Person Groups and Labor, Collaborate Sessions becomes the Collab Session application under Work Orders, and ICE server configuration moves into Mobile Configuration. Collaborate cannot be installed on Single Node OpenShift."
+  - question: "When does support end for MAS 9.0, 9.1 and 9.2?"
+    answer: "We cannot tell you, and you should be suspicious of anyone who states it confidently. From version 9.0 onward IBM applies Support Cycle-3 — three years of support, a one-year critical fix extension, and three years of usage with existing fixes (3+1+3). But the actual date tables on IBM's lifecycle pages are rendered client-side and returned empty when fetched, so we could not read published end-of-support dates for any 9.x release. Confirm through IBM Support directly."
+  - question: "Did MAS 9.0 and 9.1 have AI features, or did AI start with 9.2?"
+    answer: "AI started before 9.2. IBM's Maximo Manage 9.1 what's-new page documents an AI assistant, a required AI Service deployment, similar-record detection, similar work orders and AI-recommended field values. The Manage 9.0 page documents no AI features at all. What 9.2 changes is posture: the assistant becomes a single agent that works across a defined set of AI tools, and AI moves from feature-level assistance to insight generation with confidence scores."
+keyTakeaways:
+  - "9.1 moved Manage to Java 17; 9.2 moves it to Java 25 — the cleanest hard signal of upgrade effort across the three releases"
+  - "9.2 removes user synchronisation and the deprecated user management APIs; user and group data lives only in the Manage database"
+  - "Maximo Assist became Collaborate at 9.1 and became a Manage add-on at 9.2 — three names, three homes, one product"
+  - "AI existed at 9.1 as assistant-and-suggestions; 9.2 reframes it as a single agent working across defined AI tools"
+  - "Published end-of-support dates for 9.0, 9.1 and 9.2 could not be read from IBM's lifecycle pages — do not plan against a computed date"
+series:
+  name: "MAS 9.2"
+  part: 2
+  total: 7
+tldr: "Three MAS releases in three years, and no single page compares them. This post builds that comparison from IBM's own Manage what's-new pages for 9.0, 9.1 and 9.2 plus the suite-level 9.2 page. The through-lines that actually matter: Java 17 to Java 25, user and security data migrating out of Manage and up into the suite, and Maximo Assist becoming Collaborate becoming a Manage add-on. The through-line nobody advertises: IBM only serves the current release at suite level, so historical version pages no longer resolve — and 9.x end-of-support dates could not be read at all."
+seoTitle: "MAS 9.0 vs 9.1 vs 9.2: The Honest Comparison"
+seoDescription: "Compare Maximo Application Suite 9.0, 9.1 and 9.2 across platform, AI, applications, Java prerequisites and lifecycle — with unverifiable claims flagged."
+targetQuestions:
+  - "What is the difference between MAS 9.1 and MAS 9.2?"
+  - "Which Java version does Maximo Manage 9.2 use?"
+  - "What happened to Maximo Assist in MAS 9.1?"
+  - "When does support end for MAS 9.0 and 9.1?"
+  - "Should I upgrade from MAS 9.0 straight to 9.2?"
+semanticKeywords:
+  - "MAS 9.2 vs 9.1"
+  - "Maximo Manage 9.2 Java 25"
+  - "Maximo Assist renamed Collaborate"
+  - "MAS 9.2 user synchronisation removed"
+  - "Maximo Application Suite Support Cycle-3"
+  - "Asset data dictionary deprecated"
+  - "Maximo Tickets application"
+  - "Access and usage suite navigation"
+  - "Software Product Compatibility Report SPCR"
+  - "MAS 9.2 Db2 12 licence"
+  - "Manage component version numbers"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "You know which MAS version your environment is currently running"
+  - "Familiarity with Maximo Manage administration — Security Groups, Users, system properties"
+  - "Basic awareness of how MAS is deployed on Red Hat OpenShift"
+---
+
+# MAS 9.0 vs 9.1 vs 9.2: What Actually Changed, What IBM Documented, and What Nobody Can Verify
+
+> 🎯 **Who this is for:** the Maximo administrator or platform owner who has to write the upgrade business case — and who has discovered that no single IBM page compares the three 9.x releases side by side.
+
+**Series:** Part 2 of 7 — *MAS 9.2: The Honest Series* | **Read time:** 19 minutes
+
+---
+
+## 📖 Three Releases, Three Years, and No Scoreboard
+
+You are probably in one of three seats. You went live on 9.0 and have been heads-down on adoption ever since. You landed on 9.1 last year and are being asked whether 9.2 is worth another outage window. Or you are still on 8.x, watching the 9.x line pull away, and you need to know what you are actually walking into.
+
+Whichever seat you are in, you have hit the same wall: **there is no page that compares 9.0, 9.1 and 9.2.** IBM publishes a what's-new page per version, and those pages are written for someone who already had the previous one. They tell you what is new. They do not tell you what the arc is.
+
+Worse — and this is the finding that shaped this entire post — **the suite-level what's-new topics for 9.0 and 9.1 no longer resolve.** IBM's documentation serves only the current continuous-delivery release at the suite level. The Manage-level pages for 9.0 and 9.1 do still resolve, which is why this comparison leans on them heavily. But if your upgrade plan assumes you can go back and read what the suite shipped two versions ago, that assumption is already broken.
+
+So this post does the boring, necessary thing. It reads the three Manage what's-new pages and the current suite page, lines them up, and reports the differences dimension by dimension. Where IBM's own pages are silent, this post says so rather than filling the gap with something that sounds right.
+
+<aside>
+💡 <strong>Key insight:</strong> "Not documented on the version's what's-new page" is not the same as "did not exist." A what's-new page records what IBM chose to announce for that release. Throughout this post, when we say a page is silent on something, that is a statement about the documentation — not proof of absence.
+</aside>
+
+---
+
+## 📊 The One-Screen Comparison
+
+Start here. Everything after this section expands one row of this table.
+
+| Dimension | MAS 9.0 | MAS 9.1 | MAS 9.2 |
+|---|---|---|---|
+| **Component versioning** | Aligned to Manage version, increments continuously | Continues | Continues |
+| **Suite navigation** | — | — | Role-based menu section **removed**; Security → **Access and usage** |
+| **AI in Manage** | Not on the what's-new page | AI assistant, AI Service, similar records | **Agentic assistant**, alert insights with confidence scores |
+| **New Manage apps** | Formulas | — | **Tickets**, **Alerts** |
+| **Removed / deprecated** | Digital Twin Exchange; Bing & Google Maps | **Asset data dictionary** | Collaborate as *suite* add-on; MAF `chat-log` |
+| **Java** | Not stated | **Java 17** | **Java 25** |
+| **BIRT** | Not stated | 4.16 | **4.21** |
+| **Database** | Not stated | Not stated | **Db2 12** (11→12 needs licence) |
+| **User & group data** | In suite, synchronised | Deprecated user APIs | **Sync removed**; data in Manage DB only |
+| **Support policy** | **Cycle-3 (3+1+3)** begins | Cycle-3 | Cycle-3 |
+| **Published EOS date** | Could not be read | Could not be read | Could not be read |
+
+Two rows in that table are worth more than the rest combined. The **Java** row tells you how much regression testing you owe. The **user & group data** row tells you which integrations will break. We will spend most of this post on those two arcs and the product-renaming arc that sits between them.
+
+---
+
+## 🧱 Platform and Navigation: Versioning Settled at 9.0, the Menu Moved at 9.2
+
+### The versioning change that made everything else legible
+
+The single most useful thing MAS 9.0 did was administrative, not functional. **Starting in Maximo Manage 9.0, component version numbers align with the Manage version** and, because of continuous delivery, increment continually. When you need the latest component, you select the one with the highest version number. Major and minor fix pack versions stay stable — 9.0.0, 9.0.1, and so on.
+
+Before that alignment, correlating an add-on's version to a base version was guesswork. After it, it is arithmetic. Here is what Manage 9.0.0 actually shipped, straight from IBM's table — useful today mainly as a reference point for how far your add-ons have drifted:
+
+| Component | Version at Manage 9.0.0 |
+|---|---|
+| Maximo Manage base | 9.0.43 |
+| Asset Configuration Manager | 9.0.40 |
+| Reliability Strategies | 9.0.75 |
+| Civil Infrastructure | 9.0.12 |
+| Maximo Health | 9.0.13 |
+| Health, Safety and Environment | 9.0.7 |
+| Oil & Gas | 9.0.7 |
+| Connector for Workday | 9.0.7 |
+| Spatial | 9.0.4 |
+| Maximo IT | 9.0.3 |
+| Aviation / Nuclear / Utilities / Connectors (Oracle, SAP) | 9.0.2 |
+| Envizi, Service Provider, Transportation, TRIRIGA connector | 9.0.1 |
+
+Notice how uneven those numbers are within a single "9.0.0" release. Reliability Strategies was already at 9.0.75 while Transportation sat at 9.0.1. That is continuous delivery working as designed, and it is why "we're on 9.0" is an incomplete answer to any support question.
+
+### What changed on screen at 9.2
+
+Navigation is where 9.2 announces itself before you touch a single feature. IBM's suite-level 9.2 page records four changes:
+
+1. **The role-based menu section is removed.**
+2. **Mobile applications are now labelled "(Mobile)".**
+3. **The Security section is renamed "Access and usage".**
+4. Users can set a **default application** and personalise the side navigation.
+
+Item 3 looks cosmetic and is not. "Access and usage" is where security groups, users, and licence-consumption views now live together — and as the next-but-one section shows, several things that used to be Manage's job moved into that section. The rename is the visible edge of a structural change.
+
+<aside>
+💡 <strong>Key insight:</strong> Update your runbooks and training screenshots for the <strong>Security → Access and usage</strong> rename before go-live, not after. Every internal document that says "navigate to Suite &gt; Security" is now wrong, and administrators will burn support tickets on it.
+</aside>
+
+---
+
+## 🤖 The AI Arc: Absent, Then Assistive, Then Agentic
+
+This is the dimension where most third-party comparisons go wrong, so it gets careful treatment.
+
+### What IBM's own Manage pages say
+
+**Manage 9.0's what's-new page documents no AI features.** Not "minimal AI" — none. Its new-and-enhanced section covers Formulas, work order planning, Work Queue Manager, route statuses, job plan qualifications, and the Reliability Strategies library.
+
+**Manage 9.1's page is where AI arrives,** and it arrives as five distinct items:
+
+- An **AI assistant** that retrieves and answers questions across Maximo Manage, Maximo Health, the Operational dashboard and asset dashboards, configured through the AI configuration application.
+- **AI Service**, which you must deploy and configure to support AI configurations at all.
+- **Similar records** — using AI to find similar records.
+- **Similar work orders** — viewing similar work orders for a given work order.
+- **AI-recommended field values** in work orders.
+
+**Manage 9.2 changes the posture rather than the presence.** The assistant "can now act as a single agent that analyzes requests and works across a defined set of AI tools," handling prompts like *"What assets need my attention?"* and *"How is asset [number] doing?"*. AI-generated insights for alerts analyse alert content, asset details, work history and meter data, and each insight carries a **confidence score of high, medium or low**. A **Maximo MCP server** lets you build custom AI tools from automation scripts, object structures and workflows. The AI configuration application is redesigned with model status and one-click enablement, and **AI Service AppPoint consumption is now trackable** on licensing dashboards.
+
+| AI dimension | 9.0 | 9.1 | 9.2 |
+|---|---|---|---|
+| Assistant | Not documented | Q&A assistant across Manage, Health, dashboards | **Single agent across defined AI tools** |
+| Required service | — | **AI Service** deployment | AI Service, redesigned configuration app |
+| Similarity | Not documented | Similar records, similar work orders | Search similar tickets (Tickets app) |
+| Suggestions | Not documented | AI-recommended field values | Recommendations with **confidence scores** |
+| Insights | — | — | **Alert insights**, asset insights |
+| Extensibility | — | — | **Maximo MCP server** |
+| Cost visibility | — | — | **AppPoint tracking for AI Service** |
+
+<aside>
+⚠️ <strong>Unverified:</strong> Several widely-repeated 9.0 and 9.1 AI claims — watsonx.ai problem-code suggestions at 9.0, and FMEA Content Builder, a "Similarity Tracker" and AI Service as a separately licensed component at 9.1 — do not appear on the Manage what's-new pages we read, and could not be confirmed against a primary IBM page in August 2026. What would settle it: the suite-level 9.0 and 9.1 what's-new topics, which IBM no longer serves. Treat these as plausible but unconfirmed.
+</aside>
+
+On the model question, IBM does document the change, and the detail is more precise than the claim usually repeated. From the **January 2026** Feature Channel: *"You can now use the gpt-oss-120b model for mcc, pcc, fmea, and nl2oslc model templates,"* with **IBM Granite 3.2 8b Instruct deprecated as of 25 November 2025**. Three corrections worth carrying: it is an **option** with a documented migration path rather than a forced swap, it covers **four** templates including the AI assistant itself, and because it shipped through the Feature Channel it reached SaaS customers in production in January 2026 and self-hosted customers only at 9.2 GA in June. Part 5 works through what that means for model governance.
+
+---
+
+## 🗂️ Applications: Two Arrived at 9.2, One Left at 9.1
+
+Feature counts are noise. Applications appearing and disappearing are signal, because they change what your users can be trained on and what your security groups have to grant.
+
+| Change | Version | Detail |
+|---|---|---|
+| **Formulas** application added | 9.0 | Object and attribute formulas, under System configuration |
+| Inspection Forms Work Center deprecated | 9.0 | Replaced by a MAF application with the same functionality |
+| Manage Monitoring Information Work Center deprecated | 9.0 | — |
+| Digital Twin Exchange no longer supported | 9.0 | — |
+| Bing Maps and Google Maps deprecated | 9.0 | OpenMap supported instead |
+| **Asset data dictionary removed** | 9.1 | IBM directs you to Maximo Monitor instead |
+| **Tickets** application added | 9.2 | All ticket records in one place |
+| **Alerts** application added | 9.2 | Under the Service Desk module |
+| **Collab Session** application added | 9.2 | Under Work Orders, with session summary PDFs |
+| Self Service Center deprecated (Maximo IT) | 9.2 | Use the Self Serve application instead |
+
+The **Asset data dictionary** removal at 9.1 is the one that catches people. It is listed under "Deprecated applications" on the Manage 9.1 page with a clear redirect: use Maximo Monitor, via the Monitor-to-Manage integration. If your asset data governance process leaned on it, that process needed rebuilding at 9.1 — and if you are jumping 9.0 → 9.2, you inherit that rebuild without ever seeing the 9.1 notice.
+
+The **Tickets** application at 9.2 is the most operationally interesting addition. It manages all ticket records from one location: view all ticket types in a single list, create service requests and alerts directly, filter by class using View Manager, perform bulk owner or status changes, search similar tickets, and add communication and work log entries. Paired with the new **Alerts** application — which lets a maintenance manager raise alerts for asset and location conditions *without generating a work order* — 9.2 gives Service Desk a genuinely different shape than 9.1 had.
+
+<aside>
+💡 <strong>Key insight:</strong> If you are planning 9.0 → 9.2 directly, build your gap list from <strong>both</strong> the 9.1 and 9.2 what's-new pages. Skipping a version does not skip its deprecations — it just hides them until upgrade day.
+</aside>
+
+---
+
+## 🔄 The Product-Identity Arc: Assist → Collaborate → Manage Add-On
+
+If you have been in the Maximo ecosystem for a few years, you have watched two products change identity mid-flight. Both changes are documented; neither is obvious from a version number.
+
+### Assist became Collaborate became a Manage add-on
+
+| Stage | Version | What happened |
+|---|---|---|
+| **IBM Maximo Assist** | Through 9.0 | Suite application in its own right |
+| **Renamed Maximo Collaborate** | 9.1 | Same product, new name |
+| **Deprecated as a suite add-on** | 9.2 | Becomes an **add-on in Maximo Manage** instead |
+
+The 9.2 move is not a rebrand — it relocates the product's furniture:
+
+- **Expert Groups and Technicians applications migrate to Person Groups and Labor** in Manage. Two purpose-built Collaborate applications collapse into two applications Manage administrators already know.
+- **Collaborate Sessions becomes the Collab Session application**, sitting under Work Orders, where you can search, filter and view sessions with their associated work orders, assets and participants — and download a session summary PDF after a session completes.
+- **ICE server configuration moves into the Mobile Configuration application** in Manage.
+- **Restriction: Collaborate cannot be installed on Single Node OpenShift (SNO) environments.**
+
+That last line is the one to check before you plan anything. If your Collaborate footprint runs on SNO — common in smaller sites, labs and edge deployments — 9.2 is a blocker for that environment, not an inconvenience.
+
+<aside>
+💡 <strong>Key insight:</strong> The Expert Groups → Person Groups and Technicians → Labor migration means your Collaborate access model becomes a <em>Manage security</em> problem at 9.2. Whoever owns Manage security groups now owns remote-assistance access, whether they know it or not.
+</aside>
+
+For readers arriving from search: this repository's `MAS-ASSIST` series was written under the product's original name. The content maps to what is now Collaborate. The naming history is not a documentation error — it is three years of product strategy compressed into a rename.
+
+### Maximo Health stopped being a suite application
+
+The parallel arc is quieter. **Stand-alone Maximo Health ceased to be a suite application at 9.1** and remains an add-on within Maximo Manage. Customers who were running stand-alone Health had to add Health as a **Manage 9.0 add-on before upgrading to 9.1**.
+
+Read that sequencing carefully, because it is the template for how IBM handles these transitions: the prerequisite work happens on the *old* version. You do not fix it after the upgrade. You fix it before, or the upgrade does not complete cleanly.
+
+---
+
+## 🔐 The Centralisation Arc: Manage Gives Up User and Security Data
+
+This is the deepest structural change across the three releases, and it is almost invisible in a feature list because nothing new appears on screen. Things move.
+
+The direction of travel is consistent: **user and group data, and progressively more security configuration, migrate out of Maximo Manage's orbit and up to suite level.** 9.2 is where that arc completes.
+
+| What moves | Version | From → To |
+|---|---|---|
+| User management APIs deprecated | 9.1 | Still present, marked for removal |
+| **User management APIs removed** | 9.2 | Gone — use the newer user management APIs |
+| **User synchronisation removed** | 9.2 | For **all applications**; data lives only in the system relational database |
+| Security Groups **Sites tab** | 9.2 | Manage → Suite > Access and usage > Security groups |
+| Security Groups **Object structures tab** | 9.2 | Manage → Suite > Access and usage > Security groups |
+| Manage **user settings** | 9.2 | Manage → Suite > Access and usage > Users |
+| **Purchasing options** | 9.2 | Manage → Suite > Access and usage > Users |
+
+Three details decide whether this is routine or painful for you.
+
+**First, the storage change.** In 9.2, user and group data is stored in the Maximo Manage relational database. That eliminates duplicated user data and the synchronisation process between suite applications. Migration is automatic — but IBM explicitly instructs you to review changes to **password migration and SCIM synchronisation** before upgrading, to ensure users can still sign in afterwards. The migration itself runs as a **pre-upgrade datamodel-migration job** that updates authentication mappings and synchronises required SCIM fields, including `externalId`.
+
+**Second, the API removal is a genuine breaking change.** IBM names the three families removed: user creation APIs, workspace assignment APIs, and role assignment APIs (assigning fixed roles such as user and administrator). IBM's instruction is unambiguous: *"If your integrations or scripts use the deprecated APIs, update them to use the new APIs before you upgrade to 9.2."*
+
+**Third, the settings that moved are the ones your users notice.** Default site, display-filter default site, storeroom site and default storeroom for self-service requisitions, default repair facility, repair facility site, access to inactive sites, plus GL-account-based purchase permission — all now live on the suite Users page.
+
+<aside>
+⚠️ <strong>Action before you plan anything else:</strong> grep every automation script, integration and provisioning pipeline for the deprecated user creation, workspace assignment and role assignment APIs. On 9.1 they still work. On 9.2 they are gone. This is the single most common way a 9.2 upgrade breaks something that was never in the test plan.
+</aside>
+
+---
+
+## ⚙️ Prerequisites and Runtime: The Java Arc Is Your Cleanest Signal
+
+If you only get one number from this post to size the upgrade, make it the Java version.
+
+| Runtime dimension | 9.0 | 9.1 | 9.2 |
+|---|---|---|---|
+| **Java (Manage)** | Not stated on what's-new | **Java 17** | **Java 25** |
+| **Java (Optimizer)** | Not stated | Not stated | **Java 25** |
+| **BIRT** | Not stated | **4.16** | **4.21** |
+| **Db2** | Not stated | Not stated | **Db2 12 supported** |
+| **Cloud Pak for Data** | Not stated | Not stated | **5.2** |
+| **Python (with CP4D 5.2)** | — | — | **3.12** |
+| Version floors (OpenShift, DB) | Generate SPCR | Generate SPCR | Generate SPCR |
+
+**Manage 9.1 migrated to Java 17. Manage 9.2 migrates to Java 25**, with Maximo Optimizer moving to Java 25 in the same release. Both are documented on the respective Manage what's-new pages and backed by IBM support announcements. Two major Java generations in two releases is not a footnote — it is the reason custom Java extensions, third-party JARs and older automation-script assumptions need real regression time.
+
+**BIRT moves 4.16 → 4.21** across the same span. If your organisation maintains a custom BIRT report library, that library gets tested twice on this journey, not once.
+
+**Db2 12 carries a licence trap.** Db2 12 is supported in MAS 9.2, but upgrading Db2 11 to 12 requires explicit opt-in *and* an activation licence. Without the licence, Db2 12 runs under a **30-day trial licence that causes production system outages on expiration**. IBM handles this deliberately: the upgrade requires a valid Db2 Warehouse licence file plus the `db2_v12_upgrade` flag set to `true`, and **the upgrade fails if the licence file is not provided** — a hard stop, chosen over a silent downgrade to trial. New Db2 12 installations do not need the licence file. Only 11 → 12 upgrades enforce it.
+
+### Why there is no floor-version table here
+
+You will notice this section quotes no minimum OpenShift version. That is not an omission. **IBM deliberately does not publish version floors inline.** It directs customers to generate a **Software Product Compatibility Report (SPCR)** — "Detailed system requirements" — per MAS version, because the requirements genuinely vary with which applications you deploy and at what size.
+
+That is the right answer, and it is also an answer that a blog post cannot shortcut. A hardcoded floor from any third-party comparison table is either wrong for your topology or will be wrong within a fix pack. **Generate the SPCR for your exact application set.** That is the method, and the method outlives the numbers.
+
+<aside>
+💡 <strong>Key insight:</strong> Learn the SPCR habit rather than memorising floors. Any "MAS 9.2 requires OpenShift X" claim you read — here or anywhere — is a snapshot of someone else's deployment. Yours is a different report.
+</aside>
+
+---
+
+## 📅 Support Lifecycle: What Is Published, and What Is Not
+
+Here the comparison gets uncomfortable, and honesty is worth more than a tidy table.
+
+**The policy is confirmed.** From version 9.0 onward, MAS moved to **Support Cycle-3: "3 years of support with critical fix extension of 1 year and usage and existing fixes for 3 (3+1+3)."** That policy statement appears on IBM's lifecycle pages for both 9.0.x and 9.1.x.
+
+**The 8.x dates are confirmed.** As of the Supported Versions page current at 1 May 2026:
+
+| Version | GA | Announcement letter | Key date |
+|---|---|---|---|
+| **8.11-LTS** | 26 Sep 2023 | 223-0230 | Fix Availability Completion **30 Apr 2026**; Extended Support available from 30 Apr 2026 |
+| **8.10-LTS** | 28 Mar 2023 | 223-043 | Fix Availability Completion **30 Apr 2026**; Extended Support available from 30 Apr 2026 |
+| **8.9-CD / 8.8-CD / 8.7-CD** | — | — | Completion of Support **30 Apr 2026** |
+
+**The 9.x dates are not confirmed, and we will not compute them.** The lifecycle date tables for the 9.x releases are rendered client-side by a JavaScript single-page application, and the cells come back empty when the pages are fetched. We could read the policy. We could not read the dates.
+
+It would be easy to multiply 3+1+3 against an assumed GA date and publish a confident number. That would be fabrication wearing arithmetic as a disguise, and it would end up in someone's board deck. **Get your 9.x end-of-support dates from IBM Support directly, in writing, for your entitlement.**
+
+One related observation, offered as an observation only: the Supported Versions page as of 1 May 2026 lists **only 8.11-LTS and 8.10-LTS** under Supported Versions. 9.0, 9.1 and 9.2 are not enumerated there. That is an absence of listing on one page — it is *not* evidence that the 9.x releases are unsupported, and it should not be quoted as such.
+
+---
+
+## ⚠️ What We Could Not Verify
+
+Every comparison table has a shadow: the rows that could not be filled. Publishing them is the point of this series.
+
+| Gap | Status | What would settle it |
+|---|---|---|
+| **End-of-support dates for 9.0, 9.1, 9.2** | Could not read — SPA-rendered tables returned empty | A direct statement from IBM Support for your entitlement |
+| **GA dates for 9.0 and 9.1** | Widely repeated as June 2024 and June 2025, consistent with the annual June cadence 9.2 follows — **unverified as of August 2026** | An IBM lifecycle or announcement page stating them |
+| **Suite-level 9.0 and 9.1 what's-new content** | Topics no longer resolve; only the current CD release is served at suite level | An IBM archive of superseded suite what's-new topics |
+| **Several 9.0/9.1 AI and UI claims** | Not present on the Manage what's-new pages we read | The suite-level pages above, or per-feature documentation |
+| **AI Service model change (Granite → GPT-OSS-120B)** | Originates in prior self-authored research; not verified against IBM | An AI Service release note naming the model |
+| **Feature Channel production entitlement** | Monthly Feature Channel cadence is reported for 9.2; whether those builds are production-entitled is **unverified** | The text of a current Feature Channel readme |
+| **Whether every add-on has a shipped 9.2 build** | No compatibility matrix located | A per-add-on availability matrix from IBM |
+
+That fourth row deserves emphasis, because it is a structural warning rather than a one-off gap. **IBM's documentation site serves the current continuous-delivery release.** Historical suite-level what's-new topics do not resolve. If you are the kind of administrator who plans upgrades by reading the docs for the version you are skipping, that workflow is no longer reliable at suite level — and the practical mitigation is to cache the pages for your current version *now*, while they are still the current version.
+
+The add-on parity row matters too. The published multi-architecture section of the 9.2 documentation still carried an unresolved internal editorial placeholder noting that the support list was being cross-checked, and that per-application multi-architecture delivery completes across the monthly Feature Channel releases. That is honest evidence that **add-on architecture parity was still settling at GA** — which is exactly why IBM's own upgrade guidance leads with the parity check.
+
+---
+
+## 🎯 What To Do, Based On Where You Are Standing
+
+Comparison tables are worthless without a decision. Here is the decision, by starting position.
+
+| You are on | Your real question | The three things to do first |
+|---|---|---|
+| **8.10 / 8.11-LTS** | How urgent is this? | 1. Note Fix Availability Completion passed **30 Apr 2026**. 2. Confirm your Extended Support position with IBM. 3. Treat 9.x as a platform project, not an upgrade. |
+| **9.0** | Can I go straight to 9.2? | 1. Build your gap list from **both** 9.1 and 9.2 pages. 2. Check whether stand-alone Health needs adding as a Manage add-on. 3. Confirm the supported upgrade path with IBM Support. |
+| **9.1** | Is 9.2 worth the window? | 1. Audit integrations for the removed user management APIs. 2. Plan Java 17 → 25 regression testing. 3. Check the Db2 11 → 12 licence file *before* scheduling. |
+| **9.2 already** | What did I inherit? | 1. Reapply customised system event email templates — they do not survive the upgrade. 2. Re-point runbooks at **Access and usage**. 3. Confirm your permission mode; upgrades inherit **cluster mode**. |
+
+And five rules that apply regardless of starting point:
+
+1. **Run the add-on availability check first.** IBM's own words: if applications or add-ons are no longer available for upgrade, you must deactivate and delete them. That is a gate, not a warning.
+2. **Generate the SPCR for your exact application set.** Do not inherit anyone else's floor versions.
+3. **Update the user management API calls before you upgrade, not after.** On 9.2 they are simply gone.
+4. **Get your 9.x support dates in writing from IBM.** Do not compute them from 3+1+3 and an assumed GA date.
+5. **Cache the documentation for your current version today.** Suite-level historical topics do not resolve once the release is superseded.
+
+---
+
+## Key Takeaways
+
+- **Java is the clearest signal of upgrade effort:** Manage 9.1 moved to Java 17, Manage and Optimizer 9.2 move to Java 25 — two generations in two releases.
+- **9.2 completes the centralisation arc:** user synchronisation is removed for all applications, the deprecated user management APIs are gone, and Security Groups tabs plus user and purchasing settings move to Suite > Access and usage.
+- **One product, three identities:** Maximo Assist became Collaborate at 9.1 and became a Manage add-on at 9.2, with Expert Groups → Person Groups, Technicians → Labor, and no support on Single Node OpenShift.
+- **AI did not start at 9.2:** Manage 9.1 documented an assistant, AI Service, similar records and recommended field values. 9.2 changes the posture to a single agent with confidence-scored insights.
+- **Published end-of-support dates for 9.0, 9.1 and 9.2 could not be read** from IBM's lifecycle pages — the 3+1+3 policy is confirmed, the dates are not.
+
+---
+
+## ❓ Frequently Asked Questions
+
+**What is the biggest difference between MAS 9.1 and MAS 9.2?**
+
+Two things, and neither is a feature. First, 9.2 removes user synchronisation entirely — user and group data now lives only in the Maximo Manage relational database, and the user management APIs deprecated in 9.1 are gone. Second, the Java runtime jumps from Java 17 to Java 25 for both Maximo Manage and Maximo Optimizer. Everything else — the agentic assistant, Tickets, Alerts — is additive. Those two are structural, and they are what break integrations.
+
+**Which Java version does each MAS release use?**
+
+IBM's Maximo Manage what's-new pages state it plainly: Manage 9.1 migrated to Java 17, and Manage 9.2 migrates to Java 25, with Maximo Optimizer moving to Java 25 alongside it. The Manage 9.0 what's-new page does not carry a Java migration note at all. The same pages record BIRT moving from 4.16 at 9.1 to 4.21 at 9.2, which is the companion change most reporting teams care about.
+
+**What happened to Maximo Assist?**
+
+It was renamed IBM Maximo Collaborate starting in MAS 9.1. In MAS 9.2 Collaborate is deprecated as a suite add-on and becomes an add-on inside Maximo Manage instead. As part of that move, the Expert Groups and Technicians applications migrate to Person Groups and Labor, Collaborate Sessions becomes the Collab Session application under Work Orders, and ICE server configuration moves into Mobile Configuration. Collaborate cannot be installed on Single Node OpenShift.
+
+**When does support end for MAS 9.0, 9.1 and 9.2?**
+
+We cannot tell you, and you should be suspicious of anyone who states it confidently. From version 9.0 onward IBM applies Support Cycle-3 — three years of support, a one-year critical fix extension, and three years of usage with existing fixes (3+1+3). But the actual date tables on IBM's lifecycle pages are rendered client-side and returned empty when fetched, so we could not read published end-of-support dates for any 9.x release. Confirm through IBM Support directly.
+
+**Did MAS 9.0 and 9.1 have AI features, or did AI start with 9.2?**
+
+AI started before 9.2. IBM's Maximo Manage 9.1 what's-new page documents an AI assistant, a required AI Service deployment, similar-record detection, similar work orders and AI-recommended field values. The Manage 9.0 page documents no AI features at all. What 9.2 changes is posture: the assistant becomes a single agent that works across a defined set of AI tools, and AI moves from feature-level assistance to insight generation with confidence scores.
+
+---
+
+## References
+
+- [What's new in Maximo Manage 9.0 (IBM Documentation)](https://www.ibm.com/docs/SSLPL8_cd/com.ibm.mam.doc/overview/c_wn_manage_90.html)
+- [What's new in Maximo Manage 9.1 (IBM Documentation)](https://www.ibm.com/docs/SSLPL8_cd/com.ibm.mam.doc/overview/c_wn_manage_91.html)
+- [What's new in Maximo Manage 9.2 (IBM Documentation)](https://www.ibm.com/docs/SSLPL8_cd/com.ibm.mam.doc/overview/c_wn_manage_92.html)
+- [What's new in IBM Maximo Application Suite 9.2 (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-whats-in-maximo-application-suite-92)
+- [IBM Maximo Application Suite 9.0.x lifecycle (IBM Support)](https://www.ibm.com/support/pages/ibm-maximo-application-suite90x)
+- [IBM Maximo Application Suite 9.1.x lifecycle (IBM Support)](https://www.ibm.com/support/pages/ibm-maximo-application-suite91x)
+- [Supported versions of Maximo Application Suite (IBM Support)](https://www.ibm.com/support/pages/supported-versions-maximo-application-suite)
+- [Introducing Maximo Application Suite 9.2 (IBM Announcements)](https://www.ibm.com/new/announcements/introducing-maximo-application-suite-9-2)
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 1 — What MAS 9.2 Actually Is](/blog/mas-92-what-it-actually-is) |
+| **Next:** | [Part 3 — Inside Maximo Manage 9.2](/blog/mas-92-manage-features) |
+
+**Part 2 of 7**
+
+---
+
+**About TheMaximoGuys:** We help Maximo teams navigate MAS with practical, no-hype guidance grounded in what IBM actually documents — and honest about what it doesn't.
+
+*Published by TheMaximoGuys | August 2026*
