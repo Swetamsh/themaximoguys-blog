@@ -1,31 +1,24 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-08-10 (night-shift job `replan-20260810`: `git diff --stat c354b24 HEAD --
+**Updated:** 2026-08-11 (night-shift job `replan-20260811`: `git diff --stat e3c6791 HEAD --
 posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty and
-`git log --oneline c354b24..HEAD` shows no commits at all, confirming no ticks ran overnight.
+`git log --oneline e3c6791..HEAD` shows no commits at all, confirming no ticks ran overnight.
 Independently re-verified `knowledge_base/` file count (`ls knowledge_base/*.md | wc -l` = 15,
 unchanged), `queue.json` (`jq empty` passes, 50 items, 17 done / 26 failed / 7 skipped / 0
 pending, no duplicate `id` values), and re-listed every `posts/*/` series directory (all 19
-series dirs plus `THINK-MAS` and the flat `images/` dir, plus the 4 standalone flat posts) —
-matched the prior audit's set exactly, no new or removed directories or files. Spot-checked
-that every "failed" blog-post-type queue item (`watsonx-data-*`, `parts-id-*`,
-`databricks-05/06`, `single-mas9-*`) has its corresponding `.mdx` present on disk under
-`posts/` — confirmed content-complete, `failed` status reflects the cover-mandatory rule only,
-not missing content. Re-read the `project_nanobanana_key_leaked_blocker` memory directly — last
-entry still 2026-07-22 (22nd+ confirmation), no operator note of a key rotation or MCP reconnect
-since; the `API_KEY_INVALID` headless-session blocker remains unresolved and un-tested this run
-per job scope (audit-only, no image generation). Every one of the 27 remaining covers (Optimizer
-5, Databricks 05-06, Parts-Identifier 5, watsonx-data 7, Civil-Infrastructure 6, 2 standalone
-MAS-9 singles) stays correctly represented by its existing `failed` cover-batch queue item. No
-net-new knowledge_base docs, no structural gaps, no new posts. This is the 19th consecutive
-replan with zero disk drift. **Housekeeping this run:** compacted 17 near-duplicate "zero
-drift" daily entries (2026-07-23 through 2026-08-09) below into a single summary paragraph —
-full text of each is preserved in git history (commits `c354b24` back through `33f51c8`); no
-table content (§1-6) was changed, since all tables already matched reality. Result: 0 new queue
-items added — the content plan remains fully queued, every open item correctly parked on the
-human key-rotation/MCP-reconnect blocker.)
+series dirs plus `THINK-MAS` and the flat `images/` dir) — matched the prior audit's set
+exactly, no new or removed directories or files. Re-read the
+`project_nanobanana_key_leaked_blocker` memory directly — last entry still 2026-07-22 (22nd+
+confirmation), no operator note of a key rotation or MCP reconnect since; the `API_KEY_INVALID`
+headless-session blocker remains unresolved and un-tested this run per job scope (audit-only,
+no image generation). Every one of the 27 remaining covers (Optimizer 5, Databricks 05-06,
+Parts-Identifier 5, watsonx-data 7, Civil-Infrastructure 6, 2 standalone MAS-9 singles) stays
+correctly represented by its existing `failed` cover-batch queue item. No net-new
+knowledge_base docs, no structural gaps, no new posts. This is the 20th consecutive replan
+with zero disk drift. Result: 0 new queue items added — the content plan remains fully queued,
+every open item correctly parked on the human key-rotation/MCP-reconnect blocker.)
 
-**Prior updates — 2026-07-23 through 2026-08-09** (17 consecutive night-shift replan jobs,
+**Prior updates — 2026-07-23 through 2026-08-10** (18 consecutive night-shift replan jobs,
 each independently re-verifying `knowledge_base/` file count (15, unchanged throughout),
 `queue.json` integrity (50 items, 17 done / 26 failed / 7 skipped / 0 pending, no duplicate
 `id` values), and `posts/` series directory structure via `git diff --stat` against the prior
@@ -36,9 +29,10 @@ unresolved in every run. A few of these runs did extra verification work worth n
 2026-07-23 and 2026-07-26 runs each dispatched an Explore agent to independently re-check
 `series.part`/`series.total` frontmatter contiguity across all 5 partially-built series (PASS
 both times); the 2026-08-03 run spot-checked on-disk mdx/cover counts directly for the six
-largest gap series. None found any table content in this doc out of date. Full text of each
-daily entry is preserved in git history — see commits `c354b24` (2026-08-09) back through
-`33f51c8` (2026-07-23) for the individual audit write-ups.)
+largest gap series; the 2026-08-10 run compacted 17 near-duplicate entries (2026-07-23 through
+2026-08-09) into this same summary paragraph. None found any table content in this doc out of
+date. Full text of each daily entry is preserved in git history — see commits `e3c6791`
+(2026-08-10) back through `33f51c8` (2026-07-23) for the individual audit write-ups.)
 
 **Prior update — 2026-07-22** (night-shift job `replan-20260722`, second run same night: re-audited
 `knowledge_base/` (14 docs, unchanged), `posts/` (all 5 partially-built series — MAS-OPTIMIZER,
