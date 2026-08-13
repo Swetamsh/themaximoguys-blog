@@ -1,22 +1,28 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-08-11 (night-shift job `replan-20260811`: `git diff --stat e3c6791 HEAD --
-posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` returned empty and
-`git log --oneline e3c6791..HEAD` shows no commits at all, confirming no ticks ran overnight.
-Independently re-verified `knowledge_base/` file count (`ls knowledge_base/*.md | wc -l` = 15,
-unchanged), `queue.json` (`jq empty` passes, 50 items, 17 done / 26 failed / 7 skipped / 0
-pending, no duplicate `id` values), and re-listed every `posts/*/` series directory (all 19
-series dirs plus `THINK-MAS` and the flat `images/` dir) — matched the prior audit's set
-exactly, no new or removed directories or files. Re-read the
-`project_nanobanana_key_leaked_blocker` memory directly — last entry still 2026-07-22 (22nd+
-confirmation), no operator note of a key rotation or MCP reconnect since; the `API_KEY_INVALID`
-headless-session blocker remains unresolved and un-tested this run per job scope (audit-only,
-no image generation). Every one of the 27 remaining covers (Optimizer 5, Databricks 05-06,
-Parts-Identifier 5, watsonx-data 7, Civil-Infrastructure 6, 2 standalone MAS-9 singles) stays
-correctly represented by its existing `failed` cover-batch queue item. No net-new
-knowledge_base docs, no structural gaps, no new posts. This is the 20th consecutive replan
-with zero disk drift. Result: 0 new queue items added — the content plan remains fully queued,
-every open item correctly parked on the human key-rotation/MCP-reconnect blocker.)
+**Updated:** 2026-08-12 (night-shift job `replan-20260812`: first genuine drift in 21 replan
+runs. `git log --oneline a540982..HEAD -- posts/ knowledge_base/ content-planning/
+automation/off-hours/queue.json` showed 3 new commits since the 2026-08-11 replan, all from an
+interactive (non-night-shift) session earlier today: a new 8-part `MAS-9-2` series (index +
+Parts 1-7, `posts/MAS-9-2/`, all `draft: true`, `series.total: 7` contiguous 0-7 verified), a
+new knowledge-base document `knowledge_base/DOC15_MAS92_RELEASE_FACTBASE.md` (277 lines,
+primary-source IBM fact base backing the series, cached IBM pages under
+`knowledge_base/MAS92-SOURCES/`), and a small factual correction to the pre-existing
+`posts/MAS-NUCLEAR/2026-07-16-mas-nuclear-07-whats-new-mas92.mdx` (Granite/gpt-oss-120b model
+claim). Confirmed all 8 MAS-9-2 covers already exist on disk (`posts/MAS-9-2/images/*.png`,
+warm-chalkboard style per `warm_chalkboard_cover_style` memory) — the series is both
+content-complete AND asset-complete, so **no queue items were needed**. `knowledge_base/`
+file count is now 16 (was 15) — DOC15 confirmed as the only addition, `MAS92-SOURCES/` is a
+cache subdirectory, not a doc. `queue.json` re-verified (`jq empty` passes, 50 items, 17 done
+/ 26 failed / 7 skipped / 0 pending, no duplicate `id` values) — unchanged, since MAS-9-2
+needed nothing queued. Re-read `project_nanobanana_key_leaked_blocker` — still static at its
+2026-07-22 confirmation, no rotation/reconnect note; the blocker remains unresolved for the
+other 27 pending covers (Optimizer 5, Databricks 05-06, Parts-Identifier 5, watsonx-data 7,
+Civil-Infrastructure 6, 2 standalone MAS-9 singles), all still correctly represented by their
+existing `failed` cover-batch queue items. Added DOC15/MAS-9-2 to the Coverage Matrix and
+Production Complete inventory below. Result: 0 new queue items added — the only disk change
+was a fully self-contained series needing no follow-up work, every other open item remains
+correctly parked on the human key-rotation/MCP-reconnect blocker.)
 
 **Prior updates — 2026-07-23 through 2026-08-10** (18 consecutive night-shift replan jobs,
 each independently re-verifying `knowledge_base/` file count (15, unchanged throughout),
@@ -178,7 +184,7 @@ word-count depth, and cover-image path checks.
 
 | Bucket | Count | Status |
 |---|---:|---|
-| Fully built and asset-complete | 9 source areas | DOC1(Manage), DOC3, DOC4, DOC6, DOC7, plus existing DOC2 Health/Monitor/Predict/MVI coverage, plus MAS-ASSIST, MAS-SUPPLY-CHAIN, MAS-RELIABILITY, MAS-NUCLEAR, MAS-ADMIN, MAS-DATABRICKS Parts 00-04 (covers verified on disk 2026-07-20/21 PM runs; see corrected Pending Asset Work table in §4) |
+| Fully built and asset-complete | 10 source areas | DOC1(Manage), DOC3, DOC4, DOC6, DOC7, DOC15(MAS-9-2), plus existing DOC2 Health/Monitor/Predict/MVI coverage, plus MAS-ASSIST, MAS-SUPPLY-CHAIN, MAS-RELIABILITY, MAS-NUCLEAR, MAS-ADMIN, MAS-DATABRICKS Parts 00-04 (covers verified on disk 2026-07-20/21 PM runs and 2026-08-12 for MAS-9-2; see corrected Pending Asset Work table in §4) |
 | Deep research/text complete, covers pending | 6 series | MAS-OPTIMIZER (1 of 6 covers done), MAS-DATABRICKS Parts 05-06, MAS-PARTS-IDENTIFIER (0 of 5), MAS-WATSONX-DATA (0 of 7), MAS-CIVIL-INFRASTRUCTURE (0 of 6 — see corrected DOC2 row below), 2 standalone DOC1 single-posts (mas9-reporting-options, mas9-upgrade-gotchas) |
 | Still pending as new deep blog work | 0 series | none — MAS-CIVIL-INFRASTRUCTURE was previously listed here in error; it is content-complete on disk (index + 5 parts, `posts/MAS-CIVIL-INFRASTRUCTURE/`, committed) and only needs covers. Corrected 2026-07-22 (night-shift replan). |
 | Optional single-post gaps | 1 post, ambiguous | DOC6 extension crossovers — flagged by the 2026-07-22 upgrade-gotchas job as possibly stale since DOC6's own Coverage Matrix row already shows "None" remaining; unresolved, needs human recheck, not queued |
@@ -205,6 +211,7 @@ include references. "Production complete" means the posts also have local cover 
 | DOC11 | Reliability Strategies | 🟡 **CONTENT COMPLETE, ASSETS PENDING** | `posts/MAS-RELIABILITY` (index + 7 posts) | Generate 8 covers |
 | DOC12 | Nuclear Add-Ons (9.2) | 🟡 **CONTENT COMPLETE, ASSETS PENDING** | `posts/MAS-NUCLEAR` (index + 7 posts) | Generate 8 covers |
 | DOC13 | watsonx.data Open Lakehouse (IBM-native counterpart to DOC5) | 🟡 **CONTENT COMPLETE (INDEX + PARTS 1-6), ASSETS BLOCKED** | `posts/MAS-WATSONX-DATA` (series index/Part 0 built 2026-07-19, draft, no cover; Part 1 "Why watsonx.data" built 2026-07-19, draft, no cover; Part 2 "Getting Maximo Data into watsonx.data" built 2026-07-19, draft, no cover; Part 3 "The Iceberg Medallion" built 2026-07-19, draft, no cover; Part 4 "Fit-for-Purpose Engines" built 2026-07-19, draft, no cover; Part 5 "From Lakehouse to Action" built 2026-07-19, draft, no cover; Part 6 "watsonx.data vs. Databricks vs. MAS Native" built 2026-07-19, draft, no cover — SERIES FINALE) | Key rotated 2026-07-20 — `covers-watsonx-a/b` queued; generate all 7 covers (index + Parts 1-6, BlueprintBoard). No further text work remains for this series. |
+| DOC15 | MAS 9.2 Release Fact Base | ✅ **PRODUCTION COMPLETE** | `posts/MAS-9-2` (index + 7 parts, built 2026-08-12 interactive session, primary-source IBM fact base with per-claim IDs, all `draft: true`, all 8 covers present — warm-chalkboard style) | None — content and assets both complete; only the `draft: true` → `false` flip remains, a manual human-review step per repo convention, not a night-shift task |
 
 **Net movement since the 2026-07-15 audit:** DOC7, DOC8, DOC9, DOC10, DOC11, DOC12, DOC2 Assist,
 and DOC2 Optimizer moved from backlog into actual long-form MDX drafts. The remaining content backlog
@@ -228,6 +235,7 @@ These have both substantive MDX content and local cover assets resolved on disk.
 | `MAS-MONITOR` | DOC2 | 9 | Existing deep Monitor series. |
 | `MAS-PREDICT` | DOC2 | 9 | Existing deep Predict series. |
 | `MAS-VISUAL-INSPECTION` | DOC2 | 13 | Existing deep Visual Inspection/MVI series. |
+| `MAS-9-2` | DOC15 | 8 | MAS 9.2 release series (index + 7 parts) — what's actually new, version comparison, Manage features, suite-app features, AI layer, upgrade watchlist, FOMO reality check. Every claim traces to a DOC15 fact ID. Covers done (warm chalkboard). `draft: true` pending human review/flip. |
 
 ### Deep Research / Text Complete, Covers Pending
 
@@ -364,10 +372,12 @@ No further blog-writing work remains anywhere in the plan — a human operator r
 nanobanana MCP credential (see `project_nanobanana_key_leaked_blocker` memory) is the single blocker
 to closing out Optimizer, Parts Identifier, Databricks 05-06, watsonx.data, Civil Infrastructure, and
 the 2 standalone DOC1 posts.
-3. **No net-new content lanes remain.** Every knowledge-base document (DOC1-14 plus the supply-chain
+3. **No net-new content lanes remain.** Every knowledge-base document (DOC1-15 plus the supply-chain
 roadmap email) now has blog coverage; DOC14 was absorbed as background research into MAS-WATSONX-DATA
-rather than needing its own series. Civil Infrastructure — previously miscategorized as unbuilt — is
-also content-complete. The backlog is now covers-only.
+rather than needing its own series; DOC15 (MAS 9.2 release fact base) got its own fully
+content-and-asset-complete `MAS-9-2` series 2026-08-12, built outside the night-shift queue. Civil
+Infrastructure — previously miscategorized as unbuilt — is also content-complete. The backlog is now
+covers-only.
 
 ---
 
