@@ -1,6 +1,34 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-08-12 (night-shift job `replan-20260812`: first genuine drift in 21 replan
+**Updated:** 2026-08-13 (night-shift job `replan-20260813`: full audit reconciling this plan
+against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
+b43505e..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
+showed 3 commits since the 2026-08-12 replan (`760da26` cover regeneration, `cdc2e47` FAQ
+quote-escape fix, `9aacad0` "Publish the MAS 9.2 series"), all from an interactive
+(non-night-shift) session — no new night-shift-relevant work. The one real drift: `9aacad0`
+flipped `draft: false` on all 8 `MAS-9-2` posts, but this doc's DOC15 Coverage Matrix row and
+Production Complete inventory row still said `draft: true` pending flip — corrected below.
+`knowledge_base/` re-confirmed at 16 files (15 DOC files + 1 supply-chain roadmap email, DOC1-15
+contiguous, `MAS92-SOURCES/` still a cache subdirectory not a doc) — unchanged. Independently
+re-verified on-disk mdx/PNG counts for every partially-built series (`MAS-OPTIMIZER` 6 mdx/1
+png, `MAS-PARTS-IDENTIFIER` 5 mdx/0 png, `MAS-DATABRICKS` 7 mdx/5 png, `MAS-WATSONX-DATA` 7
+mdx/0 png, `MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0 png) — all match this doc's existing tables
+exactly, zero drift. `queue.json` re-verified (`jq empty` passes, 50 items, 17 done / 26 failed
+/ 7 skipped / 0 pending, no duplicate `id` values) — unchanged. Noted (not a defect): a large
+uncommitted working-tree edit to all 8 `MAS-9-2` post bodies (tone/style pass, FAQ answers
+simplified, `<aside>` blocks converted to blockquotes) is in progress in an interactive session
+as of this audit — left untouched per this job's "do not write blog posts" rule; it does not
+change file counts, cover counts, or publish status. Re-read
+`project_nanobanana_key_leaked_blocker` — still static at its 2026-07-22 confirmation, no
+rotation/reconnect note; the blocker remains unresolved for all 27 pending covers (Optimizer 5,
+Databricks 05-06, Parts-Identifier 5, watsonx-data 7, Civil-Infrastructure 6, 2 standalone MAS-9
+singles), all still correctly represented by their existing `failed` cover-batch queue items —
+per the replan rule (only re-queue failed items on a transient cause), none were re-added.
+Result: 0 new queue items added — the only disk change was the MAS-9-2 publish flip, which
+needed no queue follow-up; every other open item remains correctly parked on the human
+key-rotation/MCP-reconnect blocker.)
+
+**Prior update — 2026-08-12** (night-shift job `replan-20260812`: first genuine drift in 21 replan
 runs. `git log --oneline a540982..HEAD -- posts/ knowledge_base/ content-planning/
 automation/off-hours/queue.json` showed 3 new commits since the 2026-08-11 replan, all from an
 interactive (non-night-shift) session earlier today: a new 8-part `MAS-9-2` series (index +
@@ -211,7 +239,7 @@ include references. "Production complete" means the posts also have local cover 
 | DOC11 | Reliability Strategies | 🟡 **CONTENT COMPLETE, ASSETS PENDING** | `posts/MAS-RELIABILITY` (index + 7 posts) | Generate 8 covers |
 | DOC12 | Nuclear Add-Ons (9.2) | 🟡 **CONTENT COMPLETE, ASSETS PENDING** | `posts/MAS-NUCLEAR` (index + 7 posts) | Generate 8 covers |
 | DOC13 | watsonx.data Open Lakehouse (IBM-native counterpart to DOC5) | 🟡 **CONTENT COMPLETE (INDEX + PARTS 1-6), ASSETS BLOCKED** | `posts/MAS-WATSONX-DATA` (series index/Part 0 built 2026-07-19, draft, no cover; Part 1 "Why watsonx.data" built 2026-07-19, draft, no cover; Part 2 "Getting Maximo Data into watsonx.data" built 2026-07-19, draft, no cover; Part 3 "The Iceberg Medallion" built 2026-07-19, draft, no cover; Part 4 "Fit-for-Purpose Engines" built 2026-07-19, draft, no cover; Part 5 "From Lakehouse to Action" built 2026-07-19, draft, no cover; Part 6 "watsonx.data vs. Databricks vs. MAS Native" built 2026-07-19, draft, no cover — SERIES FINALE) | Key rotated 2026-07-20 — `covers-watsonx-a/b` queued; generate all 7 covers (index + Parts 1-6, BlueprintBoard). No further text work remains for this series. |
-| DOC15 | MAS 9.2 Release Fact Base | ✅ **PRODUCTION COMPLETE** | `posts/MAS-9-2` (index + 7 parts, built 2026-08-12 interactive session, primary-source IBM fact base with per-claim IDs, all `draft: true`, all 8 covers present — warm-chalkboard style) | None — content and assets both complete; only the `draft: true` → `false` flip remains, a manual human-review step per repo convention, not a night-shift task |
+| DOC15 | MAS 9.2 Release Fact Base | ✅ **PRODUCTION COMPLETE, PUBLISHED** | `posts/MAS-9-2` (index + 7 parts, built 2026-08-12 interactive session, primary-source IBM fact base with per-claim IDs, all 8 covers present — warm-chalkboard style; `draft: false` on all 8 files as of commit `9aacad0`, 2026-08-12) | None — content, assets, and publish flip are all complete |
 
 **Net movement since the 2026-07-15 audit:** DOC7, DOC8, DOC9, DOC10, DOC11, DOC12, DOC2 Assist,
 and DOC2 Optimizer moved from backlog into actual long-form MDX drafts. The remaining content backlog
@@ -235,7 +263,7 @@ These have both substantive MDX content and local cover assets resolved on disk.
 | `MAS-MONITOR` | DOC2 | 9 | Existing deep Monitor series. |
 | `MAS-PREDICT` | DOC2 | 9 | Existing deep Predict series. |
 | `MAS-VISUAL-INSPECTION` | DOC2 | 13 | Existing deep Visual Inspection/MVI series. |
-| `MAS-9-2` | DOC15 | 8 | MAS 9.2 release series (index + 7 parts) — what's actually new, version comparison, Manage features, suite-app features, AI layer, upgrade watchlist, FOMO reality check. Every claim traces to a DOC15 fact ID. Covers done (warm chalkboard). `draft: true` pending human review/flip. |
+| `MAS-9-2` | DOC15 | 8 | MAS 9.2 release series (index + 7 parts) — what's actually new, version comparison, Manage features, suite-app features, AI layer, upgrade watchlist, FOMO reality check. Every claim traces to a DOC15 fact ID. Covers done (warm chalkboard). Published (`draft: false`, commit `9aacad0`, 2026-08-12). |
 
 ### Deep Research / Text Complete, Covers Pending
 
