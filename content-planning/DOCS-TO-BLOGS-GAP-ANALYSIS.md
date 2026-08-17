@@ -1,9 +1,9 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-08-15 (night-shift job `replan-20260815`: full audit reconciling this plan
+**Updated:** 2026-08-16 (night-shift job `replan-20260816`: full audit reconciling this plan
 against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
-24117b0..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
-showed zero commits since the 2026-08-14 replan — no night-shift-relevant work landed
+4b79fd2..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
+showed zero commits since the 2026-08-15 replan — no night-shift-relevant work landed
 overnight. `knowledge_base/` re-confirmed at 16 files (15 DOC files + 1 supply-chain roadmap
 email, DOC1-15 contiguous, `MAS92-SOURCES/` still a cache subdirectory not a doc) — unchanged.
 Independently re-verified on-disk mdx/PNG counts for every partially-built series
@@ -13,12 +13,17 @@ existing tables exactly, zero drift. `queue.json` re-verified (`jq empty` passes
 done / 26 failed / 7 skipped / 0 pending, no duplicate `id` values) — unchanged. The uncommitted
 working-tree edit to all 8 `MAS-9-2` post bodies (first noted 2026-08-13) is still present and
 still untouched (interactive session, out of this job's scope; does not affect file counts,
-cover counts, or publish status). Re-read `project_nanobanana_key_leaked_blocker` — still static
-at its 2026-07-22 confirmation, no rotation/reconnect note; the blocker remains unresolved for
-all 27 pending covers, all still correctly represented by their existing `failed` cover-batch
-queue items — per the replan rule (only re-queue failed items on a transient cause), none were
-re-added. Result: 0 new queue items added — no drift, no new gaps, every open item remains
-correctly parked on the human key-rotation/MCP-reconnect blocker.)
+cover counts, or publish status). Spot-checked the standing "MISSING" false positives one more
+time — `MAS-ADMIN`'s 10 covers resolve correctly from `public/images/mas-admin/` under their
+absolute-path `coverImage` convention (not the `./images/...` convention used elsewhere), and
+`MAS-MANAGE`'s 12 posts intentionally borrow `../MAS-FEATURES/images/*.png` cover files rather
+than owning dedicated assets — neither is a real gap. Re-read
+`project_nanobanana_key_leaked_blocker` — still static at its 2026-07-22 confirmation, no
+rotation/reconnect note; the blocker remains unresolved for all 27 pending covers, all still
+correctly represented by their existing `failed` cover-batch queue items — per the replan rule
+(only re-queue failed items on a transient cause), none were re-added. Result: 0 new queue
+items added — no drift, no new gaps, every open item remains correctly parked on the human
+key-rotation/MCP-reconnect blocker.)
 
 **Prior update — 2026-08-14** (night-shift job `replan-20260814`: same audit, same result — zero
 commits since the 2026-08-13 replan, all counts and queue state unchanged, `MAS-MANAGE`
