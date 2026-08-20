@@ -1,6 +1,30 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-08-18 (night-shift job `replan-20260818`: full audit reconciling this plan
+**Updated:** 2026-08-19 (night-shift job `replan-20260819`: full audit reconciling this plan
+against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
+f24f2ed..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
+showed zero commits since the 2026-08-18 replan — no night-shift-relevant work landed
+overnight. `knowledge_base/` re-confirmed at 16 files (15 DOC files + 1 supply-chain roadmap
+email, DOC1-15 contiguous, `MAS92-SOURCES/` still a cache subdirectory not a doc) — unchanged.
+Independently re-verified on-disk mdx/PNG counts for every partially-built series
+(`MAS-OPTIMIZER` 6 mdx/1 png, `MAS-PARTS-IDENTIFIER` 5 mdx/0 png, `MAS-DATABRICKS` 7 mdx/5 png,
+`MAS-WATSONX-DATA` 7 mdx/0 png, `MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0 png, `MAS-9-2` 8 mdx/8 png,
+`MAS-MANAGE` 12 mdx/0 dedicated png — confirmed all 12 `coverImage` paths still resolve to real
+borrowed `../MAS-FEATURES/images/*.png` files, not a gap) — all match this doc's existing tables
+exactly, zero drift. `queue.json` re-verified (`jq empty` passes, 50 items, 17 done / 26 failed
+/ 7 skipped / 0 pending, no duplicate `id` values) — unchanged. Pulled the actual failure log for
+`covers-optimizer` (`logs/night-shift-covers-optimizer-20260720-231001.log`) to re-confirm in
+full rather than by note-string alone: the nanobanana MCP server is still serving a stale/invalid
+cached API key (`400 API_KEY_INVALID`) despite the key itself verifying valid via direct Gemini
+API call — a process-level MCP caching gotcha with no in-session fix, not a transient timeout/503.
+Re-read `project_nanobanana_key_leaked_blocker` in full — still static at its 2026-07-22
+22nd-confirmation entry, no rotation/reconnect note; the blocker remains unresolved for all 27
+pending covers, all still correctly represented by their existing `failed` cover-batch queue
+items — per the replan rule (only re-queue failed items on a transient cause), none were
+re-added. Result: 0 new queue items added — no drift, no new gaps, every open item remains
+correctly parked on the human key-rotation/MCP-reconnect blocker.)
+
+**Prior update — 2026-08-18** (night-shift job `replan-20260818`: full audit reconciling this plan
 against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
 d7a3406..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
 showed zero commits since the 2026-08-17 replan — no night-shift-relevant work landed
