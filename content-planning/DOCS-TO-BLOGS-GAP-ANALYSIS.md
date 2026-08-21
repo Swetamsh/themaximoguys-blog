@@ -1,6 +1,31 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-08-19 (night-shift job `replan-20260819`: full audit reconciling this plan
+**Updated:** 2026-08-20 (night-shift job `replan-20260820`: full audit reconciling this plan
+against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
+ecfe9a6..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
+showed zero commits since the 2026-08-19 replan — no night-shift-relevant work landed
+overnight. `knowledge_base/` re-confirmed at 16 files (15 DOC files + 1 supply-chain roadmap
+email, DOC1-15 contiguous, `MAS92-SOURCES/` still a cache subdirectory not a doc) — unchanged.
+Independently re-verified on-disk mdx/PNG counts for every partially-built series
+(`MAS-OPTIMIZER` 6 mdx/1 png, `MAS-PARTS-IDENTIFIER` 5 mdx/0 png, `MAS-DATABRICKS` 7 mdx/5 png,
+`MAS-WATSONX-DATA` 7 mdx/0 png, `MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0 png, `MAS-9-2` 8 mdx/8 png,
+`MAS-MANAGE` 12 mdx/0 dedicated png — coverImage paths still resolve to real borrowed
+`../MAS-FEATURES/images/*.png` files, not a gap) — all match this doc's existing tables
+exactly, zero drift. `queue.json` re-verified (`jq empty` passes, 50 items, 17 done / 26 failed
+/ 7 skipped / 0 pending, no duplicate `id` values) — unchanged. Re-checked every `failed` item's
+`note` field directly — all 26 trace to the same documented pattern (blog-post items:
+content-complete on disk, `failed` status only reflects the cover-mandatory rule per prior
+audits; cover-batch items: nanobanana MCP `API_KEY_INVALID` in headless sessions) — no note
+strings suggest a transient timeout/503 cause, so per the replan rule none were re-queued.
+Re-read `project_nanobanana_key_leaked_blocker` in full — still static at its 2026-07-22
+22nd-confirmation entry, no rotation/reconnect note; the blocker remains unresolved for all 27
+pending covers, all still correctly represented by their existing `failed` cover-batch queue
+items. The uncommitted working-tree edit to all 8 `MAS-9-2` post bodies (first noted
+2026-08-13) is still present and still untouched (interactive session, out of this job's
+scope). Result: 0 new queue items added — no drift, no new gaps, every open item remains
+correctly parked on the human key-rotation/MCP-reconnect blocker.)
+
+**Prior update — 2026-08-19** (night-shift job `replan-20260819`: full audit reconciling this plan
 against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
 f24f2ed..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
 showed zero commits since the 2026-08-18 replan — no night-shift-relevant work landed
