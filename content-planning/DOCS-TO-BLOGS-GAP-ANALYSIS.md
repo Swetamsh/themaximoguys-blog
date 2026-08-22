@@ -1,6 +1,30 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-08-20 (night-shift job `replan-20260820`: full audit reconciling this plan
+**Updated:** 2026-08-21 (night-shift job `replan-20260821`: full audit reconciling this plan
+against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
+0423786..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
+showed zero commits since the 2026-08-20 replan — no night-shift-relevant work landed
+overnight. `knowledge_base/` re-confirmed at 16 entries (15 DOC files + 1 supply-chain roadmap
+email, DOC1-15 contiguous, `MAS92-SOURCES/` still a cache subdirectory not a doc) — unchanged.
+Independently re-verified on-disk mdx/PNG counts for every partially-built series
+(`MAS-OPTIMIZER` 6 mdx/1 png, `MAS-PARTS-IDENTIFIER` 5 mdx/0 png, `MAS-DATABRICKS` 7 mdx/5 png,
+`MAS-WATSONX-DATA` 7 mdx/0 png, `MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0 png, `MAS-9-2` 8 mdx/8 png,
+`MAS-MANAGE` 12 mdx/0 dedicated png — borrowed `../MAS-FEATURES/images/*.png` convention, not
+a gap) — all match this doc's existing tables exactly, zero drift. `queue.json` re-verified
+(`jq empty` passes, 50 items, 17 done / 26 failed / 7 skipped / 0 pending, no duplicate `id`
+values) — unchanged. Grepped all 26 `failed` item `note` fields directly for
+"timeout"/"503"/"transient" — zero matches, confirming none trace to a transient cause eligible
+for re-queue. Re-read `project_nanobanana_key_leaked_blocker` in full — still static at its
+2026-07-22 22nd-confirmation entry, no rotation/reconnect note; the blocker remains unresolved
+for all 27 pending covers, all still correctly represented by their existing `failed`
+cover-batch queue items. New observation this run (not a gap, no action needed): confirmed
+`posts/MAS-INTEGRATION/` (9 mdx, 9 covers, fully content-and-asset-complete) is untracked in
+this doc's series tables — it predates and is unrelated to the DOC1-15 knowledge-base corpus
+this doc audits, and needs zero further work either way, so no new row was added. Result: 0 new
+queue items added — no drift, no new gaps, every open item remains correctly parked on the
+human key-rotation/MCP-reconnect blocker.)
+
+**Prior update — 2026-08-20** (night-shift job `replan-20260820`: full audit reconciling this plan
 against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
 ecfe9a6..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
 showed zero commits since the 2026-08-19 replan — no night-shift-relevant work landed
