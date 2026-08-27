@@ -1,31 +1,29 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-08-25 (night-shift job `replan-20260825`: full audit reconciling this plan
+**Updated:** 2026-08-26 (night-shift job `replan-20260826`: full audit reconciling this plan
 against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
-7a3a8ec..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
-showed zero commits since the 2026-08-24 replan — no night-shift-relevant work landed
+666e677..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
+showed zero commits since the 2026-08-25 replan — no night-shift-relevant work landed
 overnight. `knowledge_base/` re-confirmed at 16 files (15 DOC files + 1 supply-chain roadmap
 email, DOC1-15 contiguous) — unchanged. Independently re-verified on-disk mdx/PNG counts for
 every partially-built series (`MAS-OPTIMIZER` 6 mdx/1 png, `MAS-PARTS-IDENTIFIER` 5 mdx/0 png,
 `MAS-DATABRICKS` 7 mdx/5 png, `MAS-WATSONX-DATA` 7 mdx/0 png, `MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0
-png, `MAS-9-2` 8 mdx/8 png, `MAS-MANAGE` 12 mdx/0 dedicated png — borrowed
-`../MAS-FEATURES/images/*.png` convention, not a gap) — all match this doc's existing tables
-exactly, zero drift. `queue.json` re-verified (`jq empty` passes, 50 items, 17 done / 26 failed
-/ 7 skipped / 0 pending, no duplicate `id` values) — unchanged. Pulled the actual failure logs
-for every `cover-batch` item directly (not just note strings): `covers-parts-id`,
-`covers-databricks-56`, `covers-optimizer`, `covers-civil`, `covers-watsonx-b`,
-`covers-single-mas9-reporting`, `covers-single-mas9-upgrade-gotchas` all confirm the identical
-nanobanana MCP `400 API_KEY_INVALID` in headless sessions (22nd+ confirmation), none transient
-— per the replan rule (only re-queue failed items on a transient cause), none were re-added.
-Re-read `project_nanobanana_key_leaked_blocker` in full — still static at its 2026-07-22 22nd-
-confirmation entry, no rotation/reconnect note; the blocker remains unresolved for all 27
-pending covers, all still correctly represented by their existing `failed` cover-batch queue
-items. Confirmed the uncommitted working-tree edit to all 8 `MAS-9-2` post bodies (first noted
-2026-08-13) is still present and still untouched (interactive session, out of this job's
-scope). Result: 0 new queue items added — no drift, no new gaps, every open item remains
-correctly parked on the human key-rotation/MCP-reconnect blocker.)
+png, `MAS-9-2` 8 mdx/8 png) — all match this doc's existing tables exactly, zero drift.
+Also re-confirmed `MAS-FEATURES` (26 mdx/26 png), `MAS-MONITOR` (9/9), `MAS-INTEGRATION`
+(9/9), `MAS-HEALTH` (9/9), and `THINK-MAS` (16 mdx/25 png) need no changes — all already
+accounted for in this doc's Coverage Matrix, none are undocumented gaps. `queue.json`
+re-verified (`jq empty` passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0
+pending) — unchanged. Re-read `project_nanobanana_key_leaked_blocker` in full — still static
+at its 2026-07-22 22nd-confirmation entry, no rotation/reconnect note; per the standing
+guidance in that memory (no headless-session workaround exists, don't re-diagnose from
+scratch), this job did not burn a live nanobanana sanity call — the blocker is a standing,
+not intermittent, condition and none of the 26 `failed` items' notes suggest a transient
+cause, so none were re-queued. Confirmed the uncommitted working-tree edit to all 8 `MAS-9-2`
+post bodies (first noted 2026-08-13) is still present and still untouched (interactive
+session, out of this job's scope). Result: 0 new queue items added — no drift, no new gaps,
+every open item remains correctly parked on the human key-rotation/MCP-reconnect blocker.)
 
-**Prior updates — 2026-08-14 through 2026-08-24** (9 consecutive night-shift replan jobs,
+**Prior updates — 2026-08-14 through 2026-08-25** (10 consecutive night-shift replan jobs,
 each independently re-verifying `knowledge_base/` file count (16, unchanged throughout),
 `queue.json` integrity (50 items, 17 done / 26 failed / 7 skipped / 0 pending, no duplicate
 `id` values), and on-disk mdx/PNG counts for every partially-built series (`MAS-OPTIMIZER`,
