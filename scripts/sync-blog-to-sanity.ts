@@ -415,13 +415,37 @@ function mdxToPortableText(mdxContent: string): any[] {
       continue
     }
 
-    // Markdown table rows — convert to text blocks (no table type in schema)
-    if (line.match(/^\|(.+)\|$/)) {
-      // Skip separator rows like |---|---|
-      if (line.match(/^\|[\s-:|]+\|$/)) continue
+    // Markdown table → comparisonTable block (schema: headers[], rows[{ cells[] }])
+    if (line.match(/^\s*\|(.+)\|\s*$/)) {
       flushParagraph()
-      const cells = line.split('|').slice(1, -1).map((c) => c.trim())
-      blocks.push(createTextBlock(cells.join(' — '), 'normal'))
+
+      // Consume every consecutive table line in one go
+      const tableLines: string[] = []
+      let j = i
+      while (j < lines.length && /^\s*\|(.+)\|\s*$/.test(lines[j])) {
+        tableLines.push(lines[j].trim())
+        j++
+      }
+
+      // Drop separator rows like |---|---|
+      const dataRows = tableLines.filter((l) => !/^\|[\s\-:|]+\|$/.test(l))
+
+      if (dataRows.length > 0) {
+        const splitRow = (row: string) =>
+          row.split('|').slice(1, -1).map((c) => cleanTableCell(c))
+
+        blocks.push({
+          _type: 'comparisonTable',
+          _key: generateKey(),
+          headers: splitRow(dataRows[0]),
+          rows: dataRows.slice(1).map((r) => ({
+            _key: generateKey(),
+            cells: splitRow(r),
+          })),
+        })
+      }
+
+      i = j - 1
       continue
     }
 
@@ -432,6 +456,19 @@ function mdxToPortableText(mdxContent: string): any[] {
   flushParagraph()
 
   return blocks
+}
+
+function cleanTableCell(cell: string): string {
+  // comparisonTable cells are plain strings — the frontend renders them as-is,
+  // so inline markdown has to be flattened to readable text here.
+  return cell
+    .trim()
+    .replace(/<br\s*\/?>/gi, ' · ')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/`(.+?)`/g, '$1')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
+    .replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1$2')
+    .trim()
 }
 
 function createTextBlock(text: string, style: string): any {
