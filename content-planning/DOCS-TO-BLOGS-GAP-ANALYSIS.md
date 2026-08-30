@@ -1,6 +1,24 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-08-28 (night-shift job `replan-20260828`: full audit reconciling this plan
+**Updated:** 2026-08-29 (night-shift job `replan-20260829`: full audit reconciling this plan
+against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
+ed85fc6..HEAD` showed zero commits of any kind since the 2026-08-28 replan — no night-shift or
+interactive work landed overnight. `knowledge_base/` re-confirmed at 16 files, unchanged.
+Independently re-verified on-disk mdx/PNG counts for every partially-built series
+(`MAS-OPTIMIZER` 6 mdx/1 png, `MAS-PARTS-IDENTIFIER` 5 mdx/0 png, `MAS-DATABRICKS` 7 mdx/5 png,
+`MAS-WATSONX-DATA` 7 mdx/0 png, `MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0 png, `MAS-9-2` 8 mdx/16 png
+[8 covers + 8 thumbs], `MAS-MANAGE` 12 mdx/0 png (still intentionally held per
+`posts/MAS-MANAGE/COVER-MANIFEST.md`), standalone `posts/images/` 0 png) — all match this doc's
+tables exactly, zero drift. `queue.json` re-verified (`jq empty` passes, 50 items, 50 unique
+ids, 17 done / 26 failed / 7 skipped / 0 pending) — unchanged. The uncommitted working-tree
+edit to all 8 `MAS-9-2` post bodies (first noted 2026-08-13) is still present and untouched
+(interactive session, out of this job's scope). Every `failed` item still traces to the same
+non-transient nanobanana `API_KEY_INVALID` blocker or a deliberate content-duplication decline
+(`parts-id-05-governance`) — none qualify for re-queue per the hard rules. Result: 0 new queue
+items added — no drift, no new gaps, backlog remains entirely covers-only, blocked on the human
+nanobanana key-rotation/MCP-reconnect action.)
+
+**Prior update — 2026-08-28** (night-shift job `replan-20260828`: full audit reconciling this plan
 against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
 a2510f9..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
 showed zero commits since the 2026-08-27 replan (the one intervening commit, `e3cf6b8`, only
