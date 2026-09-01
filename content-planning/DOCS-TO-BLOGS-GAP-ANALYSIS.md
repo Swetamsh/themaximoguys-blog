@@ -1,26 +1,27 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-08-30 (night-shift job `replan-20260830`: full audit reconciling this plan
+**Updated:** 2026-08-31 (night-shift job `replan-20260831`: full audit reconciling this plan
 against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
-53e0280..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
-showed zero commits since the 2026-08-29 replan — no night-shift or interactive work landed
+f71ffeb..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
+showed zero commits since the 2026-08-30 replan — no night-shift or interactive work landed
 overnight. `knowledge_base/` re-confirmed at 16 files, unchanged. Independently re-verified
 on-disk mdx/PNG counts for every partially-built series (`MAS-OPTIMIZER` 6 mdx/1 png,
 `MAS-PARTS-IDENTIFIER` 5 mdx/0 png, `MAS-DATABRICKS` 7 mdx/5 png, `MAS-WATSONX-DATA` 7 mdx/0 png,
-`MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0 png, `MAS-9-2` 8 mdx/16 png [8 covers + 8 thumbs], `MAS-MANAGE`
-12 mdx/0 png (still intentionally held per `posts/MAS-MANAGE/COVER-MANIFEST.md`), standalone
-`posts/images/` 0 png) — all match this doc's tables exactly, zero drift. `queue.json`
-re-verified (`jq empty` passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0
-pending) — unchanged. Re-read `project_nanobanana_key_leaked_blocker` — still static at its
-2026-07-22 22nd-confirmation entry, now 5+ weeks unresolved. The uncommitted working-tree edit
-to all 8 `MAS-9-2` post bodies (first noted 2026-08-13) is still present and untouched
-(interactive session, out of this job's scope). Every `failed` item still traces to the same
-non-transient nanobanana `API_KEY_INVALID` blocker or a deliberate content-duplication decline
-(`parts-id-05-governance`) — none qualify for re-queue per the hard rules. Result: 0 new queue
-items added — no drift, no new gaps, backlog remains entirely covers-only, blocked on the human
-nanobanana key-rotation/MCP-reconnect action.)
+`MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0 png, `MAS-9-2` 8 mdx/8 png, `MAS-MANAGE` 12 mdx/0 png
+(still intentionally held per `posts/MAS-MANAGE/COVER-MANIFEST.md`), standalone `posts/images/`
+0 png) — all match this doc's tables exactly, zero drift. `queue.json` re-verified (`jq empty`
+passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0 pending) — unchanged.
+Re-read `project_nanobanana_key_leaked_blocker` — still static at its 2026-07-22 22nd-confirmation
+entry, now 6+ weeks unresolved; this session's own nanobanana MCP tool also failed to connect
+outright (`CONNECTION_CLOSED`), consistent with the standing blocker. The uncommitted
+working-tree edit to all 8 `MAS-9-2` post bodies (first noted 2026-08-13) is still present and
+untouched (interactive session, out of this job's scope). Every `failed` item still traces to
+the same non-transient nanobanana `API_KEY_INVALID` blocker or a deliberate content-duplication
+decline (`parts-id-05-governance`) — none qualify for re-queue per the hard rules. Result: 0 new
+queue items added — no drift, no new gaps, backlog remains entirely covers-only, blocked on the
+human nanobanana key-rotation/MCP-reconnect action.)
 
-**Prior updates — 2026-08-27 through 2026-08-29** (3 consecutive night-shift replan jobs, each
+**Prior updates — 2026-08-27 through 2026-08-30** (4 consecutive night-shift replan jobs, each
 independently re-verifying `knowledge_base/` file count (16, unchanged throughout), `queue.json`
 integrity (50 items, 17 done / 26 failed / 7 skipped / 0 pending, no duplicate `id` values), and
 on-disk mdx/PNG counts for every partially-built series (`MAS-OPTIMIZER`, `MAS-PARTS-IDENTIFIER`,
@@ -35,8 +36,8 @@ not a failure to retry). The uncommitted working-tree edit to all 8 `MAS-9-2` po
 noted 2026-08-13) was reconfirmed present and untouched throughout. None of the 26 `failed`
 items were ever re-queued — every note traces to either the nanobanana key block or the
 deliberate content-duplication decline, never a transient cause. Full text of each daily entry
-is preserved in git history — see the `night-shift: replan-2026082N` commits for 2026-08-27
-through 2026-08-29 for the individual audit write-ups.)
+is preserved in git history — see the `night-shift: replan-2026082N`/`2026083N` commits for
+2026-08-27 through 2026-08-30 for the individual audit write-ups.)
 
 **Prior updates — 2026-08-14 through 2026-08-26** (11 consecutive night-shift replan jobs,
 each independently re-verifying `knowledge_base/` file count (16, unchanged throughout),
