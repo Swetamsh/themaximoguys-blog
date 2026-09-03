@@ -1,6 +1,30 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-09-01 (night-shift job `replan-20260901`: full audit reconciling this plan
+**Updated:** 2026-09-03 (night-shift job `replan-20260902`: full audit reconciling this plan
+against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
+73e9999..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
+showed zero commits since the 2026-09-01 replan — no night-shift or interactive work landed in
+between. `knowledge_base/` re-confirmed at 16 files, unchanged. Independently re-verified
+on-disk mdx/PNG counts for the key partially-built series (`MAS-OPTIMIZER` 6 mdx/1 png (only
+Part 5), `MAS-PARTS-IDENTIFIER` 5 mdx/0 png, `MAS-DATABRICKS` 7 mdx/5 png, `MAS-WATSONX-DATA`
+7 mdx/0 png, `MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0 png, `MAS-ADMIN` 10 mdx/10 png (cover-complete,
+confirmed again), `MAS-9-2` 8 mdx/8 png (cover-complete), standalone `posts/images/` 0 png for
+the 2 DOC1 singles) — all match this doc's tables exactly, zero drift. Also re-scanned all
+`posts/*/` directories for any unlisted series (none found — 20 known series/roots plus
+`posts/images/`, matching this doc exactly). `queue.json` re-verified (`jq empty` passes, 50
+items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0 pending) — unchanged. Re-checked all
+26 `failed` item notes for transient-failure language (timeout/503) — none found; every note
+still traces to the non-transient nanobanana `API_KEY_INVALID`/"key reported as leaked"
+blocker or the deliberate `parts-id-05-governance` content-duplication decline, consistent with
+the full log reads two prior audits (2026-08-19, 2026-08-28) already performed. This session's
+own nanobanana MCP tool also failed to connect outright (`CONNECTION_CLOSED`), independently
+reconfirming the standing blocker is still unresolved, now 6+ weeks running. The uncommitted
+working-tree edit to all 8 `MAS-9-2` post bodies (first noted 2026-08-13) is still present and
+untouched (interactive session, out of this job's scope). Result: 0 new queue items added — no
+drift, no new gaps, backlog remains entirely covers-only, blocked on the human nanobanana
+key-rotation/MCP-reconnect action.)
+
+**Prior update — 2026-09-01** (night-shift job `replan-20260901`: full audit reconciling this plan
 against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
 030f290..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
 showed zero commits since the 2026-08-31 replan — no night-shift or interactive work landed
