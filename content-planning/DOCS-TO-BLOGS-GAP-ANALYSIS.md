@@ -1,6 +1,26 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-09-04 (night-shift job `replan-20260904`: full audit reconciling this plan
+**Updated:** 2026-09-05 (night-shift job `replan-20260905`: full audit reconciling this plan
+against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
+2e3d633..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
+showed zero commits since the `replan-20260904` job — no night-shift or interactive work landed
+in between. `knowledge_base/` re-confirmed at 16 files, unchanged. Independently re-verified
+on-disk mdx/PNG counts for the key partially-built series (`MAS-OPTIMIZER` 6 mdx/1 png (only
+Part 5), `MAS-PARTS-IDENTIFIER` 5 mdx/0 png, `MAS-DATABRICKS` 7 mdx/5 png, `MAS-WATSONX-DATA`
+7 mdx/0 png, `MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0 png, `MAS-ADMIN` and `MAS-9-2` both
+cover-complete, standalone `posts/images/` 0 png for the 2 DOC1 singles) — all match this doc's
+tables exactly, zero drift. `queue.json` re-verified (`jq empty` passes, 50 items, 50 unique
+ids, 17 done / 26 failed / 7 skipped / 0 pending) — unchanged. Re-checked all 26 `failed` item
+notes for transient-failure language (timeout/503) — none found; every note still traces to the
+non-transient nanobanana `API_KEY_INVALID`/"key reported as leaked" blocker or the deliberate
+`parts-id-05-governance` content-duplication decline. This session's own nanobanana MCP tool
+again failed to connect outright (`CONNECTION_CLOSED`), independently reconfirming the standing
+blocker is still unresolved. The uncommitted working-tree edit to all 8 `MAS-9-2` post bodies
+(first noted 2026-08-13) is still present and untouched (interactive session, out of this job's
+scope). Result: 0 new queue items added — no drift, no new gaps, backlog remains entirely
+covers-only, blocked on the human nanobanana key-rotation/MCP-reconnect action.)
+
+**Prior update — 2026-09-04** (night-shift job `replan-20260904`: full audit reconciling this plan
 against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
 0e85578..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
 showed zero commits since the `replan-20260903` job — no night-shift or interactive work landed
