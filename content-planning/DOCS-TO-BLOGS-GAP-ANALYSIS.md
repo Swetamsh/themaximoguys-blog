@@ -1,6 +1,22 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-09-11 (night-shift job `replan-20260911`, landed 2026-09-12 UTC per system
+**Updated:** 2026-09-12 (night-shift job `replan-20260912`: full audit reconciling this plan
+against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
+ff51cd6..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
+empty — no night-shift or interactive work landed since the `replan-20260911` job.
+`knowledge_base/` re-confirmed at 16 files, unchanged. `queue.json` re-verified (`jq empty`
+passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0 pending) — unchanged. All 26
+`failed` items still trace to the non-transient nanobanana `API_KEY_INVALID`/"key reported as
+leaked" blocker or the deliberate `parts-id-05-governance` content-duplication decline — none
+carry timeout/503/rate-limit language, so per the night-shift rule none were re-queued. This
+session's own nanobanana MCP tool again failed to connect outright (`CONNECTION_CLOSED`),
+independently reconfirming the standing blocker is still unresolved (9+ weeks running). The
+uncommitted working-tree edit to all 8 `MAS-9-2` post bodies (first noted 2026-08-13) is still
+present and untouched (interactive session, out of this job's scope). Result: 0 new queue items
+added — no drift, no new gaps, backlog remains entirely covers-only, blocked on the human
+nanobanana key-rotation/MCP-reconnect action.)
+
+**Prior update — 2026-09-11** (night-shift job `replan-20260911`, landed 2026-09-12 UTC per system
 clock: full audit reconciling this plan against `posts/`, `knowledge_base/`,
 `content-planning/`, and `queue.json`. `git log --oneline bad09d8..HEAD -- posts/
 knowledge_base/ content-planning/ automation/off-hours/queue.json` showed zero commits since
