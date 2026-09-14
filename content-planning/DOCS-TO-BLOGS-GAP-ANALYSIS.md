@@ -1,6 +1,32 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-09-12 (night-shift job `replan-20260912`: full audit reconciling this plan
+**Updated:** 2026-09-13 (night-shift job `replan-20260913`: full audit reconciling this plan
+against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
+11e0b63..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
+empty — no night-shift or interactive work landed since the `replan-20260912` job.
+`knowledge_base/` re-confirmed at 16 files, unchanged. `queue.json` re-verified (`jq empty`
+passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0 pending) — unchanged.
+Independently re-verified on-disk mdx/cover-image counts for every partially-built series
+(`MAS-OPTIMIZER` 6 mdx/1 png, `MAS-PARTS-IDENTIFIER` 5 mdx/0 png, `MAS-DATABRICKS` 7 mdx/5 png,
+`MAS-WATSONX-DATA` 7 mdx/0 png, `MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0 png, `MAS-ADMIN` 10 mdx/10
+covers, `MAS-9-2` 8 mdx/8 covers, `MAS-MANAGE` covers confirmed resolving correctly via its
+shared `../MAS-FEATURES/images/` paths) — all match this doc's tables exactly, zero drift. Also
+ran a full-repo coverImage-path resolution sweep across every `posts/*/*.mdx` file this run (not
+done explicitly since 2026-08-17); the sweep's two apparent "missing cover" clusters (MAS-ADMIN's
+absolute `/images/mas-admin/...` paths resolving under `public/images/mas-admin/`, and
+MAS-MANAGE's relative `../MAS-FEATURES/images/...` paths) were confirmed as script-path-joining
+false positives, not real gaps — both directories' target files exist on disk. All 26 `failed`
+items still trace to the non-transient nanobanana `API_KEY_INVALID`/"key reported as leaked"
+blocker or the deliberate `parts-id-05-governance` content-duplication decline — none carry
+timeout/503/rate-limit language, so per the night-shift rule none were re-queued. This session's
+own nanobanana MCP tool again failed to connect outright (`CONNECTION_CLOSED`), independently
+reconfirming the standing blocker is still unresolved (10+ weeks running). The uncommitted
+working-tree edit to all 8 `MAS-9-2` post bodies (first noted 2026-08-13) is still present and
+untouched (interactive session, out of this job's scope). Result: 0 new queue items added — no
+drift, no new gaps, backlog remains entirely covers-only, blocked on the human nanobanana
+key-rotation/MCP-reconnect action.)
+
+**Prior update — 2026-09-12** (night-shift job `replan-20260912`: full audit reconciling this plan
 against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
 ff51cd6..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
 empty — no night-shift or interactive work landed since the `replan-20260911` job.
