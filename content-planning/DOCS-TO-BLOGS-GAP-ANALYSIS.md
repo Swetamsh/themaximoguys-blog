@@ -1,6 +1,31 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-09-16 (night-shift job `replan-20260915`: full audit reconciling this plan
+**Updated:** 2026-09-16 (night-shift job `replan-20260916`: full audit reconciling this plan
+against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
+e38377c..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
+empty — no night-shift or interactive work landed since the `replan-20260915` job.
+`knowledge_base/` re-confirmed at 16 files (15 `DOC*.md` + `Maximo_SupplyChain_Roadmap_Email.md`,
+`MAS92-SOURCES/` still a cache subdirectory not a doc), unchanged. `queue.json` re-verified (`jq
+empty` passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0 pending) — unchanged.
+Independently re-verified on-disk mdx/cover-image counts for every partially-built series
+(`MAS-OPTIMIZER` 6 mdx/1 png, `MAS-PARTS-IDENTIFIER` 5 mdx/0 png, `MAS-DATABRICKS` 7 mdx/5 png,
+`MAS-WATSONX-DATA` 7 mdx/0 png, `MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0 png, `MAS-ADMIN` 10 mdx/10
+covers, `MAS-9-2` 8 mdx/8 covers) — all match this doc's tables exactly, zero drift. Standalone
+`posts/images/` reconfirmed at 0 png, and both standalone DOC1 posts (`mas9-reporting-options.mdx`,
+`mas9-upgrade-gotchas.mdx`) still exist with their four related queue items (`single-` and
+`covers-single-` for both) still correctly `failed`. Re-grepped all 26 `failed` item notes/briefs
+directly for timeout/503/rate-limit language this run — zero matches; every failure still traces
+to the non-transient nanobanana `API_KEY_INVALID`/"key reported as leaked" blocker or the
+deliberate `parts-id-05-governance` content-duplication decline, so per the night-shift rule none
+were re-queued. This session's own nanobanana MCP tool again failed to connect outright
+(`CONNECTION_CLOSED`), independently reconfirming the standing blocker is still unresolved (13+
+weeks running). The uncommitted working-tree edits to all 8 `MAS-9-2` post bodies (first noted
+2026-08-13), `CLAUDE.md`, and `plans/CLAUDE.md` (both first noted 2026-09-15) are still present
+and untouched (interactive-session edits, out of this job's scope). Result: 0 new queue items
+added — no drift, no new gaps, backlog remains entirely covers-only, blocked on the human
+nanobanana key-rotation/MCP-reconnect action.)
+
+**Prior update — 2026-09-15** (night-shift job `replan-20260915`: full audit reconciling this plan
 against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
 699e9de..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
 empty — no night-shift or interactive work landed since the `replan-20260914` job.
