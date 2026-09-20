@@ -1,6 +1,28 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-09-18 (night-shift job `replan-20260918`: full audit reconciling this plan
+**Updated:** 2026-09-19 (night-shift job `replan-20260919`: full audit reconciling this plan
+against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
+9f35cd1..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
+empty — no night-shift or interactive work landed since the `replan-20260918` job. `knowledge_base/`
+re-confirmed at 16 files (15 `DOC*.md` + `Maximo_SupplyChain_Roadmap_Email.md`; `MAS92-SOURCES/`
+is a cache subdirectory, not a doc), unchanged. `queue.json` re-verified (`jq empty` passes, 50
+items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0 pending) — unchanged. Re-counted on-disk
+mdx/cover-image files for every series (`MAS-OPTIMIZER` 6 mdx/1 png, `MAS-PARTS-IDENTIFIER` 5
+mdx/0 png, `MAS-DATABRICKS` 7 mdx/5 png, `MAS-WATSONX-DATA` 7 mdx/0 png,
+`MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0 png, `MAS-ADMIN` 10 mdx/10 covers, `MAS-9-2` 8 mdx/8 covers,
+`MAS-MANAGE` 12 mdx using shared `MAS-FEATURES` covers) — all match this doc's tables, zero drift.
+A coverImage-path sweep again flagged only the known MAS-ADMIN (absolute `/images/mas-admin/...`)
+and MAS-MANAGE (relative `../MAS-FEATURES/...`) path-resolution false positives. Standalone
+`posts/images/` is still empty. Grepped all 26 `failed` items for timeout/503/rate-limit/overload
+language — zero matches; every failure traces to the non-transient nanobanana `API_KEY_INVALID`
+blocker or the deliberate `parts-id-05-governance` duplication decline, so none were re-queued.
+This session's nanobanana MCP again failed to connect (`CONNECTION_CLOSED`), reconfirming the
+standing blocker is unresolved. Uncommitted interactive edits to the 8 `MAS-9-2` post bodies,
+`CLAUDE.md`, and `plans/CLAUDE.md` are untouched (out of scope). Result: 0 new queue items — no
+drift, no new gaps, backlog remains covers-only, blocked on the human nanobanana key-rotation /
+MCP-reconnect action.)
+
+**Prior update — 2026-09-18** (night-shift job `replan-20260918`: full audit reconciling this plan
 against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
 114794f..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
 empty — no night-shift or interactive work landed since the `replan-20260917` job. `knowledge_base/`
