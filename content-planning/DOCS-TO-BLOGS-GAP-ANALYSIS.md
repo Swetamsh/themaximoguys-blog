@@ -1,6 +1,23 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-09-19 (night-shift job `replan-20260919`: full audit reconciling this plan
+**Updated:** 2026-09-20 (night-shift job `replan-20260920`: full audit reconciling this plan
+against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
+2d187db..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
+empty — nothing landed since `replan-20260919`. `knowledge_base/` still 16 files (15 `DOC*.md` +
+`Maximo_SupplyChain_Roadmap_Email.md`; `MAS92-SOURCES/` is a cache dir), unchanged. `queue.json`
+re-verified (`jq empty` passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0
+pending). Re-counted mdx/cover PNGs per series: `MAS-OPTIMIZER` 6 mdx/1 png, `MAS-PARTS-IDENTIFIER`
+5/0, `MAS-DATABRICKS` 7/5, `MAS-WATSONX-DATA` 7/0, `MAS-CIVIL-INFRASTRUCTURE` 6/0, `MAS-ADMIN` 10
+mdx/10 covers (absolute `/images/mas-admin/` paths), `MAS-9-2` 8/8, `MAS-MANAGE` 12 on shared
+`MAS-FEATURES` covers — all match the tables below, zero drift. Grepped all 26 `failed` items for
+timeout/503/rate-limit/overload language — zero matches; every failure traces to the non-transient
+nanobanana `API_KEY_INVALID` blocker or the deliberate `parts-id-05-governance` duplication decline,
+so none were re-queued. This session's nanobanana MCP again failed to connect (`CONNECTION_CLOSED`),
+so the blocker is still unresolved. Uncommitted interactive edits (`MAS-9-2` bodies, `CLAUDE.md`,
+`plans/CLAUDE.md`) left untouched. Result: 0 new queue items — backlog remains covers-only, blocked
+on the human nanobanana key-rotation / MCP-reconnect action.)
+
+**Prior update — 2026-09-19** (night-shift job `replan-20260919`: full audit reconciling this plan
 against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
 9f35cd1..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
 empty — no night-shift or interactive work landed since the `replan-20260918` job. `knowledge_base/`
