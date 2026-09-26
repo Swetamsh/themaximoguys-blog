@@ -1,289 +1,49 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-09-24 (night-shift job `replan-20260924`: full audit reconciling this plan
+**Updated:** 2026-09-25 (night-shift job `replan-20260925`: full audit reconciling this plan
 against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
-a539721..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
-empty — nothing landed since `replan-20260923`. `knowledge_base/` still 16 files (15 `DOC*.md` +
-`Maximo_SupplyChain_Roadmap_Email.md`; `MAS92-SOURCES/` is a cache dir), unchanged. `queue.json`
-re-verified (`jq empty` passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0
-pending). Re-counted mdx/cover PNGs per series against this doc's tables: `MAS-OPTIMIZER` 6 mdx/1
-png, `MAS-PARTS-IDENTIFIER` 5/0, `MAS-DATABRICKS` 7/5, `MAS-WATSONX-DATA` 7/0,
-`MAS-CIVIL-INFRASTRUCTURE` 6/0, `MAS-ADMIN` 10 mdx/10 covers (absolute `/images/mas-admin/`
-paths), `MAS-9-2` 8/8, `MAS-MANAGE` 12 on shared `MAS-FEATURES` covers, standalone
-`posts/images/` still empty (2 covers missing for `mas9-reporting-options`/
-`mas9-upgrade-gotchas`) — all match the tables below, zero drift. Re-grepped all 26 `failed`
-item notes for timeout/503/rate-limit/overload language — zero matches; every failure still
-traces to the non-transient nanobanana `API_KEY_INVALID` blocker or the deliberate
-`parts-id-05-governance` duplication decline, so none were re-queued. This session's nanobanana
-MCP again failed to connect (`CONNECTION_CLOSED`), so the blocker remains unresolved (25+
-consecutive failed-cover-batch confirmations as of this run). Uncommitted interactive edits
-(`MAS-9-2` bodies, `CLAUDE.md`, `plans/CLAUDE.md`, new `AGENTS.md` files, several `MEMORY/WORK/`
-dirs) left untouched — out of scope for this job. Result: 0 new queue items — backlog remains
-covers-only, blocked on the human nanobanana key-rotation / MCP-reconnect action.)
-
-**Prior update — 2026-09-23** (night-shift job `replan-20260923`: full audit reconciling this plan
-against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
-1b50898..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
-empty — nothing landed since `replan-20260922`. `knowledge_base/` still 16 files (15 `DOC*.md` +
-`Maximo_SupplyChain_Roadmap_Email.md`; `MAS92-SOURCES/` is a cache dir), unchanged. `queue.json`
-re-verified (`jq empty` passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0
-pending). Re-counted mdx/cover PNGs per series against this doc's tables: `MAS-OPTIMIZER` 6 mdx/1
-png, `MAS-PARTS-IDENTIFIER` 5/0, `MAS-DATABRICKS` 7/5, `MAS-WATSONX-DATA` 7/0,
-`MAS-CIVIL-INFRASTRUCTURE` 6/0, `MAS-ADMIN` 10 mdx/10 covers (absolute `/images/mas-admin/`
-paths), `MAS-9-2` 8/8, `MAS-MANAGE` 12 on shared `MAS-FEATURES` covers, standalone
-`posts/images/` still empty (2 covers missing for `mas9-reporting-options`/
-`mas9-upgrade-gotchas`) — all match the tables below, zero drift. Re-grepped all 26 `failed`
-item notes for timeout/503/rate-limit/overload language — zero matches; every failure still
-traces to the non-transient nanobanana `API_KEY_INVALID` blocker or the deliberate
-`parts-id-05-governance` duplication decline, so none were re-queued. This session's nanobanana
-MCP again failed to connect (`CONNECTION_CLOSED`), so the blocker remains unresolved (24+
-consecutive failed-cover-batch confirmations as of this run). Uncommitted interactive edits
-(`MAS-9-2` bodies, `CLAUDE.md`, `plans/CLAUDE.md`) left untouched — out of scope for this job.
-Result: 0 new queue items — backlog remains covers-only, blocked on the human nanobanana
-key-rotation / MCP-reconnect action.)
-
-**Prior update — 2026-09-22** (night-shift job `replan-20260922`: full audit reconciling this plan
-against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
-c140826..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
-empty — nothing landed since `replan-20260921`. `knowledge_base/` still 16 files (15 `DOC*.md` +
-`Maximo_SupplyChain_Roadmap_Email.md`; `MAS92-SOURCES/` is a cache dir), unchanged. `queue.json`
-re-verified (`jq empty` passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0
-pending). Re-counted mdx/cover PNGs per series against this doc's tables: `MAS-OPTIMIZER` 6 mdx/1
-png, `MAS-PARTS-IDENTIFIER` 5/0, `MAS-DATABRICKS` 7/5, `MAS-WATSONX-DATA` 7/0,
-`MAS-CIVIL-INFRASTRUCTURE` 6/0, `MAS-ADMIN` 10 mdx/10 covers (absolute `/images/mas-admin/`
-paths), `MAS-9-2` 8/8, `MAS-MANAGE` 12 on shared `MAS-FEATURES` covers, standalone
-`posts/images/` still empty (2 covers missing for `mas9-reporting-options`/
-`mas9-upgrade-gotchas`) — all match the tables below, zero drift. Re-grepped all 26 `failed`
-item notes for timeout/503/rate-limit/overload language — zero matches; every failure still
-traces to the non-transient nanobanana `API_KEY_INVALID` blocker or the deliberate
-`parts-id-05-governance` duplication decline, so none were re-queued. This session's nanobanana
-MCP again failed to connect (`CONNECTION_CLOSED`), so the blocker remains unresolved (23+
-consecutive failed-cover-batch confirmations as of this run). Uncommitted interactive edits
-(`MAS-9-2` bodies, `CLAUDE.md`, `plans/CLAUDE.md`) left untouched — out of scope for this job.
-Result: 0 new queue items — backlog remains covers-only, blocked on the human nanobanana
-key-rotation / MCP-reconnect action.)
-
-**Prior update — 2026-09-21** (night-shift job `replan-20260921`: full audit reconciling this plan
-against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
-087dfd0..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
-empty — nothing landed since `replan-20260920`. `knowledge_base/` still 16 files (15 `DOC*.md` +
-`Maximo_SupplyChain_Roadmap_Email.md`; `MAS92-SOURCES/` is a cache dir), unchanged. `queue.json`
-re-verified (`jq empty` passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0
-pending). Re-counted mdx/cover PNGs per series against this doc's tables: `MAS-OPTIMIZER` 6 mdx/1
-png, `MAS-PARTS-IDENTIFIER` 5/0, `MAS-DATABRICKS` 7/5, `MAS-WATSONX-DATA` 7/0,
-`MAS-CIVIL-INFRASTRUCTURE` 6/0, `MAS-ADMIN` 10 mdx/10 covers (absolute `/images/mas-admin/`
-paths), `MAS-9-2` 8/8, `MAS-MANAGE` 12 on shared `MAS-FEATURES` covers, standalone
-`posts/images/` still empty (2 covers missing for `mas9-reporting-options`/
-`mas9-upgrade-gotchas`) — all match the tables below, zero drift. Re-grepped all 26 `failed`
-item notes for timeout/503/rate-limit/overload language — zero matches; every failure still
-traces to the non-transient nanobanana `API_KEY_INVALID` blocker or the deliberate
-`parts-id-05-governance` duplication decline, so none were re-queued. This session's nanobanana
-MCP again failed to connect (`CONNECTION_CLOSED`), so the blocker remains unresolved (18+
-consecutive failed-cover-batch confirmations as of this run). Uncommitted interactive edits
-(`MAS-9-2` bodies, `CLAUDE.md`, `plans/CLAUDE.md`) left untouched — out of scope for this job.
-Result: 0 new queue items — backlog remains covers-only, blocked on the human nanobanana
-key-rotation / MCP-reconnect action.)
-
-**Prior update — 2026-09-20** (night-shift job `replan-20260920`: full audit reconciling this plan
-against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
-2d187db..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
-empty — nothing landed since `replan-20260919`. `knowledge_base/` still 16 files (15 `DOC*.md` +
-`Maximo_SupplyChain_Roadmap_Email.md`; `MAS92-SOURCES/` is a cache dir), unchanged. `queue.json`
-re-verified (`jq empty` passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0
-pending). Re-counted mdx/cover PNGs per series: `MAS-OPTIMIZER` 6 mdx/1 png, `MAS-PARTS-IDENTIFIER`
-5/0, `MAS-DATABRICKS` 7/5, `MAS-WATSONX-DATA` 7/0, `MAS-CIVIL-INFRASTRUCTURE` 6/0, `MAS-ADMIN` 10
-mdx/10 covers (absolute `/images/mas-admin/` paths), `MAS-9-2` 8/8, `MAS-MANAGE` 12 on shared
-`MAS-FEATURES` covers — all match the tables below, zero drift. Grepped all 26 `failed` items for
-timeout/503/rate-limit/overload language — zero matches; every failure traces to the non-transient
-nanobanana `API_KEY_INVALID` blocker or the deliberate `parts-id-05-governance` duplication decline,
-so none were re-queued. This session's nanobanana MCP again failed to connect (`CONNECTION_CLOSED`),
-so the blocker is still unresolved. Uncommitted interactive edits (`MAS-9-2` bodies, `CLAUDE.md`,
-`plans/CLAUDE.md`) left untouched. Result: 0 new queue items — backlog remains covers-only, blocked
-on the human nanobanana key-rotation / MCP-reconnect action.)
-
-**Prior update — 2026-09-19** (night-shift job `replan-20260919`: full audit reconciling this plan
-against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
-9f35cd1..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
-empty — no night-shift or interactive work landed since the `replan-20260918` job. `knowledge_base/`
-re-confirmed at 16 files (15 `DOC*.md` + `Maximo_SupplyChain_Roadmap_Email.md`; `MAS92-SOURCES/`
-is a cache subdirectory, not a doc), unchanged. `queue.json` re-verified (`jq empty` passes, 50
-items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0 pending) — unchanged. Re-counted on-disk
-mdx/cover-image files for every series (`MAS-OPTIMIZER` 6 mdx/1 png, `MAS-PARTS-IDENTIFIER` 5
-mdx/0 png, `MAS-DATABRICKS` 7 mdx/5 png, `MAS-WATSONX-DATA` 7 mdx/0 png,
-`MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0 png, `MAS-ADMIN` 10 mdx/10 covers, `MAS-9-2` 8 mdx/8 covers,
-`MAS-MANAGE` 12 mdx using shared `MAS-FEATURES` covers) — all match this doc's tables, zero drift.
-A coverImage-path sweep again flagged only the known MAS-ADMIN (absolute `/images/mas-admin/...`)
-and MAS-MANAGE (relative `../MAS-FEATURES/...`) path-resolution false positives. Standalone
-`posts/images/` is still empty. Grepped all 26 `failed` items for timeout/503/rate-limit/overload
-language — zero matches; every failure traces to the non-transient nanobanana `API_KEY_INVALID`
-blocker or the deliberate `parts-id-05-governance` duplication decline, so none were re-queued.
-This session's nanobanana MCP again failed to connect (`CONNECTION_CLOSED`), reconfirming the
-standing blocker is unresolved. Uncommitted interactive edits to the 8 `MAS-9-2` post bodies,
-`CLAUDE.md`, and `plans/CLAUDE.md` are untouched (out of scope). Result: 0 new queue items — no
-drift, no new gaps, backlog remains covers-only, blocked on the human nanobanana key-rotation /
+a539721..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` showed
+only `e30cdd1` (the `replan-20260924` commit itself) — nothing landed since. `knowledge_base/`
+still 16 files (15 `DOC*.md` + `Maximo_SupplyChain_Roadmap_Email.md`; `MAS92-SOURCES/` is a cache
+dir), unchanged. `queue.json` re-verified (`jq empty` passes, 50 items, 50 unique ids, 17 done /
+26 failed / 7 skipped / 0 pending). Re-counted mdx/cover PNGs per series against this doc's
+tables: `MAS-OPTIMIZER` 6 mdx/1 png, `MAS-PARTS-IDENTIFIER` 5/0, `MAS-DATABRICKS` 7/5,
+`MAS-WATSONX-DATA` 7/0, `MAS-CIVIL-INFRASTRUCTURE` 6/0, `MAS-ADMIN` 10 mdx/10 covers (absolute
+`/images/mas-admin/` paths, verified in `public/images/mas-admin/`), `MAS-9-2` 8/8, `MAS-MANAGE`
+12 on shared `MAS-FEATURES` covers, standalone `posts/images/` still empty (2 covers missing for
+`mas9-reporting-options`/`mas9-upgrade-gotchas`) — all match the tables below, zero drift. Also
+confirmed no new series directories exist under `posts/` beyond the set already tracked in this
+doc. Re-grepped all 26 `failed` item notes for timeout/503/rate-limit/overload language — zero
+matches; every failure still traces to the non-transient nanobanana `API_KEY_INVALID` blocker or
+the deliberate `parts-id-05-governance` duplication decline, so none were re-queued. This
+session's nanobanana MCP again failed to connect (`CONNECTION_CLOSED`), so the blocker remains
+unresolved (26+ consecutive failed-cover-batch confirmations as of this run). Uncommitted
+interactive edits (`MAS-9-2` bodies, `CLAUDE.md`, `plans/CLAUDE.md`, `AGENTS.md` files, various
+`MEMORY/WORK/` dirs) left untouched — out of scope for this job. **Housekeeping:** this doc had
+accumulated 14 consecutive near-duplicate daily entries (2026-09-11 through 2026-09-24, each
+independently re-confirming the same zero-drift result) — compacted below into one summary
+paragraph, following the same convention used for the 2026-08-10, 2026-08-26, 2026-08-31, and
+2026-09-10 compactions; no information was lost, full text remains in git history. Result: 0 new
+queue items — backlog remains covers-only, blocked on the human nanobanana key-rotation /
 MCP-reconnect action.)
 
-**Prior update — 2026-09-18** (night-shift job `replan-20260918`: full audit reconciling this plan
-against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
-114794f..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
-empty — no night-shift or interactive work landed since the `replan-20260917` job. `knowledge_base/`
-re-confirmed at 16 files (15 `DOC*.md` + `Maximo_SupplyChain_Roadmap_Email.md`, `MAS92-SOURCES/`
-still a cache subdirectory not a doc), unchanged. `queue.json` re-verified (`jq empty` passes, 50
-items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0 pending) — unchanged. Independently
-re-verified on-disk mdx/cover-image counts for every partially-built series (`MAS-OPTIMIZER` 6
-mdx/1 png, `MAS-PARTS-IDENTIFIER` 5 mdx/0 png, `MAS-DATABRICKS` 7 mdx/5 png, `MAS-WATSONX-DATA` 7
-mdx/0 png, `MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0 png, `MAS-ADMIN` 10 mdx/10 covers, `MAS-9-2` 8 mdx/8
-covers) — all match this doc's tables exactly, zero drift. Standalone `posts/images/` reconfirmed
-at 0 png, and both standalone DOC1 posts (`mas9-reporting-options.mdx`, `mas9-upgrade-gotchas.mdx`)
-still exist with their four related queue items (`single-` and `covers-single-` for both) still
-correctly `failed`. Re-grepped all 26 `failed` item notes/briefs directly for timeout/503/rate-limit
-language this run — zero matches; every failure still traces to the non-transient nanobanana
-`API_KEY_INVALID`/"key reported as leaked" blocker or the deliberate `parts-id-05-governance`
-content-duplication decline, so per the night-shift rule none were re-queued. This session's own
-nanobanana MCP tool again failed to connect outright (`CONNECTION_CLOSED`), independently
-reconfirming the standing blocker is still unresolved (15+ weeks running). The uncommitted
-working-tree edits to all 8 `MAS-9-2` post bodies (first noted 2026-08-13), `CLAUDE.md`, and
-`plans/CLAUDE.md` (both first noted 2026-09-15) are still present and untouched (interactive-session
-edits, out of this job's scope). Result: 0 new queue items added — no drift, no new gaps, backlog
-remains entirely covers-only, blocked on the human nanobanana key-rotation/MCP-reconnect action.)
-
-**Prior update — 2026-09-17** (night-shift job `replan-20260917`: full audit reconciling this plan
-against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
-e50c420..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
-empty — no night-shift or interactive work landed since the `replan-20260916` job. `knowledge_base/`
-re-confirmed at 16 files (15 `DOC*.md` + `Maximo_SupplyChain_Roadmap_Email.md`, `MAS92-SOURCES/`
-still a cache subdirectory not a doc), unchanged. `queue.json` re-verified (`jq empty` passes, 50
-items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0 pending) — unchanged. Independently
-re-verified on-disk mdx/cover-image counts for every partially-built series (`MAS-OPTIMIZER` 6
-mdx/1 png, `MAS-PARTS-IDENTIFIER` 5 mdx/0 png, `MAS-DATABRICKS` 7 mdx/5 png, `MAS-WATSONX-DATA` 7
-mdx/0 png, `MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0 png, `MAS-ADMIN` 10 mdx/10 covers, `MAS-9-2` 8 mdx/8
-covers) — all match this doc's tables exactly, zero drift. Standalone `posts/images/` reconfirmed
-at 0 png, and both standalone DOC1 posts (`mas9-reporting-options.mdx`, `mas9-upgrade-gotchas.mdx`)
-still exist with their four related queue items (`single-` and `covers-single-` for both) still
-correctly `failed`. Re-grepped all 26 `failed` item notes/briefs directly for timeout/503/rate-limit
-language this run — zero matches; every failure still traces to the non-transient nanobanana
-`API_KEY_INVALID`/"key reported as leaked" blocker or the deliberate `parts-id-05-governance`
-content-duplication decline, so per the night-shift rule none were re-queued. This session's own
-nanobanana MCP tool again failed to connect outright (`CONNECTION_CLOSED`), independently
-reconfirming the standing blocker is still unresolved (14+ weeks running). The uncommitted
-working-tree edits to all 8 `MAS-9-2` post bodies (first noted 2026-08-13), `CLAUDE.md`, and
-`plans/CLAUDE.md` (both first noted 2026-09-15) are still present and untouched (interactive-session
-edits, out of this job's scope). Result: 0 new queue items added — no drift, no new gaps, backlog
-remains entirely covers-only, blocked on the human nanobanana key-rotation/MCP-reconnect action.)
-
-**Prior update — 2026-09-16** (night-shift job `replan-20260916`: full audit reconciling this plan
-against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
-e38377c..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
-empty — no night-shift or interactive work landed since the `replan-20260915` job.
-`knowledge_base/` re-confirmed at 16 files (15 `DOC*.md` + `Maximo_SupplyChain_Roadmap_Email.md`,
-`MAS92-SOURCES/` still a cache subdirectory not a doc), unchanged. `queue.json` re-verified (`jq
-empty` passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0 pending) — unchanged.
-Independently re-verified on-disk mdx/cover-image counts for every partially-built series
-(`MAS-OPTIMIZER` 6 mdx/1 png, `MAS-PARTS-IDENTIFIER` 5 mdx/0 png, `MAS-DATABRICKS` 7 mdx/5 png,
-`MAS-WATSONX-DATA` 7 mdx/0 png, `MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0 png, `MAS-ADMIN` 10 mdx/10
-covers, `MAS-9-2` 8 mdx/8 covers) — all match this doc's tables exactly, zero drift. Standalone
-`posts/images/` reconfirmed at 0 png, and both standalone DOC1 posts (`mas9-reporting-options.mdx`,
-`mas9-upgrade-gotchas.mdx`) still exist with their four related queue items (`single-` and
-`covers-single-` for both) still correctly `failed`. Re-grepped all 26 `failed` item notes/briefs
-directly for timeout/503/rate-limit language this run — zero matches; every failure still traces
-to the non-transient nanobanana `API_KEY_INVALID`/"key reported as leaked" blocker or the
-deliberate `parts-id-05-governance` content-duplication decline, so per the night-shift rule none
-were re-queued. This session's own nanobanana MCP tool again failed to connect outright
-(`CONNECTION_CLOSED`), independently reconfirming the standing blocker is still unresolved (13+
-weeks running). The uncommitted working-tree edits to all 8 `MAS-9-2` post bodies (first noted
-2026-08-13), `CLAUDE.md`, and `plans/CLAUDE.md` (both first noted 2026-09-15) are still present
-and untouched (interactive-session edits, out of this job's scope). Result: 0 new queue items
-added — no drift, no new gaps, backlog remains entirely covers-only, blocked on the human
-nanobanana key-rotation/MCP-reconnect action.)
-
-**Prior update — 2026-09-15** (night-shift job `replan-20260915`: full audit reconciling this plan
-against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
-699e9de..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
-empty — no night-shift or interactive work landed since the `replan-20260914` job.
-`knowledge_base/` re-confirmed at 16 files, unchanged. `queue.json` re-verified (`jq empty`
-passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0 pending) — unchanged.
-Independently re-verified on-disk mdx/cover-image counts for every partially-built series
-(`MAS-OPTIMIZER` 6 mdx/1 png, `MAS-PARTS-IDENTIFIER` 5 mdx/0 png, `MAS-DATABRICKS` 7 mdx/5 png,
-`MAS-WATSONX-DATA` 7 mdx/0 png, `MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0 png, `MAS-ADMIN` 10 mdx/10
-covers, `MAS-9-2` 8 mdx/8 covers) — all match this doc's tables exactly, zero drift. Standalone
-`posts/images/` reconfirmed at 0 png, and both standalone DOC1 posts
-(`mas9-reporting-options.mdx`, `mas9-upgrade-gotchas.mdx`) still exist with their four related
-queue items (`single-` and `covers-single-` for both) still correctly `failed`. Re-grepped all
-26 `failed` item notes/briefs directly for timeout/503/rate-limit language this run (not just
-recalled from prior audits) — zero matches; every failure still traces to the non-transient
-nanobanana `API_KEY_INVALID`/"key reported as leaked" blocker or the deliberate
-`parts-id-05-governance` content-duplication decline, so per the night-shift rule none were
-re-queued. This session's own nanobanana MCP tool again failed to connect outright
-(`CONNECTION_CLOSED`), independently reconfirming the standing blocker is still unresolved
-(12+ weeks running). The uncommitted working-tree edits to all 8 `MAS-9-2` post bodies (first
-noted 2026-08-13), `CLAUDE.md`, and `plans/CLAUDE.md` (both first noted 2026-09-15) are still
-present and untouched (interactive-session edits, out of this job's scope). Result: 0 new queue
-items added — no drift, no new gaps, backlog remains entirely covers-only, blocked on the human
-nanobanana key-rotation/MCP-reconnect action.)
-
-**Prior update — 2026-09-13** (night-shift job `replan-20260913`: full audit reconciling this plan
-against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
-11e0b63..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
-empty — no night-shift or interactive work landed since the `replan-20260912` job.
-`knowledge_base/` re-confirmed at 16 files, unchanged. `queue.json` re-verified (`jq empty`
-passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0 pending) — unchanged.
-Independently re-verified on-disk mdx/cover-image counts for every partially-built series
-(`MAS-OPTIMIZER` 6 mdx/1 png, `MAS-PARTS-IDENTIFIER` 5 mdx/0 png, `MAS-DATABRICKS` 7 mdx/5 png,
-`MAS-WATSONX-DATA` 7 mdx/0 png, `MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0 png, `MAS-ADMIN` 10 mdx/10
-covers, `MAS-9-2` 8 mdx/8 covers, `MAS-MANAGE` covers confirmed resolving correctly via its
-shared `../MAS-FEATURES/images/` paths) — all match this doc's tables exactly, zero drift. Also
-ran a full-repo coverImage-path resolution sweep across every `posts/*/*.mdx` file this run (not
-done explicitly since 2026-08-17); the sweep's two apparent "missing cover" clusters (MAS-ADMIN's
-absolute `/images/mas-admin/...` paths resolving under `public/images/mas-admin/`, and
-MAS-MANAGE's relative `../MAS-FEATURES/images/...` paths) were confirmed as script-path-joining
-false positives, not real gaps — both directories' target files exist on disk. All 26 `failed`
-items still trace to the non-transient nanobanana `API_KEY_INVALID`/"key reported as leaked"
-blocker or the deliberate `parts-id-05-governance` content-duplication decline — none carry
-timeout/503/rate-limit language, so per the night-shift rule none were re-queued. This session's
-own nanobanana MCP tool again failed to connect outright (`CONNECTION_CLOSED`), independently
-reconfirming the standing blocker is still unresolved (10+ weeks running). The uncommitted
-working-tree edit to all 8 `MAS-9-2` post bodies (first noted 2026-08-13) is still present and
-untouched (interactive session, out of this job's scope). Result: 0 new queue items added — no
-drift, no new gaps, backlog remains entirely covers-only, blocked on the human nanobanana
-key-rotation/MCP-reconnect action.)
-
-**Prior update — 2026-09-12** (night-shift job `replan-20260912`: full audit reconciling this plan
-against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
-ff51cd6..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` was
-empty — no night-shift or interactive work landed since the `replan-20260911` job.
-`knowledge_base/` re-confirmed at 16 files, unchanged. `queue.json` re-verified (`jq empty`
-passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0 pending) — unchanged. All 26
-`failed` items still trace to the non-transient nanobanana `API_KEY_INVALID`/"key reported as
-leaked" blocker or the deliberate `parts-id-05-governance` content-duplication decline — none
-carry timeout/503/rate-limit language, so per the night-shift rule none were re-queued. This
-session's own nanobanana MCP tool again failed to connect outright (`CONNECTION_CLOSED`),
-independently reconfirming the standing blocker is still unresolved (9+ weeks running). The
-uncommitted working-tree edit to all 8 `MAS-9-2` post bodies (first noted 2026-08-13) is still
-present and untouched (interactive session, out of this job's scope). Result: 0 new queue items
-added — no drift, no new gaps, backlog remains entirely covers-only, blocked on the human
-nanobanana key-rotation/MCP-reconnect action.)
-
-**Prior update — 2026-09-11** (night-shift job `replan-20260911`, landed 2026-09-12 UTC per system
-clock: full audit reconciling this plan against `posts/`, `knowledge_base/`,
-`content-planning/`, and `queue.json`. `git log --oneline bad09d8..HEAD -- posts/
-knowledge_base/ content-planning/ automation/off-hours/queue.json` showed zero commits since
-the `replan-20260910` job — no night-shift or interactive work landed in between.
-`knowledge_base/` re-confirmed at 16 files, unchanged. Independently re-verified on-disk
-mdx/PNG counts for the key partially-built series (`MAS-OPTIMIZER` 6 mdx/1 png (only Part 5),
-`MAS-PARTS-IDENTIFIER` 5 mdx/0 png, `MAS-DATABRICKS` 7 mdx/5 png, `MAS-WATSONX-DATA` 7 mdx/0 png,
-`MAS-CIVIL-INFRASTRUCTURE` 6 mdx/0 png, `MAS-ADMIN` 10 mdx/10 png (cover-complete), `MAS-9-2`
-8 mdx/8 png (cover-complete), standalone `posts/images/` 0 png for the 2 DOC1 singles) — all
-match this doc's tables exactly, zero drift. `queue.json` re-verified (`jq empty` passes, 50
-items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0 pending) — unchanged. Re-checked all
-26 `failed` item notes for transient-failure language (timeout/503/rate-limit) — none found;
-every note still traces to the non-transient nanobanana `API_KEY_INVALID`/"key reported as
-leaked" blocker or the deliberate `parts-id-05-governance` content-duplication decline. This
-session's own nanobanana MCP tool again failed to connect outright (`CONNECTION_CLOSED`),
-independently reconfirming the standing blocker is still unresolved. The uncommitted
-working-tree edit to all 8 `MAS-9-2` post bodies (first noted 2026-08-13) is still present and
-untouched (interactive session, out of this job's scope). Result: 0 new queue items added — no
-drift, no new gaps, backlog remains entirely covers-only, blocked on the human nanobanana
-key-rotation/MCP-reconnect action.)
+**Prior updates — 2026-09-11 through 2026-09-24** (14 consecutive night-shift replan jobs, each
+independently re-verifying `knowledge_base/` file count (16, unchanged throughout), `queue.json`
+integrity (`jq empty` passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0
+pending), and on-disk mdx/cover PNG counts for every partially-built series (`MAS-OPTIMIZER` 6
+mdx/1 png, `MAS-PARTS-IDENTIFIER` 5/0, `MAS-DATABRICKS` 7/5, `MAS-WATSONX-DATA` 7/0,
+`MAS-CIVIL-INFRASTRUCTURE` 6/0, `MAS-ADMIN` 10/10, `MAS-9-2` 8/8, `MAS-MANAGE` 12 on shared
+`MAS-FEATURES` covers) against this doc's tables — every run found zero drift. Each run also
+re-grepped all 26 `failed` item notes for timeout/503/rate-limit/overload language and found none;
+every failure still traces to the non-transient nanobanana `API_KEY_INVALID` blocker or the
+deliberate `parts-id-05-governance` duplication decline, so none were re-queued. Each run's own
+nanobanana MCP tool call also failed outright with `CONNECTION_CLOSED`, independently reconfirming
+the standing blocker across the full stretch (18+ through 25+ consecutive confirmations). Various
+uncommitted interactive-session edits (`MAS-9-2` bodies, `CLAUDE.md`, `plans/CLAUDE.md`, and later
+`AGENTS.md` files and new `MEMORY/WORK/` dirs) were noted present and untouched throughout — out of
+this job's scope. None of the 14 runs added any new queue items. Full text of each daily entry is
+preserved in git history — see the `night-shift: replan-2026091N`/`2026092N` commits for
+2026-09-11 through 2026-09-24 for the individual audit write-ups.)
 
 **Prior updates — 2026-09-01 through 2026-09-10** (10 consecutive night-shift replan jobs, each
 independently re-verifying `knowledge_base/` file count (16, unchanged throughout), `queue.json`
