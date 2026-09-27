@@ -1,33 +1,33 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-09-25 (night-shift job `replan-20260925`: full audit reconciling this plan
+**Updated:** 2026-09-26 (night-shift job `replan-20260926`: full audit reconciling this plan
 against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
-a539721..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json` showed
-only `e30cdd1` (the `replan-20260924` commit itself) — nothing landed since. `knowledge_base/`
-still 16 files (15 `DOC*.md` + `Maximo_SupplyChain_Roadmap_Email.md`; `MAS92-SOURCES/` is a cache
-dir), unchanged. `queue.json` re-verified (`jq empty` passes, 50 items, 50 unique ids, 17 done /
-26 failed / 7 skipped / 0 pending). Re-counted mdx/cover PNGs per series against this doc's
-tables: `MAS-OPTIMIZER` 6 mdx/1 png, `MAS-PARTS-IDENTIFIER` 5/0, `MAS-DATABRICKS` 7/5,
-`MAS-WATSONX-DATA` 7/0, `MAS-CIVIL-INFRASTRUCTURE` 6/0, `MAS-ADMIN` 10 mdx/10 covers (absolute
-`/images/mas-admin/` paths, verified in `public/images/mas-admin/`), `MAS-9-2` 8/8, `MAS-MANAGE`
-12 on shared `MAS-FEATURES` covers, standalone `posts/images/` still empty (2 covers missing for
-`mas9-reporting-options`/`mas9-upgrade-gotchas`) — all match the tables below, zero drift. Also
-confirmed no new series directories exist under `posts/` beyond the set already tracked in this
-doc. Re-grepped all 26 `failed` item notes for timeout/503/rate-limit/overload language — zero
-matches; every failure still traces to the non-transient nanobanana `API_KEY_INVALID` blocker or
-the deliberate `parts-id-05-governance` duplication decline, so none were re-queued. This
-session's nanobanana MCP again failed to connect (`CONNECTION_CLOSED`), so the blocker remains
-unresolved (26+ consecutive failed-cover-batch confirmations as of this run). Uncommitted
-interactive edits (`MAS-9-2` bodies, `CLAUDE.md`, `plans/CLAUDE.md`, `AGENTS.md` files, various
-`MEMORY/WORK/` dirs) left untouched — out of scope for this job. **Housekeeping:** this doc had
-accumulated 14 consecutive near-duplicate daily entries (2026-09-11 through 2026-09-24, each
-independently re-confirming the same zero-drift result) — compacted below into one summary
-paragraph, following the same convention used for the 2026-08-10, 2026-08-26, 2026-08-31, and
-2026-09-10 compactions; no information was lost, full text remains in git history. Result: 0 new
-queue items — backlog remains covers-only, blocked on the human nanobanana key-rotation /
-MCP-reconnect action.)
+d1d1f89..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
+returned nothing — no commits landed in any audited path since the `replan-20260925` commit
+itself. `knowledge_base/` re-confirmed at 16 files (15 `DOC*.md` +
+`Maximo_SupplyChain_Roadmap_Email.md`; `MAS92-SOURCES/` is a cache dir), unchanged. `queue.json`
+re-verified (`jq empty` passes, 50 items, 50 unique ids — `sort | uniq -d` empty, 17 done / 26
+failed / 7 skipped / 0 pending). Re-counted mdx/cover PNGs per series against this doc's tables:
+`MAS-OPTIMIZER` 6 mdx/1 png, `MAS-PARTS-IDENTIFIER` 5/0, `MAS-DATABRICKS` 7/5, `MAS-WATSONX-DATA`
+7/0, `MAS-CIVIL-INFRASTRUCTURE` 6/0, `MAS-ADMIN` 10/10, `MAS-9-2` 8/8, `MAS-MANAGE` 12 on shared
+`MAS-FEATURES` covers (still intentionally optional polish per the Pending Asset Work table
+below — `COVER-MANIFEST.md` in `posts/MAS-MANAGE/` remains staged "hold for generation" pending
+human review, not an automation gap), standalone `posts/images/` still empty (2 covers missing
+for `mas9-reporting-options`/`mas9-upgrade-gotchas`, already tracked as failed queue items) — all
+match the tables below, zero drift. Also confirmed no new series directories exist under
+`posts/` beyond the set already tracked in this doc, and every series' frontmatter `total:`
+field is internally consistent with its file count (index 00 + N parts, `total: N`) across all
+22 series directories — no structural/navigation defects found. Re-grepped all 26 `failed` item
+notes for timeout/503/rate-limit/overload language — zero matches; every failure still traces to
+the non-transient nanobanana `API_KEY_INVALID` blocker or the deliberate
+`parts-id-05-governance` duplication decline, so none were re-queued. This session's nanobanana
+MCP again failed to connect (`CONNECTION_CLOSED`), so the blocker remains unresolved (27+
+consecutive failed-cover-batch confirmations as of this run). Uncommitted interactive edits
+(`MAS-9-2` bodies, `CLAUDE.md`, `plans/CLAUDE.md`, `AGENTS.md` files, various `MEMORY/WORK/`
+dirs) left untouched — out of scope for this job. Result: 0 new queue items — backlog remains
+covers-only, blocked on the human nanobanana key-rotation / MCP-reconnect action.)
 
-**Prior updates — 2026-09-11 through 2026-09-24** (14 consecutive night-shift replan jobs, each
+**Prior updates — 2026-09-11 through 2026-09-25** (15 consecutive night-shift replan jobs, each
 independently re-verifying `knowledge_base/` file count (16, unchanged throughout), `queue.json`
 integrity (`jq empty` passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0
 pending), and on-disk mdx/cover PNG counts for every partially-built series (`MAS-OPTIMIZER` 6
@@ -38,12 +38,12 @@ re-grepped all 26 `failed` item notes for timeout/503/rate-limit/overload langua
 every failure still traces to the non-transient nanobanana `API_KEY_INVALID` blocker or the
 deliberate `parts-id-05-governance` duplication decline, so none were re-queued. Each run's own
 nanobanana MCP tool call also failed outright with `CONNECTION_CLOSED`, independently reconfirming
-the standing blocker across the full stretch (18+ through 25+ consecutive confirmations). Various
+the standing blocker across the full stretch (18+ through 26+ consecutive confirmations). Various
 uncommitted interactive-session edits (`MAS-9-2` bodies, `CLAUDE.md`, `plans/CLAUDE.md`, and later
 `AGENTS.md` files and new `MEMORY/WORK/` dirs) were noted present and untouched throughout — out of
-this job's scope. None of the 14 runs added any new queue items. Full text of each daily entry is
+this job's scope. None of the 15 runs added any new queue items. Full text of each daily entry is
 preserved in git history — see the `night-shift: replan-2026091N`/`2026092N` commits for
-2026-09-11 through 2026-09-24 for the individual audit write-ups.)
+2026-09-11 through 2026-09-25 for the individual audit write-ups.)
 
 **Prior updates — 2026-09-01 through 2026-09-10** (10 consecutive night-shift replan jobs, each
 independently re-verifying `knowledge_base/` file count (16, unchanged throughout), `queue.json`
