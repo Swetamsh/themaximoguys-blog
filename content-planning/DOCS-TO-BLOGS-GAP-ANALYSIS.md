@@ -1,33 +1,24 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-09-26 (night-shift job `replan-20260926`: full audit reconciling this plan
+**Updated:** 2026-09-27 (night-shift job `replan-20260927`: full audit reconciling this plan
 against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. `git log --oneline
-d1d1f89..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
-returned nothing — no commits landed in any audited path since the `replan-20260925` commit
-itself. `knowledge_base/` re-confirmed at 16 files (15 `DOC*.md` +
-`Maximo_SupplyChain_Roadmap_Email.md`; `MAS92-SOURCES/` is a cache dir), unchanged. `queue.json`
-re-verified (`jq empty` passes, 50 items, 50 unique ids — `sort | uniq -d` empty, 17 done / 26
-failed / 7 skipped / 0 pending). Re-counted mdx/cover PNGs per series against this doc's tables:
-`MAS-OPTIMIZER` 6 mdx/1 png, `MAS-PARTS-IDENTIFIER` 5/0, `MAS-DATABRICKS` 7/5, `MAS-WATSONX-DATA`
-7/0, `MAS-CIVIL-INFRASTRUCTURE` 6/0, `MAS-ADMIN` 10/10, `MAS-9-2` 8/8, `MAS-MANAGE` 12 on shared
-`MAS-FEATURES` covers (still intentionally optional polish per the Pending Asset Work table
-below — `COVER-MANIFEST.md` in `posts/MAS-MANAGE/` remains staged "hold for generation" pending
-human review, not an automation gap), standalone `posts/images/` still empty (2 covers missing
-for `mas9-reporting-options`/`mas9-upgrade-gotchas`, already tracked as failed queue items) — all
-match the tables below, zero drift. Also confirmed no new series directories exist under
-`posts/` beyond the set already tracked in this doc, and every series' frontmatter `total:`
-field is internally consistent with its file count (index 00 + N parts, `total: N`) across all
-22 series directories — no structural/navigation defects found. Re-grepped all 26 `failed` item
-notes for timeout/503/rate-limit/overload language — zero matches; every failure still traces to
-the non-transient nanobanana `API_KEY_INVALID` blocker or the deliberate
-`parts-id-05-governance` duplication decline, so none were re-queued. This session's nanobanana
-MCP again failed to connect (`CONNECTION_CLOSED`), so the blocker remains unresolved (27+
-consecutive failed-cover-batch confirmations as of this run). Uncommitted interactive edits
-(`MAS-9-2` bodies, `CLAUDE.md`, `plans/CLAUDE.md`, `AGENTS.md` files, various `MEMORY/WORK/`
-dirs) left untouched — out of scope for this job. Result: 0 new queue items — backlog remains
-covers-only, blocked on the human nanobanana key-rotation / MCP-reconnect action.)
+4581f3d..HEAD -- posts/ knowledge_base/ content-planning/ automation/off-hours/queue.json`
+returned nothing — no commits landed in any audited path since the `replan-20260926` commit.
+`knowledge_base/` unchanged (16 files + `MAS92-SOURCES/` cache dir). `queue.json` re-verified
+(`jq empty` passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0 pending).
+Re-counted mdx/cover PNGs per series against the tables below: `MAS-OPTIMIZER` 6/1,
+`MAS-PARTS-IDENTIFIER` 5/0, `MAS-DATABRICKS` 7/5, `MAS-WATSONX-DATA` 7/0,
+`MAS-CIVIL-INFRASTRUCTURE` 6/0, `MAS-ADMIN` 10/10, `MAS-9-2` 8/8, `MAS-MANAGE` 12 on shared
+`MAS-FEATURES` covers (optional polish, held for human review), standalone `posts/images/` still
+empty (2 covers tracked as failed queue items) — zero drift, no new series directories, no
+structural/navigation defects. No failed item note mentions timeout/503/rate-limit/overload, so
+none were re-queued; every failure traces to the non-transient nanobanana `API_KEY_INVALID`
+blocker or the deliberate `parts-id-05-governance` duplication decline. Uncommitted interactive
+edits (`MAS-9-2` bodies, `CLAUDE.md`, `AGENTS.md` files, `MEMORY/WORK/` dirs) left untouched.
+Result: 0 new queue items — backlog remains covers-only, blocked on the human nanobanana
+key-rotation / MCP-reconnect action.)
 
-**Prior updates — 2026-09-11 through 2026-09-25** (15 consecutive night-shift replan jobs, each
+**Prior updates — 2026-09-11 through 2026-09-26** (16 consecutive night-shift replan jobs, each
 independently re-verifying `knowledge_base/` file count (16, unchanged throughout), `queue.json`
 integrity (`jq empty` passes, 50 items, 50 unique ids, 17 done / 26 failed / 7 skipped / 0
 pending), and on-disk mdx/cover PNG counts for every partially-built series (`MAS-OPTIMIZER` 6
