@@ -1,6 +1,6 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-09-28 (night-shift job `replan-20260928`: full audit reconciling this plan
+**Updated:** 2026-09-29 (`replan-20260929`: zero drift vs 2026-09-28 — 0 items queued; only MAS-ADMIN 10 + MAS-PARTS-IDENTIFIER 5 covers remain missing, their queue items failed non-transiently and await human review). Prior: 2026-09-28 (night-shift job `replan-20260928`: full audit reconciling this plan
 against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. **Major finding —
 the cover backlog is now almost entirely closed.** On-disk PNG counts (not just queue-item
 status) were re-counted per series and found materially ahead of what this doc and `queue.json`
