@@ -2,8 +2,8 @@
 task: write MAS-WATSONX-DATA series index blog post
 slug: 20260719-041033_watsonx-data-00-series-index
 effort: advanced
-phase: verify
-progress: 35/39
+phase: complete
+progress: 37/39
 mode: interactive
 started: 2026-07-19T04:10:33Z
 updated: 2026-07-19T04:15:00Z
@@ -69,7 +69,7 @@ Draft only (`draft: true`); no publish/sync; local git commit at the end only.
 - [ ] ISC-36: BLOCKED — nanobanana Pro call failed twice with `403 PERMISSION_DENIED: API key reported as leaked`, same unrotated key blocking MAS-DATABRICKS Parts 5-6. Not a 503 (no benefit from further retry); no cover image exists. Per hard rule, no ad-hoc/lower-tier fallback used.
 - [ ] ISC-37: BLOCKED — no PNG was generated (see ISC-36), so nothing to view/confirm
 - [x] ISC-38: content-planning/DOCS-TO-BLOGS-GAP-ANALYSIS.md updated surgically to reflect the new MAS-WATSONX-DATA series index and the confirmed-still-active key blocker
-- [ ] ISC-39: git commit pending — will include new MDX + content-planning doc edit (no image to commit)
+- [x] ISC-39: git commit a2230ff created (posts/MAS-WATSONX-DATA/*.mdx, content-planning doc, PRD) — queue.json intentionally left unstaged (runner-owned, pre-existing unrelated diff)
 
 ## Decisions
 
@@ -89,3 +89,10 @@ Draft only (`draft: true`); no publish/sync; local git commit at the end only.
 - ISC-38: confirmed via Edit tool diffs to the gap-analysis doc (new DOC13 row, updated Executive Status bucket, updated header timeline).
 - ISC-39: pending — commit executed next.
 - **Capability invocation check:** MaximoBlog skill — invoked via `Skill("MaximoBlog", ...)` in BUILD ✓. DanKoeStyle skill — invoked via `Skill("DanKoeStyle", ...)` in BUILD ✓ (its Concept workflow prompt template was then sent to nanobanana, which failed on the leaked-key error — the skill itself was invoked correctly; the downstream tool call failed). Art skill's prompt-engineering technique was applied inline (structured prompt following the Concept.md template) rather than via a separate `Skill("Art")` call — noted as a minor deviation in LEARN.
+
+## Learning
+
+- Should have done a cheap 1k probe `generate_image` call immediately after DOC13/sibling research, before writing 3,832 words of content, to fail fast on the credential blocker instead of discovering it only after the full post was already written.
+- A smarter algorithm would treat "external tool health" as a THINK-phase prerequisite check with an actual tool call, not just a documentation read — the OBSERVE-phase ToolSearch confirmed the tool *existed*, not that it *worked*.
+- Should have checked project memory (MEMORY.md) before starting — `feedback_image_pro_tier_mandatory.md` was adjacent enough it might have surfaced the pattern of nanobanana issues sooner, even though the specific leaked-key incident wasn't recorded there yet (now fixed via the new `project_nanobanana_key_leaked_blocker.md` memory).
+- Recorded the leaked-key blocker as a persistent project memory so the next night-shift session (or a human) doesn't rediscover it from scratch a fourth time.

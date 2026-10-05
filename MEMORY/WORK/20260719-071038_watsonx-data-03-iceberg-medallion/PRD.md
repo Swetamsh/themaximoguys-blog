@@ -2,8 +2,8 @@
 task: Write MAS-WATSONX-DATA Part 3 Iceberg medallion blog post
 slug: 20260719-071038_watsonx-data-03-iceberg-medallion
 effort: advanced
-phase: execute
-progress: 31/34
+phase: complete
+progress: 34/34
 mode: interactive
 started: 2026-07-19T07:10:38Z
 updated: 2026-07-19T07:12:00Z
@@ -85,6 +85,14 @@ Content backbone: Bronze (named tables) → Silver (ASSET_DIM/WORKORDER_FACT/FAI
 - [x] ISC-30: MaximoBlog skill invoked and its TechnicalDeepDive workflow followed
 - [x] ISC-31: Series navigation confirmed consistent (Part 2 next-link and index Part 3 section already point to this exact slug; no edits needed)
 - [x] ISC-32: Cover image attempted via BlogCoverArt analysis + BlueprintBoard skill + Art pipeline + nanobanana model_tier pro/2k/16:9/high, outcome documented (success or honest failure) — FAILED: `403 PERMISSION_DENIED: API key reported as leaked`, identical to the prior 3 series posts (index, Part 1, Part 2); not retried since this is a non-transient auth failure, not a 503
-- [ ] ISC-33: content-planning/DOCS-TO-BLOGS-GAP-ANALYSIS.md updated to reflect this post's existence and status
-- [ ] ISC-34: New files (+ gap-analysis doc) committed locally with night-shift commit message, no push
+- [x] ISC-33: content-planning/DOCS-TO-BLOGS-GAP-ANALYSIS.md updated to reflect this post's existence and status
+- [x] ISC-34: New files (+ gap-analysis doc) committed locally with night-shift commit message, no push (commit 2e0876f)
+
+## Verification
+
+- MDX frontmatter parses cleanly via `yaml.safe_load` — 26 top-level keys, no syntax errors.
+- Word/section/table/code-block counts re-verified post-write: 4,629 body words, 14 H2 sections, 7 tables, 3 code blocks — all above the depth-contract floors.
+- Cover PNG confirmed absent at the target path — matches the documented 403 failure, not a silent skip.
+- `git log -1` confirms commit `2e0876f` landed on `main` locally; `git status` shows no push occurred and no unrelated files were swept in (other in-flight WORK/queue.json changes from other jobs were deliberately left unstaged).
+- Capability invocation check: SearchMaximo (Skill call, ~5 grep sweeps), MaximoBlog (Skill call, TechnicalDeepDive workflow read and followed), BlogCoverArt (Skill call, read+applied), BlueprintBoard (SKILL.md + Architecture workflow read, template followed), Art (SKILL.md consulted for prompt-engineering framing), WebSearch (5 calls) — all selected capabilities were invoked via actual tool calls, none phantom.
 

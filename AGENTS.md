@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex when working with code in this repository.
 
 ## Project Purpose
 
@@ -59,7 +59,7 @@ There is no test suite or linter configured in this repo (no `test`/`lint` scrip
 
 - **PreToolUse/Write:** Secret detection (`.claude/hooks/detect-secrets.sh`) — blocks writes containing hardcoded API keys (Google `AIzaSy…`, AWS, GitHub, Slack, private keys). Env refs like `${VAR}` are allowed.
 - **PostToolUse/Write:** MDX frontmatter validation — warns if `.mdx` files missing frontmatter
-- **git pre-commit** (`scripts/git-hooks/pre-commit`) — blocks *commits* containing the same secret patterns; catches every commit path (Claude, automation, manual git). Install after clone: `bash scripts/install-git-hooks.sh`. Real secrets belong in `/root/.claude-pai/.env` (sourced by `automation/off-hours/night-shift.sh`).
+- **git pre-commit** (`scripts/git-hooks/pre-commit`) — blocks *commits* containing the same secret patterns; catches every commit path (Codex, automation, manual git). Install after clone: `bash scripts/install-git-hooks.sh`. Real secrets belong in `/root/.claude-pai/.env` (sourced by `automation/off-hours/night-shift.sh`).
 
 ## Blog Post Structure
 
@@ -128,4 +128,4 @@ The sync script (`scripts/sync-blog-to-sanity.ts`) hashes each post's content on
 
 ### Off-hours content automation
 
-`automation/off-hours/` runs an autonomous, hourly cron job (23:00–06:00) that drafts one blog post or cover-image batch per tick via a headless `claude -p` run, pulling work from `automation/off-hours/queue.json`. Key guardrails: posts are always written with `draft: true`, and nothing is ever auto-synced to Sanity or auto-published to LinkedIn — morning review (`git log`, flip `draft: false`, `npm run sync`) is a manual step. See `automation/off-hours/README.md` for the full mechanics (queue format, cover-style rotation, dry-run/force flags).
+`automation/off-hours/` runs an autonomous, hourly cron job (23:00–06:00) that drafts one blog post or cover-image batch per tick via a headless `codex` run, pulling work from `automation/off-hours/queue.json`. Key guardrails: posts are always written with `draft: true`, and nothing is ever auto-synced to Sanity or auto-published to LinkedIn — morning review (`git log`, flip `draft: false`, `npm run sync`) is a manual step. See `automation/off-hours/README.md` for the full mechanics (queue format, cover-style rotation, dry-run/force flags).

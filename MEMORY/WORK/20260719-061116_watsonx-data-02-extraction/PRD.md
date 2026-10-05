@@ -89,4 +89,4 @@ end only.
 - [x] ISC-28: MDX file exists at posts/MAS-WATSONX-DATA/2026-07-19-mas-watsonx-data-02-data-extraction.mdx
 - [ ] ISC-29: BLOCKED — nanobanana Pro probe call AND the full BlueprintBoard-Architecture-engineered prompt both failed with `403 PERMISSION_DENIED: API key reported as leaked`, same unrotated key confirmed still active a third time (blocked MAS-DATABRICKS Parts 5-6, watsonx-data-00, watsonx-data-01). No cover image generated; no further retries per project memory (non-transient credential error).
 - [x] ISC-30: content-planning/DOCS-TO-BLOGS-GAP-ANALYSIS.md updated surgically (new top "Updated" entry, Executive Status bucket row, DOC13 row) to reflect Part 2 now existing
-- [ ] ISC-31: pending — commit executed next
+- [x] ISC-31: git commit e5cdea1 created (posts/MAS-WATSONX-DATA/*.mdx, PRD, content-planning doc) — queue.json and the unrelated watsonx-data-00 PRD left unstaged (runner-owned / pre-existing, out of scope)
