@@ -29,6 +29,11 @@ const DRY_RUN = process.argv.includes('--dry-run')
 const FORCE_SYNC = process.argv.includes('--force')
 const SKIP_IMAGES = process.argv.includes('--skip-images')
 const VALIDATE_ONLY = process.argv.includes('--validate')
+// --only <file>: newline-separated slugs; posts not listed are left untouched
+const ONLY_FLAG_INDEX = process.argv.indexOf('--only')
+const ONLY_SLUGS: Set<string> | null = ONLY_FLAG_INDEX !== -1 && process.argv[ONLY_FLAG_INDEX + 1]
+  ? new Set(fs.readFileSync(process.argv[ONLY_FLAG_INDEX + 1], 'utf-8').split(/\r?\n/).map((l) => l.trim()).filter(Boolean))
+  : null
 
 let _sanityClient: ReturnType<typeof createClient> | null = null
 function getSanityClient() {
@@ -254,6 +259,9 @@ function mdxToPortableText(mdxContent: string): any[] {
   let inAnswerBox = false
   let answerBoxQuestion = ''
   let answerBoxContent: string[] = []
+  let inAside = false
+  let asideContent: string[] = []
+  let inHtmlComment = false
 
   function flushParagraph() {
     const text = currentParagraph.join('\n').trim()
@@ -290,6 +298,33 @@ function mdxToPortableText(mdxContent: string): any[] {
 
     if (inCodeBlock) {
       codeBlockContent.push(line)
+      continue
+    }
+
+    // HTML comments (editorial notes) — never publish them
+    if (inHtmlComment || line.trim().startsWith('<!--')) {
+      flushParagraph()
+      inHtmlComment = !line.includes('-->')
+      continue
+    }
+
+    // <aside> callouts → blockquote (keeps inline marks; calloutBox body is plain text)
+    if (line.trim() === '<aside>') {
+      flushParagraph()
+      inAside = true
+      asideContent = []
+      continue
+    }
+
+    if (inAside) {
+      if (line.trim() === '</aside>') {
+        const text = asideContent.join(' ').trim()
+        if (text) blocks.push(createTextBlock(text, 'blockquote'))
+        inAside = false
+        asideContent = []
+      } else if (line.trim()) {
+        asideContent.push(line.trim())
+      }
       continue
     }
 
@@ -719,6 +754,8 @@ async function syncPost(parsed: ParsedPost, result: SyncResult): Promise<void> {
     result.errors.push(`${parsed.sourceFile}: Missing slug`)
     return
   }
+
+  if (ONLY_SLUGS && !ONLY_SLUGS.has(slug)) return
 
   try {
     // Check if post already exists
