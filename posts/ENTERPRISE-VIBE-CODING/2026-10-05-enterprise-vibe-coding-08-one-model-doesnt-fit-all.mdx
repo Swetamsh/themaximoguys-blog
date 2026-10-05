@@ -1,0 +1,182 @@
+---
+title: "One Model Doesn't Fit All: Why Enterprise AI Coding Tools Route Between Models"
+description: "Autocomplete, legacy refactoring, and architecture planning don't need the same AI model. Here's how enterprise coding tools decide which model does which job, and why letting the tool choose for you has a catch."
+date: "2026-09-09"
+slug: "evc-08-one-model-doesnt-fit-all"
+tags: ["Vibe Coding", "AI Coding", "Enterprise Development", "Model Routing", "IBM Bob", "GitHub Copilot", "Cursor", "Claude Code", "LLM Cost"]
+draft: false
+tier: "beginner"
+author: "Krishna Neela"
+coverImage: "./images/evc-08.png"
+authorTitle: "AI Engineer"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What is model routing in an AI coding tool?"
+    answer: "Model routing means the tool sends different tasks to different AI models instead of using one model for everything. A quick rename might go to a small, cheap, fast model, while planning a multi-file refactor goes to a larger frontier model. Some tools route automatically; others let the developer pick from a menu."
+  - question: "Can I choose which model IBM Bob uses?"
+    answer: "On the SaaS version, no. IBM's FAQ says Bob routes automatically across models such as Anthropic Claude, Mistral, IBM Granite and fine-tuned models, and users cannot pick or restrict them. IBM has said an on-premises deployment option is planned; how model choice will work there hasn't been detailed."
+  - question: "Is automatic model routing good or bad for enterprises?"
+    answer: "Both. RedMonk analyst Kate Holterhoff called it a double-edged sword: it removes the paralysis of choosing a model, but developers can be suspicious of black-box tools. Enterprises gain simplicity and cost control, and give up some transparency and the ability to pin a specific model for compliance."
+keyTakeaways:
+  - "Different coding tasks have different needs: speed, depth, cost, and data sensitivity rarely point to the same model"
+  - "Tools split into three camps: you pick (Cursor, Copilot), the tool picks (Bob SaaS), or you pin one model you host yourself"
+  - "Automatic routing trades transparency for simplicity, and that trade should be a conscious decision, not an accident"
+  - "Keep your integrations model-agnostic so a routing change never breaks your enterprise plumbing"
+series:
+  name: "Enterprise Vibe Coding"
+  part: 8
+  total: 13
+tldr: "No single AI model is best at everything. Enterprise coding tools either hand you a model picker (Cursor, GitHub Copilot, Claude Code within its own family), route for you automatically (IBM Bob SaaS), or let you pin a single self-hosted open model. Auto-routing kills decision fatigue and can cut cost, but it is a black box. Decide which trade your organization wants, and keep the plumbing (APIs, MCP servers) model-agnostic."
+seoTitle: "One AI Model Doesn't Fit All: Model Routing Explained"
+seoDescription: "Why enterprise AI coding tools route tasks between models, how Cursor, Copilot and IBM Bob differ, and the hidden trade-off of letting the tool choose."
+targetQuestions:
+  - "What is model routing in AI coding tools?"
+  - "Should developers choose their AI model or let the tool decide?"
+  - "Which models does IBM Bob use?"
+semanticKeywords:
+  - "AI model routing"
+  - "multi-model coding assistant"
+  - "model picker"
+  - "IBM Bob model selection"
+  - "black box AI tools"
+  - "self-hosted LLM coding"
+  - "AI coding cost control"
+proficiencyLevel: "beginner"
+dependencies:
+  - "Basic familiarity with AI coding assistants"
+  - "Part 7 of this series (Vibe Coding Behind the Firewall) is helpful context"
+speakableSections:
+  - "Why One Model Can't Do Every Job"
+  - "Three Ways Tools Pick a Model"
+  - "The Double-Edged Sword"
+series_part: 8
+clusterSlugs:
+  - "evc-00-series-index"
+  - "evc-07-vibe-coding-behind-the-firewall"
+  - "evc-09-receipts-please"
+relatedSlugs:
+  - "evc-07-vibe-coding-behind-the-firewall"
+  - "evc-09-receipts-please"
+  - "evc-03-autocomplete-chat-agents"
+---
+
+It's Tuesday morning at a regional insurer. One developer is renaming a variable across forty files. Another is asking the AI to explain a 2,000-line claims-adjudication module nobody has touched since 2011. A third is planning how to split a monolith into services.
+
+All three are using the same AI coding tool. Should all three be talking to the same AI model?
+
+Almost certainly not. And how your tool answers that question says a lot about who is really in control of your development pipeline.
+
+---
+
+## 🧠 Why One Model Can't Do Every Job
+
+Think of AI models like vehicles in a utility company's fleet. You don't send the bucket truck to pick up printer paper, and you don't send the hatchback to repair a transmission line.
+
+Coding work splits the same way:
+
+- **Small, frequent tasks** (completions, renames, docstrings) want a model that is *fast and cheap*. Waiting eight seconds for a one-line suggestion kills flow.
+- **Big, gnarly tasks** (cross-file refactors, architecture plans, legacy code archaeology) want a model that is *deep*, even if it is slower and pricier.
+- **Sensitive tasks** (anything touching customer data or regulated code) want a model that runs *where your compliance team says it can run*, which may rule out the best model on the market.
+
+Speed, depth, cost, and data location rarely point at the same model. So the real question isn't "which model is best?" It's "who decides which model handles which job?"
+
+---
+
+## 🔀 Three Ways Tools Pick a Model
+
+Today's tools fall into roughly three camps.
+
+**Camp 1: You pick.** Cursor and GitHub Copilot put a model menu in front of the developer. Claude Code lets you switch between Claude models. Maximum control, maximum responsibility: every developer becomes a part-time model-selection analyst.
+
+**Camp 2: The tool picks.** IBM Bob's SaaS edition routes work automatically across models including Anthropic Claude, Mistral, IBM Granite and fine-tuned models. Per IBM's own FAQ, users cannot pick or restrict which model runs. IBM's July 2026 release went further, saying Bob now "matches models to tasks, coordinates AI execution across agents." The marketing tagline sums up the philosophy: *"Stop managing models. Start managing outcomes."*
+
+**Camp 3: You pin one model you host.** For air-gapped and sovereign setups (see Part 7), choice shrinks to whatever you can run inside the fence: typically one open-weight model served on your own GPUs (often via an inference server like vLLM), sized to your hardware. Routing, if you want it, is yours to build. IBM has said an on-premises Bob option is planned, but for now this camp is mostly DIY open-model setups.
+
+| Approach | Example tools | You gain | You give up |
+|---|---|---|---|
+| Developer picks | Cursor, GitHub Copilot, Claude Code (within Claude) | Control, transparency, pinning for audits | Decision fatigue, inconsistent choices across teams, cost surprises |
+| Tool routes automatically | IBM Bob (SaaS) | Simplicity, optimized speed and cost | Visibility into which model wrote what |
+| One self-hosted model | Open models on your own GPUs, other on-prem setups | Data sovereignty, predictability | Best-model-for-the-job flexibility |
+
+None of these is "right." Each is a different answer to the same trade-off.
+
+---
+
+## ⚔️ The Double-Edged Sword
+
+When Bob hit general availability in April 2026, RedMonk analyst Kate Holterhoff put it neatly. Automatic model selection, she said, is "a double edged sword, as developers can be suspicious of black box tools," while it also "eliminates the paralysis of choice."
+
+Both halves are true, and enterprises feel both.
+
+**The upside is real.** Most developers do not want to benchmark five models before writing a unit test. A sensible default that sends cheap work to cheap models can trim cost without anyone thinking about it. IBM's July announcement framed the problem directly: many enterprise engineers are manually choosing models while trying to balance cost against performance.
+
+**The downside is also real.** Mainframe IBM Champion Uwe Graf flagged opaque model choice as a concern in practice. If you work in a bank and your model-risk team asks "which model generated this code that moved into production?", "the router decided" is not a great answer. Some regulated shops want to *pin* a model version for exactly that reason.
+
+There is also a pricing wrinkle. Bob bills in Bobcoins (roughly $0.50 each), and IBM doesn't publish how many tokens a Bobcoin buys. When the tool picks the model *and* the conversion rate is opaque, forecasting spend becomes guesswork until you have a few months of real usage data. Plans range from $20 Pro to custom Enterprise; Cursor and Copilot sit in a similar $10 to $40 per-seat band.
+
+And even perfect spend data only tells you half the story. As IBM's Adam McDaniel put it in an IBM Think piece: "Token consumption is a cost signal, not a value metric." A router that saves you 30% on tokens is only a win if the cheaper model's output doesn't cost you more in review and rework.
+
+<aside>
+💡 **The honest take:** Automatic routing isn't a feature or a flaw; it's a *policy choice* someone else made for you. Before you roll out any multi-model tool, ask the vendor three questions: Can we see which model handled each request? Can we pin or exclude a model? Can we get spend broken down by model? If the answer is "no" three times, make sure your risk team is fine with that.
+</aside>
+
+---
+
+## 🧭 How to Choose Your Camp
+
+A quick decision guide for leads and architects:
+
+1. **Highly regulated, audit-heavy code** (payments, trading, safety systems): lean toward pinned or self-hosted models. Predictability beats cleverness.
+2. **Broad internal teams with mixed skill levels**: automatic routing often wins. Fewer knobs, fewer bad choices, easier support.
+3. **Senior platform teams and AI-curious developers**: give them a picker. They will find the right model for weird jobs faster than any router.
+4. **Most real enterprises**: all of the above, by team. Analyst Mitch Ashley of Futurum even suggested "the best answer may well be a combined IBM plus Claude team" for Bob shops. Mixing tools is normal.
+
+Whatever you choose, write it down. "Team X uses auto-routing, Team Y pins Model Z, here's why" is a two-paragraph policy that will save a very long meeting later.
+
+---
+
+## 🔌 Keep the Plumbing Model-Agnostic
+
+Here's the part people miss. Models will change. Routers will change. Your vendor's default model this quarter will not be its default next year.
+
+What *shouldn't* change is how your AI tools reach your enterprise systems. If your integration with the ERP, the asset system, or the ticketing platform is hard-wired to one assistant or one model, every routing change becomes a re-integration project.
+
+That's why the **Model Context Protocol (MCP)** matters (Part 3 covered it). An MCP server exposes your system's capabilities as tools any MCP-capable agent can call. Swap the model, swap the assistant, and the connection still works. Treat models as replaceable engines and your integrations as the permanent road.
+
+---
+
+## Key Takeaways
+
+- **Different tasks, different models:** speed, depth, cost and data location rarely line up behind one model.
+- **Three camps:** developer picks (Cursor, Copilot, Claude Code), tool routes (Bob SaaS), or one pinned self-hosted model (open models on your own infrastructure).
+- **Auto-routing is a double-edged sword:** less choice paralysis, less transparency. Ask vendors about per-model visibility, pinning and spend breakdowns.
+- **Pick by team, not by company:** regulated code, broad teams and power users have different needs.
+- **Keep integrations model-agnostic** with MCP so the next routing change costs you nothing.
+
+---
+
+## References
+
+- [IBM's AI coding 'partner' Bob hits general availability (The Register, Apr 2026)](https://www.theregister.com/software/2026/04/28/ibms-ai-coding-partner-bob-hits-general-availability/5226774)
+- [IBM Advances Enterprise AI Software Development with Multi-Agent Capabilities (IBM Newsroom, Jul 2026)](https://newsroom.ibm.com/2026-07-09-ibm-advances-enterprise-ai-software-development-with-multi-agent-capabilities-and-specialized-modernization-workflows)
+- [IBM Bob pricing](https://bob.ibm.com/pricing)
+- [Introducing IBM Bob (IBM Newsroom, Apr 2026)](https://newsroom.ibm.com/2026-04-28-introducing-ibm-bob-ai-development-partner-that-takes-enterprises-from-ai-assisted-coding-to-production-ready-software)
+- [Tokenmaxxing is dead, long live valuemaxxing (IBM Think)](https://www.ibm.com/think/insights/tokenmaxxing-dead-long-live-valuemaxxing)
+
+---
+
+🧰 **From TheMaximoGuys toolbox:** If Maximo is part of your world, [Max_mcp](https://github.com/themaximoguys/Max_mcp) is our Maximo MCP server (175 tools across 20 modules, available on npm and GitHub). It doesn't care which model is behind the wheel: plug it into Claude, Bob, Copilot, Cursor, or any MCP-capable agent.
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 7 — Vibe Coding Behind the Firewall](/blog/evc-07-vibe-coding-behind-the-firewall) |
+| **Next:** | [Part 9 — Receipts, Please](/blog/evc-09-receipts-please) |
+
+---
+
+*Published by TheMaximoGuys | September 2026*

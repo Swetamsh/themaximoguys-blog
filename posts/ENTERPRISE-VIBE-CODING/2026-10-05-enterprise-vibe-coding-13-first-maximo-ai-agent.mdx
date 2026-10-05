@@ -1,0 +1,207 @@
+---
+title: "Your First Maximo AI Agent in an Afternoon"
+description: "A light, hands-on walkthrough: map the Maximo APIs with Max_Interfaces, run the Max_mcp server with a read-only API key, connect any MCP-capable agent (Claude Code, IBM Bob, Cursor, Copilot) and ask it to analyze your work-order backlog — safely."
+date: "2026-10-04"
+slug: "evc-13-first-maximo-ai-agent"
+tags: ["Vibe Coding", "AI Coding", "Enterprise Development", "IBM Maximo", "MCP", "AI Agents", "MAS 9", "Work Order Management"]
+draft: false
+tier: "beginner"
+author: "Manasa Ganga"
+authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop"
+coverImage: "./images/evc-13.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
+faqs:
+  - question: "How do I connect an AI agent to IBM Maximo?"
+    answer: "Run a Maximo MCP server — IBM's built-in one in MAS 9.2, or a third-party server such as TheMaximoGuys' Max_mcp — and register it in your agent's MCP configuration (for example .mcp.json in Claude Code, .bob/mcp.json in IBM Bob, or .cursor/mcp.json in Cursor). The server talks to Maximo's REST/OSLC APIs using an API key you supply."
+  - question: "How do I make a Maximo AI agent read-only?"
+    answer: "Make the API key read-only. Generate the key for a dedicated integration user whose security groups only grant read access to the objects you want analyzed, and point it at a dev or test environment. Don't rely on the agent or the prompt to avoid write tools — Maximo's security is the real boundary."
+  - question: "Do I need MAS 9.2 to try this?"
+    answer: "No. Max_mcp is built for MAS 9.x and installs from npm. MAS 9.2 customers can also use IBM's native Maximo MCP server. The Max_Interfaces Postman collections cover Maximo 7.x, 8.x and MAS 9."
+keyTakeaways:
+  - "Map first, connect second: knowing which APIs exist tells you what the agent can and can't touch"
+  - "The read-only API key is the real safety boundary — not the prompt"
+  - "One MCP config shape works across Claude Code, IBM Bob, Cursor and other agents"
+  - "Start with questions (backlog, PM compliance, overdue work), not actions"
+series:
+  name: "Enterprise Vibe Coding"
+  part: 13
+  total: 13
+tldr: "In one afternoon you can map Maximo's APIs with the open-source Max_Interfaces collections, run the Max_mcp server from npm with a read-only API key on a dev environment, register it with any MCP-capable agent, and ask plain-English questions about your work-order backlog. The safety comes from the key, not the prompt: dedicated user, read-only security group, non-production, no auto-approvals."
+seoTitle: "Build Your First Maximo AI Agent (MCP Guide)"
+seoDescription: "Connect Claude Code, IBM Bob or Cursor to IBM Maximo with an MCP server and a read-only API key, then analyze your work-order backlog safely."
+targetQuestions:
+  - "How do I connect Claude, Bob or Cursor to IBM Maximo?"
+  - "How do I set up a Maximo MCP server?"
+  - "How do I keep a Maximo AI agent read-only and safe?"
+proficiencyLevel: "beginner"
+dependencies:
+  - "Access to a non-production Maximo/MAS 9.x environment and permission to create an API key"
+  - "Node.js 18+ installed"
+  - "An MCP-capable AI agent (Claude Code, IBM Bob, Cursor, GitHub Copilot or similar)"
+speakableSections:
+  - "Step 1: Map the Territory"
+  - "Step 2: Make a Read-Only Key"
+  - "The Safety Checklist"
+series_part: 13
+clusterSlugs:
+  - "evc-00-series-index"
+  - "evc-03-autocomplete-chat-agents"
+  - "evc-12-maximo-eam-shops"
+relatedSlugs:
+  - "evc-12-maximo-eam-shops"
+  - "evc-11-teach-ai-house-rules"
+  - "evc-00-series-index"
+---
+
+# Your First Maximo AI Agent in an Afternoon
+
+> 🎯 **Who this is for:** Maximo developers and admins who've read twelve posts about AI agents and would now like to actually talk to one about their own work orders.
+
+**Series:** Part 13 of 13 — *Enterprise Vibe Coding* | **Read time:** 8 minutes
+
+---
+
+It's 1 p.m. on a Friday. Your maintenance manager has asked — again — why the corrective-maintenance backlog at one site keeps growing. Normally that means a saved query, an export to Excel, a pivot table and an hour of squinting.
+
+By 5 p.m. you could instead be typing: *"Which open work orders at this site are overdue, grouped by work type and priority, and which assets show up most?"* — and getting a straight answer from an AI agent that queried Maximo itself.
+
+This post gets you there. It's deliberately light: four steps, a read-only key, a dev environment, and a checklist. No production writes. No heroics.
+
+---
+
+## 🗺️ Step 1: Map the Territory (30 minutes)
+
+Before you hand an agent the keys, know which doors exist.
+
+[Max_Interfaces](https://github.com/themaximoguys/Max_Interfaces) is our open-source (MIT) set of Postman collections: 2,439+ endpoints across 14 modules, OSLC and REST, for Maximo 7.x, 8.x and MAS 9. Per its README:
+
+1. In Postman, **File > Import** the files from `postman-mas9-rest/` (or `postman-mas9-oslc/`).
+2. Create an environment with two variables: `baseUrl` (e.g. `https://your-instance.maximo.com/maximo`) and `apikey` (marked secret).
+3. Send the starter request:
+
+```
+GET {{baseUrl}}/api/os/mxapiwodetail?oslc.select=wonum,description,status&oslc.pageSize=5&lean=1
+```
+
+If five work orders come back, your API access works. Spend the rest of the half hour browsing the `WO.json` and `ASSET.json` folders. This is the honest picture of what an agent *could* call — and the place to decide what it *should*.
+
+---
+
+## 🔐 Step 2: Make a Read-Only Key (30 minutes)
+
+This is the most important step, and it happens in Maximo, not in the AI tool.
+
+- Create a **dedicated integration user** for the agent. Not your account. Not `maxadmin`.
+- Put it in a **security group that only grants read access** to the objects you want analyzed — work orders, assets, locations, PMs.
+- Generate an **API key** for that user on a **dev or test** environment.
+
+Why go to this trouble? Max_mcp's own FAQ is clear: tools like `maximo_create_workorder`, `maximo_update_asset` and `maximo_delete_po` perform real writes. Telling the agent "please only read" is a request. A read-only security group is a guarantee — Maximo refuses the write no matter what the agent was talked into. Agents act through the APIs under Maximo's security, never the database (Part 12).
+
+---
+
+## ⚙️ Step 3: Run the MCP Server and Connect Your Agent (1 hour)
+
+[Max_mcp](https://github.com/themaximoguys/Max_mcp) is TheMaximoGuys' Maximo MCP server: 175 tools across 20 modules, built for MAS 9.x and available on npm as `@themaximoguys/maximo-mcp` (proprietary license). On MAS 9.2 you can also use IBM's native Maximo MCP server; the steps for your agent look much the same.
+
+Max_mcp reads its settings from environment variables. The required ones are `MAXIMO_HOST` and either `MAXIMO_API_KEY` or `MAXIMO_USERNAME` + `MAXIMO_PASSWORD`. Use the API key. Optional ones include `MAXIMO_TIMEOUT`, `LOG_LEVEL` and `CACHE_ENABLED`.
+
+You don't even need a global install — `npx` fetches and runs it. Almost every MCP-capable agent accepts the same `mcpServers` JSON shape:
+
+```json
+{
+  "mcpServers": {
+    "maximo": {
+      "command": "npx",
+      "args": ["-y", "@themaximoguys/maximo-mcp"],
+      "env": {
+        "MAXIMO_HOST": "https://your-dev-maximo.example.com",
+        "MAXIMO_API_KEY": "your-read-only-api-key"
+      }
+    }
+  }
+}
+```
+
+Where that block goes depends on your tool:
+
+| Agent | Where the config lives | Watch out for |
+|---|---|---|
+| **Claude Code** | `.mcp.json` in the project root | Approve tool calls; don't blanket-allow write tools |
+| **IBM Bob** | `.bob/mcp.json` (project) or the global MCP settings | Keep `alwaysAllow` empty; MCP calls need approval by default |
+| **Cursor** | `.cursor/mcp.json` | Review each tool call before accepting |
+| **Claude Desktop** | `claude_desktop_config.json` | Restart the app after saving |
+
+Two practical notes. First, don't commit the real key — the IBM i MCP project, for instance, commits a `.bob/mcp.json.example` and keeps the real file out of Git. Second, if your organization prefers containers, the Max_mcp README documents a Docker setup (non-root user, read-only filesystem) that runs over stdio with `docker run -i --rm` and the same two environment variables.
+
+Restart or reload your agent. You should now see Maximo tools in its tool list.
+
+<aside>
+🛑 **Don't skip the boring part:** In January 2026, researchers showed a beta AI shell could be prompt-injected through a README into running malware because one command had been auto-approved. The same principle applies here: a work-order description is untrusted text, written by anyone with a mobile device. An agent that reads it and holds a write-capable key is a risk. A read-only key and per-call approval turn a disaster into a non-event.
+</aside>
+
+---
+
+## 💬 Step 4: Ask Real Questions (the rest of the afternoon)
+
+Start with questions, not actions. Max_mcp's analytics and scheduling modules include tools such as `maximo_overdue_workorders`, `maximo_pm_compliance`, `maximo_dashboard`, `maximo_top_downtime_assets` and `maximo_search_workorders`. You don't call them by name — you ask in plain English and approve what the agent proposes.
+
+Good first prompts:
+
+- *"Show overdue work orders at site BEDFORD grouped by work type and priority."*
+- *"Which ten assets have the most downtime, and how many open corrective work orders does each have?"*
+- *"What's our PM compliance at this site, and which PMs are furthest behind?"*
+- *"Summarize the backlog in five bullet points a maintenance manager would care about."*
+
+Then check the answer. Cross-reference one number against a saved query in Maximo. Agents summarize well and occasionally miscount; the first few runs are about building trust, not saving time. IBM's own Bob team puts it well: "Iterate, do not one-shot."
+
+If you want the agent to follow Maximo conventions when it later drafts scripts, give it house rules: [Max_autoscripts](https://github.com/themaximoguys/Max_autoscripts) (open source, MIT) ships an AGENTS.md and a coding standard it can read (Part 11).
+
+---
+
+## ✅ The Safety Checklist
+
+Print this. Tape it next to the monitor.
+
+- [ ] **Non-production environment** only, until a named owner signs off otherwise.
+- [ ] **Dedicated integration user**, never a personal or admin account.
+- [ ] **Read-only security group** for the first phase.
+- [ ] **API key, not password**, stored in an env file or secret store — never committed.
+- [ ] **No auto-approvals** for any MCP tool that writes.
+- [ ] **HTTPS only**, and logging on (`LOG_LEVEL=info` or higher) so there's a trail.
+- [ ] **Rotate the key** on a schedule and when anyone leaves the pilot.
+- [ ] **Write access is a separate decision**, made later, scoped to specific objects, with a human approving every call.
+
+---
+
+## Key Takeaways
+
+- **Map first, connect second.** Max_Interfaces shows every door before the agent touches one.
+- **The read-only key is the real boundary.** Prompts are requests; Maximo security groups are guarantees.
+- **One config shape, many agents.** The same `mcpServers` block works in Claude Code, IBM Bob, Cursor and Claude Desktop.
+- **Questions before actions.** Backlog, overdue work and PM compliance are high value and low risk.
+- **Verify the first answers by hand.** Trust is earned run by run.
+
+---
+
+## References
+
+- [Max_Interfaces — Maximo API collections (GitHub)](https://github.com/themaximoguys/Max_Interfaces)
+- [Max_mcp — Maximo MCP server (GitHub)](https://github.com/themaximoguys/Max_mcp)
+- [IBM Docs — Maximo MCP server overview](https://www.ibm.com/docs/en/masv-and-l/cd?topic=developing-maximo-mcp-server-overview)
+- [IBM Bob docs — Using MCP in Bob](https://bob.ibm.com/docs/ide/configuration/mcp/mcp-in-bob)
+- [The Register — IBM Bob prompt-injection research (Jan 2026)](https://www.theregister.com/2026/01/07/ibm_bob_vulnerability/)
+
+---
+
+🧰 **From TheMaximoGuys toolbox:** [Max_Interfaces](https://github.com/themaximoguys/Max_Interfaces) (open source, MIT) to map the APIs, [Max_mcp](https://github.com/themaximoguys/Max_mcp) (on npm) to connect the agent, and [Max_autoscripts](https://github.com/themaximoguys/Max_autoscripts) (open source, MIT) for house rules. Plug them into Claude, Bob, Copilot, Cursor — any MCP-capable agent. More at [themaximoguys.ai](https://themaximoguys.ai).
+
+---
+
+## Series Navigation
+
+| | |
+|---|---|
+| **Previous:** | [Part 12 — What This Means for Maximo & EAM Shops](/blog/evc-12-maximo-eam-shops) |
+| **Next:** | [Back to the Series Index — Enterprise Vibe Coding](/blog/evc-00-series-index) |
