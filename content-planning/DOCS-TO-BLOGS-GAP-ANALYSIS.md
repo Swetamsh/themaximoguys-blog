@@ -1,6 +1,6 @@
 # MAS 9 Docs -> Blogs: Gap Analysis & Decision Status
 
-**Updated:** 2026-10-04 (`replan-20261004`: zero drift vs 2026-10-03 — 0 items queued; prior note follows: `replan-20261003`: zero drift vs 2026-10-02 — 0 items queued; prior note follows: `replan-20261002`: zero drift vs 2026-10-01 — 0 items queued; prior note follows: `replan-20261001`: zero drift vs 2026-09-30 — 0 items queued; prior note follows: `replan-20260930`: zero drift vs 2026-09-29 — 0 items queued; prior note follows: `replan-20260929`: zero drift vs 2026-09-28 — 0 items queued; only MAS-ADMIN 10 + MAS-PARTS-IDENTIFIER 5 covers remain missing, their queue items failed non-transiently and await human review). Prior: 2026-09-28 (night-shift job `replan-20260928`: full audit reconciling this plan
+**Updated:** 2026-10-05 (`replan-20261005`: real drift this run. (1) `MAS-PARTS-IDENTIFIER` covers now 5/5 on disk (`posts/MAS-PARTS-IDENTIFIER/images/`, untracked, generated interactively 2026-10-05) — the last cover gap in the plan is closed; `covers-parts-id` corrected `failed`→`done`. (2) New knowledge-base doc `DOC16_IBM_BOB_FIELD_GUIDE.md` (733 lines, committed `7e70057`) has no dedicated series — only incidental mentions in the general `ENTERPRISE-VIBE-CODING` series — so a 6-post `MAS-BOB` series (index + Parts 1-5, outline in §7) plus one `covers-bob` batch were queued: 7 items. `knowledge_base/` is now 18 entries (DOC1-16, supply-chain email, `MAS92-SOURCES/`). `MAS-ADMIN` `/images/mas-admin/...` cover paths resolve in the Next.js repo's `public/`, not this repo — unchanged, verified earlier. Prior note: `replan-20261004`: zero drift vs 2026-10-03 — 0 items queued; prior note follows: `replan-20261003`: zero drift vs 2026-10-02 — 0 items queued; prior note follows: `replan-20261002`: zero drift vs 2026-10-01 — 0 items queued; prior note follows: `replan-20261001`: zero drift vs 2026-09-30 — 0 items queued; prior note follows: `replan-20260930`: zero drift vs 2026-09-29 — 0 items queued; prior note follows: `replan-20260929`: zero drift vs 2026-09-28 — 0 items queued; only MAS-ADMIN 10 + MAS-PARTS-IDENTIFIER 5 covers remain missing, their queue items failed non-transiently and await human review). Prior: 2026-09-28 (night-shift job `replan-20260928`: full audit reconciling this plan
 against `posts/`, `knowledge_base/`, `content-planning/`, and `queue.json`. **Major finding —
 the cover backlog is now almost entirely closed.** On-disk PNG counts (not just queue-item
 status) were re-counted per series and found materially ahead of what this doc and `queue.json`
@@ -342,8 +342,8 @@ word-count depth, and cover-image path checks.
 | Bucket | Count | Status |
 |---|---:|---|
 | Fully built and asset-complete | 15 source areas | DOC1(Manage), DOC3, DOC4, DOC6, DOC7, DOC13(MAS-WATSONX-DATA), DOC15(MAS-9-2), plus existing DOC2 Health/Monitor/Predict/MVI coverage, plus MAS-ASSIST, MAS-SUPPLY-CHAIN, MAS-RELIABILITY, MAS-NUCLEAR, MAS-ADMIN, MAS-DATABRICKS (all 7), MAS-OPTIMIZER (all 6), MAS-CIVIL-INFRASTRUCTURE (all 6), 2 standalone DOC1 posts (covers found on disk, uncommitted, 2026-09-28 replan) |
-| Deep research/text complete, covers pending | 1 series | MAS-PARTS-IDENTIFIER (0 of 5 covers) — the only remaining cover gap in the entire plan as of 2026-09-28 |
-| Still pending as new deep blog work | 0 series | none — every knowledge-base document DOC1-15 has blog coverage; no net-new series remain |
+| Deep research/text complete, covers pending | 0 series | none — MAS-PARTS-IDENTIFIER covers (5/5) found on disk 2026-10-05 |
+| Still pending as new deep blog work | 1 series | `MAS-BOB` (DOC16, IBM Bob field guide) — 6 posts + 6 covers queued 2026-10-05; DOC1-15 all have blog coverage |
 | Optional single-post gaps | 1 post, ambiguous | DOC6 extension crossovers — flagged by the 2026-07-22 upgrade-gotchas job as possibly stale since DOC6's own Coverage Matrix row already shows "None" remaining; unresolved, needs human recheck, not queued |
 
 **Important distinction:** "content complete" below means the MDX posts exist, are long-form, and
@@ -356,7 +356,7 @@ include references. "Production complete" means the posts also have local cover 
 | DOC | Topic | Current verdict | Built by | Remaining decision |
 |-----|-------|-----------------|----------|--------------------|
 | DOC1 | Manage Upgrade Roadmap | ✅ **PRODUCTION COMPLETE** | `posts/MAS-MANAGE` (12 posts) + `posts/2026-07-22-mas9-reporting-options.mdx` + `posts/2026-07-22-mas9-upgrade-gotchas.mdx` (both standalone, draft, content complete, covers blocked on nanobanana key) | None — both optional single-post gaps now built; only local cover assets remain, blocked on the key rotation |
-| DOC2 | Suite Add-Ons | ⚠️ **MOSTLY BUILT** | Health(9), Monitor(9), Predict(9), MVI(13), Assist(7, covers done), Optimizer(6, covers done 2026-09-28), Parts Identifier(5, 0 covers), Civil Infrastructure(6, covers done 2026-09-28) | Only Parts Identifier remains cover-incomplete (0 of 5); every other DOC2 series is now asset-complete |
+| DOC2 | Suite Add-Ons | ⚠️ **MOSTLY BUILT** | Health(9), Monitor(9), Predict(9), MVI(13), Assist(7, covers done), Optimizer(6, covers done 2026-09-28), Parts Identifier(5, covers done 2026-10-05), Civil Infrastructure(6, covers done 2026-09-28) | None — every DOC2 series is asset-complete |
 | DOC3 | Paid Add-Ons & Industry | ✅ **PRODUCTION COMPLETE** | `posts/MAS-FEATURES` parts 15-20, 25 | None |
 | DOC4 | Supply Chain Features | ✅ **PRODUCTION COMPLETE** | `posts/MAS-FEATURES` parts 21-25 plus `MAS-MANAGE-09` | None for feature coverage |
 | DOC5 | Data Analytics & Databricks | ✅ **PRODUCTION COMPLETE** | `posts/MAS-DATABRICKS` (index + Parts 1-6, all 7 covers present on disk as of 2026-09-28, incl. Parts 5-6 previously blocked) | None — content and assets both complete |
@@ -368,6 +368,7 @@ include references. "Production complete" means the posts also have local cover 
 | DOC11 | Reliability Strategies | 🟡 **CONTENT COMPLETE, ASSETS PENDING** | `posts/MAS-RELIABILITY` (index + 7 posts) | Generate 8 covers |
 | DOC12 | Nuclear Add-Ons (9.2) | 🟡 **CONTENT COMPLETE, ASSETS PENDING** | `posts/MAS-NUCLEAR` (index + 7 posts) | Generate 8 covers |
 | DOC13 | watsonx.data Open Lakehouse (IBM-native counterpart to DOC5) | ✅ **PRODUCTION COMPLETE** | `posts/MAS-WATSONX-DATA` (series index + Parts 1-6, all 7 covers present on disk as of 2026-09-28, BlueprintBoard) | None — content and assets both complete |
+| DOC16 | IBM Bob Field Guide | 🔴 **NOT BUILT (queued 2026-10-05)** | Incidental only: `ENTERPRISE-VIBE-CODING` (general vibe-coding series, mentions Bob) | `MAS-BOB` series, index + Parts 1-5 — see §7 |
 | DOC15 | MAS 9.2 Release Fact Base | ✅ **PRODUCTION COMPLETE, PUBLISHED** | `posts/MAS-9-2` (index + 7 parts, built 2026-08-12 interactive session, primary-source IBM fact base with per-claim IDs, all 8 covers present — warm-chalkboard style; `draft: false` on all 8 files as of commit `9aacad0`, 2026-08-12) | None — content, assets, and publish flip are all complete |
 
 **Net movement since the 2026-07-15 audit:** DOC7, DOC8, DOC9, DOC10, DOC11, DOC12, DOC2 Assist,
@@ -412,7 +413,7 @@ its covers on disk (see Production Complete above).
 
 | Series | Source | Files | Word-count depth | What is covered | Remaining asset work |
 |---|---|---:|---:|---|---|
-| `MAS-PARTS-IDENTIFIER` | DOC2 | 5 | ~18.7k words | what the app is and how AI vision recognition works, mobile capture-to-match workflow and photo craft, catalog matching/inventory/ordering and item-master data quality, deployment/training-image methodology/accuracy metrics/pilot design | 5 covers (index + 4 parts, 0 done) — the only cover gap left in the entire plan |
+| `MAS-PARTS-IDENTIFIER` | DOC2 | 5 | ~18.7k words | what the app is and how AI vision recognition works, mobile capture-to-match workflow and photo craft, catalog matching/inventory/ordering and item-master data quality, deployment/training-image methodology/accuracy metrics/pilot design | None — 5/5 covers present on disk as of 2026-10-05 (untracked) |
 
 **Parts Identifier note:** `MAS-PARTS-IDENTIFIER` (index + Parts 1-4, `posts/MAS-PARTS-IDENTIFIER/`,
 committed 2026-07-16 in `c429e81`) was found already content-complete and published (`draft: false`)
@@ -489,7 +490,8 @@ still pending — Part 5's is done).
 
 | Priority | Series | Source | Why it is still pending | Recommended decision |
 |---:|---|---|---|---|
-| 1 | `MAS-PARTS-IDENTIFIER` | DOC2 | **Only remaining gap in the entire plan (2026-09-28).** Index + Parts 1-4 are content-complete and published; only the 5 cover images remain missing (`posts/MAS-PARTS-IDENTIFIER/images/` confirmed empty). | `covers-parts-id` remains queued (failed, non-transient auth block — headless sessions still can't reach the nanobanana key per the standing blocker) — needs an interactive-session cover run, the same way Optimizer/Databricks/watsonx-data/Civil-Infrastructure/the 2 standalone posts were just resolved 2026-09-28. |
+| 1 | `MAS-BOB` | DOC16 | **New 2026-10-05.** IBM Bob field guide has no dedicated series; only incidental coverage in `ENTERPRISE-VIBE-CODING`. | Queued `bob-00..05` + `covers-bob` (outline in §7). |
+| ~~2~~ | ~~`MAS-PARTS-IDENTIFIER`~~ | DOC2 | **Resolved 2026-10-05.** All 5 covers present on disk. | `covers-parts-id` corrected to `done`. (Superseded text: **Only remaining gap in the entire plan (2026-09-28).** Index + Parts 1-4 are content-complete and published; only the 5 cover images remain missing (`posts/MAS-PARTS-IDENTIFIER/images/` confirmed empty). | `covers-parts-id` remains queued (failed, non-transient auth block — headless sessions still can't reach the nanobanana key per the standing blocker) — needs an interactive-session cover run, the same way Optimizer/Databricks/watsonx-data/Civil-Infrastructure/the 2 standalone posts were just resolved 2026-09-28.) |
 | ~~2~~ | ~~`MAS-DATABRICKS`~~ | DOC5 | **Resolved 2026-09-28.** All 7 covers (incl. Parts 5-6) now present on disk. | `covers-databricks-56` corrected to `done`. No further work. |
 | ~~3~~ | ~~`MAS-CIVIL-INFRASTRUCTURE`~~ | DOC2 | **Resolved 2026-09-28.** All 6 covers now present on disk. | `covers-civil` corrected to `done`. No further work. |
 | ~~4~~ | ~~`MAS-OPTIMIZER`~~ | DOC2 | **Resolved 2026-09-28.** All 6 covers now present on disk. | `covers-optimizer` corrected to `done`. No further work. |
@@ -514,13 +516,14 @@ majority of the cover backlog closed in an interactive session earlier the same 
 | `MAS-WATSONX-DATA` | 0 | ✅ done (7/7, verified 2026-09-28 — was 7 missing) |
 | `MAS-CIVIL-INFRASTRUCTURE` | 0 | ✅ done (6/6, verified 2026-09-28 — was 6 missing) |
 | 2 standalone DOC1 posts | 0 | ✅ done (`mas9-reporting-options`, `mas9-upgrade-gotchas` both have covers as of 2026-09-28) |
-| `MAS-PARTS-IDENTIFIER` | 5 | index + Parts 1-4, none done. `covers-parts-id` queued, failed on the standing headless nanobanana blocker — the only cover gap left anywhere in the plan. |
+| `MAS-PARTS-IDENTIFIER` | 0 | ✅ done (5/5, verified 2026-10-05 — was 5 missing) |
+| `MAS-BOB` | 6 | not yet written (DOC16); `bob-00..05` + `covers-bob` queued 2026-10-05 |
 | `MAS-MANAGE` | 0 | Optional dedicated covers; current covers intentionally use borrowed MAS-FEATURES assets. |
 
 **The 7 series/posts marked done above were corrected from stale `failed` `queue.json` entries
 this run — the covers exist on disk (untracked, generated interactively 2026-09-28), so the
 queue items were updated to `status: done` rather than left to be endlessly re-audited as gaps.
-`MAS-PARTS-IDENTIFIER` remains genuinely open: its `covers-parts-id` item is correctly `failed`
+(Superseded 2026-10-05: `MAS-PARTS-IDENTIFIER` is now cover-complete and `covers-parts-id` is `done`.) Previously: `covers-parts-id` was `failed`
 on the same non-transient nanobanana `API_KEY_INVALID` headless-session limitation documented in
 `project_nanobanana_key_leaked_blocker` — per the replan rule, failed items are only re-queued
 when the failure looks transient (timeout, 503), and this one does not, so it was left as-is
@@ -537,10 +540,9 @@ generated all remaining covers for Optimizer, Databricks (05-06), watsonx-data, 
 Infrastructure, and both standalone DOC1 posts (34 PNGs, still uncommitted). The headless-session
 limitation documented in `project_nanobanana_key_leaked_blocker` is unchanged — night-shift jobs
 still cannot reach the key — but only one series is left waiting on it.
-3. **Only one gap remains: `MAS-PARTS-IDENTIFIER` covers (5).** Its `covers-parts-id` queue item
-is correctly parked `failed`, waiting on the same interactive-session workaround that just closed
-the other five series — a human/interactive run, not a headless retry, is what will close it.
-4. **No net-new content lanes remain.** Every knowledge-base document (DOC1-15 plus the supply-chain
+3. **`MAS-PARTS-IDENTIFIER` covers are done (2026-10-05).** No cover backlog remains except the
+new `MAS-BOB` batch, which will hit the same headless nanobanana limitation and likely need an interactive run.
+4. **One net-new lane: `MAS-BOB` (DOC16).** Queued 2026-10-05, see §7. Every other knowledge-base document (DOC1-15 plus the supply-chain
 roadmap email) now has blog coverage; DOC14 was absorbed as background research into MAS-WATSONX-DATA
 rather than needing its own series; DOC15 (MAS 9.2 release fact base) got its own fully
 content-and-asset-complete `MAS-9-2` series 2026-08-12, built outside the night-shift queue.
@@ -553,3 +555,20 @@ content-and-asset-complete `MAS-9-2` series 2026-08-12, built outside the night-
 - Do not split DOC8/DOC9/DOC10 into separate series; the merged Supply Chain Playbook is already built.
 - Do not build a generic DOC12 "Maximo 7.6 vs MAS" comparison; THINK-MAS and MAS-FEATURES already own it.
 - Do not duplicate Health/Monitor/Predict/MVI from DOC2; those app series already exist.
+
+---
+
+## 7. Recommended Series Outline: MAS-BOB (DOC16) — queued 2026-10-05
+
+`posts/MAS-BOB/`, index + 5 parts, `draft: true`, SketchNote covers. Distinct from `ENTERPRISE-VIBE-CODING`
+(general, tool-agnostic); this series is Bob- and Maximo-specific. Every IBM vendor number stays labeled IBM-reported.
+
+| Part | Topic | DOC16 sections | Queue id |
+|---:|---|---|---|
+| 0 | Series index | §1, §15 | `bob-00-index` |
+| 1 | What Bob is: timeline, clients, agent harness, modes | §2-3 | `bob-01-what-is-bob` |
+| 2 | Models, security, data handling, self-hosted on OpenShift | §4-6 | `bob-02-models-security-selfhosted` |
+| 3 | Governance, Bobalytics, audit, pricing and Bobcoins | §7-8 | `bob-03-governance-pricing` |
+| 4 | Bob meets Maximo: MAS 9.2 MCP, IBM skills, Local Dev Mode, TMG tools | §13-14 | `bob-04-bob-and-maximo` |
+| 5 | Pilot playbook: metrics, competitors, open questions | §9-11, 15-16 | `bob-05-pilot-playbook` |
+| covers | 6 covers, one batch | — | `covers-bob` |
