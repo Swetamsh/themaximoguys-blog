@@ -33,6 +33,7 @@ import { contactPage } from './schemas/contactPage'
 import { testimonial } from './schemas/testimonial'
 import { caseStudy } from './schemas/caseStudy'
 import { industry } from './schemas/industry'
+import { infrastructurePlatform } from './schemas/infrastructurePlatform'
 import { service } from './schemas/service'
 import { skill } from './schemas/skill'
 import { certification } from './schemas/certification'
@@ -105,6 +106,7 @@ const structure = (S: StructureBuilder) =>
               S.documentTypeListItem('testimonial').title('Testimonials'),
               S.documentTypeListItem('caseStudy').title('Case Studies'),
               S.documentTypeListItem('industry').title('Industries'),
+              S.documentTypeListItem('infrastructurePlatform').title('Infrastructure Platforms'),
               S.documentTypeListItem('service').title('Services'),
               S.documentTypeListItem('metric').title('Metrics & Stats'),
               S.documentTypeListItem('processStep').title('Process Steps'),
@@ -158,6 +160,7 @@ export default defineConfig({
       testimonial,
       caseStudy,
       industry,
+      infrastructurePlatform,
       service,
       skill,
       certification,
