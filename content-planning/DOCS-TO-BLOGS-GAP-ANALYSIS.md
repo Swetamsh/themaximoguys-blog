@@ -595,3 +595,30 @@ Queued 2026-10-16 in `automation/off-hours/queue.json` (11 items, posts priority
 | 8 | Promoting and upgrading MAF apps without Migration Manager | §11-12 | `maf-08-promotion-upgrades` |
 | 9 | AI-assisted MAF: Bob MAF Config mode, Graphite MCP, guardrails | §15 | `maf-09-ai-assisted-maf` |
 | covers | 10 covers, one batch | — | `covers-maf` |
+
+---
+
+## 9. MAS-MOBILE mini-series (queued 2026-10-16) and DOC00 living gap appendix
+
+`posts/MAS-MOBILE/`, 3 posts, `draft: true`, InfoBlocks covers, priority 2. Source: DOC17 §2.5 + `MAS92-SOURCES/text/mobile-92-whats-new.txt`.
+
+| Part | Topic | Queue id |
+|---:|---|---|
+| 1 | Every Maximo Mobile and role-based app in MAS 9.2: the complete catalog | `mobile-01-app-catalog` |
+| 2 | Maximo Mobile 9.2: what's new for field teams | `mobile-02-mobile-92-whats-new` |
+| 3 | HSE in the field: Incident Reporter and Permit to Work | `mobile-03-hse-mobile` |
+| covers | 3 covers | `covers-mobile` |
+
+Same day: corrected `MAS-FEATURES` Part 5 (Maximo Mobile is a native store shell, not a PWA) and refreshed `MAS-MANAGE` Part 6 (9.2 section; "Mobile Studio/JSON" error removed). Both need a Sanity re-sync.
+
+**Beyond DOC1–DOC17:** `knowledge_base/DOC00_MAXIMO_CHANGES_AND_COVERAGE_GAPS.md` is the living appendix. It holds the IBM change log, the coverage matrix and the ranked gaps, and it is refreshed weekly by the `gap-scan` night-shift job. It holds six series proposals (MAS-LIFECYCLE, MAS-SECURITY-OPS, MAS-PLATFORM-OPS, MAS-DATA-LOADING, MAS-AUTOSCRIPTS, MAS-AGENTIC), **not queued**. Replan jobs must not auto-queue DOC00 proposals; a human promotes them.
+
+## 10. DOC00-sourced series queued 2026-10-16 (human-approved)
+
+| Series | Posts | Priority | Cover | Queue ids | DOC00 |
+|---|---|---|---|---|---|
+| `MAS-LIFECYCLE` | index + 4 | 1 (urgent: 7.6.1/dual-support/9.0 deadlines) | DanKoeStyle (Warm Chalkboard variant) | `lifecycle-00..04`, `covers-lifecycle` | §5.1, GAP-001 |
+| `MAS-SECURITY-OPS` | index + 6 | 2 | BlueprintBoard | `secops-00..06`, `covers-secops` | §5.2, GAP-002 |
+| `MAS-PLATFORM-OPS` | index + 8 | 3 | InfoBlocks | `platops-00..08`, `covers-platops` | §5.3, GAP-003/007 |
+
+Still PROPOSED in DOC00 (not queued): `MAS-DATA-LOADING` (§5.4), `MAS-AUTOSCRIPTS` (§5.5), `MAS-AGENTIC` (§5.6), quick wins (§5.7).

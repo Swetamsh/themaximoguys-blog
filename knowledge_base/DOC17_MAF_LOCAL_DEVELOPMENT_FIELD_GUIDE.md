@@ -124,6 +124,76 @@ IBM is explicit that "Any configuration changes made to applications based on th
 - John Q. Todd (TRM, Aug 2026) on the tooling: it is "not to the level of the legacy Maximo Application Designer", but it "does make implementing changes to mobile applications that much easier."
 - Jas Sidhu (MRM-EAM, Aug 2026): "many of the remaining challenges weren't configuration problems; they were framework questions." The full developer documentation lives **inside** Application Configuration, under (?) → "Developer Documentation", and is **not** published online.
 
+### 2.5 Where MAF is used today: the application inventory (MAS 9.0–9.2, Oct 2026)
+
+IBM's framing: "Application Configuration supports IBM Maximo Mobile, IBM Maximo Health, and IBM Maximo Manage. Additionally, you can also configure non-mobile, role-based applications" [IBM, MAS guide]. The Local Configuration extension lists packages in five categories: **`manage`, `core`, `addons`, `assist`, `monitor`** [CODE].
+
+**Delivery key:**
+- **Hybrid:** an offline Maximo Mobile app *and* an online browser RBA, built from the same code.
+- **Browser:** RBA only.
+- **Mobile:** device only.
+
+Every app below can be configured in Application Configuration, and you can duplicate one before changing it (e.g. `TECHMOBILE` → `MYTECHMOBILE`). MVI Mobile is the exception.
+
+| # | App | App ID | Module | Delivery | Business area | Since | Confidence |
+|---|---|---|---|---|---|---|---|
+| 1 | Technician | `TECHMOBILE` | Manage (Mobile included) | Hybrid | Work execution. Also carries Calibration, Linear, ACM asset swap, maps, safety-plan review, and crew WOs (9.2) | 8.x | verified |
+| 2 | Work Approvals | `SUPMOBILE` | Manage | Hybrid | Supervisor review of WOs | ~8.3 | verified (version likely) |
+| 3 | Service Requests | `SRMOBILE` | Manage (Self Service) | Hybrid | Requesters; no AppPoints | ~8.3–8.6 | verified (version likely) |
+| 4 | Inspections (conduct) | `INSPECTION` | Manage | Hybrid | Inspectors; assignment in 9.1 | 8.x | verified |
+| 5 | Inspection Forms (builder) | ? | Manage | Browser | Form designers; replaced the Work Center | 9.0 | verified (ID unknown) |
+| 6 | Asset Manager | `ASSETMOBILE` | Manage | Hybrid (GPS on mobile) | Asset management | 8.9 read-only → 8.10 edit → 8.11 specs/map | verified |
+| 7 | Locations (Location Manager) | ? | Manage | Hybrid | Location create/update, hierarchy | 9.2 | verified (ID unknown) |
+| 8 | Inventory Counting | `ICMOBILE` | Manage Inventory | Hybrid (Reconciliation is RBA only) | Count books, ad hoc counts | 8.8 | verified |
+| 9 | Inventory Receiving | `IRMOBILE` | Manage Inventory | Hybrid | PO and shipment receiving; rotating assets in 9.1 | 8.10 / 8.11 | verified |
+| 10 | Issues and Transfers | `ITMOBILE` | Manage Inventory | Hybrid | Issues, transfers, staging | 8.11 | verified |
+| 11 | Mobile dashboard | `dashboardmobile` | Mobile | Mobile | Landing tiles | 9.2 | verified |
+| 12 | Navigator | `NAVIGATOR` | Mobile | Mobile | Launcher/sync shell inside the store app | 8.x | verified |
+| 13 | Incident Reporter | ? | HSE / Oil & Gas | Mobile | Safety incidents; maps in 9.2 | 9.1 | verified (ID unknown) |
+| 14 | Permit to Work / Permit request | ? | HSE / Oil & Gas | Mobile | Field permit approvals | 9.2 | verified (ID unknown) |
+| 15 | Work Orders RBA | `WOSUMMARY` (security template) | Manage | Browser | Planners; AI problem codes (9.0), similar WOs (9.1), failure reporting (9.2) | 8.9 | verified (ID likely) |
+| 16 | Operational Dashboard + Work Queues | `OPDASHBOARD` | Manage | Browser | Managers/KPIs; map tiles in 9.2 | 8.9 | RBA verified; MAF likely |
+| 17 | Workflow Assignments | `WFASSIGN` | Manage | Browser | Workflow inbox | 8.9 | verified |
+| 18 | Work Queue Manager | ? | Manage | Browser | Queue admin | 9.x | likely |
+| 19 | Manage Monitoring Information | `MMIUI` | Manage admin | Browser | Server/pod health; replaced the MMI Work Center | 9.0 | verified (ID likely) |
+| 20 | Manage shell (menus, Help) | `MANAGE-SHELL` | Manage | Browser | Navigation | 8.5 | verified |
+| 21 | Mobile Configuration / Mobile Admin | ? | Manage / suite | Browser | Sync settings, preloaded DBs | 9.1 / 9.2 | likely |
+| 22 | Suite Security Groups / Users | ? | MAS core | Browser | Admin. IBM slide: "New Security Group Application – Maximo Application Framework" | 9.1 | verified (Security Groups) |
+| 23 | API Keys | `@maximo/apikey` | MAS core | Browser | Admin | 9.x | likely |
+| 24 | Scheduling / Dispatching / Planning dashboards | ? | Manage Scheduler | Browser | Scheduling, dispatch | 8.9 / 8.11 / 9.1 | [UNVERIFIED] as MAF |
+| 25 | Assets & Locations dashboard | ? | Health / Predict / Manage | Browser | Condition scoring; configurable cards in 9.2 | 9.1 | likely ("Health & Predict… built with IBM's Graphite Framework" [IND]) |
+| 26 | Monitor apps | category `monitor` | Monitor | Browser | IoT dashboards | — | verified (category level) |
+| 27 | Assist apps | category `assist` | Assist | Browser/mobile | Remote guidance | — | likely |
+| 28 | Maximo IT Self Serve | ? | Maximo IT | Browser | IT self-service | 9.2 | [UNVERIFIED] as MAF |
+| — | **MVI Mobile** | — | Visual Inspection | Native iOS/iPadOS | — | — | **verified NOT MAF** |
+
+**IDs that are not apps:**
+- `IROPENPOMOBILE` / `IROPENSHIPMOBILE` are **saved queries** used by IRMOBILE (POs and shipments available to receive).
+- `ISMOBILE` is a MAFAPPDATA column.
+- `CXITMOBILE` appears only as a customer's duplicate of ITMOBILE in a community log.
+- `TPAEMOBILE` was not found in any source.
+- Calibration, Linear, Spatial maps and ACM are **capabilities inside TECHMOBILE / ASSETMOBILE**, not separate apps.
+
+**Still classic (Application Designer UI), not MAF** [IBM][IND]:
+
+| Area | Classic apps |
+|---|---|
+| Purchasing (no procurement RBA found and no roadmap item) | PR, PO, RFQ, Invoices, classic Receiving, Companies, Contracts |
+| Inventory masters | Item Master, Inventory, Storerooms, Inventory Usage, Count Books |
+| Planning | Job Plans, PMs, Routes, Safety/LOTO |
+| Core records | Work Order Tracking, Assets, Locations, Meters, Failure Codes, Classifications |
+| Platform | Application Designer, Database Configuration, Workflow Designer, Escalations, Automation Scripts, Cron Tasks, integration apps, Security Groups (Manage) |
+| Service management | Service Desk, Desktop Requisitions |
+| Industry solutions | Aviation, Nuclear, Transportation, Utilities, Civil. The only industry MAF apps found are the HSE/O&G Incident Reporter and Permit to Work |
+| Scheduler boards | Graphical Scheduling Gantt boards |
+
+**Direction:**
+- IBM: "Maximo WorkCenters are now fully deprecated." Inspection Forms and MMI were rebuilt on MAF "with the same functionality" [IBM].
+- In 9.2 the "Role Based Applications" submenu was removed; mobile apps are now labelled "(Mobile)" [IBM].
+- IBM decks, not commitments: cross-MAS dashboards, expanded mobile assignments and auditing (delivered in 9.1), and industry-solution mobility [IBM].
+- **Rule of thumb:** MAF owns **field execution, approvals, inventory floor work, and admin consoles**. Classic UI still owns **back-office transactions and configuration**.
+- **To confirm app IDs on a live system:** `GET /graphite/configtool/packages` or `SELECT APPID FROM MAFAPPDATA`.
+
 ---
 
 ## 3. Anatomy of a MAF Application

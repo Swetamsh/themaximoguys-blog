@@ -1,6 +1,6 @@
 ---
 title: "Maximo Mobile for Manage: Offline-First Field Work and the End of Anywhere"
-description: "A practitioner's deep dive into Maximo Mobile for Manage 9 — why it replaced Maximo Anywhere, how its offline-first REST and sync architecture works, the Technician, Inspections, and Inventory apps, low-code app definitions in Mobile Studio, RBAC and offline security, and how to migrate off MobileFirst."
+description: "A practitioner's deep dive into Maximo Mobile for Manage 9 — why it replaced Maximo Anywhere, how its offline-first REST and sync architecture works, the Technician, Inspections, and Inventory apps, app configuration in Application Configuration, RBAC and offline security, and how to migrate off MobileFirst."
 date: "2026-06-02"
 slug: "mas-manage-maximo-mobile"
 tags: ["Maximo", "MAS Manage", "MAS 9", "Maximo Mobile", "Maximo Anywhere", "Offline", "Mobile", "Field Service"]
@@ -25,13 +25,13 @@ keyTakeaways:
   - "Maximo Mobile replaced Maximo Anywhere, which was EOL'd at MAS 8.9 and is unsupported in MAS 9"
   - "The architecture is offline-first: REST-backed data sets, a sync engine, and sync policies — no separate mobile server"
   - "Technician, Inspections, and Inventory apps share the same object structures and validation as the desktop"
-  - "App definitions are JSON authored low-code in Maximo Mobile Studio, with scripting and REST for complex logic"
+  - "Apps are Maximo Application Framework (MAF) packages — XML plus AppCustomizations.js — configured and published in Application Configuration"
   - "The standalone Assist app was dropped in 9.0; remote collaboration moved into Mobile with a Collaborate add-on"
 series:
   name: "MAS MANAGE"
   part: 6
   total: 11
-tldr: "Maximo Mobile is the offline-first successor to Maximo Anywhere, which was discontinued at MAS 8.9. It drops the MobileFirst middle tier and talks directly to Manage REST APIs: data sets sync into a local device database, a sync engine and sync policies govern refresh and conflict handling, and JSON app definitions are authored low-code in Mobile Studio. The Technician, Inspections, and Inventory apps reuse the desktop's object structures, validation, security groups, and RBAC. This post explains the architecture, the apps, and how to migrate off Anywhere."
+tldr: "Maximo Mobile is the offline-first successor to Maximo Anywhere, which was discontinued at MAS 8.9. It drops the MobileFirst middle tier and talks directly to Manage REST APIs: data sets sync into a local device database, a sync engine and sync policies govern refresh and conflict handling, and apps are Maximo Application Framework (MAF) packages configured and published in Application Configuration. The Technician, Inspections, and Inventory apps reuse the desktop's object structures, validation, security groups, and RBAC. This post explains the architecture, the apps, and how to migrate off Anywhere."
 seoTitle: "Maximo Mobile for Manage 9 | Offline-First Field Work"
 seoDescription: "How Maximo Mobile replaced Anywhere in MAS 9: offline-first REST and sync, the Technician and Inspections apps, RBAC, and Anywhere migration."
 targetQuestions:
@@ -45,7 +45,7 @@ semanticKeywords:
   - "Maximo Anywhere replacement"
   - "offline-first mobile app"
   - "Maximo Mobile Technician"
-  - "Maximo Mobile Studio"
+  - "Application Configuration"
   - "sync policies conflict resolution"
   - "Manage REST API mobile"
   - "object structures mobile data"
@@ -66,6 +66,8 @@ relatedSlugs:
   - "mas-manage-inspections-digital-forms"
   - "mas-manage-work-management"
 ---
+
+> **Updated October 2026:** Added a MAS 9.2 section, and corrected how apps are built (MAF XML configured in Application Configuration, not JSON in a "Mobile Studio").
 
 # Maximo Mobile for Manage: Offline-First Field Work and the End of Anywhere
 
@@ -145,9 +147,9 @@ Synced data lands in a **local device database**. From there the technician work
 
 ### How apps are built
 
-App definitions are **JSON** — layouts, cards, data sources, and actions — authored **low-code** in **Maximo Mobile Studio**. For the simple majority of changes you arrange cards and bind data sources visually. For complex logic you drop into **scripting and REST**. There is no hybrid build to compile and no app to re-sign for a configuration change.
+The apps are built on the **Maximo Application Framework (MAF)**, which IBM internally calls Graphite. Each app is defined in **XML** (`app.xml` plus included files) that declares its pages, datasources (backed by object structures such as `MXAPIWODETAIL`) and components. A build step compiles that XML into a React app. You configure the apps in **Application Configuration**. It is in the MAS admin menu from 9.1; through 9.0 it was the "MAF Configuration application", which ran as a Docker container. For most changes you edit the XML. For logic you add JavaScript to **`AppCustomizations.js`**, the one supported, upgrade-safe place for custom code. Then you preview and **publish**. Each publish is stored as a new revision in the `MAFAPPDATA` table, and devices download it. There is no hybrid build to compile and no app to re-sign for a configuration change.
 
-This is the quiet revolution buried in the architecture. Under Anywhere, a layout tweak or a new field could mean editing a hybrid app, rebuilding it, and pushing a freshly signed package out to every device — a release cycle measured in days. Under Maximo Mobile, a configuration change is a change to the JSON app definition that flows to devices through the same sync mechanism as data. The cost of iterating on a mobile screen drops by an order of magnitude, which in practice is the difference between a mobile rollout that keeps improving and one that freezes the day it ships because nobody wants to touch the build pipeline again.
+This is the quiet revolution buried in the architecture. Under Anywhere, a layout tweak or a new field could mean editing a hybrid app, rebuilding it, and pushing a freshly signed package out to every device — a release cycle measured in days. Under Maximo Mobile, a configuration change is a published change to the server-side app package, which devices download the next time they update. The cost of iterating on a mobile screen drops by an order of magnitude, which in practice is the difference between a mobile rollout that keeps improving and one that freezes the day it ships because nobody wants to touch the build pipeline again.
 
 ---
 
@@ -230,7 +232,7 @@ ANYWHERE / MOBILEFIRST  ──────────▶  MAXIMO MOBILE
 
   • Decommission the MobileFirst /        • Configure data sets, sync
     Anywhere server                          policies, and app definitions
-  • Remove Anywhere extensions               in Maximo Mobile Studio
+  • Remove Anywhere extensions               in Application Configuration
     and custom adapters                    • Reuse desktop object structures,
   • Retire app-signing / build               security groups, RBAC
     pipeline                               • Retrain technicians on the
@@ -238,12 +240,33 @@ ANYWHERE / MOBILEFIRST  ──────────▶  MAXIMO MOBILE
 ```
 
 1. **Decommission the MobileFirst / Anywhere server** — it has no successor; the middle tier is gone.
-2. **Remove Anywhere extensions and custom adapters** — their logic, where still needed, moves into object structures, automation scripts, or Mobile Studio configuration.
-3. **Configure Maximo Mobile** — data sets, sync policies, and the JSON app definitions.
+2. **Remove Anywhere extensions and custom adapters** — their logic, where still needed, moves into object structures, automation scripts, or MAF app configuration (app XML and AppCustomizations.js).
+3. **Configure Maximo Mobile** — data sets, sync settings, and the MAF apps in Application Configuration (duplicate IBM's app before changing it).
 4. **Retrain** — the offline-first apps are simpler, but they *are* different. Budget for it.
 
 <aside>
-⚠️ **Watch out:** Do not treat "Anywhere → Mobile" as a like-for-like port. Anywhere customizations built as MobileFirst adapters have no direct equivalent — re-express the requirement using REST, object structures, automation scripts, and Mobile Studio rather than trying to recreate the old extension.
+⚠️ **Watch out:** Do not treat "Anywhere → Mobile" as a like-for-like port. Anywhere customizations built as MobileFirst adapters have no direct equivalent — re-express the requirement using REST, object structures, automation scripts, and MAF configuration in Application Configuration rather than trying to recreate the old extension.
+</aside>
+
+---
+
+## 🆕 What MAS 9.2 Adds to Maximo Mobile
+
+MAS 9.2 went GA on 25 June 2026. These are the mobile changes worth planning for (IBM's 9.2 what's-new pages):
+
+| Area | What's new in 9.2 | Why it matters |
+|---|---|---|
+| **New apps** | A **Locations** app for creating and updating locations and their hierarchy. A **mobile dashboard** landing page with configurable tiles. For HSE and Oil & Gas customers, **Incident Reporter** (now with maps) and **Permit to Work** requests | Location data capture and safety work move to the field, not the back office |
+| **Sync** | **Individual record synchronization**, **background fetch**, **parallel data downloads at login**, and controls for record image downloads | Faster logins and less "sync everything again" pain on big assignments |
+| **Shared data** | Apps can reuse another app's downloaded data (`mobile-shared-data-from`), falling back to their own download | Less duplicate data on the device when users run several apps |
+| **Navigation** | The separate "Role Based Applications" menu is gone. Mobile apps appear in normal menus with a "(Mobile)" label | Retrain users who were told to "look under Role Based Apps" |
+| **Configuration** | Application Configuration previews 50–80% faster, publishes through a queue with progress and logs, generates delta files for every XML file, and warns you before you edit IBM's default JavaScript | Customizations survive upgrades more reliably. Duplicate the IBM app first |
+| **Language** | Arabic and Hebrew support for MAF apps | Right-to-left fleets are now in scope |
+
+Also on the 9.2 list, and worth checking against your licensing: on-device (offline) Visual Inspection inference, Maximo Assistant on mobile, QR-code device setup, and inventory additions such as ABC type as a count-book criterion and issue returns.
+
+<aside>
+⚠️ **Watch out:** Patches keep landing on the 9.2 line. Manage 9.2.4 (29 Sep 2026) alone fixed a batch of mobile defects, including labor-timer status, ad hoc counts in Inventory Counting, and Service Request navigation. Mobile app store updates ship separately from server patches, so test both together.
 </aside>
 
 ---
@@ -253,7 +276,7 @@ ANYWHERE / MOBILEFIRST  ──────────▶  MAXIMO MOBILE
 1. **Thou shalt not build on Anywhere** — it ended at MAS 8.9 and is unsupported in MAS 9.
 2. **Thou shalt scope sync policies carefully** — offline data is only what was pulled at sync time.
 3. **Thou shalt reuse the desktop's object structures and validation** — one source of truth for business rules.
-4. **Thou shalt configure in Mobile Studio first**, scripting and REST only when the logic demands it.
+4. **Thou shalt configure in Application Configuration first** — app XML, then `AppCustomizations.js` — and never edit IBM's own controllers.
 5. **Thou shalt inherit the web security model** — same groups, signatures, identity, and RBAC.
 6. **Thou shalt not plan a standalone Assist app** — collaboration lives inside Mobile, with Collaborate for the expert.
 7. **Thou shalt plan Anywhere migration as two migrations** — app platform *and* mobile platform.
@@ -267,6 +290,7 @@ ANYWHERE / MOBILEFIRST  ──────────▶  MAXIMO MOBILE
 - **The Technician app is the flagship**: an offline assigned work order list with start/stop, labor (LABTRANS), materials, meters, tasks, failure codes, DOCLINKS attachments, and inline inspections.
 - **Inspections and Inventory apps reuse the desktop's form engine (Graphite), object structures, and validation**; 9.0 moved inspection forms to Graphite with better performance and question attachments.
 - **Security is inherited, not rebuilt** — same security groups, signature options, MAS identity, and RBAC, with offline enforcing permissions captured at sync time and transactions able to fire MIF events.
+- **MAS 9.2 adds a Locations app, a mobile dashboard, HSE Incident Reporter and Permit to Work, and faster, finer-grained sync** — plus a configuration tool that protects your customizations through upgrades.
 - **The standalone Assist app was dropped in 9.0** — remote collaboration is now part of Maximo Mobile, with a Collaborate add-on for the expert side.
 
 ---
@@ -276,6 +300,9 @@ ANYWHERE / MOBILEFIRST  ──────────▶  MAXIMO MOBILE
 **IBM Official**
 - [What's new in Maximo Manage 9.0 — IBM Documentation](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=manage-in-90)
 - [Maximo Manage documentation home](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
+- [What's new in Maximo Mobile 9.2 — IBM Documentation](https://www.ibm.com/docs/api/v1/content/SSLPL8_cd/com.ibm.mam.doc/overview/c_wn_mobile_92.html)
+- [Configuring and customizing IBM Maximo Mobile — IBM Support](https://www.ibm.com/support/pages/configuring-and-customizing-ibm%C2%AE-maximo%C2%AE-mobile)
+- [IBM Maximo Mobile architecture — IBM Support](https://www.ibm.com/support/pages/ibm-maximo-mobile-architecture)
 
 **Community**
 - [New Features in MAS 9.0 and 9.1 — Maximo Secrets](https://maximosecrets.com/2025/07/06/new-features-in-mas-90-and-91/)

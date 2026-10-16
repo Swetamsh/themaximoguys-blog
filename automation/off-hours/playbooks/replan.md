@@ -11,6 +11,7 @@ queue so the plan in `content-planning/` is eventually fulfilled completely.
    append queue items. Content gets produced by later ticks.
 3. Never re-add items for work that already exists on disk, and never duplicate an id
    already present in `automation/off-hours/queue.json` (including done/failed items).
+4. **`knowledge_base/DOC00_*` is a living gap appendix, not a source document.** Never queue series from it, and never edit it (the weekly `gap-scan` job owns it). Its §5 proposals are queued only by a human.
 
 ## Step 1 — Audit
 

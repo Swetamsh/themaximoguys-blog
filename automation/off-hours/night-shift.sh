@@ -103,6 +103,7 @@ case "$ITEM_TYPE" in
   blog-post)   PLAYBOOK="$DIR/playbooks/blog-post.md" ;;
   cover-batch) PLAYBOOK="$DIR/playbooks/cover-batch.md" ;;
   replan)      PLAYBOOK="$DIR/playbooks/replan.md" ;;
+  gap-scan)    PLAYBOOK="$DIR/playbooks/gap-scan.md" ;;
   *) log "FAIL $ITEM_ID unknown item type '$ITEM_TYPE'"; mark_status "$ITEM_ID" failed "unknown type"; exit 1 ;;
 esac
 
