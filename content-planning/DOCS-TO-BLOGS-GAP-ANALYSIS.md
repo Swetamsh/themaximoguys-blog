@@ -572,3 +572,26 @@ content-and-asset-complete `MAS-9-2` series 2026-08-12, built outside the night-
 | 4 | Bob meets Maximo: MAS 9.2 MCP, IBM skills, Local Dev Mode, TMG tools | §13-14 | `bob-04-bob-and-maximo` |
 | 5 | Pilot playbook: metrics, competitors, open questions | §9-11, 15-16 | `bob-05-pilot-playbook` |
 | covers | 6 covers, one batch | — | `covers-bob` |
+
+---
+
+## 8. Recommended Series Outline: MAS-MAF-DEV (DOC17) — queued 2026-10-16
+
+`posts/MAS-MAF-DEV/`, index + 9 parts, `draft: true`, MarkerBoard covers. Source: `knowledge_base/DOC17_MAF_LOCAL_DEVELOPMENT_FIELD_GUIDE.md`
+(full plan in DOC17 §16). First hands-on developer line on the Maximo Application Framework; MAS-MANAGE Part 2 and MAS-BOB Part 4
+only mention MAF. Hook: IBM's new MAF Local Configuration (ex-"Local Dev Mode") VS Code/Bob extension brings MAF development back to the desktop.
+Queued 2026-10-16 in `automation/off-hours/queue.json` (11 items, posts priority 3, covers priority 4). Resolve DOC17 §17 blockers (#1 IBM Docs re-verify, #2 cache location) first.
+
+| Part | Topic | DOC17 sections | Queue id |
+|---:|---|---|---|
+| 0 | Series index | §1, §6.4 | `maf-00-index` |
+| 1 | What MAF is: Graphite, XML→React, mobile shell, RBAs, MAFAPPDATA | §2 | `maf-01-what-is-maf` |
+| 2 | Anatomy of app.xml: pages, states, datasources, schemas | §3 | `maf-02-app-xml-anatomy` |
+| 3 | Controllers and AppCustomizations.js (upgrade-safe logic) | §4 | `maf-03-controllers-customizations` |
+| 4 | Three generations of tooling: Docker maf-tools → Application Configuration → Local Configuration | §6, §14 | `maf-04-tooling-generations` |
+| 5 | Hands-on: MAF Local Configuration in VS Code / IBM Bob | §7-8 | `maf-05-local-configuration-handson` |
+| 6 | Debugging MAF apps | §9, §14 | `maf-06-debugging` |
+| 7 | Offline by design: mobile download, filters, sync | §10 | `maf-07-offline-data` |
+| 8 | Promoting and upgrading MAF apps without Migration Manager | §11-12 | `maf-08-promotion-upgrades` |
+| 9 | AI-assisted MAF: Bob MAF Config mode, Graphite MCP, guardrails | §15 | `maf-09-ai-assisted-maf` |
+| covers | 10 covers, one batch | — | `covers-maf` |
