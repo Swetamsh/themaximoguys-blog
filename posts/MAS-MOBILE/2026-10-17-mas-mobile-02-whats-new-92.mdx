@@ -1,0 +1,546 @@
+---
+title: "Maximo Mobile 9.2: What's New for Field Teams, and How to Roll It Out"
+description: "A practitioner's walkthrough of the Maximo Mobile 9.2 release: Mobile dashboard, individual record sync, background fetch, parallel downloads, image controls, crew work orders, on-device visual inspection, Assistant on mobile, plus the Manage 9.2.4 mobile APARs and a rollout test plan."
+date: "2026-10-17"
+slug: "mas-mobile-02-whats-new-92"
+tags: ["Maximo", "MAS", "Maximo Mobile", "MAS 9.2", "Offline Sync", "Mobile Configuration", "Field Service", "Release Notes", "Rollout"]
+draft: true
+tier: "admin"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-mobile-02-whats-new-92.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What are the biggest changes for field users in Maximo Mobile 9.2?"
+    answer: "Four changes show up on day one. The Mobile dashboard becomes the default entry point after sign-in when it is enabled, replacing the app grid as the first screen. Individual record synchronization lets a technician refresh one work order or asset instead of syncing everything. Crew work order management gives crew members and supervisors a dedicated crew schedule list and shared travel and work timers. Material Request and Timesheets arrive as their own apps. For admins, the headline changes are the new Mobile Configuration application, preloaded database controls, background fetch and configurable image handling. Treat the dashboard as the change that needs retraining, because it changes what users see first."
+  - question: "Is calibration still available in the Technician app after upgrading to 9.2?"
+    answer: "Only if you switch it on. IBM's 9.2 page says calibration is now controlled by the maximo.mobile.technician.enablecalibration system property, and that by default it is disabled. When disabled, calibration fields and data are hidden from technicians, which also reduces download and sync volume. After an admin changes the value, technicians must log in again and reload all data. If you run a metrology or calibration shop, add this property to your upgrade checklist and test it in a non-production workspace before the cutover, because the symptom of forgetting it is simply that calibration data and the calibration icon are missing."
+  - question: "How often should I run the preloaded database generation cron task?"
+    answer: "IBM does not publish a single number we could verify for 9.2, so this is practitioner guidance. A thread on the IBM Community reports IBM guidance of once every 24 hours for most production environments, every 12 hours if lookup data changes quickly, and 24 to 48 hours for stable data, scheduled after off-peak batch jobs and finishing before users start their day. Another contributor in the same thread would never run it more often than daily and described a customer running it every three hours who saw no preload retrieval for over a week. Generation also costs server resources, and 9.2.4 includes a fix (DT498526) for MobileDbGeneration cron tasks growing JVM threads and memory until pods run out of memory, so a tighter schedule has a real cost."
+  - question: "Does Maximo Mobile 9.2 let a technician run visual inspection on the device?"
+    answer: "Yes, on iOS only. IBM's 9.2 page describes a Visual Inspection application that integrates with Maximo Visual Inspection so quality inspectors can capture images with an iPhone or iPad camera and run trained models on the device or against the Maximo Visual Inspection training server. Triggers can be manual, barcode or QR scan, timed, MQTT message or object detection. It is a separate application from the Technician app, and it is not the same as the inspection forms feature, which can call MVI models for image questions. If your field estate is Android-only, there is no on-device equivalent in the release notes we reviewed."
+  - question: "Is Maximo Mobile a PWA, and does that change how I roll out 9.2?"
+    answer: "Maximo Mobile is not a PWA. It is a native store shell for iOS, Android and Windows that downloads server-published Graphite (MAF) apps from the Manage server. That matters for rollout in two ways. App-level changes such as new dashboard tiles or a revised Technician app reach devices when the new revision is published, with no store release. Shell-level changes such as the BLE plug-in, biometric e-signatures and Android log-file saving need the new shell version on the device, so your MDM or store update policy gates them. Test both paths separately."
+keyTakeaways:
+  - "The Mobile dashboard becomes the first screen after sign-in once enabled, so training material built around the Navigator app grid is out of date for 9.2 users"
+  - "Login and sync speed are now admin-tunable: parallel downloads, background fetch, preloaded database controls, image download controls and upload compression all live in Mobile Configuration or Manage properties"
+  - "Calibration is disabled by default via maximo.mobile.technician.enablecalibration, and flipping it forces every technician to re-login and reload data"
+  - "Shell features (BLE, biometric e-signatures, Android log saving) depend on the installed app version, while app features (dashboard, Timesheets, crew work orders) arrive by publishing a revision"
+  - "Manage 9.2.4 (29 September 2026) carries about 25 to 30 mobile-related APARs, including MobileDbGeneration memory growth, slow work order save and ICMOBILE ad hoc count fixes, so patch level belongs in your test plan"
+series:
+  name: "MAS Mobile"
+  part: 2
+  total: 3
+tldr: "Maximo Mobile 9.2 changes the first screen your technicians see, the way they sync, and the knobs you have to control data volume. This post groups every item in IBM's 9.2 what's-new page by who it affects (technician, storeroom clerk, inspector, admin, developer), explains the settings that matter for login time and bandwidth, flags the defaults that bite on upgrade (calibration off, dashboard precedence), reviews the mobile APARs fixed in Manage 9.2.4, and ends with a pilot and test plan that exercises both the native shell and the server-published apps. Items we could not confirm from IBM text are tagged."
+seoTitle: "Maximo Mobile 9.2: What's New for Field Teams"
+seoDescription: "Maximo Mobile 9.2 explained: dashboard, record sync, background fetch, image controls, crew work orders, 9.2.4 APARs and a rollout test plan."
+relatedSlugs: ["mas-manage-maximo-mobile", "mas-features-maximo-mobile", "mas-features-mobile-supply-chain", "mas-maf-dev-00-series-index", "mas-mobile-01-app-catalog", "mas-mobile-03-hse-incident-permit"]
+clusterSlugs: ["mas-mobile-01-app-catalog", "mas-mobile-03-hse-incident-permit"]
+targetQuestions:
+  - "What's new in Maximo Mobile 9.2?"
+  - "What is the Maximo Mobile dashboard and when is it the default screen?"
+  - "How do I speed up Maximo Mobile login and sync?"
+  - "How do I control image downloads and uploads in Maximo Mobile?"
+  - "Which mobile fixes are in Maximo Manage 9.2.4?"
+  - "How should I test and roll out a Maximo Mobile upgrade to field teams?"
+semanticKeywords:
+  - "Maximo Mobile 9.2 release notes"
+  - "Maximo Mobile dashboard"
+  - "Maximo Mobile background fetch"
+  - "preloaded database Maximo Mobile"
+  - "individual record synchronization"
+  - "Maximo Mobile crew work orders"
+  - "maximo.mobile.technician.enablecalibration"
+  - "Maximo Mobile Mobile Configuration application"
+  - "Manage 9.2.4 APAR mobile"
+  - "Maximo Mobile rollout test plan"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Maximo Manage on MAS 9.2 (ideally 9.2.4 or later) with Maximo Mobile enabled"
+  - "Administrator access to Mobile Configuration, System Properties and Cron Task Setup in Manage"
+  - "A test iOS or Android device with the current Maximo Mobile shell"
+---
+
+# Maximo Mobile 9.2: What's New for Field Teams, and How to Roll It Out
+
+> 🎯 **Who this is for:** Mobility leads, Maximo administrators and field supervisors who have to decide what to switch on, what to retrain and what to test before 9.2 reaches technicians' phones. Developers should read Part 1 for the app inventory and then the [MAS-MAF-DEV series index](/blog/mas-maf-dev-00-series-index).
+
+*Part 2 of 3 in the MAS Mobile series. This is a three-part mini-series with no separate index post; the parts link to each other at the bottom.*
+
+## 🔥 The Release Notes Are Long. Your Rollout Window Is Not.
+
+IBM's "What's new in Maximo Mobile 9.2" page runs to dozens of entries, and several of them are repeated under more than one heading (the notification panel changes appear three times). Read it top to bottom and you come away with a pile of features and no idea which of them will change a technician's Monday morning.
+
+We read the whole page, cross-checked it against our knowledge base and the Manage 9.2.4 readme, and rebuilt it around the questions a rollout lead actually asks:
+
+- What will users see differently the moment they sign in?
+- What can I do to make login and sync faster, and what does it cost?
+- What changed in the apps each persona uses?
+- What defaults changed that could surprise me after the upgrade?
+- Which defects were fixed in the 9.2 patch train, and what does that say about my patch level?
+- How do I test all of it on real devices before field crews depend on it?
+
+A reminder on ground rules from Part 1: Maximo Mobile is **a native store shell that downloads server-published MAF apps**. It is not a PWA. Keep that split in mind, because it decides how every feature below reaches a device and what has to be tested.
+
+<aside>
+
+💡 **Key insight:** In 9.2, the biggest wins are not new screens. They are *controls*: control over what downloads, when it downloads, how big it is and who gets it first. If you only do one thing after the upgrade, learn the Mobile Configuration application.
+
+</aside>
+
+## 🧭 The 9.2 Release at a Glance
+
+Here is the release grouped the way IBM's page groups it, with our read on who is affected and whether the change arrives with the app revision or needs a newer shell on the device.
+
+| Area | Headline changes | Mostly affects | Arrives via |
+|---|---|---|---|
+| First screen | Mobile dashboard as default entry point; in-app tour; what's new carousel | Everyone | App revision |
+| Sync and data | Individual record sync, sync all records, stop sync, refresh options, background fetch, parallel downloads, preloaded database controls | Technicians, admins | Mix of app and server settings |
+| Data volume | Record image download controls, upload compression, attachment-count limit, MOBILE_DOCLINKS relationship | Admins, developers | Server settings and app revision |
+| Technician work | Crew work orders, Timesheets, Material Request, failure report prompts, tasks, actual materials, meters | Technicians, supervisors | App revision |
+| Calibration | Environmental conditions, uncertainty, accuracy validation, optional calibration property | Calibration technicians | App revision plus property |
+| Storeroom | Return to inventory, receive services and direct issue, ABC count books, scanner actions | Storeroom clerks | App revision |
+| Inspections | Scan responses, calculated responses, geolocation, site-level forms, offline completion | Inspectors, form designers | App revision |
+| Device capabilities | BLE plug-in, biometric e-signatures, Android log saving, deep links | Technicians, integrators | Native shell |
+| AI and quality | Assistant in Maximo Mobile (online only), Visual Inspection app (iOS only) | Selected users | Shell plus server config |
+| Security and login | Default login method, SELFSERVICE options for service requests | Admins | Server config |
+
+## 🏠 The Mobile Dashboard Changes the First Screen
+
+IBM's wording is direct: "The new Mobile dashboard is now the default entry point after sign-in. When enabled, the dashboard will take precedence and will be displayed." It offers "quick access to your apps and key operational information through actionable tiles showing pending work, recent activity, and task progress." You can launch apps from tiles, work offline with automatic sync, and reach simplified settings and device information in one place. Importantly, "the dashboard uses already downloaded data, minimizing additional synchronization."
+
+That last sentence is the design principle behind much of 9.2. The dashboard does not run its own queries. It reads what the Technician and other apps already downloaded. Two practical consequences follow.
+
+**Tiles are only as fresh as the last sync.** A tile that says "5 pending" is counting local records. If background fetch is not configured and the technician has not refreshed, the tile can be stale. Train users to read the dashboard as "what my device knows," not "what the server knows."
+
+**Your training deck has a screenshot problem.** Users who used to land on the Navigator grid will now land on the dashboard. The Navigator still exists as the launcher and sync-error view inside the shell (see Part 1), but it is no longer the front door once the dashboard is enabled.
+
+> 📌 **What we could not verify:** IBM's page does not name the setting that enables the dashboard or say whether it can be enabled per group. Check the Mobile Configuration application on your system. Do not assume it is on by default after the upgrade.
+
+### Onboarding help that ships with 9.2
+
+Four user-assistance items are easy to overlook and worth using in your pilot.
+
+| Item | What it does | Use it for |
+|---|---|---|
+| Set up Maximo Mobile app | A link on the MAS login page or the user profile menu that walks a user through installing the app on a device | Self-service onboarding in pilots |
+| In-app tour | Highlights what is new in the Navigator for 9.2 | First-login orientation |
+| What's new carousel | Summarises key improvements inside the app | Release communication |
+| In-app checklist for administrators | In Manage, Help & Support > Show me how, then the onboarding checklist | Admin task sequencing |
+| Interactive onboarding guide | Online or PDF guide for technicians or admins | Training packs |
+
+On the setup link: our brief for this post mentioned QR-code based install, and that is a sensible reading of "quickly install Maximo Mobile app on your device" from a login page. IBM's text, however, does not use the words "QR code" for this feature. **[UNVERIFIED]** whether the flow presents a QR code on desktop for a phone to scan. Try it on your own login page before you put it in a rollout communication.
+
+## ⚡ Sync Speed and Data Control: The Real Story of 9.2
+
+This is the section to read twice. Slow first login and heavy sync are the number-one complaint about offline Maximo Mobile, and 9.2 gives you more levers than any previous release.
+
+First, a quick model of how data gets to a device, because it explains which lever does what.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                     MANAGE SERVER                            │
+│                                                              │
+│  Lookup data (assets, items, domains)                        │
+│        │  generated on a schedule by the preload cron task   │
+│        ▼                                                     │
+│  ┌──────────────────┐     ┌───────────────────────────────┐  │
+│  │ Preloaded DB     │     │ Transactional data via REST   │  │
+│  │ (per group/site) │     │ (work orders, usage, labor)   │  │
+│  └────────┬─────────┘     └───────────────┬───────────────┘  │
+└───────────┼───────────────────────────────┼──────────────────┘
+            ▼                               ▼
+   first login download          delta / record sync / refresh
+            │                               │
+            └───────────────┬───────────────┘
+                            ▼
+              ┌───────────────────────────┐
+              │ Device: native offline DB │
+              │ + dashboard reads from it │
+              └───────────────────────────┘
+```
+
+A community thread on the IBM Community describes the split the same way: the preload "holds only lookup data," while transactional data "is always downloaded interactively using the REST API." Keep that picture in mind as we go through the levers.
+
+### Lever 1: Parallel data downloads
+
+IBM states: "You can now configure parallel data downloads to reduce login time. Maximo Mobile downloads configuration data, system information, and images at the same time." It also "consolidates module update checks into a single request," which reduces network traffic.
+
+There is a related, older property in the Manage system property table: `maximo.mobile.download.parallel`, described as "the number of apps that the Navigator can download at the same time," default 3, and 0 meaning all apps at once. We cannot confirm from IBM text whether the 9.2 "parallel data downloads" feature is that property, an extension of it, or a separate setting, so treat them as possibly distinct and read the IBM topic "Optimizing data downloads for faster login" for your build.
+
+### Lever 2: Background fetch
+
+"Background fetch allows the app to download data automatically. You can schedule data preparation for specific user groups so data is ready before users start their workday. This reduces login time and improves the user experience."
+
+The key phrase is *for specific user groups*. The pattern that makes sense is to prepare a crew's data before the shift starts, so the first login of the day is a delta, not a big download. We found no IBM page body or practitioner write-up describing the exact scheduling options, and a web search for the setting returned nothing beyond the release-note sentence, so **the configuration screens are [UNVERIFIED] in this post.** Pilot with one crew and measure first-login time before and after.
+
+### Lever 3: The preloaded database
+
+Admins can now "configure preloaded databases in the Mobile Configuration application of Maximo Manage," view status, disable or delete them, and "manually stop a preloaded database generation." A stopped generation "cannot be resumed", and "a new database generation starts according to the schedule defined in the mobiledbCrontask cron task."
+
+A note on naming. IBM's 9.2 page writes the cron task as `mobiledbCrontask`. Older IBM support material and the practitioner thread call it `MobileDbGeneration`. Search your Cron Task Setup for both spellings and trust what you see.
+
+How often should it run? Practitioner guidance, not IBM documentation:
+
+| Source | Guidance |
+|---|---|
+| IBM guidance as quoted in a community thread | Once every 24 hours for most production; every 12 hours for fast-changing lookup data; 24 to 48 hours for stable data; schedule after off-peak batch jobs and finish before users start |
+| Second contributor, same thread | Never more often than daily; somewhere between daily and weekly depending on database count, generation time and change rate; a customer on a 3-hour schedule went 7+ days without a preload retrieval |
+
+Two gotchas from the same thread are worth building into your runbook.
+
+1. **Delta sync does not remove records.** It picks up new and changed records but "would NOT pick up any removal of records." A decommissioned asset stays on the device until a full sync of lookup data.
+2. **The preload is used at first login and on a manual full lookup sync.** Generating more often does not help users who already have a device database.
+
+And one fix to know about: Manage 9.2.4 addresses DT498526, where "MobileDbGeneration cron tasks grow JVM threads and memory until pods run out of memory." If you run many preloaded databases (by site and language, say) on a pre-9.2.4 build, watch pod memory around the generation window.
+
+### Lever 4: Record image downloads
+
+IBM adds two places to control images: "the Maximo Mobile offline data settings and container settings," and "Maximo Manage mobile properties to globally manage data usage." The global control is the one that protects bandwidth. We could not retrieve the exact property name for the 9.2 record image toggle (the IBM topic is "Enabling record images download"), so look it up in your build.
+
+The 9.1-era ImgLib properties from Manage documentation remain the best-documented tools for image size, and they combine like this.
+
+| Property | Effect |
+|---|---|
+| `maximo.mobile.disableImagesFromLookupDatasro uces` (spelling as it appears in the extracted IBM table; check the exact name in System Properties) | TRUE: no images in lookup datasources; the preloaded database is built without lookup images |
+| `mobile.imglib.resizeatserver` | TRUE: images are resized at the server before download; FALSE: the original image is returned |
+| `mobile.imglib.thumbnail.width` / `mobile.imglib.thumbnail.height` | Target thumbnail size, for example 50 by 50 |
+
+IBM's procedure for retrieving and resizing images uses the `NameVariationGenerator` cron task (ThreadCount and an optional WhereClause), then a request to the `/maximo/oslc/graphite/mobile/images` endpoint.
+
+> ⚠️ **Rule of thumb:** If your assets or items carry high-resolution images and your crews are on cellular data, turn lookup images off first and measure. It is the cheapest large win.
+
+### Lever 5: Upload compression and attachment limits
+
+On the way *up*, 9.2 adds two admin controls.
+
+- **Image upload compression:** enable or disable compression, set a default upload quality, and "allow user override so mobile users can choose to upload a full-resolution image when required." This is a bandwidth-versus-evidence trade-off. Inspection and HSE photos may need the override left on.
+- **Attachments per upload:** you can configure the maximum number of attachments a user can upload in one action. IBM's reasoning: file-size limits alone "allowed users to initiate large bulk uploads," causing "upload failures, memory constraints, or reduced application performance" in low-bandwidth environments.
+
+The older bulk-download attachment properties still matter on the way down: `maximo.mobile.attachments.bulkDownload.automatically` (default true), a file-size cap `filesizelimit` (default 5120 KB), and a `filetypes` list (all types by default). If your crews complain about huge syncs, check whether every PDF manual on every work order is being pulled automatically.
+
+### Lever 6: Doclinks for developers
+
+Developers can now split document-link relationships: "The MOBILE_DOCLINKS relationship has a simplified query that downloads data faster to mobile devices. The MANAGE_DOCLINKS relationship handles browser access." You can customise each independently. If you previously tuned DOCLINKS for desktop and mobile slowed down, this is the fix, and it belongs in the MAF development work covered in the [MAS-MAF-DEV series](/blog/mas-maf-dev-00-series-index).
+
+### Reading the sync controls together
+
+| You want to | Pull this lever | Cost or risk |
+|---|---|---|
+| Cut first-login time | Preloaded DB generation on schedule, parallel downloads, background fetch for crews | Server load at generation time; stale tiles if not refreshed |
+| Cut bytes on cellular | Disable lookup images, server-side resize, upload compression, attachment-count cap | Lower image fidelity unless user override is allowed |
+| Stop timeouts on large fetches | `maximo.mobile.async.fetch` = 1 (MAS only, per a 2026 community post, which reports a 5-second server poll) | Extra polling traffic |
+| Reduce wasted sync on related data | `maximo.mobile.advanced.delta` = 1 (enables delta checks on related data) | More server-side delta storage, MobileDeltaInfo table activity |
+| Keep stale records out | Full lookup sync after decommissions | Time on device |
+| Avoid app-by-app downloads queueing | `maximo.mobile.download.parallel` (default 3) | Concurrent load |
+
+## 🔄 Sync From the Technician's Side
+
+The admin controls are half of it. The other half is what a technician can now do when the network is bad or the clock is ticking.
+
+**Individual record synchronization.** "Records including work orders and assets can be refreshed individually so that time can be saved on data synchronization." This is the feature field crews will like most. Before, refreshing one work order meant refreshing a list. Now they can pull the one record they are standing in front of.
+
+**Sync all records.** A new Manage option synchronises "all records that are associated with the current app in a single action," so users "do not have to use the Cloud sync page or update data from other apps."
+
+**Stop in-progress synchronisation.** When sync starts on pages that use card groups, "an inline notification displays a Stop button." Records and pages already downloaded remain available. Two caveats from IBM: in this release stop-sync works only for card group components, and the underlying API is available for application teams to implement elsewhere.
+
+**Refresh data options.** The Record data options page now offers **Reload all data**, **Update recent changes** and **Do not download**. Make sure your field guide explains the difference, since "Reload all data" is the one that pulls the big payload.
+
+**Persistent offline indicator.** "The app persistently indicates the disconnected state so you always know that you are working with local data." Work done while disconnected is saved on the device and synchronised when connectivity returns, and the user is guided to reconnect.
+
+**Case-insensitive search on all records.** Added for languages with non-ASCII characters. If your 8.x or 9.0 users learned to type exact case, this removes a long-standing annoyance.
+
+**Meters.** The most recent reading is shown regardless of which app entered it, individual meters can be refreshed when online, and meter definitions download once with only readings updated afterwards. You can also edit one meter at a time in a work order, with a search box on the Enter readings page, which matters for assets with dozens of meters.
+
+## 🔧 What Changed for Technicians and Supervisors
+
+### Crew work orders
+
+IBM's description is substantial: "Technicians and crew supervisors can now view, accept, execute, and complete work orders assigned to crews. A dedicated schedule list displays crew-assigned work orders separately from individual assignments. Any crew member or supervisor can start or stop travel and work timers on behalf of the crew, automatically creating labor transactions for all active crew members." Labor can be reported for the whole crew or for individual members, with edit and delete. "When a crew work order is completed, all active labor transactions are automatically closed."
+
+Two details deserve attention. First, the feature "is controlled by a security option," so admins enable it per security group. It will not appear just because you upgraded. Second, auto-closing all active labor transactions on completion is convenient but changes what your labor reports contain: one person's tap now writes to everyone's time. Agree the policy with payroll before you enable it.
+
+A small related change: Active work can now be selected from the Technician work order drop-down, showing all active work orders where labor transactions have started.
+
+### New and separated apps
+
+| App | What IBM says | Rollout note |
+|---|---|---|
+| Timesheets | Read-only, time-based view of labor for today or yesterday, with work order, asset, location, transaction type, hours, duration, premium pay codes and task details; "always fetches the latest information from the server" | Needs a connection; do not promise it offline |
+| Material Request | "A separate app in Maximo Mobile now": create requests for any work order, view existing ones, add descriptions of materials ordered | Update training: it was part of the Technician flow before |
+| Permit to Work | Create and update permit records integrated with HSE and Oil and Gas workflows | Covered in Part 3 |
+| Locations | Create, view and modify locations; view hierarchies; Maps for navigating to the work location | Parent-child changes still require the role-based app in Manage |
+
+The Timesheets "always fetches from the server" behaviour is the opposite of the dashboard's "uses downloaded data." A user in a basement with no signal will have a working dashboard and an empty Timesheets screen. That is by design, and it is worth saying in training.
+
+### Work order execution details
+
+- **Failure report prompts:** saving a work order as Closed or Completed prompts for a failure report first, and marking the asset status Down triggers the same prompt.
+- **Tasks:** add tasks, edit tasks, update observations, create follow-up work orders, and filter and sort the task list (filters: status, asset, location; sorts: task number, status, task sequence).
+- **Actual materials:** in Report work, Materials Used, tap plus to add a material as an actual cost with description, quantity and unit cost. Items with quantity and unit cost are saved as Item line type.
+- **Live bins and balances:** adding items shows available bins and balances, which you can refresh online; offline you see only locally available bin data. The result is saved as an item-type transaction and can be verified in Work Order Tracking under Actuals > Materials.
+- **Scan to filter rotating assets:** a scanner icon filters rotating materials or tools by barcode.
+- **Actual labor and materials details** are now viewable on the work order.
+- **Offline inspections:** an inspection completed offline now sets the form to Completed without needing to be online.
+- **Safety hazard option on service requests**, follow-up work shown inside the service request, and configurable fields on Create Service Request (remove, reorder or disable standard fields such as Asset or Service Address).
+- **Related records:** from an asset or location, a Related records page shows counts and lets users launch Work Orders, Inspections, Assets or Locations, and create associated records of the types configured in Maximo Mobile.
+
+### Calibration: the default that will surprise you
+
+IBM's 9.2 page adds environmental-conditions tick marks, uncertainty fields, extended failure reporting (instrument used after expiry, immediate action, ready to use), accuracy validation for calibration standards with a **Bypass Accuracy Validation** checkbox, and the ability to remove rotating tools from completed or closed calibration work orders when the organisation allows it. All good news for metrology teams.
+
+But then: "Administrators can now control calibration functionality in Maximo Mobile with the `maximo.mobile.technician.enablecalibration` system property... By default, the property is disabled." And: "Once an admin changes the property value, technicians must re-login and reload all data."
+
+If you serve calibration technicians, this is a go-live blocker in the shape of a default. A community performance post agrees on the default (0, calibration data excluded from API responses), and adds that disabling it trims download size. Our suggestion: leave it off for general maintenance populations and enable it only for the calibration group's environment, if your architecture lets you separate them. Since it is a system property, it is global, so plan the re-login event for everyone.
+
+IBM's calibration icon logic is data-driven. The icon shows when the asset or location is not calibrated and the work type's WORKTYPE synonym domain maximum value is `CAL`, or when at least one datasheet is attached. Test both paths.
+
+```sql
+-- Check which work types will trigger the calibration icon on this system
+SELECT worktype, wtypedesc, orgid
+FROM   worktype
+WHERE  worktype IN (SELECT value FROM synonymdomain
+                    WHERE domainid = 'WORKTYPE' AND maxvalue = 'CAL');
+```
+
+The query is illustrative; verify column names against your Database Configuration before running it.
+
+## 📦 Storeroom and Inspection Updates
+
+### Storeroom clerks
+
+| Change | Where | Why it matters |
+|---|---|---|
+| Return items to inventory | Issues and Transfers | Search by barcode or QR; filter by item, description, work order, material request, asset or location; return many items in one process using an inventory usage record |
+| Receive materials, services and direct-issue items | Inventory Receiving | Search POs and shipments of any storeroom at the site |
+| Attachments and item images during receiving and counting | Receiving and Counting | Evidence of damage and correct item pictures |
+| ABC selection type | Inventory Counting | Cycle counting by ABC class |
+| Work order look-up | Issues and Transfers | Context while issuing or returning |
+| Select a storeroom for ad hoc counts and reconciliation | Inventory Counting | The Count book screen shows the user's insert site records regardless of default storeroom |
+| Configurable scanner actions | Inventory and other apps | After a scan fills a field, a follow-on action fires based on the typical workflow for that page |
+
+Scanner actions deserve a pilot. They make multi-scan workflows faster but they also change what a scan does, and a storeroom that has muscle memory for the old behaviour will notice.
+
+### Inspections
+
+IBM lists a heavy set of form-design features: QR, NFC or barcode scanning to populate responses (plus a scan-only response type), calculated read-only responses, form and question instructions with attachments, geolocation responses (points, lines, polygons on a map), comments recorded from the action menu, creating inspections from Work Order Details, file descriptions and names, and **site-level configuration** of forms.
+
+The site-level change has an upgrade effect: "Forms created before the upgrade will be considered ORG only and existing siteid information will be stored in the OLDSITEID attribute and cleared from SITEID." If your inspection forms used SITEID, read IBM's "Upgrading inspection forms to support site-level configuration" before you upgrade. This is a data migration, not a UI tweak.
+
+## 📲 Device Capabilities That Need the New Shell
+
+These features rely on native code, so they arrive with a shell update and not with a published app revision.
+
+| Capability | What IBM says | Rollout implication |
+|---|---|---|
+| Bluetooth Low Energy | A BLE plug-in lets apps "scan for nearby BLE devices, establish a connection, and read sensor data" | Needs app code that uses the plug-in; the release notes do not name a delivered app that uses it **[UNVERIFIED]** |
+| Biometric e-signatures | Face ID, Touch ID or fingerprint to complete e-signatures, with password fallback; users opt in and manage preferences | Pair with the e-signature property `maximo.mobile.esignatureenabled`; we infer this is the gate **[UNVERIFIED]** |
+| Android log files | Save Maximo Mobile log files to a selected folder | Helpful for support; add to your troubleshooting guide |
+| Notification panel | Navigation controls to deep-linked actions, individual or bulk delete, mark all read or unread, unread shown blue and above read, badge counts, sound when closed or minimised | Deletions are permanent; badge dot on Android only |
+| Default login method | Choose local, LDAP, OIDC or SAML as the default, or select a method directly from the URL | Removes a step for SSO-only estates |
+
+### Deep links
+
+The deep link changes are more important than they look because they connect Mobile to the rest of your tool landscape. Per IBM: users can generate and share a deep link from any record view using native sharing; links can use business identifiers such as asset number and site ID instead of internal IDs; if the record is not on the device and the user is online, the app searches the server and downloads it; links can pre-fill fields on edit or create pages through attribute parameters; and if multiple records match, the user picks from a list.
+
+Think of what that enables: a link in an email, a chat message, an IoT alert or an external dashboard that opens the right record in the right app, and for a create page, with asset and location already filled in. We have not found IBM's URL syntax in the text we have, so we are not going to guess one. Use IBM's "Creating deep links for Maximo Mobile" topic.
+
+### Assistant on mobile and on-device visual inspection
+
+**Assistant in Maximo Mobile.** If AI assistant is configured for Manage and the user has permission, it can be used in Maximo Mobile, but "currently, it works only in online mode." Do not put it in an offline-first procedure.
+
+**Visual Inspection application (iOS only).** Quality inspectors "capture images with their iOS device camera and run trained AI models to detect defects, classify objects, and analyze quality in real time," with models run "directly on iOS devices or from the Maximo Visual Inspection training server." Configurable confidence thresholds and failure conditions; triggers by manual action, barcode or QR scan, time interval, MQTT message or object detection; MQTT broker connection; results with pass/fail statistics, confidence scores and captured images.
+
+Two clarifications keep the architecture straight. Per our app catalog, MVI Mobile is a native iOS application, not a MAF app, so it does not follow the publish-and-download path above. And it is distinct from inspection forms calling MVI models for image questions, which is a MAF feature from 9.1.
+
+## 🩹 Manage 9.2.4: The Mobile Patch Train
+
+Your 9.2 upgrade is not one upgrade. Since 9.2, component versions have been independent, and Manage has already reached patch 9.2.4. IBM's readme says it was released on 29 September 2026 and moves Manage to build 9.2.232 with Graphite 3.2.889. Our weekly change log counts roughly 90 APARs in that patch, many in Mobile.
+
+From the readme, these are the mobile-relevant items we extracted. The page layout made some APAR-to-description pairings hard to confirm, so check IBM's linked defect pages before quoting a DT number to a customer.
+
+| Theme | APAR | Fixed behaviour |
+|---|---|---|
+| Labor and time | DT469152 | Reporting labor with the device time zone showed the start date as the previous day when time zones differ |
+| | DT474469 | Starting a labor timer did not move the work order to INPRG with automatic status change configured |
+| | DT500332 | Technician accepted negative values in Labor Actuals Hours |
+| | DT461677 | Reassigning a task in Technician left the original assignment UNASSIGNED instead of Complete or Reassigned |
+| Server-side behaviour | DT472678 | `add()` for WPSERVICE, WPLABOR and ASSIGNMENT created records but returned no response |
+| | DT498526 | MobileDbGeneration cron tasks grew JVM threads and memory until pods ran out of memory |
+| Work order performance | DT496717 | Saving a new work order in Technician took an unexpectedly long time |
+| | DT500262 | Choosing Discard in the Save or Discard dialog did not close it, blocking new work order creation |
+| | DT498070 | Editing a formatted decimal could cause an invalid entry error |
+| | DT498509 | Wildcard (%) asset filters returned no results in Mobile, unlike the role-based app |
+| Inventory | DT495983 | ICMOBILE ad hoc count did not reduce the pending count until the page was refreshed |
+| | DT498398 | Mobile count book reconciliation filter added conflicting conditions and returned wrong results |
+| Service requests | DT496458 | SRMOBILE navigation highlight stayed on the previous section |
+| Inspections | DT495882, DT501327, DT454312, DT498458, DT499214, DT496667 | Route-generated work order inspection errors (BMXAA9573E), "No results found" instead of opening a form, wrong "Revised By" on revision history, Form Type not saved on first save, truncated choice descriptions, untranslated labels |
+| Calibration | DT496153 | As Found and As Left statuses changed from FAIL to PASS after reopening data sheets |
+| Devices and maps | DT500450, DT500675, DT500868, DT461947, DT501071 | iOS 1.0.29 login options missing, Apple Maps Steps view instead of turn-by-turn on Start Travel, layer deselect not removing from the map, map stuck loading, maps failing on Windows with a proxy |
+| Tooling and locale | DT497222, DT495784, DT499504 | AppCustomizations.js upload validation failing for Technician, English pretext under Norwegian, nl_BE meter readings dropping the last digit |
+
+Read that list as a test plan. Every row is a place where someone's real device did the wrong thing. If you are on 9.2.0 or 9.2.1, the Technician save slowness, labor time zone and ICMOBILE fixes alone justify planning the patch.
+
+> ⚠️ **Discrepancy to note:** A web search associated DT474469 with the Manage 9.0.31 readme, while the 9.2.4 readme we fetched lists it in the Organizations area. A fix can legitimately appear in more than one stream. Check your own stream's readme.
+
+## 🧪 Rolling It Out: A Pilot and Test Plan That Works
+
+### Principle: test the shell and the apps separately
+
+From Part 1: the shell is a store app; the apps are server-published. Your regression plan needs two axes.
+
+| Axis | What changes it | How to test |
+|---|---|---|
+| Shell version | App Store, Google Play, MDM push | Same published apps, old shell versus new shell |
+| App revision | Publishing in Application Configuration or an upgrade | Same shell, old revision versus new revision |
+
+The developer-side point in our DOC17 knowledge base reinforces why: a browser preview does not exercise the offline path. Anything touching datasources, lookup data or `mobile-qbe-filter` needs a device test after publish. A developer's localhost check is not a field test.
+
+### Pre-flight: capture the current settings
+
+Before touching anything, snapshot the mobile properties so you can diff after the upgrade.
+
+```sql
+-- Snapshot mobile-related system properties (illustrative; verify column names on your system)
+SELECT propname, propvalue, servername
+FROM   maxpropvalue
+WHERE  propname LIKE 'maximo.mobile.%'
+   OR  propname LIKE 'mxe.mobile.%'
+   OR  propname LIKE 'mobile.imglib.%'
+ORDER  BY propname;
+```
+
+Save the output with the date. After the upgrade, run it again. Anything that changed without you changing it is a conversation with IBM or a colleague.
+
+### Developer note: cross-app shared data
+
+For teams that maintain custom MAF apps, 9.2.0 adds the ability to reuse another app's downloaded data. DOC17 records the syntax as follows (verified against IBM material in our knowledge base; test in your build).
+
+```xml
+<!-- Reuse the Technician app's downloaded data instead of downloading a second copy -->
+<mobile-shared-data-from app-id="techmobile" datasource-id="woDetailsDS"/>
+```
+
+The fallback is that the app downloads its own copy if the shared one is unavailable. The datasource id shown is a placeholder; use the real id from the source app. Cross-app sharing is how the Mobile dashboard and apps such as Timesheets-like views can avoid doubling the download, and it is why custom apps that duplicate Technician datasources should be reviewed after the upgrade.
+
+### The pilot, in four waves
+
+| Wave | Who | Goal | Exit criteria |
+|---|---|---|---|
+| 0: Admin lab | 2 admins, 2 devices (1 iOS, 1 Android) | Snapshot settings, enable dashboard, test preload generation, check cron task naming | All settings recorded; preload generation completes; dashboard shows tiles |
+| 1: Super-users | One crew, 5 to 8 people | Real work with background fetch and individual record sync | First-login time measured; no lost transactions after a day offline |
+| 2: Persona sweep | One person per persona (technician, supervisor, requester, storeroom clerk, inspector, calibration technician) | Cover every app the persona uses | Persona checklists signed off |
+| 3: Region or site | A full site | Load and support | Support ticket volume stable for a week |
+
+### Persona test scripts
+
+Keep each script to something one person can do in twenty minutes, on a real device, in airplane mode for the offline half.
+
+**Technician**
+1. Sign in; confirm the dashboard appears (or does not, if you have not enabled it).
+2. Go offline. Open an assigned work order, start travel, start work, report labor and an actual material.
+3. Return online; confirm transactions sync and appear in Work Order Tracking (Actuals > Materials for the material).
+4. Refresh a single work order with individual record sync; confirm only that record updates.
+5. Save the work order as Complete; confirm the failure report prompt.
+
+**Crew supervisor**
+1. Open the crew schedule list; accept a crew work order.
+2. Start the timer on behalf of the crew; confirm labor transactions for every active crew member.
+3. Complete the work order; confirm all active labor transactions close.
+4. Take the result to payroll for sign-off before enabling the security option broadly.
+
+**Storeroom clerk**
+1. Return items using barcode search; save, reopen the inventory usage record.
+2. Run an ad hoc count for a different storeroom; confirm pending count updates (DT495983 is fixed in 9.2.4).
+3. Receive a service and a direct-issue item against a PO.
+
+**Inspector**
+1. Complete a form offline using a scanned response and a calculated response; confirm status Completed without reconnecting.
+2. Capture a geolocation response with the map.
+3. Open a form from Work Order Details.
+
+**Calibration technician** (only after you set `maximo.mobile.technician.enablecalibration`)
+1. Re-login and reload all data.
+2. Open a CAL work type work order; confirm the calibration icon.
+3. Add a calibration standard with lower accuracy than the asset; confirm the warning; test Bypass Accuracy Validation.
+
+**Admin**
+1. Stop a preloaded database generation; confirm it does not resume and restarts on the next schedule.
+2. Change the image upload quality; confirm uploaded images are compressed unless the user overrides.
+3. Set the attachment-per-upload limit and try to exceed it.
+
+### Known offline pitfalls from the field
+
+Practitioner threads show recurring offline surprises that your test should deliberately probe. These are reports on earlier releases, so confirm whether they still occur on 9.2.
+
+| Reported on | Behaviour | Test |
+|---|---|---|
+| 9.0 (IBM Community thread, July 2025) | Inspection forms not available offline when entering via the Technician app's Inspection button before opening the Inspections app | Go offline after only using the Technician app; try to open an inspection |
+| 8.x (thread, November 2023) | Inspection questions did not appear offline unless the form had been opened online beforehand; IBM answered with a roadmap idea and no ETA | Same as above, with a new form revision |
+| 9.x (thread, June 2026, unanswered in results) | No clear warning when a work order was changed on the desktop while a user was offline | Change a work order in the browser, then sync a stale device copy and observe |
+
+### Rollback and communications
+
+Shell updates cannot be rolled back server-side the way an app revision can. In your plan: keep the previous shell version available through MDM for the pilot, know how to revert a published revision (MAFAPPDATA stores revisions), and announce properties that force a reload (calibration) at least a shift ahead.
+
+## ✅ The Commandments of the 9.2 Rollout
+
+1. **Learn Mobile Configuration first.** It is where the new controls live.
+2. **Dashboard means retraining.** Change the screenshots before the go-live.
+3. **Schedule the preload, don't spam it.** Daily is a defensible default; every few hours is not.
+4. **Remember removals.** Delta sync adds and changes; it does not delete.
+5. **Calibration is opt-in.** Set the property deliberately and plan the reload.
+6. **Test shell and apps on separate axes.** BLE and biometrics need the shell; dashboard and crews need the revision.
+7. **Real devices, real airplane mode.** Browser previews cannot exercise offline.
+8. **Patch to 9.2.4.** The mobile APAR list is a free test script.
+9. **Enable crew work orders with payroll in the room.** One tap writes many labor records.
+10. **Tag what you cannot verify.** If a setting is not in IBM text, say so in the plan.
+
+## 🔮 What Comes Next
+
+Part 3 takes the two HSE apps, Incident Reporter and Permit to Work, and follows how mobile-created records plug into safety workflows. If you have not read it yet, Part 1 has the full app catalog, including the IDs we could and could not verify. For the broader Maximo Mobile picture, see [Maximo Mobile in Manage](/blog/mas-manage-maximo-mobile), the [MAS features overview of Maximo Mobile](/blog/mas-features-maximo-mobile) and [Mobile for supply chain](/blog/mas-features-mobile-supply-chain). If you build custom apps, begin at the [MAF development series index](/blog/mas-maf-dev-00-series-index).
+
+## 📚 References
+
+- [IBM Docs: What's new in Maximo Mobile 9.2](https://www.ibm.com/docs/api/v1/content/SSLPL8_cd/com.ibm.mam.doc/overview/c_wn_mobile_92.html) (cached copy in our knowledge base, 2026-08-12)
+- [IBM Support: Maximo Application Suite Manage operator patch 9.2.4 readme](https://www.ibm.com/support/pages/node/7289350)
+- [IBM Support: Increase Maximo Mobile preloaded database download speed (MobileDbGeneration cron task and thread count)](https://www.ibm.com/support/pages/node/6855299) (summary visible; full steps require IBM login)
+- [IBM Community: what is MobileDbGeneration cron task schedule recommendation](https://community.ibm.com/community/user/discussion/what-is-mobiledbgeneration-cron-ta%73k-schedule-recommendation)
+- [IBM Community: Maximo Mobile performance optimization for Technician (Piyush Sukhadiya, January 2026)](https://community.ibm.com/community/user/blogs/piyush-sukhadiya/2026/01/07/maximo-mobile-performance-optimization-technician)
+- [IBM Community: What's new in Maximo Mobile 9 (Kimi Jasuja)](https://community.ibm.com/community/user/blogs/kimi-jasuja/2024/07/09/whats-new-maximo-mobile-9)
+- IBM Maximo Manage documentation: Configuring properties that affect mobile apps; Downloading images with ImgLib (local knowledge base extract)
+- TheMaximoGuys knowledge base: DOC17, MAF Local Development Field Guide, section 10 (mobile offline data model) and DOC00 change log entry CHG-007
+
+---
+
+## Series Navigation
+
+*This three-part mini-series has no index post.*
+
+| Part | Title |
+|---|---|
+| 1 | [Every Maximo Mobile and Role-Based App in MAS 9.2: The Complete Catalog](/blog/mas-mobile-01-app-catalog) |
+| **2** | **Maximo Mobile 9.2: What's New for Field Teams, and How to Roll It Out (this post)** |
+| 3 | [HSE in the Field: Maximo Incident Reporter and Permit to Work on Mobile](/blog/mas-mobile-03-hse-incident-permit) |
+
+[← Part 1: The Complete App Catalog](/blog/mas-mobile-01-app-catalog) | [Part 3: HSE in the Field →](/blog/mas-mobile-03-hse-incident-permit)
+
+---
+
+**About TheMaximoGuys:** We help Maximo teams cut through vendor messaging and make grounded decisions. When we cannot confirm a fact, we label it, so you know what to verify before it reaches a project plan.
+
+<!--
+REVIEWER NOTES (night-shift, 2026-10-17):
+- Primary source: knowledge_base/MAS92-SOURCES/text/mobile-92-whats-new.txt (IBM, cached 2026-08-12) plus DOC17 section 2.5 and section 10. Release-note items are paraphrased or quoted from the cache. The IBM page repeats several sections (notification panel x3, preloaded DB x2, image upload compression x2); each is covered once.
+- Brief items: QR-code setup is NOT stated in IBM text (only "quickly install"); tagged UNVERIFIED in the post. Background fetch configuration screens could not be found in any web source; tagged UNVERIFIED. Cross-app shared data syntax comes from DOC17 section 10 (datasource-id is a placeholder).
+- 9.2.4 APARs: fetched from IBM node/7289350 via a summarising fetch tool; the tool itself warned that APAR-to-description pairings were hard to confirm. Re-check DT numbers against the readme before publishing. DT474469 appears in the 9.0.31 readme per a search summary and in the 9.2.4 list per the fetch; both may be true. The 9.2.4 readme excluded items DT496570, DT496572 (scheduler/crew qualification) were not used. "~90 APARs" comes from DOC00 CHG-007; "~25 mobile-related" in keyTakeaways is our count of the extracted list (about 28 rows) and should be rounded to "about 25 to 30".
+- Property names: the ImgLib property "maximo.mobile.disableImagesFromLookupDatasro uces" has a space from PDF extraction; the real name is probably maximo.mobile.disableImagesFromLookupDatasources. Verify. maximo.mobile.download.parallel description is from Manage docs (apps downloaded concurrently), may differ from the 9.2 "parallel data downloads" feature.
+- Cron task naming: IBM 9.2 page says mobiledbCrontask; older support content and community say MobileDbGeneration.
+- SQL snippets (MAXPROPVALUE, WORKTYPE/SYNONYMDOMAIN) are illustrative and not run against a live schema. The WORKTYPE query in particular may need correcting (SYNONYMDOMAIN.MAXVALUE/VALUE columns).
+- IBM docs "Refreshing data" URL returned 404 on fetch (surfaced in search); not cited. The IBM Support node/6855299 is behind login beyond the summary.
+- Community offline pitfalls are from search snippets, not fetched in full; labelled as reports on earlier releases.
+- KB vs web: no direct disagreement. Web research found no IBM page body for background fetch or record image download property names.
+- Slug of part 3 follows queue slug_hint (mas-mobile-03-hse-incident-permit); post may not exist yet. mas-maf-dev-00-series-index is queued but not yet written.
+-->
