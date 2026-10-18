@@ -1,0 +1,539 @@
+---
+title: "SAML SSO and MFA in MAS: Why MFA Lives in Your Identity Provider"
+description: "How to set up SAML 2.0 single sign-on in Maximo Application Suite, why multi-factor authentication is applied by your identity provider and not by MAS, what IBM does and does not say about OIDC, and how to troubleshoot slow or failing SAML logins."
+date: "2026-10-18"
+slug: "mas-secops-saml-sso-mfa"
+tags: ["Maximo", "MAS", "Security", "SAML", "SSO", "MFA", "Identity Provider", "Entra ID", "OIDC", "Authentication", "MAS 9"]
+draft: true
+tier: "admin"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-secops-01-saml-sso-mfa.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Can I turn on MFA inside Maximo Application Suite itself?"
+    answer: "In the IBM documentation we could read, no. MAS has no setting that enforces a second factor on its own. IBM Developer's article on single sign-on and multi-factor authentication describes MFA as a policy you apply to users in a SAML 2.0 identity provider (IdP); MAS starts the SAML flow, the IdP decides whether to challenge for a second factor based on session state and policy, and MAS trusts the signed assertion that comes back. The practical effect is that MFA only covers the paths that go through the IdP. A local account, a plain LDAP bind or an API key never sees the IdP, so it never sees MFA. Your job is to make the IdP the only interactive door and to document every exception."
+  - question: "Does MAS support OIDC identity providers, or only SAML?"
+    answer: "It depends on which IBM page you read and when it was written. IBM Docs describe OpenID Connect authentication starting in MAS 9.1, with fields for a discovery endpoint, client ID, client secret and a user identifier taken from the token (sub, preferred_username, email or name). The same docs say multiple OIDC providers are supported from 9.1 through the API and CLI and from 9.2 in the UI. Older material disagrees: the IBM Developer SSO article states MAS supports only SAML 2.0 for single sign-on, and the IBM Manage FAQ lists 'OpenID support in addition to SAML' under authentication gaps for the move from EAM to Manage. We treat the Developer article and the FAQ as dated for the OIDC question, and we have not tested OIDC end to end in every Manage flow. If your plan depends on an OIDC-only identity provider, prove it in a non-production workspace first and open an IBM case for any Manage-side gap."
+  - question: "Why do some users get the SAML error AIUOM0100E after SSO is configured?"
+    answer: "A September 2025 IBM Community thread on exactly this error lists the usual suspects. First, a SAML user needs a SAML ID in MAS, and that does not happen automatically unless SCIM or LDAP synchronisation creates the users for you. Second, SAML needs exact configuration on both sides: the NameID format, the identifier your IdP sends and the user identifier stored in MAS must line up. Third, the pod logs may not contain the detail you need. The thread's accepted advice is to capture the SAML exchange in the browser with a SAML tracer extension and decode the request and response XML. The coreidp and coreapi pods are where to look on the cluster."
+  - question: "What is DT423352 and do I need to care about it?"
+    answer: "DT423352 is a defect IBM lists in the fixed-known-issues readme for MAS 9.1.0, released on 24 June 2025, described as SAML validation failing for user IDs with special characters. If your user IDs contain characters such as an apostrophe, a plus sign or a hyphen-heavy employee code, and you are on a Core build older than 9.1.0, SAML logins for those users can fail validation even though the same people authenticate perfectly at the IdP. IBM's page gives only a one-line description, not the root cause, so test with a real special-character account in a non-production environment before and after the upgrade. The 9.1.0 readme also lists DT397993 (SAML not working behind a reverse proxy) which matters if a load balancer or WAF sits in front of the auth host."
+  - question: "Our MAS login is slow with SAML. What should we check first?"
+    answer: "Separate the three places time can go: the IdP round trip, the MAS login service, and the user lookup. IBM's 9.1.4 readme (6 October 2025) lists DT422664, login performance degrading as the number of users grows, so on a large user base check your Core version before you tune anything. An older IBM fix readme for MAS 8.8.1 (September 2022) describes removing redundant database lookups and adding a lookup index to improve authentication performance, which shows this has been a recurring theme. Next, look at coreidp: IBM has a support article about the coreidp pod crashing and restarting under heavy load, which users experience as intermittent 'Application is not available' pages. Finally, time the IdP leg separately with browser developer tools or a SAML tracer, because a slow conditional-access or MFA policy at the IdP looks exactly like a slow MAS."
+keyTakeaways:
+  - "MFA is a policy applied by your SAML identity provider; MAS trusts the signed assertion and has no MFA enforcement of its own in the IBM documentation we could read (IBM Developer)"
+  - "Every path that bypasses the IdP also bypasses MFA: local MongoDB accounts, LDAP binds and API keys need their own controls, or must be disabled"
+  - "SAML setup is a metadata exchange: generate SP metadata in MAS, register it in the IdP, upload IdP metadata back; since 9.2 you can also configure multiple IdPs in the UI, and since 9.0 via the API"
+  - "The NameID your IdP sends must match the user identifier stored in MAS, and users need the SAML authentication type; mismatches are behind most 'SAML error' tickets (IBM Community, IBM Support)"
+  - "OIDC is documented from MAS 9.1, but older IBM sources still say SAML-only; verify OIDC in your own workspace before committing to an OIDC-only IdP"
+series:
+  name: "MAS Security Operations"
+  part: 1
+  total: 6
+tldr: "MAS does not enforce multi-factor authentication itself. You enforce it in the SAML 2.0 identity provider that MAS trusts, which makes the IdP policy, not a MAS setting, your real security control. This guide walks the SAML setup in the Suite administration UI and through the API, explains NameID and user mapping, seamless login and IdP-initiated links, and then maps every path into MAS against whether MFA covers it. It also deals honestly with the OIDC question, where IBM's own pages disagree by date, and gives a troubleshooting sequence for failed and slow SAML logins, with the specific IBM defects (DT423352, DT380909, DT422664) that explain many of them."
+seoTitle: "SAML SSO and MFA in MAS: MFA Lives in Your IdP"
+seoDescription: "Set up SAML SSO in Maximo Application Suite, see why MFA is enforced by your identity provider, and fix slow or failing SAML logins."
+relatedSlugs: ["mas-secops-series-index", "mas-92-upgrade-watchlist", "mas-lifecycle-series-index"]
+clusterSlugs: ["mas-secops-series-index", "mas-secops-scim-entra-okta", "mas-secops-ldap-api-keys", "mas-secops-user-management-92", "mas-secops-cve-patching-2026", "mas-secops-securing-ai-agents-mcp"]
+targetQuestions:
+  - "How do I configure SAML SSO in Maximo Application Suite?"
+  - "Does MAS support MFA, and where do I enable it?"
+  - "Does Maximo Application Suite support OIDC identity providers?"
+  - "Why is my MAS SAML login slow or failing with AIUOM0100E?"
+  - "What NameID format should I use for MAS with Entra ID or Okta?"
+semanticKeywords:
+  - "MAS SAML SSO configuration"
+  - "Maximo Application Suite MFA"
+  - "SAML 2.0 service provider metadata MAS"
+  - "MAS seamless login"
+  - "MAS NameID format"
+  - "MAS Entra ID SAML"
+  - "AIUOM0100E SAML authentication error"
+  - "coreidp coreapi troubleshooting"
+  - "MAS OIDC authentication 9.1"
+  - "DT423352 SAML special characters"
+  - "DT422664 login performance"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Suite administrator access to the MAS administration UI (and an API key with system admin permission for the API route)"
+  - "Administrator access to your SAML 2.0 identity provider (Entra ID, Okta, IBM Security Verify, Keycloak or similar)"
+  - "oc access to the Core namespace if you need pod logs"
+---
+
+# SAML SSO and MFA in MAS: Why MFA Lives in Your Identity Provider
+
+> 🎯 **Who this is for:** MAS administrators and identity engineers who have been asked some version of "can we turn on MFA for Maximo?" and who need a clear answer, a working SAML configuration and a troubleshooting path when logins fail or crawl. Part 1 of the [MAS Security Operations series](/blog/mas-secops-series-index).
+
+## 🔥 The Ticket That Starts Every SAML Project
+
+The request usually arrives from a security review: *"Our policy says every application with production data needs multi-factor authentication. Please enable MFA on Maximo."*
+
+You open the Suite administration page. You look through Configurations, Users, Authentication. You search the documentation. And you don't find a toggle that says "Require MFA."
+
+You haven't missed it. In the IBM material we could read, it isn't there. IBM Developer's article on single sign-on and multi-factor authentication for MAS describes the architecture plainly: MAS is the SAML service provider, your identity provider decides whether a second factor is needed, and MAS trusts the assertion that comes back. MFA is something your IdP does *to* a login before MAS ever hears about it.
+
+That sounds like a limitation. It's actually a design decision with consequences you need to understand before you tell the security team "yes":
+
+- Your MFA strength is the IdP's MFA strength. Phishing-resistant factors, conditional access and risk policies all come from the IdP.
+- Any road into MAS that doesn't cross the IdP doesn't get MFA. Local accounts. LDAP binds. API keys. Dedicated login pages.
+- The quality of your SAML configuration, especially NameID and user mapping, now decides whether people can log in at all.
+
+> 💡 **Key insight:** In MAS, "enable MFA" is not a configuration task. It is an architecture task: make the IdP the only interactive door, then enforce the policy there.
+
+This post is Layer 1 of the four-layer model from the [series guide](/blog/mas-secops-series-index): authentication. Everything below is labelled by how we verified it. IBM Docs and IBM Support pages we read directly are stated as fact; IBM pages that were gated or only partially visible are described as such; partner and community claims are marked.
+
+## 🧭 What MAS Authentication Actually Offers
+
+Start with the menu of options, because "SAML" is only one entry on it.
+
+IBM's authentication documentation lists local (MongoDB-backed) users, LDAP, SAML and, from 9.1, OpenID Connect. Regardless of where authentication happens, IBM states that access management and authorization privileges stay in MAS. Your IdP says *who you are*; MAS still decides *what you may do*.
+
+| Option | Where the password check happens | MFA possible? | Introduced / notes |
+|---|---|---|---|
+| Local (MongoDB) | MAS itself | No MFA control in the documentation we read | Original option; 9.2 moves user data to the system relational database (see Part 4) |
+| LDAP | Your directory, via MAS's LDAP bind | Only whatever the directory enforces; there is no interactive second factor on a plain bind | Multiple options side by side from 8.11 |
+| SAML 2.0 | Your IdP | **Yes, at the IdP** | Multiple SAML/LDAP IdPs via API from 9.0; UI from 9.2 |
+| OIDC | Your OpenID provider | Yes, at the provider | Documented from 9.1; see the OIDC section below |
+| API key | No password; a key exchanged for a token | No | Used for integrations and automation (Part 3) |
+
+Three version facts from IBM Docs are worth pinning to the wall:
+
+1. **8.11:** you can configure local, SAML or LDAP to give users several login options and choose one as the default. IBM also notes that from 8.11, a user created without an authentication type cannot access MAS at all.
+2. **9.0:** multiple identity providers *of the same type* (for example two SAML IdPs) can be configured through the API. SAML initiated logout appears. When you upgrade users from Maximo Asset Management 7.6 you can choose local or SCIM ownership for SAML users.
+3. **9.2:** multiple identity providers can be configured in the Suite administration UI. IBM still recommends the API route for automation, scripting and bulk configuration.
+
+## 🏗️ How a SAML Login Flows Through MAS
+
+Before the steps, the picture. MAS acts as a SAML **service provider (SP)**. Your IdP is the authority. When a user opens any MAS endpoint, an internal OIDC process in MAS kicks in and, depending on your default-IdP settings, sends the browser to the IdP.
+
+```text
+ SP-INITIATED LOGIN
+ ┌─────────┐  1 open Manage URL   ┌────────────────────┐
+ │ Browser │─────────────────────▶│ MAS (auth host)    │
+ └────┬────┘                      │ coreidp-login      │
+      │  2 redirect with          └─────────┬──────────┘
+      │    SAML AuthnRequest                │
+      ▼                                     │
+ ┌──────────────────────────┐               │
+ │ Identity provider (IdP)  │               │
+ │  • password / SSO session│               │
+ │  • MFA policy ◀── HERE   │               │
+ │  • conditional access    │               │
+ └────────────┬─────────────┘               │
+              │ 3 signed SAML assertion     │
+              │   (NameID = user identifier)│
+              ▼                             ▼
+ ┌────────────────────────────────────────────────────┐
+ │ MAS validates signature, matches NameID to a MAS   │
+ │ user whose authentication type is SAML, then       │
+ │ issues its own session → Manage / Monitor / etc.   │
+ └────────────────────────────────────────────────────┘
+```
+
+Two flavours exist, and IBM documents both:
+
+| Flow | Starts at | What happens | Best for |
+|---|---|---|---|
+| **SP-initiated** | A MAS URL (bookmark, link, mobile) | MAS shows its login page (user clicks Continue) or, with seamless login, redirects straight to the IdP | New deployments; IBM Developer recommends it for greenfield projects for better security |
+| **IdP-initiated** | A tile in the IdP portal | The IdP posts an assertion; a `relayState` parameter can drop the user directly into an application | Portal-centric organisations; deep links into Manage |
+
+If the user already has a MAS session, the application just opens. If the user already has an IdP session, the IdP skips the password and may skip the second factor too, depending on your policy. That last sentence is the heart of the MFA discussion.
+
+## 🛠️ Setting Up SAML: The Suite Administration UI
+
+This is the path IBM documents in the Suite administration UI. The exact labels may shift slightly between releases; the structure does not.
+
+**Before you start**, agree three things with your IdP administrator: the **service provider name** (a short identifier that becomes part of your SP URLs), the **NameID format** (see the next section) and whether you want **initiated logout** (single logout).
+
+1. **Open the SAML page.** In Suite administration, choose *Configurations* from the side navigation and then *SAML authentication*.
+2. **Create the SP information.**
+   - Give it a **display name** (this is what users see as a login option).
+   - Enter your preferred **service provider name**.
+   - Choose a **name identifier format**.
+   - Optionally tick **Enable initiated logout** (available from MAS 9.0). If you do, you must also enable single logout on the IdP side.
+3. **Generate and download the SP metadata file.** If you later change the service provider name or the user identifier format, IBM says you must save and generate the metadata again and re-register it with the IdP.
+4. **Register MAS in the IdP.** Upload the metadata XML, or copy values from it, into a new enterprise application or SAML app in the IdP. If you enabled initiated logout, add the single logout URL, which is the single-logout service in the metadata, in the pattern `https://auth.<domain>/ibm/saml20/<saml_name>/slo`.
+5. **Download the IdP metadata XML** from the IdP.
+6. **Upload it back into MAS** on the SAML authentication page and save.
+7. **Make the users real.** Create or synchronise users whose authentication type is **SAML** (next section).
+
+IBM Developer's article describes the same exchange as five hand-offs between the MAS administrator and the IdP administrator: SP metadata out, SP application created and certificate imported at the IdP, IdP metadata back, upload, confirm. In practice the slowest step is not technical. It's the two administrators being different people in different teams, so put both on one call.
+
+### The Entra ID variant
+
+Microsoft publishes a tutorial for Maximo Application Suite in the Entra gallery (last updated by Microsoft in June 2026, with screenshots from MAS 8.9). The pieces that matter:
+
+- In Entra: *Enterprise apps → Maximo Application Suite → Single sign-on → SAML*. If you upload the SP metadata file, **Identifier** and **Reply URL** populate automatically; if not, Microsoft's note says to fill them manually and contact IBM support for the values.
+- For SP-initiated mode, set the **Sign on URL** to `https://<workspace_id>.<mas_application>.<mas_domain>`.
+- Download the **Federation Metadata XML** and upload it to the MAS SAML page.
+- In MAS, Microsoft's tutorial selects **emailAddress** as the name-ID format.
+- Create the test user in Suite administration with authentication type **SAML**, and put the **UPN** in the Display Name and Primary email fields, because Microsoft's guidance is that they must match what Entra sends.
+
+> ⚠️ That tutorial is the vendor's recipe for its own side. The IBM Docs page remains the source of truth for what MAS expects. When the two seem to disagree, trust the one describing the system you are changing.
+
+## ⚙️ Setting Up SAML Through the API
+
+From 9.0 the API is how you configure multiple SAML IdPs, and from 9.2 it's still IBM's recommended route for automation and bulk work. IBM's page lists these steps:
+
+1. Generate an API key with **system admin permission** and use its access token.
+2. Create the IdP with a `PUT` to `https://api.<masDomain>/config/saml/<idpId>` and a JSON body with `spInitiatedLogout`, `displayName`, `issuer`, `serviceProviderName` and `nameIDFormat`.
+3. Download the generated SAML configuration XML.
+4. Wait a few minutes, then open `https://auth.<masDomain>/ibm/saml20/<serviceProviderName>/samlmetadata`. IBM warns this URL can take a few minutes to appear.
+5. Upload that file to your IdP, then download the IdP's metadata.
+6. Upload the IdP metadata with a `PUT` to `https://api.<masDomain>/config/saml/<idpId>/metadata` as multipart form field `file`.
+7. Wait for the operator to reconcile and the UI to refresh.
+
+```bash
+# Illustrative only: placeholders, never real tokens in tickets or shell history.
+# The auth header name and token exchange are described in IBM's API key documentation.
+curl -s -X PUT "https://api.${MAS_DOMAIN}/config/saml/${IDP_ID}" \
+  -H "Content-Type: application/json" \
+  -H "${MAS_AUTH_HEADER}" \
+  -d '{
+        "displayName": "Corporate SSO",
+        "serviceProviderName": "corp-sso",
+        "issuer": "https://sts.example.com/idp-entity-id",
+        "nameIDFormat": "email",
+        "spInitiatedLogout": true
+      }'
+```
+
+**Check the `nameIDFormat` value against IBM's list before you send it.** The documentation page lists these accepted values: `customize`, `email`, `encrypted`, `entity`, `kerberos`, `persistent`, `unspecified`, `windowsDomainQualifiedName` and `x509SubjectName`. The body above is a pattern, not a copy-paste: confirm every value against IBM's page for your release.
+
+Two operational notes from the same page. Changes are not instant, because an operator reconciles them. And the IBM examples use `--insecure` to skip certificate verification; do not carry that into a production runbook.
+
+## 🪪 NameID and User Mapping: Where Most SAML Projects Actually Fail
+
+Here is the sentence that explains half of all SAML tickets: **SAML uses its own ID to link to MAS users.** IBM's authentication documentation says so directly. The signed assertion carries a NameID; MAS looks for a user whose identifier matches that NameID *and* whose authentication type is SAML. No match, no login, even though the IdP just proved who you are.
+
+IBM Developer lists the NameID choices this way:
+
+| NameID format | How the user maps | Use when |
+|---|---|---|
+| Email address | The same user logs in at the IdP and MAS; the identifier is the email | Emails are unique, stable and already your Maximo user identifier |
+| Persistent | An opaque IdP-issued ID; a different MAS user can correspond to it | Emails change (marriage, rebrand, mergers) and you want stability |
+| Unspecified / customize | You define it | You must match an existing identifier convention exactly |
+| Windows domain qualified name | Listed by the article, not explained | Legacy AD estates; test carefully |
+
+> 💡 **Key insight:** Choose the NameID format *before* you create users, and write the mapping on one page: IdP attribute → NameID → MAS user identifier. If you change the format later, IBM says you must regenerate and re-register the SP metadata.
+
+### Three ways users get a SAML identity
+
+| Method | What it does | Watch out for |
+|---|---|---|
+| **SCIM provisioning** from the IdP (Part 2) | Creates and updates MAS users and groups from the IdP | Token expiry, deprovisioning behaviour |
+| **LDAP synchronisation** | Imports users from a directory | Leaver behaviour; LDAPS only (Part 3) |
+| **Manual / CSV import** | IBM Developer: bulk import with the CSV user template, setting the issuer to SAML | Easy to forget the authentication type; fine for pilots, poor for lifecycle |
+
+The IBM Community thread we cite later makes the same point from the other side: after SSO is configured, **SAML IDs must be set on the users**, and that doesn't happen automatically unless SCIM or LDAP synchronisation is in place.
+
+### The upgrade trap
+
+IBM Support published (and last modified on 23 June 2026) an article titled around SAML authentication failing after an upgrade to MAS 8.11, because of a UserID/Username mismatch in the database migration. The visible abstract says the coreidp pod logs show lines such as "SAML user maxadmin not found in MAS database" and "User: maxadmin is not a SAML user." The resolution is behind IBM's login wall, so we won't paraphrase it. What you can take from the symptom: **after any upgrade that migrates user data, test a SAML login before you declare victory.** The 9.1 to 9.2 migration is exactly such an event; Part 4 covers its pre-flight checks.
+
+### Special characters and reverse proxies
+
+Two defects from IBM's fixed-known-issues readme for **MAS 9.1.0 (released 24 June 2025)** belong in your mapping checklist:
+
+- **DT423352:** SAML validation failing for user IDs with special characters.
+- **DT397993:** SAML not working behind a reverse proxy.
+
+The 9.1.0 page gives titles only, no root causes. If your user IDs contain anything other than letters and digits, or if your auth host sits behind a WAF or load balancer that rewrites headers, test those two cases explicitly on whatever Core version you run.
+
+## 🚪 Default IdP, Seamless Login and the Links You Give Users
+
+Once SAML works, you decide how people *arrive*. IBM describes three global configurations from 8.11:
+
+| Configuration | What users see | Typical use |
+|---|---|---|
+| SAML configured, **not default** | MAS login page with SAML as an alternative option | Migration phase; mixed populations |
+| SAML **default**, seamless login **disabled** | MAS login page with SAML as the primary option | Most organisations after cutover |
+| SAML **default**, seamless login **enabled** | No MAS login page; browser goes straight to the IdP | Strict SSO shops |
+
+The Suite custom resource controls this with `spec.sso.defaultIDP` and `spec.sso.seamlessLogin`. In the UI, IBM's path is Suite administration → Users → Authentication tab → Default login behavior.
+
+> ⚠️ **A compliance gotcha from IBM's own page:** if you enable seamless login, the login page is never shown. If you must display a federal-style security banner or system notification on the login page, keep seamless login **disabled**, or users will never see the message.
+
+### Deep links and dedicated pages
+
+- **IdP-initiated with a different default:** if another IdP is your default but you still want seamless IdP-initiated SAML, IBM documents a separate endpoint for the `relayState`: `https://auth.<masdomain>/idplogin/idpinitiated`, with `appid`, `wsid` and `apppath` parameters. IBM's example sends users to Manage in workspace `main` with `?appid=manage&wsid=main`.
+- **Dedicated login pages:** `https://auth.<masdomain>/idplogin/loginpage?idp=saml:default-saml` shows only the SAML option. IBM is firm that this is an alternative mechanism, **not** a way to implement seamless login: "for SAML seamless integration, you must set SAML as default and seamless instead of using a SAML dedicated login page."
+- **A fixed defect:** **DT380909**, "Dedicated SAML login endpoint does not work when seamless login is enabled," is listed in IBM's MAS 9.0.0 fixed-issues page. If you see that on an older 8.x build, that's your explanation.
+
+Dedicated pages matter for MFA in one more way: the `idp=local` variant shows a local-password page. If local accounts still exist, that URL still works unless you've removed the accounts.
+
+## 🔐 MFA: Mapping Every Door Into MAS
+
+Now the part the security team actually cares about. Here is IBM Developer's model of MFA in MAS, restated as a control map.
+
+At login, MAS starts the SAML flow for users whose authentication type is SAML. The IdP then decides whether to challenge based on its session state and policy. Steps in the flow are marked optional in IBM's description precisely because they depend on whether the user has an active IdP session or whether policy demands a fresh factor.
+
+Choosing the second factor, per the same article, depends on whether Maximo is exposed to the internet or only the intranet, what your IdP supports, and user readiness. That's the IdP team's decision, not a MAS option.
+
+### The door-by-door table
+
+| Door into MAS | Passes through IdP? | MFA enforced by IdP? | Action |
+|---|---|---|---|
+| Browser, SAML default + seamless | Yes | Yes, by policy | Target state |
+| Browser, SAML default, not seamless | Yes (user clicks) | Yes if the user picks SAML | Set seamless or train users |
+| Browser, **local** password (`idp=local`) | **No** | **No** | Disable local users or restrict to a documented break-glass account |
+| Browser, **LDAP** password | **No** | **No** (LDAP bind) | Remove LDAP as a login option if you only need it for sync |
+| IdP portal tile (IdP-initiated) | Yes | Yes | Fine; use the `idpinitiated` endpoint with `relayState` |
+| REST client with **API key** | **No** | **No** | Scope and rotate keys; Part 3 |
+| Mobile (Maximo Mobile) | Depends on configuration | Depends | Test; IBM has a support article on mobile SAML login errors |
+| Another IdP configured (9.0+) | Yes, for that IdP | Per that IdP | Inventory every IdP; each has its own policy owner |
+| Self-registration (9.0+) | Depends on selected IdP | Depends | Review whether you need it |
+
+Notice what this table says. SAML with MFA protects the door users walk through. It does nothing for the windows. The most common audit finding we expect from MAS estates is not "SAML is weak"; it is "SAML is strong and local accounts are still enabled."
+
+### The honest limits
+
+- **No IdP, no MFA.** We found a January 2025 IBM Community question asking how to apply MFA to external contractors on MAS 9 without an IdP. In the results we reviewed it has no confirmed answer, and no IBM page we read provides an in-MAS alternative. Treat "MFA for users who cannot use an IdP" as an **open item**, not a missing checkbox.
+- **MFA at the IdP is only as good as the IdP session.** A long IdP session means users may not be challenged for a second factor when they open MAS. That's usually the right usability trade-off, but write it down: *MFA at login* and *MFA at sensitive actions* are different things, and MAS gives you no per-action step-up.
+- **Initiated logout matters for shared machines.** IBM's 9.0 option logs out current sessions before another user logs in with the same credentials, but only if the IdP is also set up for single logout.
+
+### A practical MFA hardening sequence
+
+1. Put an MFA policy on the IdP application that represents MAS. Prefer phishing-resistant factors for administrators.
+2. Switch to SAML default; decide on seamless login (mind the banner issue).
+3. Inventory local users, LDAP login, API keys and extra IdPs from the Suite administration pages.
+4. Disable or delete what you can; for what remains, document owner, reason and compensating control.
+5. Test as a fresh user in a private browser window: you should be challenged at the IdP, never see a MAS password prompt, and land in the right application.
+6. Keep the evidence: IdP policy screenshot, MAS default-IdP setting, the user inventory and the test notes.
+
+## 🌐 The OIDC Question: Where IBM's Pages Disagree
+
+You will meet this in vendor calls: *"MAS only supports SAML, so our OIDC-only identity provider won't work."* Our brief for this post pointed to the IBM Manage FAQ as the source of an "external OIDC identity provider gap." Here is what we found when we read the pages.
+
+| Source | What it says | Date signal |
+|---|---|---|
+| IBM Manage FAQ (`ibm-mas-manage.github.io/faq`) | Lists supported methods as Local IDP, LDAP and SAML; under "EAM to Manage gaps" it lists **"OpenID support in addition to SAML,"** "Support multiple LDAPs" and "Local user security controls parity" as not yet supported | Undated on the page we read |
+| IBM Developer SSO + MFA article | "Because Maximo Application Suite supports only SAML 2.0 for single sign-on…" OIDC is mentioned as widely used but not covered | Predates 9.1 as far as we can tell; not dated in the text we read |
+| IBM Docs, authentication | Lists OpenID Connect authentication as a method | Current docs |
+| IBM Docs, configuring OIDC | "Starting in Maximo Application Suite 9.1, you can configure OpenID Connect (OIDC) authentication" | 9.1+ |
+| IBM Docs, multiple IdPs | Multiple OIDC IdPs from 9.1; UI from 9.2 | 9.1+ / 9.2 |
+| IBM Manage FAQ, integrations | "For REST-based integration, you can use OIDC as well as an API key for authentication" | Different topic: inbound REST |
+
+The FAQ's own gap list contains an item we know is now stale: "Support multiple LDAPs" is listed as a gap, yet IBM Docs describe multiple LDAP IdPs from 9.0. That's a good sign the gap list was written for an earlier release and not refreshed. Our reading, flagged as our interpretation:
+
+> The "OIDC gap" is historical for the suite login. From 9.1 IBM documents OIDC configuration. What we could **not** confirm is whether *every* Manage-side flow behaves identically for OIDC-authenticated users, and we found no IBM page that settles it either way. Prove it in your own workspace.
+
+### What IBM Docs say about configuring OIDC (9.1+)
+
+- Register MAS with your OpenID provider using the redirect URL `https://auth.<masdomain>/oidcclient/redirect/default-oidc/`. You receive a client ID and secret.
+- In Suite administration, go to Configurations → OIDC authentication.
+- Supply a **discovery endpoint** (`/.well-known/openid-configuration`); if you don't, you must provide the issuer identifier, authorization endpoint, token endpoint and JWKS URI.
+- Choose the **user identifier** from the token: `sub`, `preferred_username`, `email` or `name`. This is the OIDC twin of the NameID decision above.
+- Choose the token endpoint authentication method: Post, Basic or Private key JWT (IBM suggests Basic if you don't know).
+- Pick the signature algorithm your provider supports (IBM says the default is typically RS256).
+
+### A decision rule
+
+| Your situation | Recommendation |
+|---|---|
+| IdP supports SAML 2.0 (nearly all enterprise IdPs do) | Use SAML; it is the best-documented path, with SP/IdP-initiated flows and single logout described in IBM Docs |
+| IdP is OIDC-only | Use OIDC from 9.1; run a pilot covering login, Manage, mobile and REST before cut-over; open an IBM case for anything that fails |
+| You are on MAS 8.x and OIDC-only | Plan the upgrade or put a SAML-capable broker (Keycloak, for example) in front; IBM Developer lists Keycloak among IdPs that support SAML 2.0 |
+
+## 🐌 Troubleshooting: Failed and Slow SAML Logins
+
+SAML failures arrive as two symptoms: the login **fails** (an error page) or it **drags**. Treat them separately.
+
+### Part A: failures
+
+A September 2025 thread on the IBM Community (Maximo group) captures a clean example. A user configured SSO on MAS 9 and saw **AIUOM0100E: You cannot log in because of a SAML authentication error.** The answers, in order:
+
+1. Check the **coreidp** and **coreapi** pods (coreapi runs three replicas by default, per the reply).
+2. Confirm **SAML IDs are set for users**; that isn't automatic without SCIM or LDAP sync.
+3. SAML needs exact configuration on both sides, and logs may not carry key details, so **capture the exchange with a SAML tracer** browser extension and decode the request and response XML. The thread's author reported the problem resolved using this approach.
+
+Turn that into a sequence:
+
+| # | Check | How | What it tells you |
+|---|---|---|---|
+| 1 | Is the user a SAML user in MAS? | Suite administration → Users; check authentication type | "User is not a SAML user" log lines |
+| 2 | Does the NameID match? | SAML tracer: read `<NameID>` in the response; compare with the MAS user identifier, including case | Mismatch is the top cause |
+| 3 | Does the IdP certificate/metadata match? | Compare the signing cert in IdP metadata with what MAS holds; re-upload after IdP cert rotation | Signature validation failures |
+| 4 | Is the SP metadata current? | If you changed SP name or NameID format, regenerate and re-register | IdP rejecting the request |
+| 5 | Are clocks in sync? | Compare IdP and cluster time | Assertion "not yet valid" or expired |
+| 6 | Is a proxy rewriting things? | Compare the host in the ACS URL with the browser URL | Reverse-proxy failures (see DT397993) |
+| 7 | Special characters in the identifier? | Test with a plain-ASCII user | DT423352 pattern |
+| 8 | Did an upgrade change user records? | Look for "SAML user … not found in MAS database" in coreidp logs | The 8.11 migration symptom |
+
+Useful commands (namespace and pod names depend on your instance ID; verify before running):
+
+```bash
+# Find the identity pods in the Core namespace
+oc get pods -n mas-${MAS_INSTANCE_ID}-core | grep -E 'coreidp|coreapi'
+
+# Follow logs while a tester attempts a login
+oc logs -n mas-${MAS_INSTANCE_ID}-core -f deploy/coreidp-login --tail=200
+```
+
+The `coreidp-login` deployment name comes from IBM's CVE-2026-105052 bulletin material covered in the [series guide](/blog/mas-secops-series-index); confirm the exact names with `oc get deploy` on your cluster.
+
+### Part B: slow logins
+
+"Login is slow" has at least four different owners, so time it before tuning it.
+
+```text
+ USER CLICK ──▶ [MAS redirect] ──▶ [IdP: password + MFA + policy] ──▶ [MAS: validate + lookup + session]
+                   a                          b                              c
+ Measure a, b, c separately with browser developer tools (Network tab, preserve log)
+```
+
+| Segment | Typical culprit | Evidence | Who fixes it |
+|---|---|---|---|
+| a. MAS redirect | Pod restarts, ingress, DNS | Intermittent "Application is not available" | Platform team |
+| b. IdP leg | Conditional access evaluation, remote MFA push, risky-sign-in checks | Long time on IdP domain | Identity team |
+| c. MAS validation and lookup | User-count growth, missing index, database lookups | Long wait after returning to the auth host | Patch level |
+
+IBM's pages give real anchors for segment a and segment c:
+
+- **Segment a:** an IBM Support article, modified 23 June 2026, is titled around the **coreidp pod crashing and restarting under heavy load**, causing intermittent login failures and an "Application is not available" page. The excerpt we could read gives the symptom but not the cause or the fix, so open the full article with your IBM ID before changing resources.
+- **Segment c:** IBM's **MAS 9.1.4 readme (6 October 2025)** lists **DT422664, "Login performance degrades as the number of users grows."** The same page lists ten other fixes, none login-related. An older IBM readme for **MAS 8.8.1** (September 2022) describes removing redundant database lookups and adding a lookup index to improve authentication performance. Different releases, same family of problem: authentication cost that scales with users.
+- **Also relevant:** IBM Support has a generic "Logging into Maximo is delayed" note covering Maximo broadly; its body is gated, so we cite it only as a pointer.
+
+What we could **not** find on any IBM page we could read is a SAML-specific slow-login fix. If someone claims there is one, ask for the document. Our rule for this series stands: a performance claim without a source is a guess.
+
+A practical order of operations for a slow-login ticket:
+
+1. Record timing for segments a, b and c for ten logins (cold and warm).
+2. If segment b dominates, hand it to the IdP team with the HAR file.
+3. If segment c dominates, check your Core version against the DT422664 fix level (9.1.4) and any later monthly interim builds, and read the Core release notes for newer authentication fixes.
+4. If segment a shows restarts, collect `oc describe pod` and previous logs for the coreidp pods and open an IBM case referencing the coreidp restart article.
+
+## 🧩 The Defects Behind Real SAML Tickets
+
+Pulled together from IBM's own fixed-issue pages, so you can match a symptom to a release:
+
+| Defect | Symptom (IBM's wording, shortened) | Fixed in | Page |
+|---|---|---|---|
+| DT380909 | Dedicated SAML login endpoint does not work when seamless login is enabled | MAS 9.0.0 | 9.0.0 fixed known issues |
+| DT397993 | SAML not working behind a reverse proxy | MAS 9.1.0 (24 Jun 2025) | 9.1.0 fixed known issues |
+| DT423352 | SAML validation failing for user IDs with special characters | MAS 9.1.0 (24 Jun 2025) | 9.1.0 fixed known issues |
+| DT422664 | Login performance degrades as the number of users grows | MAS 9.1.4 (6 Oct 2025) | 9.1.4 readme |
+| (no DT id on page) | Redundant lookups removed; lookup index added for authentication | MAS 8.8.1 FP0001 (Sep 2022) | 8.8.1 readme |
+
+Read the "fixed in" column as *the first release IBM's page lists the fix in*, not a promise about your fix pack level. Check the Core release notes for your channel.
+
+## 🧪 A Complete Test Plan Before Cut-Over
+
+Run this in a non-production workspace first, and keep screenshots:
+
+| Test | Expected result | Evidence |
+|---|---|---|
+| SP-initiated login, new browser profile | Redirect to IdP, MFA prompt, land in Manage | HAR or screenshot |
+| IdP-initiated tile with relayState | Direct to Manage in the right workspace | Screenshot |
+| User with special characters in ID | Login works (DT423352 check) | Test notes |
+| User with different case in IdP vs MAS | Document behaviour (case sensitivity) | Test notes |
+| Local login URL (`idp=local`) | Blocked or break-glass only | Screenshot |
+| Single logout from IdP | MAS session ends (if initiated logout enabled) | Timestamps |
+| Logout from MAS, re-login | Fresh IdP check per policy | Timestamps |
+| Mobile app login | Works, or documented exception | Test notes |
+| Login through the production reverse proxy / WAF | Works (DT397993 check) | HAR |
+| 50 simultaneous logins | Acceptable time on segments a, b, c | Timing table |
+| Deactivate the user in the IdP | MAS access ends within the agreed window (Part 2 covers SCIM) | Timestamps |
+
+## 🔟 The Ten Commandments of SAML and MFA in MAS
+
+1. **MFA is an IdP policy.** Put it where it can be enforced.
+2. **Every door counts.** Local, LDAP, API key, extra IdPs: inventory and justify each.
+3. **Decide NameID first.** Then create users. Changing it later means regenerating and re-registering metadata.
+4. **A SAML user is a user with the SAML authentication type.** The IdP proving identity is not enough.
+5. **Seamless login hides the login page.** Check your banner requirements first.
+6. **Never build seamless login out of a dedicated page.** IBM says to use default plus seamless.
+7. **Test upgrades with a SAML login.** The 8.11 migration taught us why.
+8. **Time the three segments before tuning.** Redirect, IdP, validation: three owners.
+9. **Capture the assertion.** A SAML tracer beats guessing from logs.
+10. **Label what you verified.** If you only have a vendor's claim, say so in the ticket.
+
+## 📅 What To Do This Week
+
+| Day | Action | Evidence to keep |
+|---|---|---|
+| Monday | List every configured IdP and login option; note the default and seamless setting | Screenshots of Configurations and Authentication tabs |
+| Tuesday | Confirm the IdP application has an MFA policy and who owns it | Policy export or screenshot |
+| Wednesday | Find local and LDAP-login users; decide disable, break-glass or migrate | User list with decision per account |
+| Thursday | Run the special-character, proxy and IdP-initiated tests | Test table above |
+| Friday | Time ten logins across segments a, b, c; compare Core version with DT422664 | Timing sheet, version note |
+
+## 🔭 Open Items We Could Not Close
+
+| Open item | Why it is open | What would close it |
+|---|---|---|
+| MFA for users who cannot use an IdP | One community question, no confirmed answer | IBM support case |
+| OIDC behaviour across every Manage flow | IBM Docs document OIDC from 9.1; older pages say SAML-only; no page settles Manage-side parity | A pilot in your workspace; IBM case |
+| Resolution of the 8.11 SAML-after-upgrade article | Body gated; only the symptom is visible | Read it with an IBM ID |
+| Cause and fix for coreidp restarts under load | Body gated | Read it with an IBM ID |
+| A SAML-specific slow-login fix | None found on readable IBM pages | IBM case with timing data |
+| Date of the Manage FAQ's authentication gap list | The page is undated and partly stale | IBM confirmation |
+
+## ❓ Frequently Asked Questions
+
+**Can I turn on MFA inside Maximo Application Suite itself?**
+Not in the IBM material we read. MFA is a policy on your SAML IdP; MAS trusts the signed assertion. Anything that bypasses the IdP (local accounts, LDAP binds, API keys) bypasses MFA.
+
+**Does MAS support OIDC identity providers, or only SAML?**
+IBM Docs document OIDC authentication from MAS 9.1 (multiple OIDC providers from 9.1 by API, from 9.2 in the UI). The IBM Developer SSO article and the Manage FAQ still say SAML-only or list OpenID as a gap, and we read those as dated. Pilot before you commit.
+
+**Why do some users get AIUOM0100E after SSO is configured?**
+Most often the user has no SAML ID in MAS, or the NameID the IdP sends doesn't match the stored identifier. Check the coreidp and coreapi pods and capture the exchange with a SAML tracer extension.
+
+**What is DT423352?**
+An IBM defect listed as fixed in the MAS 9.1.0 readme (24 June 2025): SAML validation failing for user IDs with special characters. Test with a real special-character account.
+
+**Our login is slow with SAML. Where do I start?**
+Time the redirect, the IdP leg and the MAS validation separately. On large user bases, check for DT422664 (fixed in the 9.1.4 readme dated 6 October 2025), and check coreidp for restarts.
+
+## References
+
+- [Single sign-on and multi-factor authentication integration with Maximo Application Suite (IBM Developer)](https://developer.ibm.com/articles/single-sign-on-multi-factor-authentication-integration-with-maximo-application-suite/)
+- [Configuring multiple identity providers for the same authentication type, including SAML API steps (IBM Docs)](https://www.ibm.com/docs/en/SSRHPA_cd/appsuite/admin/t_config_multiple_idp.html)
+- [Maximo Application Suite authentication overview (IBM Docs)](https://www.ibm.com/docs/en/SSRHPA_cd/appsuite/admin/manage_authentication.html)
+- [IBM Maximo Manage FAQ, authentication methods and gaps (IBM MAS Manage on GitHub)](https://ibm-mas-manage.github.io/faq)
+- [IBM Maximo Application Suite 9.1.0 fixed known issues, including DT423352 and DT397993 (IBM Support)](https://www.ibm.com/support/pages/node/7235938)
+- [Readme file for Maximo Application Suite 9.1.4, including DT422664 (IBM Support)](https://www.ibm.com/support/pages/node/7246982)
+- [IBM Maximo Application Suite 9.0.0 fixed known issues, including DT380909 (IBM Support)](https://www.ibm.com/support/pages/node/7158256)
+- [Readme file for Maximo Application Suite 8.8.1 (IBM Support)](https://www.ibm.com/support/pages/readme-file-maximo-application-suite-881)
+- [SAML authentication fails for users after Maximo Application Suite 8.11 upgrade (IBM Support)](https://www.ibm.com/support/pages/node/7148310)
+- [coreidp pod crashes and restarts causing login failures (IBM Support)](https://www.ibm.com/support/pages/node/7125375)
+- [SSO configuration in MAS 9 (IBM Community discussion)](https://community.ibm.com/community/user/discussion/sso-configuration-in-mas-9)
+- [Configure Maximo Application Suite for single sign-on with Microsoft Entra ID (Microsoft Learn)](https://learn.microsoft.com/en-us/entra/identity/saas-apps/maximo-application-suite-tutorial)
+
+---
+
+## Series Navigation
+
+[← Series Guide](/blog/mas-secops-series-index) · [Part 2: SCIM User and Group Sync from Entra ID and Okta →](/blog/mas-secops-scim-entra-okta)
+
+| Part | Title |
+|---|---|
+| 0 | [MAS Security Operations: Identity, Access and Patching (Series Guide)](/blog/mas-secops-series-index) |
+| **1** | **SAML SSO and MFA in MAS: Why MFA Lives in Your Identity Provider** |
+| 2 | [SCIM User and Group Sync from Entra ID and Okta](/blog/mas-secops-scim-entra-okta) |
+| 3 | [LDAP, API Keys and Service Identities in MAS](/blog/mas-secops-ldap-api-keys) |
+| 4 | [MAS 9.2 User-Management Changes Admins Must Know](/blog/mas-secops-user-management-92) |
+| 5 | [Patching as a Security Program: The 2026 MAS CVE Year](/blog/mas-secops-cve-patching-2026) |
+| 6 | [Securing MAS for AI Agents and MCP](/blog/mas-secops-securing-ai-agents-mcp) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo teams cut through vendor messaging and make grounded decisions about their asset management platform. Every date, version and score in this series is labeled by how we verified it, and where IBM has not said, we say so instead of guessing.
+
+<!--
+REVIEWER NOTES (night-shift, 2026-10-18, secops-01):
+- DISCREPANCY (OIDC): brief and DOC00 §5.2 cite an "external OIDC IdP gap (IBM Manage FAQ)". The FAQ at ibm-mas-manage.github.io/faq does list "OpenID support in addition to SAML" under "EAM to Manage gaps" (read this run), but IBM Docs document OIDC from MAS 9.1 (config steps and fields) and multiple OIDC IdPs from 9.1 / UI in 9.2. The FAQ gap list also still lists "Support multiple LDAPs," which IBM Docs say is supported from 9.0, so the list looks stale. The post says this and does not claim Manage-side OIDC parity. The IBM Developer SSO article also says "supports only SAML 2.0" — treated as pre-9.1.
+- The FAQ page is undated in the fetched text; date of the gap list unknown.
+- DT423352 and DT397993: IBM 9.1.0 fixed-known-issues page (node 7235938) gives titles only. "24 June 2025" is the 9.1.0 release date from that page. No root cause stated; none inferred.
+- DT422664 from the 9.1.4 readme (node 7246982, 6 Oct 2025). The 8.8.1 readme has no DT ids (Sept 2022); the post states only the two described changes.
+- 7148310 (8.11 SAML failure) and 7125375 (coreidp restarts): only title/symptom visible, both modified 23 Jun 2026; resolutions not stated.
+- NameID value tokens: IBM Docs list `email`; the Microsoft tutorial says "emailAddress". Post flags the difference and tells the reader to use IBM's list. The JSON body in the API example is illustrative; the auth header is a placeholder because the fetched IBM page did not show the header name.
+- coreidp-login deployment name taken from the series index/CVE bulletin material, not re-verified on a cluster.
+- Mobile SAML login: a search result title ("Unauthenticated error during login Maximo Mobile EAM using SAML") was referenced only as existence of an IBM article; body not read.
+- MFA-without-IdP community question (Jan 2025) is carried from the series index; not re-read this run.
+- Case sensitivity of login IDs: from IBM's 7.6.1 SAML security doc snippet (search result), not MAS docs; the post only says "including case" as a test item.
+-->
