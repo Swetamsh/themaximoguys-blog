@@ -1,0 +1,653 @@
+---
+title: "LDAP, API Keys and Service Identities in MAS: Who Is Really Calling Your Maximo?"
+description: "How LDAP synchronisation really behaves in Maximo Application Suite (one-way, scheduled, LDAPS-only, deactivate-not-delete), how Manage API keys and Suite API keys differ, and a least-privilege model for integrations and AI agents that use the 9.2 MCP server."
+date: "2026-10-18"
+slug: "mas-secops-ldap-api-keys"
+tags: ["Maximo", "MAS", "Security", "LDAP", "API Keys", "Service Accounts", "Least Privilege", "MXAPIAPIKEY", "MCP", "AI Agents", "MAS 9"]
+draft: true
+tier: "admin"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-secops-03-ldap-api-keys.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "How does LDAP synchronisation work in Maximo Application Suite, and does it delete users?"
+    answer: "IBM documents LDAP synchronisation as one-way, from the LDAP server to MAS, and it runs on a schedule, so differences can exist between runs. For users, the sync inserts missing users, updates existing ones (without touching entitlement or application access), skips users whose ldap.meta.lastModified has not changed, and deactivates users who were removed from LDAP. It does not delete them. Groups are inserted and updated but never deleted. The practical consequence is that a leaver keeps whatever access they had until the next sync run, and a user who authenticates locally still gets in after deactivation in the directory, because the local password is not an LDAP object. Measure your real window by timing a test leaver."
+  - question: "Is LDAPS mandatory for MAS LDAP sync, and what do I need on the directory side?"
+    answer: "Yes. IBM's pages state that secure LDAP (LDAPS) is the only allowed protocol for synchronisation and that non-TLS connections are not supported. You provide the server URL in protocol://hostname:port form, a Base DN, a Bind DN and Bind password for a service account that can search users and groups, and the TLS certificate (several if you need a chain). Optional User Base DN and Group Base DN default to the Base DN. The bind account is itself a service identity: give it read-only search rights on the two subtrees you sync, store its password in a vault, and put its rotation date in the same register as your API keys."
+  - question: "What is the difference between a Suite API key and a Manage API key?"
+    answer: "They are different credentials for different systems. A Suite API key is created in Suite administration, is exchanged over HTTP Basic authentication at the /v1/authenticate endpoint for a JWT, and is used for Suite-level APIs such as SCIM user management. A Manage API key is created in the API Keys application under Integration in Manage (or through the MXAPIAPIKEY object structure), is tied to a Manage user, and is sent on each REST or OSLC request as an apikey header or query parameter. The Manage key inherits the permissions of its linked user, so its blast radius is whatever security groups that user holds. Keep separate inventories for the two."
+  - question: "Can I create, rotate and revoke Manage API keys by script in MAS 9?"
+    answer: "In the sources we found, yes through MXAPIAPIKEY, but not through the 7.6 route. IBM Docs describes importing an externally generated key with POST /oslc/os/mxapiapikey and an apikey property plus an expiration. A July 2026 IBM Community thread reports that the 7.6 apitoken/create call with a maxauth header returns HTTP 403 with BMXAA7901E on MAS 9.1, and an IBM Champion answered that maxauth is not supported and that keys should be managed through MXAPIAPIKEY using an admin API key, with create, list and delete operations. The thread shows that create uses /api/os/mxapiapikey while delete uses /oslc/os/mxapiapikey/{id}. The follow-up about validating a user's password first went unanswered, so test your own flow."
+  - question: "How should I give an AI agent or MCP client access to Maximo without handing it the keys to the kingdom?"
+    answer: "Treat the agent as a service identity with its own Manage user, its own API key and its own narrow security group. IBM's 9.2 MCP server, as summarised in our field guide, authenticates external agents with an apikey header or a JWT, and every tool is a Maximo REST call, so the agent inherits Manage authorisation, business rules and validation. That is a feature only if the key's user is narrow. Start with a read-only key, add a scoped write key per use case, mark destructive tools, and log every key by owner and expiry. Never reuse a human administrator's key for an agent."
+keyTakeaways:
+  - "LDAP sync in MAS is one-way, scheduled and deactivate-only: removed users are deactivated at the next run, groups are never deleted, and locally authenticated users keep access until someone disables the local account (IBM Docs)"
+  - "LDAPS is the only protocol allowed for LDAP sync; the bind account is a privileged service identity that needs read-only search rights, a vaulted password and a rotation date"
+  - "A Manage API key carries exactly the permissions of its linked user, so the real security control is the security group of the integration user, not the key itself"
+  - "Suite API keys and Manage API keys are different credential types with different lifecycles; run one inventory that covers both, plus SCIM JWTs and LDAP bind accounts, with owner, purpose, scope and expiry on every row"
+  - "AI agents using the MAS 9.2 MCP server inherit Manage authorisation, so give each agent a dedicated least-privilege user and key, start read-only, and treat any agent using a human's key as a finding"
+series:
+  name: "MAS Security Operations"
+  part: 3
+  total: 6
+tldr: "Part 2 ended with a warning: the SCIM key is a privileged identity. This part widens the lens to every non-human credential in MAS. We cover how LDAP synchronisation actually behaves (one-way, scheduled, LDAPS-only, deactivate-not-delete, with owner set to scim), what the bind account can see, how the Suite API key, the SCIM JWT and the Manage API key differ, how to script Manage keys through MXAPIAPIKEY without the old maxauth route, and a service-identity register you can build in a day. We finish with a least-privilege design for integrations and for AI agents that connect through the 9.2 MCP server, including what we could and could not verify."
+seoTitle: "MAS LDAP Sync, API Keys and Service Identities"
+seoDescription: "How LDAP sync, Manage API keys and Suite JWTs work in Maximo Application Suite, plus a least-privilege model for integrations and MCP agents."
+relatedSlugs: ["mas-secops-series-index", "mas-secops-saml-sso-mfa", "mas-secops-scim-entra-okta"]
+clusterSlugs: ["mas-secops-series-index", "mas-secops-saml-sso-mfa", "mas-secops-scim-entra-okta", "mas-secops-user-management-92", "mas-secops-cve-patching-2026", "mas-secops-securing-ai-agents-mcp"]
+targetQuestions:
+  - "How does LDAP user synchronisation work in Maximo Application Suite?"
+  - "Does MAS LDAP sync delete users or just deactivate them?"
+  - "How do I create and rotate API keys in Maximo Manage on MAS 9?"
+  - "What is the difference between a MAS Suite API key and a Manage API key?"
+  - "How do I apply least privilege to integrations and AI agents that call Maximo?"
+semanticKeywords:
+  - "MAS LDAP user registry synchronization"
+  - "Maximo Application Suite LDAPS bind DN"
+  - "ScimCfg forceMappedValue"
+  - "Maximo Manage API key MXAPIAPIKEY"
+  - "mxe.secureapikey"
+  - "mxe.apikeyforloggedinuser"
+  - "Maximo service account least privilege"
+  - "MAS API key rotation"
+  - "Maximo MCP server API key"
+  - "BMXAA7901E maxauth MAS 9"
+  - "MAS non-human identity inventory"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Suite administrator access to MAS, with permission to configure user registry synchronisation and create API keys"
+  - "Maximo Manage administrator access to the API Keys application and Security Groups"
+  - "Read access to the corporate LDAP or Active Directory, and a service account for binding"
+  - "A non-production Suite to rehearse any LDAP mapping change, because id mapping changes after first sync are destructive"
+---
+
+# LDAP, API Keys and Service Identities in MAS: Who Is Really Calling Your Maximo?
+
+> 🎯 **Who this is for:** MAS administrators, integration owners and security engineers who run LDAP-fed estates, who inherited a pile of API keys nobody can explain, or who are about to let an AI agent call Maximo. Part 3 of the [MAS Security Operations series](/blog/mas-secops-series-index). Part 2 covered [SCIM user and group sync](/blog/mas-secops-scim-entra-okta).
+
+## 🔥 The Key Nobody Could Explain
+
+Here is a scene we have watched in some form on more than one engagement. An auditor asks a simple question: "List every non-human way into your Maximo, and who owns each one."
+
+The room goes quiet. Somebody remembers the integration with the ERP. Somebody else remembers a reporting tool that reads work orders. A third person mentions a script that loads assets on Sunday nights. Nobody can say which API key each of them uses, which user each key belongs to, which security groups that user holds, or whether the person who created it still works here. One key turns out to belong to a user who is a member of a broad administrative group, "because it was the only way we got it working at go-live."
+
+That is the problem this post addresses. Human access gets attention: SSO, MFA, onboarding, offboarding. We covered those in [Part 1](/blog/mas-secops-saml-sso-mfa) and [Part 2](/blog/mas-secops-scim-entra-okta). Machine access gets a key created once, pasted into a config file, and forgotten. In MAS the machine side has more surface than it did in the 7.6 days: Suite API keys, SCIM JWTs, LDAP bind accounts, Manage API keys, and from 9.2 an MCP server that lets AI agents call Maximo tools. Every one of them is a credential with a blast radius.
+
+In this guide we cover:
+
+- How LDAP synchronisation really behaves, including the parts that surprise people.
+- The LDAP configuration fields and the service account behind them.
+- The four kinds of non-human credential in a MAS estate, and how to tell them apart.
+- How Manage API keys work, and how to script them without the old `maxauth` route.
+- A service-identity register and a rotation routine.
+- A least-privilege design for integrations and for AI agents.
+- A hardening checklist you can run this week.
+
+> 💡 **Key insight:** An API key does not have permissions. The user behind it does. If you want to secure a key, secure the user it points at.
+
+A note on labels, as in the rest of this series. IBM Docs, IBM Support and IBM Community pages we read directly are stated as fact and cited. Our own field guide summaries are marked as such. Where we could not find an IBM statement, we say so rather than guess.
+
+## 🗂️ Four Credentials, Four Lifecycles
+
+Before the details, the map. Most confusion about "API keys in MAS" comes from using one phrase for four different things.
+
+| Credential | Created where | What it unlocks | How it is presented | Lifecycle knob |
+|---|---|---|---|---|
+| **Suite API key** | Suite administration, API keys | Suite-level APIs (user management, SCIM) | Exchanged via HTTP Basic at `/v1/authenticate` for a JWT | Authentication token expiry on the key; JWT expiry header |
+| **SCIM JWT** | Minted from a Suite API key | The SCIM endpoints for one profile | Header credential in the IdP | `mas-jwt-expiry-duration` (for example `P90D`) |
+| **LDAP bind account** | Your directory | Search access to users and groups for sync | Bind DN and Bind PW stored in MAS | Directory password policy |
+| **Manage API key** | Manage, API Keys application, or MXAPIAPIKEY | Manage REST and OSLC APIs as the linked user | `apikey` header or query parameter | Delete the key; `expiration` property |
+
+Two rules fall out of this table.
+
+1. **There is no single place to look.** Suite keys live in Suite administration. Manage keys live in Manage. LDAP bind credentials live in the user registry synchronisation configuration and the directory. A review that covers only one of them is not a review.
+2. **Each type has a different owner.** Suite keys usually belong to the platform team. Manage keys usually belong to whoever built the integration. The LDAP bind account belongs to the directory team. Without a shared register, nobody sees the whole picture.
+
+Part 2 gave you the Suite API key and JWT mechanics for SCIM. This post concentrates on LDAP and the Manage API key, then ties all four together in a register.
+
+## 🌐 LDAP in MAS: Two Jobs, One Directory
+
+LDAP shows up in MAS doing two separate jobs, and mixing them up causes design mistakes.
+
+| Job | What it does | Direction | Where configured |
+|---|---|---|---|
+| **LDAP authentication** | Validates the user's password against your directory at login | Login time, MAS to LDAP | Suite administration, authentication |
+| **LDAP user registry synchronisation** | Copies users and groups from the directory into MAS | Scheduled, LDAP to MAS | Suite administration, user registry synchronization |
+
+IBM's authentication page puts the first job plainly: with LDAP, user authentication is managed by your LDAP server, and when you create users with LDAP enabled, the LDAP username links to the MAS user. Authorisation, meaning access and privileges, stays in MAS regardless of which system handles authentication. That second sentence is the one to underline. Your directory knows who someone is. It does not know what they may do in Maximo.
+
+The synchronisation page adds a useful flexibility: with LDAP authentication you can sync the full registry or a filtered subset, and with local or SAML authentication you can still point sync at an external LDAP server. So "we use SAML for login" and "we sync from AD" are not contradictory. Many estates do exactly that, using the directory as the roster and the IdP as the front door.
+
+From MAS 8.11, IBM documents that local, SAML and LDAP can be configured side by side so users have more than one way to log in, with one identity provider set as the default. IBM's pages also state that configuring multiple identity providers of the same authentication type (for example two LDAP directories) is supported, and our MAS 9.2 factbase records that 9.2 moves this into the user interface where earlier releases needed the API or CLI. That matters for mergers, where two directories coexist for a year.
+
+> ⚠️ **Through 9.0 only one LDAP server is supported for synchronisation.** IBM's synchronisation page lists this as a limitation. If your estate has two directories and sits on an older release, check the page for your version before you promise anything.
+
+## 🔄 How LDAP Synchronisation Actually Behaves
+
+We read IBM's LDAP user registry synchronisation page closely for this series, because a lot of folklore surrounds it. Here is what it says, organised around the questions administrators ask.
+
+### Direction, timing and drift
+
+- Synchronisation is **one way**, from the LDAP server to MAS.
+- It runs **on a schedule**. IBM's own words: because it runs on a schedule, discrepancies might be temporarily introduced between synchronisations.
+- The page does not state the schedule interval or how to change it. Do not quote a figure from memory. Measure it.
+- User sync and group sync run in the same job.
+- Synchronisation through external SCIM APIs is not supported as an LDAP sync path. (SCIM 2.0 from an IdP is a separate mechanism, available from 9.0.)
+
+The word "drift" belongs in your risk register. Between runs, MAS and the directory disagree. That window is your leaver exposure for any account whose access does not depend on the directory at login.
+
+### The operations table
+
+IBM describes the sync as a set of insert, update, skip and delete decisions:
+
+| Object | Operation | What happens |
+|---|---|---|
+| User | **Insert** | Missing users are added with an IdP issuer, entitlement and application access. Users removed earlier and re-added in LDAP are reactivated. Welcome emails go out if SMTP is configured. |
+| User | **Update** | Existing users are updated. Entitlement and application access are **not** changed. |
+| User | **Skip** | Users with no LDAP change since the last sync are skipped. The check uses the field `ldap.meta.lastModified`. |
+| User | **Delete** | Users removed from LDAP are **deactivated**. |
+| Group | **Insert** | Missing groups are added. |
+| Group | **Update** | Existing groups are updated. |
+| Group | Delete | **Never.** Sync does not delete groups. |
+
+Read the user "Update" row twice. The sync refreshes attributes such as name, email and title. It does not reassign entitlement or application access. So moving someone from one AD group to another does not, by itself, change what they can open in MAS. Entitlement and access are managed in MAS. If you expected the directory to drive roles, you will be disappointed, and the fix is a design decision, not a bug report.
+
+### What "deactivated" means for a leaver
+
+This is the section to show your security team. IBM's text on removed users says deactivation happens at the **next** sync, so access can linger. Then it splits into two cases:
+
+| How the user authenticates | After the user is removed from LDAP and the next sync has run |
+|---|---|
+| LDAP or SAML | Login fails, because the user is no longer active |
+| Local authentication | **The user ID still has access** |
+
+The second row is the trap. A synced user who also has a local password, perhaps from an earlier life or from a profile that includes a local identity, is not stopped by the directory. Their local credential lives in MAS, and deactivation in the directory does not touch it. If your policy is "directory is the single source of truth," then local accounts for real people are a policy violation waiting to happen.
+
+Two further points worth knowing:
+
+- Before the next sync, a removed LDAP user can still log in if the login path is not a live directory check. Whether your LDAP login does a live bind at each login is a configuration fact to verify in your own tenant. We did not find IBM text that settles it for every setup, so test it.
+- Because groups are never deleted, an LDAP group removed from the directory stays in MAS as a group. If a Manage security group was linked to it, the link and the grants remain. Orphaned groups are a quiet source of excess access.
+
+### Owner equals scim
+
+Synced users carry an `owner` value of `scim`. IBM states that this indicates an externally managed user. We flagged the naming collision in Part 2: this is internal vocabulary for "managed from outside," and it is shared by LDAP-synced users and SCIM-provisioned ones. It is not evidence that an IdP pushed the user over `/scim/v2`.
+
+The operational use is simple and valuable: you can ask MAS which users are externally managed and which are local. That split is your first audit query. Any person who is not externally managed is a candidate for review.
+
+### Entitlement across the 9.2 line
+
+IBM's page notes a version difference. Through 9.1, synced users start with application entitlement only, and administration entitlement can be added manually. From 9.2, user entitlement is calculated dynamically from workspace and assigned application access. The page also says that from 9.2 the synchronisation process "might appear slower to complete, but the overall process is more efficient."
+
+Storage moved too. Through 9.1, sync data lives in MongoDB. From 9.2, it lives in the system relational database. Our factbase, citing IBM's upgrade documentation, records that user and group data for authentication moves into the Manage relational database in 9.2, that a pre-upgrade datamodel-migration job updates authentication mappings and synchronises required SCIM fields including `externalId`, and that MongoDB user and group collections are renamed `User_pre_upgrade_91_backup` and `Group_pre_upgrade_91_backup`. Part 4 covers the 9.2 user-management changes in full.
+
+## 🧱 The LDAP Configuration, Field by Field
+
+IBM's page lists the connection attributes with Microsoft Active Directory examples, noting they are based on IBM Liberty. Here they are, with the security implication of each.
+
+| Field | What it is | IBM example or note | Security note |
+|---|---|---|---|
+| **URL** | `protocol://hostname:port` | Only LDAPS is allowed | Non-TLS is rejected by design; do not look for a workaround |
+| **Base DN** | Root of the search path | | Keep it as narrow as the design allows |
+| **Bind DN / Bind PW** | Service account that searches users and groups | Needs privilege to search both | The credential to inventory and rotate |
+| **Certificate** | TLS certificate of the LDAP server | Multiple certificates are allowed for a chain | Track its expiry; a lapsed certificate silently stops sync |
+| **User Base DN** | Subtree for users | Defaults to Base DN if omitted | Set it explicitly to your employee OU |
+| **userFilter** | Search filter for users | `(&(sAMAccountName=%v)(objectcategory=user))` | Add conditions that exclude disabled accounts if your directory supports it |
+| **userIdMap** | Which attribute is the user ID | `user:<sAMAccountName>` | Do not change after first sync (see below) |
+| **Group Base DN** | Subtree for groups | Defaults to Base DN | Point at a dedicated `MAS-*` group OU |
+| **groupFilter** | Search filter for groups | `(&(cn=%v)(objectcategory=group))` | Narrow it to the groups you actually use |
+| **groupIdMap** | Which attribute is the group ID | `*:cn` | |
+| **groupMemberIdMap** | How membership is read | `memberOf:member` | |
+
+The IBM examples are for Microsoft Active Directory. If you run another directory, map the equivalents. IBM's page lists supported directory types via the `ldapType` customisation, including IBM Tivoli Directory Server, Microsoft Active Directory, Novell eDirectory, Netscape and Sun Java System Directory Server, among others.
+
+### The bind account is a service identity
+
+The Bind DN deserves its own paragraph, because it is the credential most often absent from inventories. It authenticates MAS to your directory. IBM's text says it needs privileges to search users and groups. It does not need to modify anything. So:
+
+- Create a dedicated account named for its purpose, for example `svc-mas-ldap-sync`.
+- Grant read and search rights only, scoped to the two subtrees you sync.
+- Deny interactive logon in the directory if your directory supports it.
+- Exempt it from nothing silently: if your password policy forces rotation, put the rotation on a calendar, because a forced expiry will break sync with no obvious alert.
+- Record owner, purpose and rotation date in your register.
+
+### Mapping rules that bite
+
+IBM lists mapping constraints that deserve a place on your change checklist:
+
+- Mapped values must be **unique** in LDAP.
+- `id` and `username` may contain letters, numbers, `-`, `@`, `.` and `_`, with no spaces.
+- **Changing the id mapping after the first sync requires deleting the existing SCIM-owned users.** IBM gives the MongoDB command for 9.1 and earlier. If you do not, the next sync fails on duplicate usernames and emails. That is a destructive operation on a production user base, so rehearse it.
+- Changing the username mapping can affect authentication.
+- Duplicate email addresses or phone numbers can cause sync failures.
+- Unmapped email and phone values copy **all** LDAP values; a mapped value copies only one.
+
+The id-mapping rule is the one that turns a small decision at go-live into a painful migration later. Choose a stable, unique, immutable attribute and live with it.
+
+### forceMappedValue and the ScimCfg resource
+
+IBM documents two customisation points worth knowing.
+
+From **9.0.2**, setting `spec.config.forceMappedValue: true` in the `ScimCfg` custom resource changes how unmapped properties behave. With `true`, unmapped properties get the value `NOT_PROVIDED`, and unmapped email and phone numbers become empty arrays. With `false`, the default, the sync falls back to default LDAP attributes first, and uses `NOT_PROVIDED` only if neither is found.
+
+From **8.9**, the `ScimCfg` resource also accepts `customMaxSearchResults` (the maximum entries a search returns), `ldapType`, and `customLdapRegistryExtensions` for extra Liberty `<ldapRegistry>` settings. IBM warns that properties exposed through the UI or sync APIs, such as host, port, bindDN, bindPassword and baseDN, cannot be set through the extensions, nor can `id` or `realm`.
+
+An illustrative snippet, so you can recognise the shape. Check the exact API version and schema on your cluster before you apply anything; we did not verify the full CR schema on a live 9.2 system.
+
+```yaml
+# Illustrative only. Confirm apiVersion, namespace and field names with:
+#   oc explain scimcfg.spec.config
+apiVersion: config.mas.ibm.com/v1
+kind: ScimCfg
+metadata:
+  name: <instance-id>-ldap-scim
+  namespace: mas-<instance-id>-core
+spec:
+  config:
+    forceMappedValue: true        # IBM Docs: 9.0.2 and later
+    customMaxSearchResults: 1000  # IBM Docs: 8.9 and later
+```
+
+## 📋 What Can Go Wrong: LDAP Sync Failure Modes
+
+Here is the troubleshooting table we use, built from IBM's documented constraints and the general behaviour of scheduled directory sync. Rows marked "verify" are expectations from the documented design, not IBM-published error catalogues.
+
+| Symptom | Likely cause | First check | Fix |
+|---|---|---|---|
+| Sync stops entirely | LDAP server certificate expired or changed | Certificate in the sync configuration against the server's chain | Re-import the certificate chain |
+| Sync fails with duplicate username or email errors | Id mapping was changed after first sync (IBM Docs), or duplicate email values in the directory | Mapping history; duplicate attribute query in the directory | Revert mapping, or follow IBM's delete-and-resync procedure in a rehearsed window |
+| Users missing from MAS | userFilter too narrow, or User Base DN wrong | Filter against a known user with an LDAP browser | Correct filter and base DN |
+| Leaver can still log in | User authenticates locally, or next sync has not run | Authentication type of the account; time since last sync | Disable local account; shorten the window by agreement with the directory team |
+| Users keep old roles after an AD group change | Sync does not change entitlement or application access (IBM Docs) | Where role assignment is actually managed | Move role assignment to security groups managed on purpose |
+| Attributes show `NOT_PROVIDED` | `forceMappedValue` is true and the property is unmapped | Property mapping page | Map the property or accept the placeholder |
+| Sync feels slower after 9.2 upgrade | IBM states the 9.2 process might appear slower but is more efficient | Compare total completion time, not per-step time | None needed; measure and record |
+| Extension fields missing in the UI | IBM notes extension fields were not shown in the UI in 8.11 and earlier | Version | They remain part of the user object |
+
+A tip we give every team: keep one test user and one test group in the directory whose only purpose is to rehearse sync behaviour. Create them, change them, disable them, and watch what MAS does at the next run. The first time you learn how deactivation works should not be the day of a real leaver.
+
+## 🔐 Manage API Keys: The Credential That Inherits a User
+
+Now to the part with the most operational risk. Manage API keys are the standard way for external clients to call Manage's OSLC and REST APIs and the integration framework. IBM describes them as a native form of authentication that does not need an external repository for password storage.
+
+### What IBM's API Keys page says
+
+We read the Manage "API keys application" page. The facts that matter:
+
+- **Storage.** By default all API keys are encrypted at storage, controlled by the system property `mxe.secureapikey`.
+- **Creation.** You create keys in the API Keys application under Integration. You can also import an externally generated key through the `MXAPIAPIKEY` REST API: `POST /oslc/os/mxapiapikey` with an `apikey` property and an `expiration` property. IBM's example shows `-1` for expiration but the page does not explain what that value means. Do not assume it means "never expires" without testing on your build.
+- **User synchronisation first.** IBM says you must synchronise Manage users for the external clients before API keys are created for them. A key points at a user. No user, no key.
+- **Permissions come from the linked user.** IBM: the permissions associated with the key are determined by the permissions of the associated user.
+- **Restrict who can create keys for whom.** Setting the system property `mxe.apikeyforloggedinuser` to `1` (Global Value, then save and Live Refresh) restricts key creation to the logged-in user. That limits one administrator minting keys that impersonate another user.
+- **Presentation.** The key goes in an `apikey` query parameter or an `apikey` request header, on every request. A header is the better habit, because query parameters end up in access logs and proxy logs.
+- **No session.** API key calls do not create a persistent server connection.
+- **Revocation.** Delete the key. IBM adds a caution: deleting a key does not block all access, because the external client might still reach Manage through another configured authentication system. If a key is compromised, delete it and issue a new one for that user.
+
+Two things the page does not give: a maximum number of keys per user, and a time-based expiry model beyond the `expiration` property. Both are things to check on your own build.
+
+### The blast radius rule
+
+Putting those facts together gives you the single most useful sentence in this post:
+
+> **A Manage API key can do whatever its user can do. Nothing less.**
+
+Which leads to the usual failure pattern in the field:
+
+| Shortcut taken | Why it happened | What it creates |
+|---|---|---|
+| Integration key linked to an administrator user | "It didn't work with a normal user and we were out of time" | A static, never-expiring admin credential in a config file |
+| One shared key for several integrations | Fewer keys to manage | Impossible to attribute, rotate or revoke one integration alone |
+| Key linked to a real employee's user | Quick to set up | Key outlives the employee's access review; leaver exposure |
+| Key linked to a service user in a broad security group | Group already existed | Integration can read and write far more than it needs |
+| Key in a query parameter in a URL | Easy to test in a browser | Key in logs, browser history and tickets |
+
+Every row is fixable by the same discipline: one integration, one dedicated service user, one narrowly scoped security group, one key.
+
+### Scripting the key lifecycle without maxauth
+
+If you came from 7.6 you may remember creating keys by calling an `apitoken/create` endpoint with a `maxauth` header. That route does not carry over.
+
+A July 2026 IBM Community thread documents the failure on MAS 9.1: the 7.6-style `apitoken/create` call with `maxauth` returns HTTP 403 with error **BMXAA7901E** ("You cannot log in at this time. Contact the system administrator."), even though the same credentials work in the Manage UI, and a key created manually in the API Keys application works fine. An IBM Champion answered in the thread that `maxauth` is not supported for authentication to Manage in MAS, that only OIDC/SAML and `apikey` are supported, and that keys should be managed through the `MXAPIAPIKEY` object structure using a generated admin API key.
+
+The operations described in that thread, which we treat as practitioner guidance rather than an IBM specification:
+
+| Operation | Request (per the thread) | Note |
+|---|---|---|
+| Create | `POST /api/os/mxapiapikey` with a body containing `userid` and `expiration` | Uses the `/api/` path |
+| List | `GET /api/os/mxapiapikey` | |
+| Delete | `DELETE /oslc/os/mxapiapikey/{id}` | Uses the `/oslc/` path, not `/api/` |
+
+The thread's author also asked how to validate a user's username and password before minting their key, since `maxauth` is gone. That question was left unanswered when the thread closed, so there is no documented supported answer to build on. Our advice: do not build a self-service portal that creates keys on behalf of users who "prove" themselves with a password. Have a controlled administrative process mint keys for service users that you created on purpose.
+
+A sketch of a rotation script, with the caveat that field names and units are as the thread shows them and must be verified on your build. The `expiration` value is shown as a placeholder because neither source defines its units.
+
+```bash
+#!/usr/bin/env bash
+# Illustrative rotation sketch for a Manage API key via MXAPIAPIKEY.
+# ADMIN_KEY: a tightly held key whose user may manage MXAPIAPIKEY only.
+# Confirm paths, payload fields and the meaning of "expiration" on your build.
+set -euo pipefail
+
+MAXIMO="https://${MAS_HOST}/maximo"
+SVC_USER="svc-erp-readonly"          # dedicated service user, narrow group
+EXPIRATION="<value-per-your-build>"  # units not defined in the sources we read
+
+# 1. Create the replacement key
+curl -sS -X POST "${MAXIMO}/api/os/mxapiapikey" \
+  -H "apikey: ${ADMIN_KEY}" \
+  -H "Content-Type: application/json" \
+  -d "{\"userid\":\"${SVC_USER}\",\"expiration\":${EXPIRATION}}" \
+  | tee new-key-response.json
+
+# 2. Hand the new key to the consumer through your secret manager (not email).
+# 3. After the consumer is verified on the new key, list and delete the old one:
+curl -sS -H "apikey: ${ADMIN_KEY}" "${MAXIMO}/api/os/mxapiapikey?lean=1"
+# curl -sS -X DELETE -H "apikey: ${ADMIN_KEY}" "${MAXIMO}/oslc/os/mxapiapikey/<old-id>"
+```
+
+Notice what the script implies: you need an administrative key to manage other keys. That key is the most sensitive credential in the whole scheme. Give its user rights to the `MXAPIAPIKEY` object structure and nothing else, hold it in a vault, and use it only from a controlled pipeline.
+
+> ⚠️ **Both the 9.0.x admin API documentation and several community posts describe different API paths for Suite and for Manage.** Keep the two straight: the Suite uses `https://api.{instance}.{domain}` style hosts, Manage uses the `/maximo` path on the Manage host. A key for one does nothing at the other.
+
+## 🏛️ The Suite API Key, Revisited
+
+Part 2 walked through the Suite API key for SCIM: create it with **User management** access, copy the key ID and authentication token once (IBM says they cannot be recovered), then exchange them at `/v1/authenticate` using HTTP Basic for a JWT. Two reminders matter for the register:
+
+- **JWT expiry.** The default is short. The `mas-jwt-expiry-duration` header takes an ISO 8601 duration such as `P90D`. IBM documents that `P100Y` and `NEVER` are supported on 9.2, 9.1.7 and 9.0.18 and later. Our 9.2 factbase also lists "JWT expiry can exceed 90 days or never expire" as a 9.2 feature.
+- **Access scope.** The key's suite administrative access level is chosen at creation. "User management" is a powerful scope. Do not pick a broader one than the job needs.
+
+A Suite API key and a Manage API key can have the same human owner and be unrelated in function. Do not let a shared word in a ticket title ("API key") make a reviewer think one control covers both.
+
+## 📒 The Service-Identity Register
+
+You cannot govern what you cannot list. The deliverable from this part of the series is one table, kept current, that covers every non-human credential. Here is the structure we use.
+
+| Column | Why it matters |
+|---|---|
+| ID / name | The key description, service user ID, or bind DN |
+| Type | Suite API key, SCIM JWT, LDAP bind, Manage API key, MCP agent key |
+| Owner (a named person or a team mailbox) | Someone who can say "yes, keep it" |
+| Purpose | One sentence; if you cannot write one, it is a deletion candidate |
+| Linked user | For Manage keys: the Manage user the key acts as |
+| Security groups held | The actual blast radius |
+| Created | For age-based review |
+| Expiry or rotation date | Mandatory; "none" is a finding |
+| Where stored | Vault path, not a person's laptop |
+| Last used | If your logs allow it; unused keys are cleanup candidates |
+| Review date | Next scheduled review |
+
+### Building the first version in a day
+
+1. **Suite API keys.** Open Suite administration, API keys. Export or transcribe the list: description, access scope, expiry.
+2. **SCIM JWTs.** Ask each IdP owner. Decode the `exp` claim as shown in Part 2. Add rows for unknown ones as "owner unknown."
+3. **LDAP bind account.** Read it from the user registry synchronisation configuration. Add the certificate expiry as a second date.
+4. **Manage API keys.** Open the API Keys application under Integration, list all keys and their linked users. Alternatively, query the `MXAPIAPIKEY` object structure with a suitably scoped admin key.
+5. **Join to security.** For each linked user, list the security groups and the privileges that matter (administration, data import, user management, workflow reassignment).
+6. **Mark the findings.** Admin-linked keys, shared keys, keys on real employee users, keys without expiry, keys without an owner.
+
+A read-only look at the Manage side, as SQL for teams that have database access. Table and column names here are our best understanding of the Manage schema and are marked illustrative; confirm in your database before running. MAS restricts direct database access in many environments, so the API route may be the only option.
+
+```sql
+-- Illustrative. Verify table and column names in your Manage schema.
+-- Service users that hold security group membership (blast radius view):
+SELECT g.userid, g.groupname
+FROM   groupuser g
+JOIN   maxuser   u ON u.userid = g.userid
+WHERE  u.userid LIKE 'SVC-%'     -- your naming convention for service users
+ORDER  BY g.userid, g.groupname;
+```
+
+The naming convention in that query is not a Maximo feature. It is a habit we recommend: every non-human Manage user gets a prefix (`SVC-`) so they can be found and filtered. Without it, service users hide among thousands of employees.
+
+## 🧭 A Least-Privilege Design for Integrations
+
+Least privilege is easy to say and tedious to do. Here is a design pattern that makes it routine for integrations.
+
+### The five-part pattern
+
+1. **One integration, one service user.** Never share a user across integrations.
+2. **One security group per integration role.** Not "integration group for everything." A read-only reporting feed gets a group that can read the specific object structures it uses.
+3. **Object-structure level access.** Manage's security groups include an Object Structures tab. Our MAS 9.2 factbase records that in 9.2 the Sites and Object structures tabs move from Manage's Security Groups application into suite security (Suite > Access and usage > Security groups). Grant only the object structures the integration calls.
+4. **Site restrictions.** Limit the group's sites to those the integration needs.
+5. **One key per user, with an owner and an expiry.** Rotate on a schedule that matches your risk appetite.
+
+IBM's 9.1 security group documentation describes the modular approach: add users to multiple groups that each grant fewer privileges, rather than one broad group. The levels of authorisation can combine read, insert, save and delete. For service users, prefer several small groups to one large one, because you can see at a glance what each does.
+
+### Worked examples
+
+| Integration | Service user | What it needs | What it must not have |
+|---|---|---|---|
+| ERP pulls approved purchase orders nightly | `SVC-ERP-PO-READ` | Read on the PO object structure at named sites | Insert, save, delete; any other object structure; administration |
+| Reporting tool reads work orders | `SVC-BI-WO-READ` | Read on the work order object structure | Any write; person or labour rate data unless required |
+| Sunday asset loader | `SVC-ASSET-LOAD` | Insert and save on the asset object structure; data import | Delete; access to financials; user management |
+| Mobile gateway | Per-user sessions, not an API key | Normal user authentication | A shared key that bypasses user identity |
+| Monitoring probe | `SVC-HEALTH` | Read on a trivial health-check object | Everything else |
+
+The mobile row is deliberate. Not every machine-looking caller should be a key. When the real actor is a human on a device, use user authentication so Maximo's audit trail names the human.
+
+### Guard rails that cost almost nothing
+
+- **Header, not query string.** Send `apikey` in a header so it does not appear in access logs.
+- **Network scoping.** Where your ingress allows it, restrict which source addresses can reach the integration endpoints.
+- **Turn on `mxe.apikeyforloggedinuser`** if you want key creation limited to the logged-in user, per IBM's page.
+- **Keep `mxe.secureapikey` at its default** so keys are encrypted at rest, unless you have a documented reason.
+- **No shared keys in shared tickets.** Keys travel through your secret manager, not email or chat.
+- **Monthly list review.** A 15-minute review of the register, with a named reviewer, is worth more than an annual project.
+
+## 🤖 Service Identities for AI Agents and the MCP Server
+
+AI agents are the new kind of non-human caller, and the one most likely to be set up carelessly because the demo works with whatever key is to hand.
+
+### What the 9.2 MCP server is, per our field guide
+
+Our IBM Bob field guide, which summarises IBM documentation for MAS 9.2, describes a native Maximo MCP server that ships as an `instance_ID-mcp` deployment on OpenShift. The points that matter for security:
+
+- **Tools are generated from Manage.** They include AI configuration tools plus custom tools built from object structures, automation scripts, workflows and API routes. IBM's wording, as we recorded it: every tool is a Maximo REST API POST, and not all Maximo APIs are tools.
+- **Tool lists refresh on a poll.** The default `POLLING_FREQUENCY` is 10 minutes, and `TOOL_RESPONSE_TIMEOUT` defaults to 10 minutes.
+- **Access is through a public OpenShift route.** External agents authenticate with an **`apikey` header or a JWT** and use JSON-RPC 2.0 `tools/call` with server-sent-event responses.
+- **The server is open to external agents.** The same server the Maximo Assistant uses can serve other MCP clients.
+- **Governance implication.** Because tools run under Manage's REST and security layer, agent actions inherit Manage authorisation, business rules and validation.
+
+We did not find a primary IBM page for the MCP server's authentication details in our web research this run, so treat the header and JWT statement as coming from our field guide's reading of IBM documentation, and verify it against the current IBM page for your release before you design around it.
+
+### Why agents change the risk
+
+A human with an over-broad key makes occasional mistakes at human speed. An agent with an over-broad key can issue many calls quickly, can be steered by text inside the data it reads, and can chain tools in sequences nobody reviewed. The key does not know the difference. This is why least privilege matters more, not less, for agents.
+
+| Risk | How it shows up | Control |
+|---|---|---|
+| Over-broad key | Agent can read or write across the estate | Dedicated service user, narrow security group |
+| Destructive tool exposure | A tool that deletes or bulk-updates is callable | Do not expose it; mark destructive tools with MCP annotations (field guide recommendation) |
+| Prompt-injection steering | Text in a work order description tells the agent to call a tool | Read-only first; human approval for writes; narrow tools |
+| Credential sprawl | One agent key copied into several tools | One key per agent per environment |
+| No audit trail | Calls attributed to a shared admin user | Dedicated user per agent so logs name it |
+| Stale key | Pilot key left active after the pilot | Expiry and a review date |
+
+### An onboarding sequence for an agent
+
+1. **Create a dedicated Manage user** named for the agent, for example `SVC-AGENT-PLANNER`, never a human's account.
+2. **Create a security group** granting read on the object structures the first use case needs, restricted to the pilot site. Start read-only, as our field guide recommends.
+3. **Create the key** for that user, with an owner, a purpose and an expiry in the register.
+4. **Connect through the MCP server**, not the database and not a raw admin key.
+5. **Review the exposed tools.** If a tool can write, ask whether this agent needs it. If it can delete, assume the answer is no.
+6. **Add a scoped write key later, per use case**, with its own user and group, and require human approval for the first period.
+7. **Log and review.** Review which tools the agent called, with which arguments, at a fixed cadence.
+8. **Retire on schedule.** When the pilot ends, delete the key and the user.
+
+Part 6 of this series covers securing MAS for AI agents in full, including the authentication flow and audit. The point for this part is narrower: an agent is a service identity, and it belongs in the register.
+
+## 🛠️ Operations: Rotation, Monitoring and Offboarding
+
+A register without a routine is a spreadsheet. Here is the routine.
+
+### Rotation schedule
+
+| Credential | Suggested review cadence | Trigger for immediate rotation |
+|---|---|---|
+| Suite API key and SCIM JWT | Per JWT expiry; check 30 days before | Owner leaves; suspected exposure |
+| LDAP bind password | Per directory policy, at least yearly | Directory admin leaves; exposure |
+| LDAP server certificate | Before expiry; alert at 60 days | Directory certificate renewal |
+| Manage API keys for integrations | Yearly or per risk class | Integration owner leaves; vendor change; exposure |
+| Agent keys | Short: per pilot phase | Any change to the tool set |
+
+These cadences are our recommendations, not IBM requirements. IBM's pages give you the mechanics; your policy gives you the dates.
+
+### Zero-downtime rotation for a Manage key
+
+Because Manage keys are tied to a user and a user can in principle have more than one key (verify the limit on your build, since IBM's page does not state a maximum), rotation can overlap:
+
+1. Create the new key for the same service user.
+2. Deploy it to the consumer through the secret manager.
+3. Confirm the consumer works on the new key.
+4. Delete the old key.
+5. Update the register: created date, expiry, rotation date.
+
+If your build limits keys per user, the fallback is a short, agreed maintenance window.
+
+### Detecting the quiet failures
+
+| Quiet failure | Why nobody notices | Detection |
+|---|---|---|
+| LDAP certificate expires | Sync just stops; existing users still work | Calendar alert; compare last-sync time with now |
+| Bind password changed in the directory | Sync fails; users unchanged | Monitor sync job result |
+| JWT expires | Provisioning silently stops (Part 2) | Decode `exp`; alert at 30 days |
+| Key's user was deactivated | Integration returns auth errors | Alert on repeated 401 or 403 from an integration |
+| Key for a leaver remains active | Nothing breaks | Quarterly join of the register to HR leaver lists |
+| Orphaned LDAP groups | Groups are never deleted by sync | Quarterly compare of MAS groups with directory groups |
+
+### Offboarding a person who owned keys
+
+When an employee leaves, the directory handles their login. It does not handle the keys they created. Add this to the leaver checklist: search the register for any credential with that person as owner, and reassign or rotate each one. Also check for Manage API keys linked to their own user ID, which would stop working or, worse, keep working after the user is deactivated depending on how your build treats key validity for inactive users. We could not find an IBM statement on that behaviour, so test it with a throwaway user.
+
+## 🧪 The Audit Test: Prove It Before the Auditor Asks
+
+Run this on a pilot population, and repeat it after every upgrade, because the 9.2 changes touch exactly this area.
+
+| # | Test | How | Expected result | Evidence to keep |
+|---|---|---|---|---|
+| 1 | Externally managed vs local | List users by `owner` value | Real employees are externally managed; local accounts are a short, justified list | Export with counts |
+| 2 | Leaver via LDAP | Remove a test user from the directory; wait for the next sync | User deactivated; login fails (LDAP or SAML users) | User status and login failure |
+| 3 | Leaver with local password | Same test, for a user who also has a local password | Document whether access remains (IBM says it does) | Result per build |
+| 4 | Group removal | Remove a test group from the directory | Group still exists in MAS (IBM: never deleted) | Group list before and after |
+| 5 | Bind account scope | Review the bind account's directory rights | Read and search only, on two subtrees | Directory ACL output |
+| 6 | Certificate expiry | Read the LDAP certificate dates | At least 60 days remaining | Certificate text |
+| 7 | Key to user to groups | For each Manage API key, resolve the linked user's groups | No integration key sits in an administrative group | Register join |
+| 8 | Key without owner | Search the register | None | Register extract |
+| 9 | Revocation | Delete a test key; call with it | Call fails; document any residual access through other auth | Request and response |
+| 10 | Agent key | Resolve the agent user's groups and tools | Read-only first; no destructive tools | Group list and tool list |
+
+Tests 2 and 3 should be agreed with your security team before you run them, in the same spirit as the leaver test in Part 2. The aim is not that MAS must do any specific thing. The aim is that the behaviour is **known, written down and repeatable**.
+
+## ⚖️ LDAP, SCIM or Both? A Decision Table
+
+Many readers will ask whether to keep LDAP sync now that SCIM exists. IBM documents both, and neither replaces the other in every case.
+
+| Consideration | LDAP sync | SCIM 2.0 from the IdP |
+|---|---|---|
+| Who initiates | MAS, on a schedule | The IdP, on assignment changes or its own cycle |
+| Deactivation | At the next scheduled run | Whatever the IdP sends, subject to Part 2's caveats |
+| Custom MAXUSER attributes | Supported per an IBM Ideas request that says LDAP registration supports custom attributes and SCIM does not yet (see Part 2) | Not exposed today per that request |
+| Directory type | Any LDAP v3 directory that fits the supported types | Any IdP that is a SCIM client |
+| Network path | MAS reaches your directory over LDAPS | The IdP reaches MAS API endpoint |
+| Operational owner | Directory team and MAS admin | Identity team and MAS admin |
+| Failure mode | Silent: expired cert or bind password | Silent: expired JWT |
+
+Our guidance: choose one system as the owner of the lifecycle for a given population, and do not let LDAP and SCIM both manage the same users. IBM's own page reminds you that sync through external SCIM APIs is not a supported LDAP path, which is another way of saying these are separate mechanisms. If you are migrating from one to the other, run them on disjoint populations, then cut over by group.
+
+## 🔟 The Ten Commandments of Non-Human Access in MAS
+
+1. **Every key has a user, and the user is the real control.** Secure the user.
+2. **One integration, one service user, one key.** No sharing.
+3. **No administrator behind an integration key.** Ever.
+4. **LDAPS only, and the bind account is read-only.** Treat it as a privileged identity anyway.
+5. **Choose the id mapping once.** Changing it after first sync means deleting synced users.
+6. **A removed LDAP user is deactivated at the next sync, not now.** Know your window.
+7. **Local passwords defeat directory deactivation.** Keep real people off them.
+8. **Header, not query string.** Keys do not belong in URLs.
+9. **Agents get their own identity, starting read-only.** Never a human's key.
+10. **If it is not in the register, it does not exist.** And if it is not rotated, it is a liability.
+
+## 📅 What To Do This Week
+
+| Day | Action | Evidence to keep |
+|---|---|---|
+| Monday | Create the service-identity register skeleton; list Suite API keys and SCIM JWTs | First register tab |
+| Tuesday | Read the LDAP sync configuration: bind account, certificate dates, id mapping, last successful sync | Config notes and dates |
+| Wednesday | List all Manage API keys with linked users and their security groups; flag admin-linked and shared keys | Findings list |
+| Thursday | Run tests 2 and 3 from the audit table with a throwaway directory user | Test evidence |
+| Friday | For any AI agent or MCP client in use or in pilot, confirm a dedicated user, a read-only group and a register entry | Agent register rows |
+
+## 🔭 Open Items We Could Not Close
+
+| Open item | Why it is open | What would close it |
+|---|---|---|
+| LDAP sync schedule and how to change it | IBM's page does not state an interval | Check the synchronisation configuration in your Suite; time two runs |
+| Meaning and units of `expiration` (including `-1`) in MXAPIAPIKEY | IBM's example uses `-1` with no explanation; the community example does not define units | Test on a non-production build; IBM case |
+| Maximum number of Manage API keys per user | Not stated on IBM's page | Test, or IBM case |
+| Behaviour of a Manage API key after its user is deactivated | No IBM statement found | Test with a throwaway user |
+| Validating a user's password before minting their key | Left unanswered in the July 2026 community thread | IBM guidance |
+| MCP server authentication details | Our statement comes from the field guide's summary of IBM documentation; we found no primary IBM page in this run's web search | Current IBM page for the 9.2 MCP server |
+| Whether LDAP login does a live directory check on every login | No IBM text settles it for every configuration | Test with a disabled directory account before the next sync |
+| Full `ScimCfg` schema on 9.2 | We did not inspect a live cluster | `oc explain` on your cluster |
+
+## ❓ Frequently Asked Questions
+
+**Does LDAP sync delete users from MAS?**
+No. IBM says users removed from LDAP are deactivated at the next sync. Groups are never deleted by the sync.
+
+**Is LDAPS required?**
+Yes. IBM states that secure LDAP is the only allowed protocol for synchronisation and that non-TLS connections are not supported.
+
+**What do Manage API keys inherit?**
+The permissions of the linked Manage user, per IBM's API Keys page. Secure the user and its security groups, not just the key.
+
+**Can I still create Manage keys with maxauth?**
+A July 2026 IBM Community thread reports 403 with BMXAA7901E on MAS 9.1 and an IBM Champion's answer that `maxauth` is not supported; use `MXAPIAPIKEY` with an admin key instead.
+
+**How should an AI agent authenticate to Maximo?**
+Through the MCP server or the REST API with its own dedicated user and key, starting read-only. Our field guide records the MCP server accepting an `apikey` header or a JWT; verify against the current IBM page.
+
+## References
+
+- [LDAP user registry synchronization (IBM Docs)](https://www.ibm.com/docs/en/SSRHPA_cd/appsuite/admin/manage_user_sync.html)
+- [Configuring authentication, including LDAP and multiple identity providers (IBM Docs)](https://www.ibm.com/docs/en/SSRHPA_cd/appsuite/admin/manage_authentication.html)
+- [API keys application in Maximo Manage (IBM Docs)](https://www.ibm.com/docs/SSLPL8_cd/com.ibm.mif.doc/gp_intfrmwk/c_api_keys_comp.html)
+- [Configuring Maximo Application Suite to synchronize user and groups with SCIM 2.0 (IBM Docs)](https://www.ibm.com/docs/en/SSRHPA_cd/appsuite/admin/t_config_synch_scim20.html)
+- [Administering security groups in Maximo Application Suite 9.1 (IBM Docs)](https://www.ibm.com/docs/SSRHPA_cd/appsuite/users_91/t_ctr_security_groups_91.html)
+- [Upgrading user authentication changes from Maximo Application Suite 9.1 to 9.2 (IBM Docs)](https://www.ibm.com/docs/en/SSRHPA_cd/appsuite/install/c_user_auth_upgrade_91.html)
+- [How to generate Maximo Manage API key programmatically in MAS 9.1 using API (IBM Community)](https://community.ibm.com/community/user/question/how-to-generate-maximo-manage-api-key-programmatically-in-mas-91-using-api)
+- [Maximo Application Suite Admin APIs 9.0.x, Getting Started (IBM Developer)](https://developer.ibm.com/apis/catalog/maximo--maximo-application-suite-admin-apis-9-0-x/Getting+Started)
+
+---
+
+## Series Navigation
+
+[← Part 2: SCIM User and Group Sync](/blog/mas-secops-scim-entra-okta) · [Part 4: MAS 9.2 User-Management Changes →](/blog/mas-secops-user-management-92)
+
+| Part | Title |
+|---|---|
+| 0 | [MAS Security Operations: Identity, Access and Patching (Series Guide)](/blog/mas-secops-series-index) |
+| 1 | [SAML SSO and MFA in MAS: Why MFA Lives in Your Identity Provider](/blog/mas-secops-saml-sso-mfa) |
+| 2 | [SCIM User and Group Sync from Entra ID and Okta](/blog/mas-secops-scim-entra-okta) |
+| **3** | **LDAP, API Keys and Service Identities in MAS** |
+| 4 | [MAS 9.2 User-Management Changes Admins Must Know](/blog/mas-secops-user-management-92) |
+| 5 | [Patching as a Security Program: The 2026 MAS CVE Year](/blog/mas-secops-cve-patching-2026) |
+| 6 | [Securing MAS for AI Agents and MCP](/blog/mas-secops-securing-ai-agents-mcp) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo teams cut through vendor messaging and make grounded decisions about their asset management platform. Every date, version and score in this series is labeled by how we verified it, and where IBM has not said, we say so instead of guessing.
+
+<!--
+REVIEWER NOTES (night-shift, 2026-10-18, secops-03):
+- SOURCES READ DIRECTLY: IBM Docs LDAP user registry synchronization (manage_user_sync), Manage API keys application page (c_api_keys_comp), authentication overview (manage_authentication; it does NOT list LDAP fields), IBM Community thread on programmatic Manage API keys (question dated 07/08/26, answer 07/09/26 by an IBM Champion). Web search results listed the 9.1 security groups page and the 9.0.x admin API Getting Started page; the developer.ibm.com fetch returned only a title, so no Suite /v1/authenticate detail beyond the SCIM page (Part 2) and search summaries is claimed.
+- BRIEF vs RESEARCH: brief cited DOC00 section 5.2 and CHG ids. No CHG id applies directly to LDAP/API keys; CHG-008 and CHG-020 are for Part 5. Not cited here.
+- DOC15/DOC16 (knowledge base) are the source for: PLAT-07/09/13/16/17 and the MCP server description (DOC16 section 13.2). Knowledge base wins on discrepancy; no conflict found. The MCP auth statement (apikey header or JWT) is DOC16-only; no primary IBM page found this run, and a search for it returned only third-party MCP material.
+- LDAP page: schedule interval not stated; IBM says through 9.0 only one LDAP server is supported, and the authentication page says multiple IdPs of same type exist (9.0 API/CLI, 9.2 UI per DOC15). Slight tension with "only one LDAP server through 9.0" is flagged inline; human to confirm wording.
+- Manage API key page: expiration "-1" unexplained in IBM text; post says so. Community thread uses /api/os/mxapiapikey for create and /oslc/os/mxapiapikey/{id} for delete; IBM Docs uses /oslc/os/mxapiapikey. Both stated with attribution.
+- The ScimCfg YAML apiVersion/kind/name are ILLUSTRATIVE and unverified (IBM page names the ScimCfg CR and the fields only). The SQL (groupuser, maxuser) and the SVC- naming convention are illustrative/our recommendation.
+- Claim "removed LDAP user can still log in before the next sync" is an inference from IBM's deactivate-at-next-sync text; flagged as needing a test. The Manage-key-after-user-deactivation behaviour is explicitly marked unknown.
+- Rotation cadences in the table are our recommendations, labelled as such.
+- Date/volume: word count target met against siblings (see commit).
+-->
