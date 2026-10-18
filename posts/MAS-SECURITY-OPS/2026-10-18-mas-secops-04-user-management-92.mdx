@@ -1,0 +1,613 @@
+---
+title: "MAS 9.2 User-Management Changes Admins Must Know: What IBM Confirms, What It Doesn't"
+description: "What actually changed for user administration in Maximo Application Suite 9.2: user synchronisation removed, user data in the relational database, security-group tabs moved to suite security, deprecated user APIs gone. Plus what we could not confirm about a classic User app deprecation and AppPoint recalculation."
+date: "2026-10-18"
+slug: "mas-secops-user-management-92"
+tags: ["Maximo", "MAS", "MAS 9.2", "Security", "User Management", "Security Groups", "AppPoints", "Licensing", "Upgrade", "MAXUSER", "MasUserAnalyzer"]
+draft: true
+tier: "admin"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-secops-04-user-management-92.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Is the classic Users application deprecated in Maximo Manage 9.2?"
+    answer: "We could not confirm it. IBM's 9.2 What's new page lists user settings and purchasing options moving to the suite Users page, the Sites and Object structures tabs moving to suite Security groups, user synchronisation removed, and the deprecated 9.1 user APIs removed. None of those entries uses the word deprecated for the Users (Manage) application. The only IBM statement we found on its status is from the 9.1 release notes, which say existing Manage 9.0.x users can continue to manage users in Maximo Manage by selecting the Users (Manage) application. The claim circulating on social media is plausibly a loose reading of the 9.2 moves. Treat the application as present but progressively hollowed out, test your own 9.2 environment, and re-check the 9.2 deprecations page before you plan around its removal."
+  - question: "What does 'user synchronisation is removed for all applications' mean in practice?"
+    answer: "IBM states that from 9.2 user and group data for authentication is stored in the system relational database, which eliminates duplicated user data and the synchronisation process between suite applications. In 9.1 and earlier the suite kept users in its own store (MongoDB) and pushed them to Manage, so a user could exist in two places and drift. In 9.2 there is one record. The practical effects are that a failed sync no longer explains a missing user, that the MongoDB user and group collections are renamed User_pre_upgrade_91_backup and Group_pre_upgrade_91_backup and are no longer used, and that anything reading the old stores or calling the removed 9.1 user APIs must be rewritten. Identity provider synchronisation (SCIM or LDAP from your directory into MAS) still exists; it is the suite-to-application copy that is gone."
+  - question: "Did AppPoint calculation change by security group in 9.2?"
+    answer: "We found no IBM statement that the ratios or the calculation changed in 9.2. What IBM documents, in the Manage security-group synchronisation page, is a mechanism that predates 9.2: the MasUserAnalyzer cron task reviews and calculates each user's licence type from the number and type of applications their security groups let them reach, and sends the new type to the suite when an authorisation change alters the calculation or when the calculated type is higher than the synchronised entitlement. That is how adding someone to a broader security group can raise their AppPoint cost. What is new in 9.2 is visibility: an AppPoints usage dashboard and tracking of AI Service AppPoints. Do not accept a claim of a 9.2 ratio change without a contractual or IBM-docs source."
+  - question: "What must I check before upgrading from 9.1 to 9.2 for user data?"
+    answer: "Run the Integrity Checker (through the Tools API or validate_integ.sh in the maxinst pod) and clear every reported issue, because the pre-upgrade datamodel-migration job depends on a clean database. Audit MAXUSER rows where the issuer is empty, because IBM fix DT501598 in Core 9.2.6 (readme dated 18 September 2026) addresses MAXUSER fields being overwritten during a 9.1 to 9.2 upgrade for users whose MASISSUER is NULL, and the fix is repeated in 9.2.7. Back up the database, capture a list of users, groups and licence types for comparison, inventory scripts that call the removed 9.1 user APIs, and note any customised system-event email templates because those are not migrated. After the upgrade, read the datamodelmigration pod log and test sign-in for every identity provider path."
+  - question: "Where did my security-group Sites and Object structures settings go?"
+    answer: "IBM says the Sites tab and the Object structures tab that used to live in the Security groups (Manage) application are available in suite security in 9.2, under Suite, Access and usage, Security groups. The intent is to centralise security configuration. For administrators the consequences are procedural: runbooks, screenshots and training that tell people to open Manage and edit the tab need updating, and the people who can change site and object-structure access are now defined by suite security rights rather than only by Manage application rights. Check who holds those rights before you upgrade, because object-structure access controls which users and systems reach integration endpoints."
+keyTakeaways:
+  - "9.2 removes user synchronisation between suite applications: user and group data lives in the system relational database, so there is one record per user, and the old MongoDB collections are renamed with a _pre_upgrade_91_backup suffix (IBM Docs)"
+  - "The deprecated 9.1 user and group management APIs are removed in 9.2, so every script, integration and IdP connector that still calls them breaks on upgrade; inventory them before you move"
+  - "The Sites and Object structures security-group tabs and several Manage user settings moved to suite security and the Users page; your runbooks and who-can-do-what rights must move with them"
+  - "We found no IBM source for a classic Users application deprecation or a 9.2 AppPoint ratio change; the documented AppPoint mechanism is the MasUserAnalyzer cron task, and the genuinely new 9.2 item is the AppPoints usage dashboard"
+  - "DT501598 (Core 9.2.6, 18 September 2026) fixes MAXUSER fields being overwritten when MASISSUER is NULL during 9.1 to 9.2 upgrade, so audit issuers and run the Integrity Checker before you start"
+series:
+  name: "MAS Security Operations"
+  part: 4
+  total: 6
+tldr: "Part 3 closed the non-human credential story. This part turns to the platform change that sits under all of it: MAS 9.2 stops copying users between suite applications. We walk through what IBM confirms (user and group data in the system relational database, synchronisation removed, deprecated 9.1 user APIs removed, security-group Sites and Object structures tabs and Manage user settings moved to suite security, LDAP electronic signature, multiple identity providers in the UI, the AppPoints usage dashboard), give you a pre-upgrade and post-upgrade checklist built on DT501598 and the Integrity Checker, and then test two popular claims, a classic User app deprecation and an AppPoint recalculation by security group, against IBM documentation. One of them has a real mechanism behind it. The other we could not find."
+seoTitle: "MAS 9.2 User Management Changes for Admins"
+seoDescription: "MAS 9.2 removes user sync, moves security group tabs to suite security and drops old user APIs. What IBM confirms, and what it doesn't."
+relatedSlugs: ["mas-secops-series-index", "mas-secops-scim-entra-okta", "mas-secops-ldap-api-keys"]
+clusterSlugs: ["mas-secops-series-index", "mas-secops-saml-sso-mfa", "mas-secops-scim-entra-okta", "mas-secops-ldap-api-keys", "mas-secops-cve-patching-2026", "mas-secops-securing-ai-agents-mcp"]
+targetQuestions:
+  - "What changed in MAS 9.2 for user and group management?"
+  - "Is the Users application deprecated in Maximo Manage 9.2?"
+  - "Does MAS 9.2 still synchronise users between suite applications?"
+  - "How do security groups affect AppPoint consumption in MAS?"
+  - "What should I check before upgrading MAS 9.1 to 9.2 for user data?"
+semanticKeywords:
+  - "MAS 9.2 user management"
+  - "Maximo Application Suite centralized user management"
+  - "user synchronization removed MAS 9.2"
+  - "datamodel-migration job MAS 9.2"
+  - "DT501598 MASISSUER MAXUSER"
+  - "MasUserAnalyzer cron task"
+  - "Maximo AppPoints usage dashboard"
+  - "MAS security groups Sites tab Object structures"
+  - "User_pre_upgrade_91_backup"
+  - "MAS electronic signature LDAP"
+  - "Maximo Integrity Checker validate_integ.sh"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Suite administrator access to MAS 9.1 or 9.2, with permission to view Access and usage, Users and Security groups"
+  - "Maximo Manage administrator access, including database read access for the audit queries"
+  - "OpenShift access sufficient to read pod logs in the Core namespace"
+  - "A non-production copy of the 9.1 environment to rehearse the upgrade and the validation steps"
+---
+
+# MAS 9.2 User-Management Changes Admins Must Know: What IBM Confirms, What It Doesn't
+
+> 🎯 **Who this is for:** MAS administrators, security leads and licence managers planning a 9.1 to 9.2 upgrade, or running 9.2 already and wondering which of the user-management rumours are true. Part 4 of the [MAS Security Operations series](/blog/mas-secops-series-index). Part 3 covered [LDAP, API keys and service identities](/blog/mas-secops-ldap-api-keys).
+
+## 🔥 Three Claims, One Meeting
+
+Picture the upgrade planning meeting. Someone from the licensing team says, "I read that the classic User app is deprecated in 9.2, so we need to move everyone to the suite Users page." Someone from integration says, "I heard user sync is gone, so does our reconciliation job still matter?" A third person, who owns the AppPoint budget, says, "Our contact told us AppPoints are now recalculated by security group, so every group change is a cost event."
+
+Each claim has something true inside it. Each also has something that we could not source. If you plan from the rumour, you either do needless work or miss a real break. That is the reason this post exists.
+
+We went to IBM's 9.2 documentation, the 9.2 patch readmes and IBM's own Manage documentation, and we separated what IBM states from what circulates on social media. The honest summary:
+
+- **User synchronisation between suite applications is removed in 9.2.** Confirmed by IBM, and it is the biggest change.
+- **The classic Users application is deprecated in 9.2.** Not found in any IBM page we read. A related, confirmed change (user settings moving to the suite Users page) probably feeds the rumour.
+- **AppPoints are recalculated by security group.** There is a real, documented mechanism, but it is not new in 9.2 and we found no ratio change. What is new is the AppPoints usage dashboard.
+
+In this guide we cover:
+
+- The 9.2 change inventory, with a verification status for every line.
+- How the data model changed and what the upgrade migration does.
+- What moved from Manage to suite security, and the runbook edits that follow.
+- The removed user APIs and how to find your callers.
+- A pre-upgrade and post-upgrade checklist, including the DT501598 audit.
+- The honest test of the two unconfirmed claims, and the AppPoint mechanism that does exist.
+- A failure-mode table and a one-week plan.
+
+> 💡 **Key insight:** The riskiest change in 9.2 user management is not a new screen. It is the removal of a copy: one place now holds the truth, and anything that read the other place breaks.
+
+A note on labels, as in the rest of this series. Statements we read on IBM Docs, IBM Support pages or in IBM's documentation extracts held in our knowledge base are stated as fact and cited. Third-party claims (LinkedIn commentary, partner blogs) are labelled and not repeated as fact. Where we found nothing, we say so.
+
+## 🗂️ The 9.2 Change Inventory
+
+Here is every user-management-related change we could find in IBM's 9.2 What's new content, with our verification status. "IBM" means the statement appears in IBM's own 9.2 documentation as captured in our knowledge base (DOC15, built from IBM's pages) or a page we fetched this run.
+
+| # | Change in 9.2 | Where IBM states it | Status |
+|---|---|---|---|
+| 1 | User and group data for authentication stored in the system relational database; synchronisation between suite applications eliminated | 9.2 What's new, Upgrade and User management sections; "Upgrading user authentication changes from 9.1 to 9.2" | IBM |
+| 2 | User synchronisation removed for all applications | 9.2 What's new, "Centralized management of user data" | IBM |
+| 3 | User and group management APIs deprecated in 9.1 are removed; use the newer user management APIs | 9.2 What's new, "Deprecated user management APIs removed" | IBM |
+| 4 | Manage user settings (default site, display filter, storeroom site and default storeroom for self-service requisitions, default repair facility, repair facility site, inactive-site access) available on the suite Users page | 9.2 What's new, "User settings and purchasing options" | IBM |
+| 5 | GL-account-based purchase permission set when creating Manage users in suite security | Same entry | IBM |
+| 6 | Security groups Sites tab moved to suite security (Suite, Access and usage, Security groups) | 9.2 What's new, "Group access to sites" | IBM |
+| 7 | Security groups Object structures tab moved to suite security | 9.2 What's new, "Group access to object structures" | IBM |
+| 8 | Electronic signature can validate against LDAP credentials | 9.2 What's new, "Electronic signature for LDAP authentication" | IBM |
+| 9 | Multiple identity providers of the same type (LDAP, SAML, OIDC) configurable in the UI | 9.2 What's new, "Configuration for multiple identity providers" | IBM |
+| 10 | SCIM JWT expiry can exceed 90 days or never expire (`P100Y`, `NEVER`) | 9.2 What's new, SCIM entry | IBM |
+| 11 | System-event emails (welcome, password reset) configurable in the UI; customised templates are not migrated | 9.2 What's new; upgrade page | IBM |
+| 12 | SMTP OAuth2 for outbound mail | 9.2 What's new | IBM |
+| 13 | Entitlement model for cloned and custom applications | 9.2 What's new, "Entitlements for cloned and custom applications" | IBM |
+| 14 | AppPoints usage dashboard; AI Service AppPoint tracking | 9.2 What's new | IBM |
+| 15 | Classic Users (Manage) application deprecated | Not found in IBM pages | Unconfirmed |
+| 16 | AppPoint ratios or calculation changed by security group | Not found in IBM pages (mechanism predates 9.2) | Unconfirmed |
+
+Three things stand out. First, the weight of the list is on **centralisation**: fewer copies, fewer places to configure. Second, items 1 to 3 are **breaking** in the strict sense, while items 4 to 7 are **relocations** that break your documentation and habits but not your data. Third, items 15 and 16 are the two claims from our opening meeting, and neither has an IBM page behind it in what we read.
+
+> ⚠️ **Warning:** Item 15 is absent from IBM pages we read, not proven false. IBM publishes deprecations on its own schedule. Read the 9.2 deprecation and lifecycle pages again at upgrade time, because a status can change between a patch and a feature release.
+
+## 🧱 Before and After: The Data Model
+
+Understanding item 1 is the key to understanding everything else, so spend a few minutes on the picture.
+
+```
+MAS 9.1 AND EARLIER                          MAS 9.2
+────────────────────                         ───────
+ Identity provider                            Identity provider
+ (SAML / LDAP / SCIM)                         (SAML / LDAP / SCIM)
+        │                                            │
+        ▼                                            ▼
+ ┌──────────────────┐                        ┌──────────────────────────┐
+ │ Suite user store │                        │  System relational DB    │
+ │   (MongoDB)      │                        │  one user, one group     │
+ └────────┬─────────┘                        │  record, read by every   │
+          │  user sync                       │  application             │
+   ┌──────┴───────┬───────────┐              └─────────────┬────────────┘
+   ▼              ▼           ▼                            │
+ Manage        Monitor      Health ...            ┌─────────┼─────────┐
+ (MAXUSER)     (copy)       (copy)                ▼         ▼         ▼
+                                                Manage   Monitor   Health
+  Copies can drift; sync can fail                (reads the same record)
+```
+
+The text-book difference is this. In 9.1, the suite owned a user record and **pushed** a copy to each application. Manage held its own row in `MAXUSER`, and other applications held theirs. The push could fail, lag or be partial, and a lot of troubleshooting time in 9.0 and 9.1 estates went to the question "is the user in the suite but not in Manage, or the other way round?"
+
+In 9.2, IBM states that user and group data for authentication is stored in the system relational database, which eliminates duplicated user data and the synchronisation process between suite applications. One caution on wording. IBM's pages use two phrasings, "system relational database" on the upgrade page and "Maximo Manage relational database" in the What's new summary. We treat them as the same store for a Manage-deployed environment, flag the difference in the notes at the bottom, and suggest you confirm on a test environment which database holds your user tables if Manage is not deployed.
+
+### What the upgrade migration does
+
+IBM describes the migration as automatic. A pre-upgrade process runs a `datamodel-migration` job that:
+
+1. Updates authentication mappings.
+2. Synchronises required SCIM fields, including `externalId`, so that users can keep signing in.
+3. Renames the MongoDB `User` and `Group` collections to `User_pre_upgrade_91_backup` and `Group_pre_upgrade_91_backup`. They remain available as backup and are no longer used. You can remove them once you no longer need them.
+
+IBM also tells you what it does **not** do: customised system-event email templates from 9.1 or earlier are not migrated automatically and must be reapplied afterwards in the UI (the Communication Template application if Manage is deployed, or the Email templates page if it is not).
+
+| Item | After the upgrade | Your action |
+|---|---|---|
+| Authentication mappings | Updated by the datamodel-migration job | Verify the job log; test sign-in per IdP |
+| SCIM `externalId` | Synchronised by the job | Compare to your IdP's object IDs |
+| MongoDB user and group collections | Renamed `*_pre_upgrade_91_backup`, unused | Keep for your rollback window, then remove |
+| Passwords | IBM tells you to review password migration before upgrading | Read IBM's page; test a local-password user |
+| Custom email templates | Not migrated | Reapply in the Communication Template app or Email templates page |
+| Deprecated 9.1 user APIs | Removed | Rewrite callers (see below) |
+
+> 📌 **Note on passwords:** IBM's What's new entry says to "review the changes to password migration and SCIM synchronisation" before upgrading so users can still access the system. We did not find a detailed IBM description of the password mechanics in the pages we read. Do not assume; test with a locally authenticated account in your rehearsal.
+
+### What stays: identity provider synchronisation
+
+A frequent misreading of "user synchronisation is removed" is that SCIM and LDAP synchronisation are gone. They are not. [Part 2](/blog/mas-secops-scim-entra-okta) covered SCIM from Entra ID and Okta, and [Part 3](/blog/mas-secops-ldap-api-keys) covered LDAP synchronisation. Those bring users **into** MAS from your directory. What 9.2 removes is the **second hop**, the suite copying users out to each application.
+
+| Sync path | 9.1 | 9.2 |
+|---|---|---|
+| Directory to MAS (SCIM) | Supported | Supported; JWT expiry limit relaxed |
+| Directory to MAS (LDAP sync) | Supported | Supported |
+| MAS to each application (user sync) | Present | **Removed** |
+| Manage to MAS (licence type updates) | Present | Mechanism documented for Manage; see AppPoints section |
+
+The practical test for any script or monitor you own is simple: does it talk about the second hop? If it checks "is user X synced to Manage yet," it is now asking a question that no longer has an answer.
+
+## 🧭 What Moved: Manage Screens to Suite Security
+
+Items 4 to 7 are relocations. They are low risk to data and high risk to **process**, because they invalidate the instructions people carry in their heads.
+
+### User settings and purchasing options
+
+When Manage is deployed, IBM says you configure these options when you create a user on the suite Users page (Suite, Access and usage, Users):
+
+- Default site
+- Use default site as a display filter
+- Storeroom site for self-service requisitions
+- Default storeroom for self-service requisitions
+- Default repair facility
+- Repair facility site
+- Access to inactive sites
+
+For purchasing, you can give a Manage user permission to purchase items by adding them to general ledger accounts, again at user creation in suite security.
+
+### Security group tabs
+
+IBM says the **Sites** tab and the **Object structures** tab, originally in the Security groups (Manage) application, are now available in suite security, under Suite, Access and usage, Security groups. The Sites tab lets you give a group access to records and data in all sites or specific sites. The Object structures tab lets you give a group access to the object structures that integration endpoints use.
+
+| What you used to do in Manage | Where it lives in 9.2 | Who needs rights now |
+|---|---|---|
+| Edit a group's site access (Security groups, Sites tab) | Suite, Access and usage, Security groups, Sites | Suite security administrators |
+| Edit a group's object-structure access (Security groups, Objects structures tab) | Suite, Access and usage, Security groups, Object structures | Suite security administrators |
+| Set a new user's default site and storeroom | Suite, Access and usage, Users, create user | Suite user administrators |
+| Grant GL-account purchase permission | Suite, Access and usage, Users | Suite user administrators |
+
+The object-structure tab deserves attention from a security reviewer. In the context of [Part 3](/blog/mas-secops-ldap-api-keys), an integration user's blast radius is the set of security groups it holds. If object-structure access is now maintained in suite security, then **the people who can widen an integration's reach may no longer be the people you thought**. Add this to your access review.
+
+### The runbook edit list
+
+Take a pen to your documentation. At a minimum, check:
+
+1. New-joiner procedures that tell the helpdesk to "open the Users application in Manage and set the default site."
+2. Site-onboarding checklists that say "open Security groups, then the Sites tab."
+3. Integration onboarding that says "grant the object structure in Security groups."
+4. Training screenshots.
+5. Audit evidence templates that cite Manage screens as the control.
+
+> 💡 **Key insight:** Nothing in this section breaks a user. Everything in it breaks a procedure. The cheapest 9.2 risk reduction you will do is rewriting five runbooks.
+
+### Does this mean the classic Users application is deprecated?
+
+This is claim number one, and the relocations are the best explanation we have for it. If you watch settings leave the Users (Manage) application and land on the suite Users page, "it's being deprecated" is a natural inference. But an inference is not a deprecation notice.
+
+What we can establish:
+
+| Source | What it says | Date/version |
+|---|---|---|
+| IBM, 9.1 What's new | Existing Manage 9.0.x users can continue to manage users in Maximo Manage by selecting the Users (Manage) application | 9.1 |
+| IBM, 9.2 What's new | User settings and purchasing options are now on the suite Users page; no deprecation language for the Manage application | 9.2 |
+| IBM, 9.2 What's new | Sites and Object structures tabs moved to suite security | 9.2 |
+| IBM Manage documentation (system users) | The Users application is where you create system accounts such as MAXADMIN and MXINTADM, which cannot be deleted | Manage docs |
+| Third-party LinkedIn commentary | Describes centralised user management in 9.2; says nothing we could verify about deprecation | 2026 |
+
+So: **in the IBM pages we read, the Users (Manage) application is not marked deprecated in 9.2, and it still has duties the suite page does not obviously replace**, such as system accounts and, in the Manage docs, self-registration configuration and security controls. Our recommendation is a three-step stance:
+
+1. Plan new-user creation through suite security, because that is the direction of every 9.1 and 9.2 change.
+2. Keep the Users (Manage) application in your test plan until IBM states otherwise, particularly for system accounts and any Manage-only security controls.
+3. Re-read IBM's deprecation page for your exact version at upgrade time.
+
+## 🔌 The Removed APIs: Find Your Callers
+
+Item 3 is the quiet one. IBM states that "user and group management APIs that were deprecated in Maximo Application Suite 9.1 are now removed in 9.2. Use the new user management APIs instead," and points to the "User management APIs in Maximo Application Suite 9.1 and later" page.
+
+We did not retrieve the full list of removed endpoints, and we will not guess at them. What you can do without that list is find every caller.
+
+### Where callers hide
+
+| Caller | Typical shape | How to find it |
+|---|---|---|
+| Joiner-mover-leaver scripts | Shell or Python calling the suite admin API | Search repos and cron hosts for the suite hostname plus `/api` paths |
+| Identity governance connectors | Custom SCIM-adjacent or REST connectors | Ask the IGA owner for the connector config and endpoint list |
+| Reconciliation reports | Scheduled job comparing IdP to MAS | Check job scheduler definitions and last-success dates |
+| Onboarding portals | Self-service app that creates MAS users | Read the portal's integration settings |
+| Terraform or Ansible roles | Automation that creates users or groups | Grep roles for the admin endpoints |
+| Monitoring probes | Synthetic checks that create and delete a test user | Look in the monitoring tool's probe list |
+
+A search pattern that works well on a Linux jump host or repo checkout (adapt the hostname to yours):
+
+```bash
+# Illustrative: find files that talk to your MAS host's admin/user endpoints
+MAS_HOST="mas.example.com"
+grep -rIl --exclude-dir=.git "$MAS_HOST" /opt /etc /home 2>/dev/null \
+  | xargs grep -Il -E "/api/.*(user|group)" 2>/dev/null
+```
+
+Then compare the endpoints you find against IBM's current "User management APIs in MAS 9.1 and later" page. Anything that is not on that page needs a rewrite before the upgrade, not after.
+
+> ⚠️ **Warning:** Do not wait for a 404 in production to learn which job used a removed endpoint. Joiner and leaver automation fails silently in many shops: the script exits non-zero into a log nobody reads, and the next audit finds a leaver who is still active.
+
+## 💳 AppPoints: The Mechanism That Is Real and the Change That Isn't
+
+Now claim number three. We will separate the mechanism, the numbers and the 9.2 additions.
+
+### The mechanism: licence type follows authorisation
+
+IBM's Manage documentation on security-group synchronisation explains how licence type is determined:
+
+- Licence types are set in MAS and synchronised to Manage with each new user. The licence type becomes part of the user profile.
+- In Manage, the **`MasUserAnalyzer` cron task** regularly reviews and calculates licence types according to the number or type of applications users can access.
+- The licence type is sent from Manage to MAS if either (a) a change to authorisations in Manage changes the calculation, or (b) the calculated licence type is higher than the entitlement value synchronised from MAS.
+- IBM's example: a user is not given administrator entitlement in MAS, is synchronised to Manage, and is later added to a system administrator security group. The new licence type is sent to MAS.
+
+That is the documented path by which a security-group change becomes an AppPoint change. It is real. It also pre-dates 9.2 in the documentation we hold. So the statement "AppPoints are now recalculated by security group in 9.2" is wrong as a statement about **what is new**, and right as a description of **how it has worked**.
+
+### The numbers
+
+IBM's AppPoints reference (the customer-managed page we fetched) lists the cost by application entitlement and access type:
+
+| Application entitlement | Concurrent | Authorized |
+|---|---:|---:|
+| None | System management for concurrent access | 0 |
+| Self service | 0 | 0 |
+| Limited | 5 | 2 |
+| Base | 10 | 3 |
+| Premium | 15 | 5 |
+
+Administrator entitlements use reserved AppPoints when the access type is Authorized: **10** for Base admin and **15** for Premium admin, permanently deducted. Concurrent users consume points only while logged in (returned on logout, and up to 30 minutes later if a session closes without logout). Authorized users have points permanently reserved. If you enforce the entitlement, users are blocked from logging in once it is exceeded; if you do not, they can log in and you may be charged for overage.
+
+IBM's licensing text in our knowledge base describes the tiers this way: Limited users have entitlement to three Manage modules and Monitor; Base users have many Manage modules and Health; Premium users have the entire suite, and each level inherits lower-tier entitlements.
+
+| Tier | Reaches | Typical trigger when a security group is added |
+|---|---|---|
+| Limited | Up to 3 Manage modules, Monitor | Starting tier for narrow roles |
+| Base | Many Manage modules, Health; Scheduler at Base | Group grants a broader set of Manage applications |
+| Premium | Entire suite, industry solutions and add-ons | Group grants access to industry-solution or add-on applications |
+
+### What is genuinely new in 9.2
+
+| 9.2 item | What IBM says | Why it matters to user administration |
+|---|---|---|
+| AppPoints usage dashboard | Track licence usage in real time across applications, users and time periods | Gives you a place to see cost change after a group edit |
+| AI Service AppPoint tracking | AppPoint use for AI Service tracked on licensing dashboards (AI configuration, Actions, Check AppPoints) | Agents and AI features now appear in the same ledger |
+| Entitlement for cloned and custom applications | Cloned and custom applications operate inside the standard security, access and licensing framework | A user in a group that reaches a custom app may now be classified by it |
+
+We want to be exact about the last row. IBM says custom and cloned applications can be assigned entitlement so they operate within the licensing framework. We did not find how that changes the calculated type for a given group, and we will not speculate. Test it.
+
+A caution from the community side. The licence type shown for a user can surprise people, and the guidance we found from an IBM community answer is that the dashboard does not tell you *why* a user was classed as Base rather than Limited. We could only reach that through a search summary, so treat it as a lead, not a rule. The practical workaround is the one you can do yourself: compare the applications a user's groups can reach against the tier definitions.
+
+### A query to find the cron task and the drift
+
+These queries are illustrative. Table and column names are from standard Manage conventions; confirm them against your schema before running anything in production, and run read-only.
+
+```sql
+-- Is the licence analyzer cron task present and active?
+SELECT crontaskname, instancename, active, schedule
+FROM   crontaskinstance
+WHERE  UPPER(crontaskname) = 'MASUSERANALYZER';
+
+-- Who is in the broadest groups? (adjust group names to your estate)
+SELECT gu.userid, gu.groupname
+FROM   groupuser gu
+WHERE  gu.groupname IN ('MAXADMIN', 'MAXEVERYONE')
+ORDER  BY gu.userid;
+```
+
+Run the first query before and after the upgrade and confirm the task is still active with the schedule you expect. If it is inactive, licence types in MAS can lag authorisation changes in Manage.
+
+### Group edits as cost events
+
+Whether or not 9.2 changed the arithmetic, the mechanism makes one operating rule worth adopting: **treat every security-group change that adds application access as a potential licence event**. In a pre-9.2 world that was hard to see. With the 9.2 dashboard it is easier.
+
+| Group change | Likely effect on the licence type | Check |
+|---|---|---|
+| Add user to a broad "everything in Manage" group | Limited to Base | Dashboard before and after |
+| Add user to a group that reaches an industry solution | Base to Premium | Dashboard; contract tier |
+| Add user to a system administrator group | Administrator entitlement reserved (10 or 15) | IBM's example case |
+| Remove user from a group | Type may fall at the next analyzer pass | Confirm it falls, not just assume |
+| Add integration user to a group | Same as a person | Count service identities too |
+
+## 🧪 Pre-Upgrade Checklist: 9.1 to 9.2
+
+Now to the part you can act on. Use this as a rehearsal script on a clone, then as the production checklist.
+
+### Step 1: Know your patch level target
+
+IBM's patch notes in the 9.2 train matter for user data. We confirmed on the 9.2.6 readme (dated 18 September 2026) that **DT501598** reads: "MAXUSER fields incorrectly overwritten during 9.1 to 9.2 upgrade for users where MASISSUER is NULL." The same readme lists **DT499855**, users repeatedly deactivated by the Inactivity Timeout. A search of IBM Support pages indicates the DT501598 fix is repeated in the 9.2.7 readme (29 September 2026). Target 9.2.6 or later, and read the readme for the exact build you will install.
+
+| Fix | What it addresses | Release in which we saw it | Relevance |
+|---|---|---|---|
+| DT501598 | MAXUSER fields overwritten at 9.1 to 9.2 upgrade when MASISSUER is NULL | Core 9.2.6 (18 Sep 2026); repeated in 9.2.7 | Directly on the migration path |
+| DT499855 | Users repeatedly deactivated by Inactivity Timeout | Core 9.2.6 readme | Looks like a mass-lockout symptom after upgrade |
+
+### Step 2: Run the Integrity Checker
+
+IBM says to run the Integrity Checker regularly and before the upgrade, using the Tools API or the `validate_integ.sh` script inside the `maxinst` pod, and to resolve every reported issue before proceeding.
+
+```bash
+# Illustrative: run the integrity script inside the maxinst pod.
+# Replace the namespace and pod name with yours.
+oc get pods -n mas-<instance>-manage | grep maxinst
+oc exec -n mas-<instance>-manage <maxinst-pod-name> -- /bin/bash -c "validate_integ.sh"
+```
+
+Capture the output. A clean run is part of your change record. If the run reports issues, resolve them in the rehearsal environment first so you know the fix works.
+
+### Step 3: Audit issuers
+
+DT501598 names MASISSUER. We do not have IBM text explaining everything MASISSUER controls, and we will not invent it. The audit is still cheap and worth doing. Illustrative query, verify the column names against your own schema first:
+
+```sql
+-- Illustrative. Find Manage users with no issuer value.
+SELECT userid, status, masissuer
+FROM   maxuser
+WHERE  masissuer IS NULL
+   OR  masissuer = '';
+```
+
+| Result | What it tells you | Action |
+|---|---|---|
+| Zero rows | No users exposed to the DT501598 condition | Proceed; still target 9.2.6+ |
+| Few rows, all system or retired accounts | Likely harmless, but system accounts matter | Confirm each; document |
+| Many rows | Users created before issuer values were reliably populated (our inference) | Snapshot the table; rehearse the upgrade and diff |
+
+Before the rehearsal, snapshot the columns you care about:
+
+```sql
+-- Illustrative snapshot for comparison after upgrade
+CREATE TABLE maxuser_pre92_snapshot AS
+SELECT userid, status, defsite, personid, masissuer
+FROM   maxuser;
+```
+
+Adjust the column list to what exists, and use your DBA's approved snapshot process rather than ad-hoc DDL in production.
+
+### Step 4: Baseline users, groups and licence types
+
+Export a baseline you can diff afterwards.
+
+| Baseline | Why | How |
+|---|---|---|
+| Count of active users | Detect mass deactivation (compare DT499855) | `SELECT COUNT(*) FROM maxuser WHERE status='ACTIVE'` |
+| Group membership per user | Detect lost authorisations | `groupuser` export |
+| Licence type per user | Detect AppPoint drift | Dashboard export or suite Users page |
+| Local-password users | Test password migration | List from suite Users page; pick sample |
+| System accounts | Confirm MAXADMIN, MXINTADM unaffected | Direct query |
+
+### Step 5: Inventory callers of the removed APIs
+
+Use the search pattern from the removed-APIs section. Produce a table of caller, owner, endpoint, replacement and test date. No row may be blank on "replacement" at go-live.
+
+### Step 6: Plan email templates
+
+IBM tells you to reapply customised system-event email templates manually. Export the text of your current welcome and password-reset templates now; you will want it on the day.
+
+### Step 7: Decide the rollback window
+
+The renamed MongoDB collections are kept for backup. Decide how long you keep them (we suggest through your first full business cycle) and put the removal date in the change calendar so it neither lingers forever nor vanishes early.
+
+## ✅ Post-Upgrade Validation
+
+IBM's instructions are brief: verify the `datamodel-migration` job completed successfully by checking its log for errors, and verify that all user accounts can log in. Expand them as follows.
+
+### Read the migration log
+
+In OpenShift, IBM says to go to Workloads, Pods, and search for the `instance_id-datamodelmigration` log. From the CLI:
+
+```bash
+# Illustrative. Namespace follows the common mas-<instance>-core pattern; confirm yours.
+oc get pods -n mas-<instance>-core | grep -i datamodelmigration
+oc logs -n mas-<instance>-core <datamodelmigration-pod> | grep -i -E "error|fail|exception"
+```
+
+IBM also notes that temporary migration failures can occur and typically resolve automatically as the upgrade progresses. So an error line in the middle of a long log is a reason to look at the end state, not necessarily a failure. Document the error text either way.
+
+### Test sign-in by path
+
+"All users can log in" is a promise you cannot test one user at a time. Test one account per sign-in path.
+
+| Path | Test account | Pass condition |
+|---|---|---|
+| SAML SSO user | One per IdP | Reaches the suite after IdP login |
+| SCIM-provisioned user | One per group family | Signs in; groups visible |
+| LDAP user | One per LDAP config | Signs in with directory password |
+| Local-password user | One | Signs in with existing password after migration |
+| System account (MAXADMIN) | One | Signs in; rights intact |
+| Integration user (API key) | One per key family | Key still authorises a read call |
+| Self-service user | One | Can raise a service request |
+
+### Diff the baselines
+
+Re-run the baseline queries. Compare user counts, group membership and licence types. Any variance is either explained by planned changes or is an incident.
+
+### Check the cron task and dashboards
+
+Confirm `MasUserAnalyzer` is active (query above). Open the AppPoints usage dashboard and compare to your pre-upgrade licence figures. A sudden shift without any group changes deserves a ticket to IBM, not a shrug.
+
+### Reapply email templates
+
+Use the Communication Template application (Manage deployed) or the Email templates page. Send a test welcome and test password reset to a mailbox you control.
+
+## 🧯 Things That Go Wrong
+
+| Symptom | Likely cause (some are inferences) | First check | Fix direction |
+|---|---|---|---|
+| Users cannot sign in after upgrade | Authentication mapping not migrated; `externalId` mismatch | `datamodelmigration` log | Fix per IBM validation guidance; document errors for support |
+| Some Manage user fields are blank or reset | DT501598 (issuer NULL path) | Patch level; issuer audit | Upgrade to 9.2.6+ before migrating; restore from snapshot |
+| Many users deactivated | Inactivity timeout behaviour (DT499855) | Core readme; user status counts | Take the fix; reactivate per procedure |
+| Provisioning job fails with 404 or 410 | Removed 9.1 user APIs | Job logs; endpoint inventory | Move to current user management APIs |
+| Helpdesk cannot find where to set default site | Setting moved to suite Users page | Runbook | Update runbook; retrain |
+| Site access edits "missing" in Manage | Sites tab moved to suite security | Suite, Access and usage, Security groups | Use new location; check rights |
+| Integration lost access to an endpoint | Object-structure access now managed in suite security | Group's Object structures tab | Re-grant; document owner |
+| Welcome email looks generic again | Custom templates not migrated | Template apps | Reapply from your export |
+| AppPoint usage jumps | Group change or analyzer recalculation | Dashboard by user and period | Identify the group; decide if intended |
+| Licence type does not fall after removing a group | Analyzer not run or task inactive | `crontaskinstance` | Activate task; wait a cycle; verify |
+| Old reports reading the suite user store return nothing | Store no longer used | Report source | Point to the system database or supported API |
+
+## 🔒 Security Review Angles for 9.2
+
+Centralisation changes the threat picture in small ways. Here are the review questions we would ask.
+
+**One store, one blast radius.** With a single user and group store, a defect or a bad bulk edit has no second copy to compare against. The renamed MongoDB backup collections are your only pre-upgrade comparison point for a while. Protect them like data, and set the date to delete them.
+
+**Who can edit object-structure access.** Object structures determine which users and systems can reach integration endpoints. Review the suite security rights that now govern that tab, and add the review to your quarterly access recertification. Cross-reference [Part 3's](/blog/mas-secops-ldap-api-keys) service-identity register.
+
+**Electronic signature against LDAP.** IBM says e-signature validation can use LDAP credentials instead of local application passwords, so users who authenticate through LDAP confirm sensitive actions with enterprise credentials. This is a control improvement: signature strength now follows your directory's password and lockout policy. It is also a dependency: an LDAP outage now blocks signing, so decide your break-glass approach.
+
+**Multiple identity providers of one type.** The UI now supports more than one LDAP, SAML or OIDC provider. Useful for mergers and contractors, but every extra provider is another path where a user can exist. Include all providers in your joiner-leaver test.
+
+**SCIM token lifetime.** IBM now allows JWT expiry beyond 90 days, including `P100Y` or `NEVER`. The option exists; that does not make it wise. A never-expiring SCIM token is a never-expiring privileged credential. Our recommendation from [Part 2](/blog/mas-secops-scim-entra-okta) stands: shortest lifetime your rotation process can sustain, and an owner on every token.
+
+**Inactivity and deactivation.** DT499855 shows that users were being repeatedly deactivated by the inactivity timeout in some builds. Whether that is a defect you hit or not, include "unexpected status changes" in your post-upgrade monitoring.
+
+| Control | 9.2 change | Review question |
+|---|---|---|
+| Authentication source of truth | Single relational store | Where is the backup and who can read it? |
+| Integration reach | Object structures managed in suite security | Who holds that right? |
+| Signature strength | LDAP e-signature | What is the fallback when LDAP is down? |
+| Identity breadth | Multiple IdPs per type | Is each IdP in the leaver test? |
+| Machine credential lifetime | Longer SCIM JWT allowed | Is any token set to never expire? |
+| Licence visibility | Usage dashboard | Who reviews it, how often? |
+
+## 🗓️ A One-Week Plan
+
+| Day | Task | Output |
+|---:|---|---|
+| 1 | Read IBM's 9.2 What's new, authentication upgrade page and the 9.2.6 and 9.2.7 readmes; record the target build | Target build and reading notes |
+| 2 | Run Integrity Checker on a clone; run the issuer audit; snapshot `maxuser` | Clean-run evidence; issuer list |
+| 3 | Inventory removed-API callers; assign owners | Caller table with owners |
+| 4 | Rewrite runbooks for relocated settings and security-group tabs; export email templates | Updated runbooks; template text |
+| 5 | Rehearse the upgrade on the clone; read the migration log; run sign-in tests per path | Test matrix filled in |
+| 6 | Diff baselines; review dashboard; check `MasUserAnalyzer` | Variance report |
+| 7 | Go/no-go: confirm backups, rollback window, communication | Signed checklist |
+
+## 📜 The Seven Commandments of 9.2 User Management
+
+1. **Thou shalt not plan from a rumour.** If IBM has not said it, label it unconfirmed and test it.
+2. **Thou shalt find thy callers.** Every script that touched the removed user APIs is on the upgrade critical path.
+3. **Thou shalt audit issuers before migration.** DT501598 exists because a NULL did something unexpected.
+4. **Thou shalt run the Integrity Checker and keep the output.** It is evidence, not ceremony.
+5. **Thou shalt test every sign-in path.** SAML, SCIM, LDAP, local, system and key-based.
+6. **Thou shalt treat group edits as potential licence events.** Watch the dashboard.
+7. **Thou shalt rewrite the runbooks.** Relocated settings are the cheapest failure to prevent.
+
+## ❓ FAQ
+
+**Is the classic Users application deprecated in 9.2?**
+Not in any IBM page we read. The 9.1 notes say existing Manage 9.0.x users can keep using the Users (Manage) application, and the 9.2 notes move some settings to the suite Users page without a deprecation statement. Keep testing it and re-check IBM's deprecation page at upgrade time.
+
+**What does "user synchronisation removed" mean?**
+The copy of users from the suite to each application is gone. User and group data lives in the system relational database. SCIM and LDAP synchronisation from your directory into MAS remain.
+
+**Did AppPoint calculation change by security group?**
+We found no IBM statement of a 9.2 change. The documented mechanism is the `MasUserAnalyzer` cron task, which sets licence type from application access. New in 9.2: the AppPoints usage dashboard and AI Service tracking.
+
+**What should I check before upgrading from 9.1?**
+Integrity Checker, MASISSUER audit (DT501598), baselines of users, groups and licence types, caller inventory for removed APIs, and an export of custom email templates.
+
+**Where did the Sites and Object structures tabs go?**
+Suite, Access and usage, Security groups, per IBM's 9.2 What's new.
+
+## 🎯 Key Takeaways
+
+- 9.2 removes the second hop of user synchronisation. One relational store, one record per user.
+- The datamodel-migration job handles authentication mappings and `externalId`; you handle APIs, runbooks, email templates and validation.
+- The removed 9.1 user APIs are a silent-failure risk for joiner and leaver automation.
+- Relocations (user settings, Sites and Object structures tabs) change who can do what, so update access reviews as well as documents.
+- The classic Users application deprecation is unconfirmed. The AppPoint-by-security-group mechanism is real but not new; the dashboard is.
+- Target Core 9.2.6 or later for DT501598, and keep the Integrity Checker output.
+
+## 🔭 What Comes Next
+
+[Part 5](/blog/mas-secops-cve-patching-2026) leaves identity and turns to patching as a security program: the 2026 CVE year, the October interim builds, and a catalog-driven routine. [Part 6](/blog/mas-secops-securing-ai-agents-mcp) closes the series with securing MAS for AI agents.
+
+## References
+
+- [What's new in Maximo Application Suite 9.2 (IBM Docs)](https://www.ibm.com/docs/en/SSRHPA_cd/appsuite/overview/whats_new_92.html)
+- [Upgrading user authentication changes from Maximo Application Suite 9.1 to 9.2 (IBM Docs)](https://www.ibm.com/docs/en/SSRHPA_cd/appsuite/install/c_user_auth_upgrade_91.html)
+- [What's new in Maximo Application Suite 9.1, including the Users (Manage) application note (IBM Docs)](https://www.ibm.com/docs/en/SSRHPA_cd/appsuite/overview/whats_new_91.html)
+- [Understanding Application Points (IBM Docs)](https://www.ibm.com/docs/en/SSRHPA_cd/appsuite/reference/app_points.html)
+- [Administering security groups in Maximo Application Suite 9.1 and later (IBM Docs)](https://www.ibm.com/docs/SSRHPA_cd/appsuite/users_91/t_ctr_security_groups_91.html)
+- [Security group synchronization and default assignments (IBM Maximo Manage Docs)](https://www.ibm.com/docs/SSLPL8_cd/com.ibm.mbs.doc/securgroup/c_security_grp_manage.html)
+- [Readme file for Maximo Application Suite 9.2.6, DT501598 and DT499855 (IBM Support)](https://www.ibm.com/support/pages/readme-file-maximo-application-suite-926)
+- [Readme file for Maximo Application Suite 9.2.7 (IBM Support)](https://www.ibm.com/support/pages/readme-file-maximo-application-suite-927)
+
+---
+
+## Series Navigation
+
+[← Part 3: LDAP, API Keys and Service Identities](/blog/mas-secops-ldap-api-keys) · [Part 5: Patching as a Security Program →](/blog/mas-secops-cve-patching-2026)
+
+| Part | Title |
+|---|---|
+| 0 | [MAS Security Operations: Identity, Access and Patching (Series Guide)](/blog/mas-secops-series-index) |
+| 1 | [SAML SSO and MFA in MAS: Why MFA Lives in Your Identity Provider](/blog/mas-secops-saml-sso-mfa) |
+| 2 | [SCIM User and Group Sync from Entra ID and Okta](/blog/mas-secops-scim-entra-okta) |
+| 3 | [LDAP, API Keys and Service Identities in MAS](/blog/mas-secops-ldap-api-keys) |
+| **4** | **MAS 9.2 User-Management Changes Admins Must Know** |
+| 5 | [Patching as a Security Program: The 2026 MAS CVE Year](/blog/mas-secops-cve-patching-2026) |
+| 6 | [Securing MAS for AI Agents and MCP](/blog/mas-secops-securing-ai-agents-mcp) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo teams cut through vendor messaging and make grounded decisions about their asset management platform. Every date, version and score in this series is labeled by how we verified it, and where IBM has not said, we say so instead of guessing.
+
+<!--
+REVIEWER NOTES (night-shift, secops-04-user-mgmt-92, 2026-10-18):
+- SOURCES READ: knowledge_base DOC15 (PLAT-07..PLAT-17), MAS92-SOURCES/text/mas-92-whats-new.txt, user-auth-upgrade-91.txt, feature-channel-whats-new.txt; IBM 9.2.6 readme (fetched: DT501598, DT499855, date 18 Sep 2026); IBM AppPoints reference page (fetched; no 9.2-specific content, no usage-dashboard text); IBM 9.1 What's new (fetched; Users (Manage) note); local IBM Manage docs (security group sync, MasUserAnalyzer, system users, license ratios).
+- NOT VERIFIED: (a) classic Users app deprecation - nothing found in IBM pages; (b) any 9.2 AppPoint ratio change (DOC15 GAP-08 agrees: none found); (c) the "dashboard does not explain why a user is Base vs Limited" claim comes only from a search-result summary of an IBM Community thread, hedged in text; (d) 9.2.7 repeating DT501598 comes from a search summary, not a fetched page - verify; (e) 9.2 What's new URL (whats_new_92.html) and the 9.2.7 readme URL were inferred from the search-surfaced 9.1 and 9.2.6 URL patterns and the search result for the 9.2.7 readme; whats_new_92 was NOT fetched directly, content came from the KB extract of the IBM content API - human please click-check.
+- DISCREPANCY: 9.2 What's new says users stored in the "Maximo Manage relational database"; the upgrade page says "system relational database". Flagged inline; KB wins, both quoted.
+- ILLUSTRATIVE ONLY: all SQL (maxuser.masissuer, groupuser, crontaskinstance, CREATE TABLE snapshot), the oc/grep commands, the namespace patterns, and the search pattern. Column names not confirmed against a 9.2 schema.
+- The sign-in test matrix, one-week plan, tier-trigger table and group-change effects are our recommendations, not IBM statements. "Many rows = users created before issuer values were populated" is marked as our inference.
+- Removed API endpoint list not retrieved; the post deliberately names none.
+- The earlier index post lists this part as "Part 4"; navigation chain already points at slug mas-secops-user-management-92, which matches this post.
+-->
