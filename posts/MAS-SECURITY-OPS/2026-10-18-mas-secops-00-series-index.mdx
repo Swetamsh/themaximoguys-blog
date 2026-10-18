@@ -1,0 +1,454 @@
+---
+title: "MAS Security Operations: Identity, Access and Patching (Series Guide)"
+description: "A map of how identity, access, patching and AI-agent security fit together in Maximo Application Suite 9.x: SAML and MFA, SCIM, LDAP, API keys, the 9.2 user-management rewrite, the October 2026 CVEs, and what changes when AI agents call MAS through MCP."
+date: "2026-10-18"
+slug: "mas-secops-series-index"
+tags: ["Maximo", "MAS", "Security", "SAML", "SCIM", "LDAP", "API Keys", "CVE", "Patching", "MCP", "MAS 9.2"]
+draft: true
+tier: "admin"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-secops-00-series-index.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Does Maximo Application Suite have its own MFA, or do I need my identity provider?"
+    answer: "In the documentation we could find, MFA is something your identity provider applies, not a feature MAS enforces itself. IBM Developer's article on single sign-on and multi-factor authentication for MAS describes MFA as a policy you configure in a SAML 2.0 IdP; MAS trusts the SAML assertion that comes back. That is why Part 1 of this series is built around SAML. The practical consequence is that users who authenticate with local (MongoDB-style) accounts or plain LDAP bind get whatever protection that path offers and nothing more. An IBM Community question from January 2025 asks how to do MFA for contractors without an IdP and, in the results we reviewed, has no confirmed answer. If you cannot put an IdP in front of MAS, treat MFA as a gap to be documented, not a setting you forgot to tick."
+  - question: "Which MAS versions are affected by the October 2026 login-service vulnerability, and what do I install?"
+    answer: "IBM's bulletin for CVE-2026-105052 (path traversal, CWE-22, CVSS 3.1 base 7.5, no authentication required) lists MAS 8.10, 8.11, 9.0, 9.1 and 9.2 as affected. The fixed releases are Core 9.0.33, 9.1.27 and 9.2.8 or later, all published on 7 October 2026. For 8.10 and 8.11 the bulletin gives a workaround: override the CoreIdp login image tag to 3.2.201 (8.10) or 4.0.179 (8.11) in the coreidp custom resource, and do not remove that override until you have taken the October 2026 monthly update or later. The flaw lets a remote attacker read arbitrary files via crafted dot-dot URLs, and it sits in the login service, which is the one component you cannot put behind your own login. Part 5 walks through verification."
+  - question: "Is the Maximo AI Service code-injection CVE real, and is there an IBM bulletin?"
+    answer: "Yes. IBM published a security bulletin on 5 October 2026 for Maximo AI Service 9.1.0 and 9.2.0 that lists CVE-2026-90920, a code-injection issue (CWE-94) with an IBM-assigned CVSS 3.1 base score of 9.8. The remediation is to upgrade AI Service to 9.1.19 or 9.2.3, or to the latest version shown in the catalog; the bulletin lists no workaround. The same bulletin lists a long tail of third-party component CVEs (Tomcat, Netty, HttpComponents, glibc), so patching AI Service is not optional even if you never hear about the headline CVE again. One caution: AI Service has its own version numbers. 9.2.3 for AI Service is not the same thing as Core 9.2.3, so read the bulletin's component name before you compare numbers. Third-party trackers also list sibling AI Service denial-of-service CVEs; we have not read IBM's text for those and do not state their scores here."
+  - question: "What actually changes for users and groups when I upgrade from MAS 9.1 to 9.2?"
+    answer: "IBM's upgrade documentation says that from 9.2, user and group data for authentication is stored in the system relational database, which removes duplicated user data and the synchronization process between suite applications. A pre-upgrade datamodel-migration job updates authentication mappings and synchronizes the required SCIM fields, including externalId, so users can still sign in. The old MongoDB user and group collections are renamed User_pre_upgrade_91_backup and Group_pre_upgrade_91_backup and are no longer used. User and group management APIs that were deprecated in 9.1 are removed in 9.2. A separate Core fix (DT501598, in Core 9.2.6) addresses MAXUSER fields being overwritten during the 9.1 to 9.2 upgrade when MASISSUER is NULL, so run the Integrity Checker before you start. Part 4 covers the checklist."
+  - question: "Do AI agents that connect to MAS through MCP need a different security model from human users?"
+    answer: "They need the same identity controls applied more strictly, because an agent can act faster and wider than a person. IBM has said that in 9.2 you can integrate external agents and tools with Maximo through the Maximo MCP server, and that AI-assisted actions include creating and updating records such as work order status and service requests. The IBM article we read does not describe human approval steps or permission scoping for those write actions, so you should not assume either exists. Treat each agent as a service identity with its own least-privilege security group, its own credential that can be rotated, and its own audit trail. Parts 3 and 6 build that pattern; we mark anything IBM has only announced, such as automation scripts as custom tools, as announced and not shipped."
+keyTakeaways:
+  - "MFA is applied by your SAML identity provider, not enforced by MAS itself; plan identity architecture around the IdP, and treat local accounts as the weak path (IBM Developer)"
+  - "CVE-2026-105052 (login-service path traversal, CVSS 7.5, unauthenticated) affects MAS 8.10 through 9.2 and is fixed in Core 9.0.33, 9.1.27 and 9.2.8; 8.10/8.11 use a CoreIdp login image-tag workaround (IBM bulletin)"
+  - "CVE-2026-90920 (Maximo AI Service code injection, CVSS 9.8) affects AI Service 9.1.0 and 9.2.0 and is fixed in 9.1.19 and 9.2.3; AI Service versions are not Core versions"
+  - "MAS 9.2 moves users and groups into the system relational database and removes user synchronisation between suite applications, so the upgrade is also an identity migration"
+  - "SCIM 2.0 sync (since 9.0) needs an API key, a JWT with a deliberately chosen expiry, and a SCIM profile; Entra ID adds a compatibility flag that IBM says resolves several provisioning problems"
+series:
+  name: "MAS Security Operations"
+  part: 0
+  total: 6
+tldr: "Security in MAS is not one setting. It is four layers that fail independently: who proves identity (SAML, OIDC, LDAP, local), who gets provisioned and deprovisioned (SCIM, LDAP sync), what each human or machine is allowed to do (security groups, API keys, AppPoints entitlements), and how fast you close holes (a monthly catalog cadence plus interim builds for urgent CVEs). October 2026 tested all four at once: an unauthenticated path traversal in the login service across MAS 8.10 to 9.2, a critical code-injection flaw in Maximo AI Service, and a 9.2 user-management rewrite that changes where user data lives. This guide maps the layers, shows what we verified on IBM pages versus what comes from third parties, gives you a self-assessment, and points to six parts that go deep."
+seoTitle: "MAS Security Operations: Identity & Patching Guide"
+seoDescription: "Map MAS 9.x security: SAML and MFA, SCIM, LDAP, API keys, the 9.2 user changes, October 2026 CVEs and AI-agent access. Series guide for admins."
+relatedSlugs: ["mas-92-series-index", "mas-92-upgrade-watchlist", "mas-lifecycle-series-index", "mas-92-ai-features"]
+clusterSlugs: ["mas-secops-saml-sso-mfa", "mas-secops-scim-entra-okta", "mas-secops-ldap-api-keys", "mas-secops-user-management-92", "mas-secops-cve-patching-2026", "mas-secops-securing-ai-agents-mcp"]
+targetQuestions:
+  - "How do I secure Maximo Application Suite 9?"
+  - "Does MAS support MFA?"
+  - "How does SCIM user sync work in MAS?"
+  - "Which MAS versions are affected by CVE-2026-105052?"
+  - "How do I secure AI agents that call MAS through MCP?"
+semanticKeywords:
+  - "MAS security operations"
+  - "Maximo Application Suite SAML SSO"
+  - "MAS MFA identity provider"
+  - "MAS SCIM 2.0 Entra ID"
+  - "MAS LDAP synchronization"
+  - "MAS API key least privilege"
+  - "CVE-2026-105052 Maximo"
+  - "CVE-2026-90920 Maximo AI Service"
+  - "MAS 9.2 user management"
+  - "Maximo MCP server security"
+  - "MAS patch cadence monthly catalog"
+  - "CoreIdp login"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Administrator access to the MAS Suite administration UI and the OpenShift console"
+  - "Contact with whoever runs your corporate identity provider (Entra ID, Okta, IBM Security Verify or similar)"
+  - "Knowing which Core, Manage and AI Service versions are installed today"
+---
+
+# MAS Security Operations: Identity, Access and Patching (Series Guide)
+
+> 🎯 **Who this is for:** MAS administrators, platform engineers and security leads who own the answer to "who can get into our Maximo, what can they do once inside, and how fast can we close a hole?" If you also own the identity provider or the OpenShift cluster, this series is written for you too.
+
+## 🔥 The Week the Login Page Became the Attack Surface
+
+You've spent years hardening Maximo the way the old world taught you: put the application server behind a reverse proxy, lock the database, keep the admin console off the internet. Then MAS arrived, and the front door moved. Authentication is no longer a servlet filter inside your app server. It is a separate component in the suite, a login service that every user and every integration passes through before any application sees them.
+
+On 3 October 2026, IBM published a bulletin for exactly that component. **CVE-2026-105052** is a path traversal in the MAS login service. IBM rates it CVSS 3.1 base score 7.5, vector `AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N`. Read that vector slowly: network, low complexity, **no privileges, no user interaction**. A remote attacker sends a crafted URL with `/../` sequences and reads files they should never see. IBM lists MAS 8.10, 8.11, 9.0, 9.1 and 9.2 as affected.
+
+Two days later, on 5 October, IBM published a second bulletin for **Maximo AI Service 9.1.0 and 9.2.0**, headlined by **CVE-2026-90920**, a code-injection flaw (CWE-94) with an IBM-assigned CVSS of **9.8**.
+
+What happened to your patching process in those two weeks? If the honest answer is "we found out from a vendor email, and we weren't sure which of our environments were affected," this series is for you.
+
+> 💡 **Key insight:** MAS security is four layers that fail independently. You can have a flawless SAML setup and still be exposed through an unpatched login service. You can patch within 48 hours and still have 40 orphaned accounts that SCIM never deprovisioned. Treat each layer as its own program with its own owner and its own evidence.
+
+This is Part 0, the map. Parts 1 to 6 are the territory. Everything below is labeled by how we verified it, because the rule for this series is the same as our lifecycle series: **do not state a date, version or score as fact until you have seen it on IBM's own page.**
+
+## 🔬 How We Verified What You're About to Read
+
+| Label | Meaning | Example in this post |
+|---|---|---|
+| **IBM-confirmed** | We read it on an IBM support page or IBM Docs page in October 2026 | CVE-2026-105052 fixed versions; SCIM setup steps |
+| **IBM-derived** | IBM states the term; the specific number is arithmetic | Days between release and today |
+| **Third-party** | A CVE tracker, partner blog or vendor write-up; IBM's own text was not read | Sibling AI Service CVE scores; CVSS vector for CVE-2026-90920 |
+| **Open** | We could not find it; we refuse to guess | MFA without an IdP; IoT DoS CVE bulletin |
+
+One discrepancy deserves to be named up front. Our internal change log recorded the AI Service CVE as having "no IBM bulletin found." That was true when it was written. Reading IBM's support pages directly this week, we found the bulletin (IBM support document 7290833, published 5 October 2026). The knowledge base now needs updating; the series uses the IBM text.
+
+## 🧭 The Four Layers of MAS Security
+
+Here is the model every part of this series hangs from:
+
+```text
+╔══════════════════════════════════════════════════════════════════╗
+║  LAYER 4  PATCH & CHANGE      monthly catalogs · interim builds  ║
+║           (how fast holes close)   CVE bulletins · version skew  ║
+╠══════════════════════════════════════════════════════════════════╣
+║  LAYER 3  AUTHORISATION       security groups · AppPoints tiers  ║
+║           (what each identity      API-key scope · MCP agents    ║
+║            may do)                                               ║
+╠══════════════════════════════════════════════════════════════════╣
+║  LAYER 2  LIFECYCLE           SCIM 2.0 · LDAP sync · deactivation║
+║           (who exists, and          joiner / mover / leaver      ║
+║            who stops existing)                                   ║
+╠══════════════════════════════════════════════════════════════════╣
+║  LAYER 1  AUTHENTICATION      SAML · OIDC · LDAP · local         ║
+║           (who proves they are      MFA applied in the IdP       ║
+║            who)                                                  ║
+╚══════════════════════════════════════════════════════════════════╝
+```
+
+| Layer | The question | Primary control | Typical failure | Series part |
+|---|---|---|---|---|
+| 1. Authentication | Is this really Dana from planning? | SAML 2.0 with MFA in the IdP; OIDC; LDAP | Local accounts left enabled beside SSO; no MFA path for contractors | Part 1 |
+| 2. Lifecycle | Should Dana still exist after her transfer? | SCIM 2.0 sync, LDAP sync, deactivation rules | Leavers stay active; group removals do not propagate | Parts 2, 3 |
+| 3. Authorisation | What may Dana, or the integration, or the agent, do? | Security groups, API keys, AppPoints entitlements | One shared admin API key for every integration | Parts 3, 4, 6 |
+| 4. Patch and change | Is the code behind layers 1 to 3 current? | Monthly catalog, interim builds, CVE bulletins | Learning about a CVE from a vendor email | Part 5 |
+
+The reason to separate them is diagnostic. When someone says "MAS security," ask which layer. Most of the confusion we see in the field comes from fixing layer 1 and assuming layers 2 to 4 follow.
+
+## 🔐 Layer 1: Authentication — What MAS Actually Supports
+
+IBM's authentication documentation describes local (MongoDB-held) accounts, LDAP and SAML as the established options, and from MAS 8.11 several can run at once so users have more than one way to log in. One identity provider can be set as the default; if SAML is configured but is not the default, it appears on the login page as an alternative. **Seamless login** is a separate setting: enable it and the login page is skipped entirely, with users redirected straight to the default IdP.
+
+Where it gets more interesting is multiple identity providers of the *same* type, which matters for mergers, contractor populations and multi-tenant arrangements.
+
+| Capability | Introduced | How you configure it | Source |
+|---|---|---|---|
+| Local + LDAP + SAML side by side | 8.11 | Suite administration | IBM Docs, authentication |
+| Multiple SAML or LDAP IdPs | 9.0 | Admin API / CLI only | IBM Docs, multiple IdPs |
+| Multiple OIDC IdPs | 9.1 | Admin API / CLI | IBM Docs, multiple IdPs |
+| Multiple IdPs in the UI | 9.2 | Suite administration UI | IBM Docs; MAS 9.2 factbase |
+| SAML initiated logout | 9.0 | SP settings plus matching IdP single logout | IBM Docs |
+| Electronic signature validated against LDAP | 9.2 | Manage / suite settings | MAS 9.2 factbase |
+
+The API route stays relevant after 9.2 because IBM positions it for automation, scripting and bulk configuration. It needs an API key with system administrator permission, which should make you think about where that key lives (Part 3).
+
+### MFA lives in the IdP
+
+The question we get most is "how do we turn on MFA in MAS?" The answer from IBM Developer's article on single sign-on and MFA for MAS is that you don't, not in MAS. The article describes three stages: establish SAML trust (MAS generates service-provider metadata, the IdP administrator registers it and returns IdP metadata, MAS uploads it), enroll users in the IdP with the right MFA policy, and enroll users in MAS with the issuer set to SAML. At login, MAS starts the SAML flow for users whose authentication type is SAML, and the IdP decides whether an extra factor is needed based on session state and policy.
+
+That design is a strength if you have a good IdP and a gap if you don't. A community question from January 2025 asks how to apply MFA to external contractors on MAS 9 *without* an IdP; in the results we reviewed there is no confirmed answer, and we did not find an IBM page that says otherwise. We are also unable to confirm, from IBM's own pages, the claim sometimes repeated in partner circles that external OIDC providers cannot satisfy certain Manage-side flows. We list both as **open** and test them in Part 1.
+
+> 💡 **Key insight:** "Does MAS support MFA?" is the wrong question. "Does every path into MAS go through something that enforces MFA?" is the right one. A single enabled local account is a path.
+
+## 👥 Layer 2: Lifecycle — SCIM and LDAP Decide Who Still Exists
+
+Authentication tells you who is at the door. Lifecycle decides who is on the guest list. MAS gives you two mechanisms: LDAP synchronisation and, since 9.0, SCIM 2.0 provisioning driven by your identity provider.
+
+### SCIM 2.0 in five steps
+
+IBM documents the setup as follows:
+
+1. Create an API key in Suite administration with user-management access, setting the token expiry.
+2. Exchange it for a JWT by calling `GET /v1/authenticate` with the key ID as the username and the token as the password (HTTP Basic).
+3. Create a MAS SCIM profile that defines the configuration applied to synchronised users and groups.
+4. In the IdP, create an application, enable SCIM 2.0 provisioning, set the base URL to `https://api.{mas-instance-id}.{domain}/scim/v2/{profileId}`, and supply the JWT as the header credential.
+5. Assign users and groups to the application to start syncing.
+
+```bash
+# Step 2: exchange the API key for a JWT (placeholders only; never paste real keys into tickets)
+curl -s -u "${MAS_API_KEY_ID}:${MAS_API_KEY_TOKEN}" \
+  -H "mas-jwt-expiry-duration: P90D" \
+  "https://api.${MAS_INSTANCE_ID}.${MAS_DOMAIN}/v1/authenticate"
+```
+
+That `mas-jwt-expiry-duration` header is where most SCIM deployments quietly go wrong. The default expiry is short, which means the IdP's provisioning connection breaks on a schedule nobody wrote down. IBM's documentation allows ISO 8601 durations such as `P90D`, and in MAS 9.2, 9.1.7 and 9.0.18 and later, much longer values (for example `P100Y`) or `NEVER`. Longer is more convenient and more dangerous: a non-expiring token with user-admin rights is a permanent credential for creating accounts. Part 2 shows how to pick an expiry, rotate it, and alarm on its age.
+
+### The Entra ID footnote
+
+IBM publishes a support article on Microsoft Entra SCIM problems with MAS. The symptoms it lists: users not properly deprovisioned, updates not reflected, attribute mismatches or skipped updates, multiple group members removed after a PATCH meant to remove one user, and inability to change user status. Its fix is a compatibility flag, `aadOptscim062020`, appended as a query parameter to the Tenant URL in the Entra provisioning settings. If your leavers process depends on Entra deprovisioning reaching MAS, you want that article before your next audit, not after.
+
+### LDAP: still the incumbent
+
+For shops that have not moved to SCIM, LDAP synchronisation remains the lifecycle engine. IBM's synchronisation tables are worth knowing: **Insert** adds a user and sets up an IdP issuer, entitlement and application access; **Update** does *not* touch entitlement or application access; **Delete** *deactivates* the MAS user when the LDAP entry disappears; and groups are always updated but **never deleted** by the sync. That last point surprises auditors. Our internal notes also record that LDAP connections must use LDAPS with TLS, and that MAS 9.1 allows multiple LDAP servers. Part 3 turns these into a leaver-test you can run.
+
+## 🛂 Layer 3: Authorisation — Humans, Integrations and Now Agents
+
+Everything that talks to MAS has an identity, and everything with an identity has a blast radius.
+
+| Identity type | Credential | Where the permission lives | Common mistake |
+|---|---|---|---|
+| Human, interactive | SAML/OIDC/LDAP/local login | Security groups, AppPoints entitlement tier | Everyone in one broad group "to start" |
+| Integration (MIF, ETL, reporting) | API key exchanged for a token | The user the key is tied to, plus security groups | One shared key across ten integrations |
+| Administrator tooling (CLI, automation) | API key with system admin permission | Suite-level admin role | Key stored in a pipeline variable with no rotation |
+| AI agent via MCP | Service identity / token (to be confirmed) | Whatever you scope it to | Letting the agent inherit a human's rights |
+
+Our internal field guidance recommends **one API key per integration endpoint**, never shared keys. That is a good rule and an easy one to audit. Part 3 builds the inventory and the rotation routine.
+
+MAS 9.2 also moves some authorisation surfaces. According to IBM's 9.2 material as captured in our factbase, the security groups **Sites** and **Object structures** tabs now live in suite security (Suite → Access and usage → Security groups), and Manage user settings such as default site and storeroom move to the suite **Users** page. If your runbooks tell people to "go to Security Groups in Manage," they are going to be out of date after the upgrade.
+
+Separately, a quiet but security-relevant 9.2 detail: the installer's **administrative permission modes** (cluster, namespaced, minimal). Installing from OperatorHub defaults to minimal mode, but IBM states the mode cannot be changed during an upgrade, and the `mas upgrade` CLI sets **cluster mode** when going from 9.1 to 9.2, inheriting the 9.1 configuration. If your security review approved minimal permissions, check what your upgraded cluster actually has.
+
+## 🔄 The 9.2 Identity Migration You're Probably Treating as a Version Bump
+
+If you are planning 9.1 to 9.2, read this section before the maintenance window is booked.
+
+IBM's upgrade documentation says that starting in 9.2, user and group data for authentication is stored in the **system relational database**, eliminating duplicated user data and the synchronisation process between suite applications. In plain terms: the MongoDB-held user store you knew is replaced, and "user synchronisation" between suite apps is removed.
+
+| What changes | Before (9.1) | After (9.2) |
+|---|---|---|
+| Where users and groups live | MongoDB collections plus per-app copies | System relational database |
+| Cross-app user sync | Required between suite applications | Removed for all applications |
+| Old Mongo collections | In use | Renamed `User_pre_upgrade_91_backup` and `Group_pre_upgrade_91_backup`, unused, removable |
+| User/group management APIs deprecated in 9.1 | Present | Removed; use the newer user management APIs |
+| Custom system email templates | As customised | Not migrated; reapply manually |
+| Migration mechanism | n/a | Pre-upgrade datamodel-migration job updates authentication mappings and syncs SCIM fields including `externalId` |
+
+IBM's pre-upgrade instructions are concrete: run the Integrity Checker before the upgrade (via the Tools API, or `validate_integ.sh` inside the `maxinst` pod), resolve the reported issues, and after the upgrade check the `<instance_id>-datamodelmigration` job log under Workloads → Pods in OpenShift and confirm every user can log in.
+
+Note the interplay with a Core patch: **DT501598**, fixed in Core 9.2.6 (18 September 2026), describes MAXUSER fields being overwritten during a 9.1 to 9.2 upgrade when MASISSUER is NULL. If your Manage users were created before issuer values were reliably populated, a MASISSUER audit belongs in your pre-upgrade checklist. Part 4 gives you the query pattern and the validation script.
+
+Two claims you will see elsewhere, which we have *not* verified on IBM pages and therefore treat as third-party: that the classic User application is deprecated in 9.2, and that AppPoint calculation changes by security group. Part 4 tests both against IBM documentation and says plainly what we find.
+
+## 🩹 Layer 4: Patching — The October 2026 Test
+
+You can't harden what you can't patch quickly. MAS's patch mechanics are different from 7.6 fix packs, and the October 2026 bulletins exercised every part of them.
+
+### Reading the releases page
+
+IBM's MAS releases-information page lists Core builds with a type and date. Taken together, the October entries show the pattern:
+
+| Core line | 7 Oct 2026 (interim) | 29 Sep 2026 (standard) | 18 Sep 2026 (interim) | Notes |
+|---|---|---|---|---|
+| 9.2 | 9.2.8 | 9.2.7 | 9.2.6 | 9.2.4 and 9.2.5 "reserved for internal use" |
+| 9.1 | 9.1.27 | 9.1.26 | 9.1.25 | 9.1.23 and 9.1.24 reserved |
+| 9.0 | 9.0.33 | 9.0.32 | 9.0.31 | 9.0.30 reserved |
+
+Three lessons sit in that table. First, **interim builds exist for urgent fixes** and arrive between the standard monthly releases; the 7 October interim carried the login-service fix across three lines at once. Second, **version numbers skip**: "reserved for internal use" means a gap is not a missing release you forgot to install. Third, **component versions are independent**: Manage 9.2.4 (29 September) ships with Core 9.2.7 and AI Service 9.2.3, and AI Service's 9.2.3 is a different artifact from Core's 9.2.3 (27 August). Part 5 shows how to build a version-skew table for your own environments.
+
+### CVE-2026-105052 in detail
+
+| Item | Value | Source |
+|---|---|---|
+| Component | MAS login service (CoreIdp login) | IBM bulletin; third-party tracker names the component |
+| Weakness | Path traversal, CWE-22 | IBM |
+| CVSS 3.1 base | 7.5 | IBM |
+| Vector | `AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N` | IBM |
+| Affected | MAS 8.10, 8.11, 9.0, 9.1, 9.2 | IBM |
+| Fixed | Core 9.0.33, 9.1.27, 9.2.8 or later | IBM |
+| 8.10 / 8.11 | CoreIdp login 3.2.201 / 4.0.179 via image-tag override | IBM |
+| Bulletin published | 3 October 2026 (modified 14 October) | IBM |
+| Known exploitation | Not listed in CISA KEV per a third-party tracker | Third-party |
+
+For 8.10 and 8.11 estates that cannot upgrade immediately, IBM's workaround edits the coreidp custom resource in OpenShift (Administration → CustomResourceDefinitions → coreidp) and adds the login image tag under `spec.settings`. After you save, the CoreIdp Entity Manager operator recreates the `coreidp-login` deployment. The sentence to memorise is IBM's warning not to remove the override until you have applied the October 2026 monthly update or later; removing it earlier reverts you to the vulnerable image.
+
+```bash
+# Illustrative checks after applying the 8.10/8.11 workaround (names depend on your instance)
+oc get coreidp -A
+oc get deployment -A | grep coreidp-login
+oc get coreidp <instance> -n <core-namespace> -o jsonpath='{.spec.settings.imageTags}'
+```
+
+> ⚠️ **Lifecycle collision:** 8.7, 8.8 and 8.9 went out of support on 30 April 2026. This bulletin lists 8.10 and 8.11 as the oldest affected versions and gives them a workaround. We found no equivalent fix for 8.9 and earlier, and unsupported versions do not receive one. If you still run those, your security position and your support position are the same problem; see the [lifecycle series](/blog/mas-lifecycle-series-index).
+
+### CVE-2026-90920 and the AI Service lesson
+
+| Item | Value | Source |
+|---|---|---|
+| Product | Maximo AI Service 9.1.0, 9.2.0 | IBM bulletin (7290833) |
+| Weakness | Code injection, CWE-94 | IBM |
+| CVSS 3.1 base | 9.8 (IBM-assigned) | IBM |
+| Fix | Upgrade to 9.1.19 or 9.2.3 or latest in catalog | IBM |
+| Workaround | None listed | IBM |
+| Published | 5 October 2026 | IBM |
+| Companion fixes | Tomcat, Netty, HttpComponents, glibc CVEs (23 unique IDs in all) | IBM |
+| Attack vector string | Network / no privileges / no interaction | Third-party tracker (CNA data) |
+
+There is a wider lesson here. AI Service is the component that lets Manage talk to large language models. Many sites installed it as a pilot and forgot it. A pilot component with a 9.8 critical flaw and no workaround is how a proof of concept becomes an incident. The question to ask is not "have we patched AI Service?" but "do we know every optional component installed on every cluster, and who owns it?"
+
+We also note a third-party tracker lists an **IoT** denial-of-service CVE and sibling AI Service DoS CVEs from the same period. We did not read an IBM bulletin for the IoT item, so Part 5 carries it as open rather than repeating scores we cannot source.
+
+### The cadence behind it
+
+Catalog releases are monthly: v9-261007 is the most recent we have confirmed, with 261029, 261126 and 261224 scheduled according to the knowledge base. The IBM CLI documents which OpenShift versions each catalog supports: catalogs v9-260924 and later support OCP 4.18 to 4.22, and v9-260827 was the last with OCP 4.16. Cluster-level hardening is moving as well: the ansible-devops 37.15 to 37.21 line made Kafka passwords FIPS-style (32 characters) and added the CIS OWASP ruleset, which is the sort of change that rewards teams who read release notes rather than wait for an incident.
+
+## 🤖 Layer 3.5: AI Agents and the MCP Server
+
+Here is the newest layer, and the one with the least documentation.
+
+IBM's 12 August 2026 article on agentic workflows in Maximo Assistant says that in 9.2 you can integrate external agents and tools with Maximo's agents and tools through the **Maximo MCP server**, and describes AI-assisted actions that create, update and modify records, for example changing work order status, creating follow-up work orders and creating service requests. It also says "you will also be able to use any of your automation scripts as custom tools," which is future tense, announced and not shipped. Reading the page carefully, it **does not describe human approval steps or permission scoping** for these write actions.
+
+That is not a criticism of IBM; it's a marketing-adjacent article, not a security guide. It is a warning about *your* design responsibilities:
+
+| Design question | Why it matters | Where we'll answer it |
+|---|---|---|
+| What identity does the agent act as? | Inheriting a human's identity makes audit trails meaningless | Part 6 |
+| What is the smallest security group that does the job? | An agent that can read work orders should not be able to change status | Part 6 |
+| Can its credential be rotated without redeploying? | Long-lived tokens leak | Parts 3, 6 |
+| Is every write recorded with the agent's own identity? | Needed for post-incident review | Part 6 |
+| Which actions need a human in the loop? | "Trusted autonomy" is not "human-free" | Part 6 |
+
+The same REST API facts apply. IBM's developer documentation describes exchanging a Maximo API key for a time-limited token that is sent in a request header on later calls. Whatever MCP does underneath, assume the API-key and token mechanics matter, and test rather than assume.
+
+> 💡 **Key insight:** The AI Service CVE and the MCP server are the same story from two angles. The more MAS exposes to automated callers, the more your security posture depends on identity hygiene and patch speed, not on the cleverness of the AI.
+
+## 🧪 Self-Assessment: Where Are You Today?
+
+Score each row 0 (no), 1 (partly), 2 (yes, with evidence). Evidence means a screenshot, a ticket or a report, not a belief.
+
+| # | Question | Layer | Score |
+|---|---|---|---|
+| 1 | Every human path into MAS goes through an IdP that enforces MFA | 1 | |
+| 2 | Local accounts are disabled or limited to a documented break-glass account | 1 | |
+| 3 | You can name every identity provider configured in MAS and who owns each | 1 | |
+| 4 | Leavers are deactivated in MAS within an agreed time, and you have tested it this quarter | 2 | |
+| 5 | The SCIM JWT (or LDAP bind credential) has a known expiry, an owner and a rotation date | 2 | |
+| 6 | Group removals through SCIM have been tested end to end, including Entra's PATCH behaviour | 2 | |
+| 7 | Every API key maps to one integration, one owner and one purpose | 3 | |
+| 8 | No automation uses a system-admin key where a narrower one would do | 3 | |
+| 9 | You have an inventory of installed MAS components and versions across all clusters | 4 | |
+| 10 | You can state, today, whether you are exposed to CVE-2026-105052 and CVE-2026-90920 | 4 | |
+| 11 | An interim-build path exists: urgent fix to production in days, not release cycles | 4 | |
+| 12 | Any AI agent that can write to MAS has its own identity and its own audit trail | 3 | |
+
+**0 to 8:** treat this quarter as a remediation quarter. **9 to 16:** you have the basics and the gaps are specific; start with the lowest-scoring layer. **17 to 24:** you're ahead of most estates; spend your effort on evidence and on the agent layer.
+
+## 🗺️ The Six Parts
+
+### [Part 1: SAML SSO and MFA in MAS: Why MFA Lives in Your Identity Provider](/blog/mas-secops-saml-sso-mfa)
+*Layer 1.* SAML setup end to end, SP-initiated versus IdP-initiated flows, seamless login, MFA only through a SAML IdP, the OIDC question, and slow-login troubleshooting.
+
+### [Part 2: SCIM User and Group Sync from Entra ID and Okta](/blog/mas-secops-scim-entra-okta)
+*Layer 2.* SCIM 2.0 since 9.0, JWT creation and expiry strategy, Entra gotchas including the compatibility flag, and the user-sync defect trail behind it.
+
+### [Part 3: LDAP, API Keys and Service Identities in MAS](/blog/mas-secops-ldap-api-keys)
+*Layers 2 and 3.* LDAP synchronisation behaviour, an API-key inventory and rotation routine, and least privilege for integrations and agents.
+
+### [Part 4: MAS 9.2 User-Management Changes Admins Must Know](/blog/mas-secops-user-management-92)
+*Layers 2 and 3.* The relational-database move, the migration job, the Integrity Checker, DT501598 and the claims we are testing against IBM documentation.
+
+### [Part 5: Patching as a Security Program: The 2026 MAS CVE Year](/blog/mas-secops-cve-patching-2026)
+*Layer 4.* CVE-2026-105052, CVE-2026-90920, the IoT DoS item, catalog-driven patching, and an evidence pack for auditors.
+
+### [Part 6: Securing MAS for AI Agents and MCP](/blog/mas-secops-securing-ai-agents-mcp)
+*Layer 3.5.* Authentication to the MCP server, scoping agent permissions, audit, and where agents must stop.
+
+## 🧾 Where This Fits With the Rest of the Library
+
+| If you need… | Read |
+|---|---|
+| What MAS 9.2 contains and who qualifies | [MAS 9.2 series index](/blog/mas-92-series-index) |
+| What breaks when you upgrade to 9.2 | [MAS 9.2 upgrade watch-list](/blog/mas-92-upgrade-watchlist) |
+| Which versions are still supported | [Maximo Support Cliff](/blog/mas-lifecycle-series-index) |
+| AI features that add security surface | [MAS 9.2 AI features](/blog/mas-92-ai-features) |
+
+## 🔟 The Ten Commandments of MAS Security Operations
+
+1. **Name the layer before you name the fix.** Authentication, lifecycle, authorisation and patching fail separately.
+2. **MFA is an IdP policy.** If a path into MAS bypasses the IdP, it bypasses MFA.
+3. **Disable what you don't use.** Local accounts, unused IdPs and pilot components are attack surface.
+4. **Every credential has an owner and an expiry.** A non-expiring token is a decision, not a default.
+5. **Test the leaver, not the joiner.** Provisioning that works proves nothing about deprovisioning.
+6. **One key, one integration.** Shared admin keys erase accountability.
+7. **Treat the upgrade as an identity migration.** Run the Integrity Checker before 9.2, not after.
+8. **Know your component versions.** Core, Manage and AI Service count separately.
+9. **Interim builds are for emergencies; have a path for them.** Do not wait for the monthly cycle.
+10. **Agents are identities.** Give them their own, scope them narrowly and log every write.
+
+## 📅 What To Do This Week
+
+| Day | Action | Evidence to keep |
+|---|---|---|
+| Monday | Record Core, Manage, AI Service and other component versions for every cluster | Version table |
+| Tuesday | Compare against CVE-2026-105052 and CVE-2026-90920 fixed versions; schedule patching | Ticket links |
+| Wednesday | If on 8.10/8.11, confirm the image-tag override is present and note the "do not remove" rule | Screenshot of CR |
+| Thursday | Run the leaver test: deactivate a test user in the IdP, confirm MAS state within the agreed window | Timestamps |
+| Friday | Inventory API keys, owners and expiries; flag any shared or system-admin keys | Key register |
+
+## 🔭 What We Still Cannot Tell You
+
+| Open item | Why it is open | What closes it |
+|---|---|---|
+| MFA for users who cannot use an IdP | Only a community question found; no IBM answer | IBM support case |
+| MCP server authentication and scoping details | IBM's article does not describe them | IBM 9.2 documentation or support |
+| IoT DoS CVE (CVE-2026-75881) bulletin and fix | Only third-party mentions found | IBM bulletin |
+| Sibling AI Service DoS CVE scores | Third-party trackers only | The IBM bulletin text for each |
+| Classic User application deprecation in 9.2 | Third-party claim | IBM 9.2 documentation (Part 4) |
+| AppPoint recalculation by security group | Third-party claim | IBM licensing documentation (Part 4) |
+| Whether automation scripts as custom tools has shipped | IBM used future tense on 12 Aug | IBM release notes |
+
+## ❓ Frequently Asked Questions
+
+**Does Maximo Application Suite have its own MFA, or do I need my identity provider?**
+MFA is applied by your SAML identity provider, per IBM Developer's article. MAS trusts the assertion. Local accounts and plain LDAP binds get no extra factor, and we found no confirmed IBM answer for MFA without an IdP.
+
+**Which MAS versions are affected by the October 2026 login-service vulnerability, and what do I install?**
+CVE-2026-105052 affects 8.10, 8.11, 9.0, 9.1 and 9.2. Fixed in Core 9.0.33, 9.1.27 and 9.2.8 or later (7 October 2026). For 8.10/8.11, override the CoreIdp login image tag to 3.2.201 or 4.0.179 and keep it until you have taken the October 2026 monthly update or later.
+
+**Is the Maximo AI Service code-injection CVE real, and is there an IBM bulletin?**
+Yes. IBM published it on 5 October 2026: CVE-2026-90920, CWE-94, CVSS 9.8, affecting AI Service 9.1.0 and 9.2.0. Upgrade to 9.1.19 or 9.2.3 or later; no workaround is listed. AI Service versions are independent of Core versions.
+
+**What actually changes for users and groups when I upgrade from MAS 9.1 to 9.2?**
+User and group data moves into the system relational database, user sync between suite applications is removed, and a pre-upgrade migration job maps authentication data including SCIM `externalId`. Run the Integrity Checker first, and check DT501598 (MAXUSER overwritten when MASISSUER is NULL).
+
+**Do AI agents that connect to MAS through MCP need a different security model from human users?**
+They need the same controls applied more strictly. IBM's article describes write actions through the MCP server but not approval steps or permission scoping, so give each agent its own identity, a least-privilege security group, a rotatable credential and its own audit trail.
+
+## References
+
+- [IBM Security Bulletin: CVE-2026-105052, MAS login service path traversal (IBM Support, 7290791)](https://www.ibm.com/support/pages/node/7290791)
+- [Maximo Application Suite 9.2.8 release notes (IBM Support, 7292664)](https://www.ibm.com/support/pages/node/7292664)
+- [Maximo AI Service security bulletin, CVE-2026-90920 and component CVEs (IBM Support, 7290833)](https://www.ibm.com/support/pages/node/7290833)
+- [Maximo Application Suite releases information (IBM Support)](https://www.ibm.com/support/pages/maximo-application-suite-releases-information-0)
+- [Configuring Maximo Application Suite to synchronize users and groups with SCIM 2.0 (IBM Docs)](https://www.ibm.com/docs/en/SSRHPA_cd/appsuite/admin/t_config_synch_scim20.html)
+- [Configuring multiple identity providers for the same authentication type (IBM Docs)](https://www.ibm.com/docs/en/SSRHPA_cd/appsuite/admin/t_config_multiple_idp.html)
+- [Single sign-on and multi-factor authentication integration with Maximo Application Suite (IBM Developer)](https://developer.ibm.com/articles/single-sign-on-multi-factor-authentication-integration-with-maximo-application-suite/)
+- [Common issues with Microsoft Entra SCIM and MAS (IBM Support, 7272019)](https://www.ibm.com/support/pages/node/7272019)
+- [Working smarter with agentic workflows in Maximo Assistant (IBM Think)](https://www.ibm.com/think/perspectives/working-smarter-agentic-workflows-maximo-assistant)
+- [Upgrading user authentication changes from MAS 9.1 to 9.2 (IBM Docs)](https://www.ibm.com/docs/api/v1/content/SSRHPA_cd/appsuite/install/c_user_auth_upgrade_91.html)
+- [Core 9.2.6 release notes, including DT501598 (IBM Support, 7288414)](https://www.ibm.com/support/pages/node/7288414)
+- [CVE-2026-90920 record (Strix CVE tracker, third-party)](https://www.strix.ai/cve/CVE-2026-90920)
+- [ibm-mas/cli catalogs (GitHub)](https://ibm-mas.github.io/cli/catalogs/)
+- [ibm-mas/ansible-devops releases (GitHub)](https://github.com/ibm-mas/ansible-devops/releases)
+
+---
+
+## Series Navigation
+
+**Series Index** · [Part 1: SAML SSO and MFA in MAS →](/blog/mas-secops-saml-sso-mfa)
+
+| Part | Title |
+|---|---|
+| 1 | [SAML SSO and MFA in MAS: Why MFA Lives in Your Identity Provider](/blog/mas-secops-saml-sso-mfa) |
+| 2 | [SCIM User and Group Sync from Entra ID and Okta](/blog/mas-secops-scim-entra-okta) |
+| 3 | [LDAP, API Keys and Service Identities in MAS](/blog/mas-secops-ldap-api-keys) |
+| 4 | [MAS 9.2 User-Management Changes Admins Must Know](/blog/mas-secops-user-management-92) |
+| 5 | [Patching as a Security Program: The 2026 MAS CVE Year](/blog/mas-secops-cve-patching-2026) |
+| 6 | [Securing MAS for AI Agents and MCP](/blog/mas-secops-securing-ai-agents-mcp) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo teams cut through vendor messaging and make grounded decisions about their asset management platform. Every date, version and score in this series is labeled by how we verified it, and where IBM has not said, we say so instead of guessing.
+
+<!--
+REVIEWER NOTES (night-shift, 2026-10-18):
+- DISCREPANCY: knowledge_base DOC00 CHG-020 says "IBM bulletin and fixed versions not found" for CVE-2026-90920. This run read IBM support document 7290833 (published 5 Oct 2026): AI Service 9.1.0/9.2.0, CWE-94, IBM CVSS 9.8, fixed in 9.1.19 / 9.2.3, no workaround. CHG-020 and the "open items" list in DOC00 can be upgraded to [IBM]. The CVSS vector string for CVE-2026-90920 came from a third-party tracker (CNA data), not the IBM page.
+- CVE-2026-105052: DOC00 CHG-008 gives 7 Oct 2026 as the release date; the IBM CVE bulletin (7290791) says initial publication 3 Oct 2026, last modified 14 Oct. Both used; consistent (bulletin precedes Core interim builds). Release note page 7292664 itself did not state affected versions; the bulletin 7290791 did.
+- IoT DoS CVE-2026-75881 (CHG-020) and sibling AI Service CVE scores (e.g., CVE-2026-90921) are third-party only; not stated as fact.
+- The "external OIDC gap (IBM Manage FAQ)" in DOC00 section 5.2 could not be located; the post lists it as open. The "classic User app deprecated" and "AppPoint recalculation by security group" claims are [IND] and are hedged.
+- Multiple-IdP versions: IBM Docs fetch said 9.0 SAML/LDAP via API, 9.1 OIDC, 9.2 UI. A search snippet suggested OIDC at 9.0; the fetched page was used.
+- SCIM statements come from the IBM Docs page (fetched via summarizer); the exact JWT NEVER support versions (9.2, 9.1.7, 9.0.18) match DOC15 PLAT-17.
+- The 'x-access-token' header for the REST API token was seen in a search snippet of IBM Developer, not in a fetched page; the post says only "request header".
+- Component versions: Manage 9.2.4 bundling Core 9.2.7 / AI Service 9.2.3 comes from DOC00 CHG-007; not re-verified on the IBM page this run.
+- Catalog schedule (261029/261126/261224) is from DOC00 CHG-005 and not re-read on IBM.
+- 8.9-and-earlier "no equivalent fix" is an inference from the bulletin's affected list; confirm with IBM if relevant to a customer.
+-->
