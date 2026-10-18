@@ -1,0 +1,614 @@
+---
+title: "SCIM User and Group Sync from Entra ID and Okta: The MAS 9 Setup Guide"
+description: "How SCIM 2.0 provisioning works in Maximo Application Suite since 9.0: the API key and JWT, the SCIM profile, the Entra ID compatibility flag, Okta limits, the group-name suffix trap, and the defect trail from DT434846 through the 9.2.3 readme."
+date: "2026-10-18"
+slug: "mas-secops-scim-entra-okta"
+tags: ["Maximo", "MAS", "Security", "SCIM", "Entra ID", "Okta", "User Provisioning", "Identity Provider", "JWT", "API Keys", "MAS 9"]
+draft: true
+tier: "admin"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-secops-02-scim-entra-okta.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "How do I set up SCIM user sync from Microsoft Entra ID to Maximo Application Suite?"
+    answer: "IBM documents five steps. Create a MAS API key with User management access, exchange it for a JSON Web Token by calling GET /v1/authenticate with Basic Auth (API key ID as username, authentication token as password) and a mas-jwt-expiry-duration header, create a SCIM profile through the API, create a non-gallery enterprise application in Entra with provisioning set to Automatic, and set the Tenant URL to https://api.{mas-instance-id}.{domain}/scim/v2/{profileId} with the JWT as the secret token. Then append the compatibility flag aadOptscim062020 to the Tenant URL as IBM Support article 7272019 describes, and assign users and groups to the application. Provisioning starts when the assignment is made, so test with one pilot user and one pilot group before assigning everyone."
+  - question: "What does the aadOptscim062020 flag do and do I really need it?"
+    answer: "Microsoft documents the flag as a switch to the SCIM-compliant PATCH behaviour. With it, Entra sends lowercase operation names, sends active as a real boolean rather than the string False, and removes a group member with a filtered path such as members[value eq \"id\"] instead of a bare members path with a value list. IBM Support article 7272019, modified 21 July 2026, lists the symptoms it was observed to resolve in MAS: users not deprovisioned, updates not reflected, attribute mismatches or skipped updates, several group members removed by a PATCH meant for one user, and an inability to change user status. IBM calls it an observed fix, not a guaranteed one. Treat it as mandatory for any Entra rollout where deprovisioning matters, and still test leavers end to end."
+  - question: "Why do my SCIM groups show up in MAS with strange suffixes?"
+    answer: "We found one source for this. In a June 2026 IBM Community thread, an IBM Champion answered that when you create the SCIM profile you should set the useGroupDisplayNameAsGroupId parameter to true, because otherwise MAS adds suffixes to group names. IBM's own SCIM concept page, as we could read it, does not document that parameter, and the thread does not state the suffix format or the minimum MAS version. Treat it as a practitioner lead: create a throw-away profile in a non-production Suite, push one group with and without the parameter, and compare the resulting group IDs before you rely on it."
+  - question: "Does Okta work as a SCIM client for MAS?"
+    answer: "IBM's documentation names Okta and Microsoft Entra as example identity providers and describes the IdP as the SCIM client that pushes user and group operations. We did not find an IBM or Okta page that walks through the MAS-specific Okta configuration, so the Okta steps here are the generic Okta SCIM recipe applied to IBM's documented endpoint and authentication. One hard limit is documented by Okta: SCIM provisioning on a custom app integration is available for SAML 2.0 and SWA apps and not for custom OIDC apps. If your MAS login is configured as OIDC in Okta, plan a separate SAML application for provisioning."
+  - question: "What is DT434846?"
+    answer: "DT434846 is titled SCIM Group Sync Performance Issue. It appears in IBM's fixed-issue list for the MAS 9.0.11 patch readme, released 5 May 2025, and in the 9.1.0 fixed-known-issues page, released 24 June 2025. IBM's pages give the title only, with no symptom, cause or measurement, so we cannot tell you how much faster it got. What we can say is the practical consequence: if you run SCIM group sync on a 9.0 build older than 9.0.11, or on a 9.1 release before 9.1.0, you are missing the documented fix. Patch first, then measure."
+keyTakeaways:
+  - "SCIM 2.0 has been in MAS since 9.0: the IdP is the client, MAS exposes /scim/v2/{profileId}/Users and /Groups, and authentication is a JWT you mint from a User-management API key (IBM Docs)"
+  - "The SCIM profile is a one-shot template applied only when a user or group is created; editing it later does not fix users already imported, so get it right in a test Suite first"
+  - "Entra ID needs the aadOptscim062020 flag on the Tenant URL for reliable deprovisioning, status changes and single-member group removals; IBM Support 7272019 lists the symptoms it resolves"
+  - "The JWT is a credential with user-administration rights: choose an expiry deliberately (P90D to NEVER), record the owner and the rotation date, and alarm on its age"
+  - "The SCIM defect trail runs from DT434846 (9.0.11, May 2025) to DT499272 (9.2.3, August 2026): patch level decides whether your sync is stable, so check your build against the list before you tune anything"
+series:
+  name: "MAS Security Operations"
+  part: 2
+  total: 6
+tldr: "Since MAS 9.0 your identity provider can create, update and deactivate MAS users and groups itself through SCIM 2.0. The mechanics are simple: a User-management API key becomes a JWT, a SCIM profile defines what a new user gets, and the IdP pushes to https://api.{instance}.{domain}/scim/v2/{profileId}. The traps are not simple. The JWT expires quickly by default, the profile applies only at creation, Entra needs a compatibility flag on the Tenant URL, group names may pick up suffixes, Okta supports SCIM only on SAML and SWA custom apps, and a long list of IBM fixes from DT434846 to DT499272 decides whether bulk group sync survives contact with a real directory. This guide walks the setup, then the failure modes, then a leaver test you can run before your next audit."
+seoTitle: "SCIM Sync from Entra ID and Okta to MAS 9"
+seoDescription: "Set up SCIM 2.0 user and group sync from Entra ID or Okta to Maximo Application Suite: JWT, profile, Entra flag, group suffixes, and IBM fixes."
+relatedSlugs: ["mas-secops-series-index", "mas-secops-saml-sso-mfa", "mas-92-upgrade-watchlist"]
+clusterSlugs: ["mas-secops-series-index", "mas-secops-saml-sso-mfa", "mas-secops-ldap-api-keys", "mas-secops-user-management-92", "mas-secops-cve-patching-2026", "mas-secops-securing-ai-agents-mcp"]
+targetQuestions:
+  - "How do I configure SCIM user and group sync from Entra ID to Maximo Application Suite?"
+  - "How do I create the JWT and API key for MAS SCIM, and how long should it last?"
+  - "What is the aadOptscim062020 flag and why does MAS need it with Entra ID?"
+  - "Can Okta provision users and groups into MAS with SCIM?"
+  - "What is DT434846 and which MAS versions fix SCIM group sync problems?"
+semanticKeywords:
+  - "MAS SCIM 2.0 user provisioning"
+  - "Maximo Application Suite SCIM Entra ID"
+  - "Maximo Application Suite SCIM Okta"
+  - "mas-jwt-expiry-duration"
+  - "aadOptscim062020"
+  - "MAS SCIM profile"
+  - "useGroupDisplayNameAsGroupId"
+  - "DT434846 SCIM group sync performance"
+  - "SCIM deprovisioning Maximo"
+  - "MAS user lifecycle automation"
+  - "scim/v2 profileId Users Groups"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Suite administrator access to the MAS administration UI, with permission to create API keys"
+  - "Application administrator access in Microsoft Entra ID or Super Admin in Okta"
+  - "A SAML identity provider already configured in MAS (see Part 1) if users will sign in with SAML"
+  - "A non-production MAS Suite to rehearse the profile, because profiles apply only at user creation"
+---
+
+# SCIM User and Group Sync from Entra ID and Okta: The MAS 9 Setup Guide
+
+> 🎯 **Who this is for:** MAS administrators and identity engineers who want joiners, movers and leavers in the corporate directory to reach Maximo without a human typing into the Users application, and who need to know where that automation breaks. Part 2 of the [MAS Security Operations series](/blog/mas-secops-series-index). Part 1 covered [SAML SSO and MFA](/blog/mas-secops-saml-sso-mfa).
+
+## 🔥 The Leaver Who Was Still Active
+
+Picture the audit finding. Someone left the company in March. Their Entra ID account was disabled the same day. In October, an auditor pulls the MAS user list and finds that person active, with a Manage security group that can approve work orders.
+
+Nobody did anything wrong. SAML was configured. The IdP refused to issue an assertion for the disabled account, so the person could not sign in. But the MAS account was never touched. The Maximo user, the group memberships, the entitlement that costs money: all still there, because SAML proves identity at login and has no opinion about whether an account should exist.
+
+That is the gap SCIM closes. SCIM 2.0 (System for Cross-domain Identity Management) lets the IdP push lifecycle events, create, update, deactivate, delete, to MAS as they happen. IBM's documentation says it plainly: starting in MAS 9.0, users and groups defined in your IdP are synchronised when those resources are assigned access, so you do not add them by hand, and updates or removal of access sync automatically when the IdP is configured for it.
+
+What IBM's page does not tell you is how many ways this can quietly stop working. In this guide we cover:
+
+- How the pieces fit: API key, JWT, SCIM profile, IdP application.
+- The Entra ID path, including the compatibility flag that IBM Support publishes.
+- The Okta path, including the limit Okta documents for custom apps.
+- Group sync, security groups and the suffix trap.
+- The defect trail from DT434846 to DT499272, so you can check your patch level.
+- A leaver test and a rotation plan.
+
+> 💡 **Key insight:** SAML decides who can walk in. SCIM decides who still exists. If you only have the first, you have a lock on the door and a guest list that never gets cleaned.
+
+Labels in this post follow the series convention. IBM Docs and IBM Support pages we read directly are stated as fact. Community answers and vendor claims are marked. Where IBM gives a title and no detail, we give the title and no detail.
+
+## 🧭 What SCIM Actually Does in MAS
+
+Start with direction. In LDAP synchronisation, MAS pulls from the directory on a schedule. SCIM is the reverse: the IdP is the **client** and pushes operations to endpoints that MAS exposes. IBM's wording is that the APIs "are initiated by the identity provider, which acts as a client, to manage user and group lifecycle operations."
+
+| Question | LDAP sync | SCIM 2.0 |
+|---|---|---|
+| Who starts the conversation? | MAS, on a cron schedule | The IdP, when assignments change or on its own provisioning cycle |
+| Where does the logic live? | MAS LDAP configuration and property mapping | IdP attribute mappings plus a MAS SCIM profile |
+| What triggers a user to exist? | The LDAP filter matches | The user or group is assigned to the IdP application |
+| Available since | Long-standing MAS feature | MAS 9.0 |
+| Deprovisioning | Delete deactivates the MAS user when the LDAP entry disappears (IBM synchronisation table) | Whatever the IdP sends: PATCH active=false or DELETE |
+| Typical owner | Directory team plus MAS admin | Identity team plus MAS admin |
+
+A naming trap worth flagging now. In MAS documentation the word "scim" also appears in the LDAP world: LDAP-synchronised users carry an `owner` value of `scim`, and the synchronisation is configured through a `ScimCfg` custom resource. IBM's 9.0 user-upgrade notes also offer "local or scim ownership" for SAML users. That is internal vocabulary for "externally managed". It is not the same thing as an IdP pushing SCIM 2.0 to `/scim/v2`. When someone says "we use SCIM" in a design meeting, ask which of the two they mean.
+
+### The endpoints
+
+IBM documents the following under the base URL `https://api.{mas-instance-id}.{domain}/scim/v2/{profileId}`:
+
+| Resource | Methods | Purpose |
+|---|---|---|
+| `/Users` | POST, GET | Push a new user; list users with filtering and paging |
+| `/Users/{userId}` | GET, PUT, PATCH, DELETE | Read, replace, change fields on, or delete one user |
+| `/Groups` | POST, GET | Push a new group; list groups |
+| `/Groups/{groupId}` | GET, PUT, PATCH, DELETE | Same operations on one group |
+| `/scim/v2/Profiles` | POST, GET | Create or page through SCIM profiles (API only in 9.0) |
+| `/scim/v2/Profiles/{profileId}` | GET, PUT, DELETE | Read, update, delete one profile |
+
+IBM's own caveat is worth quoting in spirit: these APIs are for IdP-to-Suite synchronisation, "provided for reference usage by experienced administrators." They are not a general user-management API. Part 3 covers the right tools for scripting.
+
+## 🏗️ The Five Moving Parts
+
+```text
+                 ┌──────────────────────────────────────────────┐
+                 │  MAS Suite administration                    │
+  (1) API key ──▶│  API key, access = "User management"         │
+                 └───────────────┬──────────────────────────────┘
+                                 │ key ID + authentication token
+                                 ▼
+                 ┌──────────────────────────────────────────────┐
+  (2) JWT     ──▶│  GET /v1/authenticate  (Basic Auth)          │
+                 │  header: mas-jwt-expiry-duration: P90D       │
+                 └───────────────┬──────────────────────────────┘
+                                 │ "token" field = the JWT
+                                 ▼
+  (3) Profile ──▶  POST /scim/v2/Profiles   { id, identities,
+                                              entitlement, workspaces }
+                                 │ profileId goes into the base URL
+                                 ▼
+ ┌────────────────────┐   (4)   Base URL + JWT as header credential
+ │ Entra ID / Okta    │ ────────────────────────────────────────────▶
+ │ enterprise app     │   POST/PATCH/DELETE /Users  /Groups
+ │ SCIM provisioning  │
+ └─────────┬──────────┘
+           │ (5) assign users and groups to the app = provisioning starts
+           ▼
+   MAS users and groups, configured by the profile at creation
+```
+
+Each part has an owner, and that is where projects stall:
+
+| Part | Created by | Lives in | What goes wrong |
+|---|---|---|---|
+| API key | MAS administrator | Suite administration → API keys | Key shown once; lost key means a new key |
+| JWT | MAS administrator | Pasted into the IdP | Expires in days by default and the sync dies silently |
+| SCIM profile | MAS administrator, through the API | MAS | Applied only at creation; typos are permanent for existing users |
+| IdP application | Identity team | Entra / Okta | Wrong Tenant URL, missing flag, wrong attribute mappings |
+| Assignments | Identity team | Entra / Okta | Assigned groups that no one mapped to a MAS security group |
+
+## 🔑 Step 1 and 2: The API Key and the JWT
+
+This is the part the series brief calls "JWT from API key", and it is the part most likely to be done once and forgotten.
+
+### Create the API key
+
+In Suite administration, open **API keys** from the side navigation and choose **Create API key**. Give it a description, set the authentication token expiry, and under suite administrative access select **User management**. Submit, then copy the API key ID and authentication token immediately. IBM's page is blunt: if you lose them they cannot be recovered and you must create a new API key.
+
+Name the key for its purpose and owner, not for a person. `scim-entra-prod` survives a staff change; `surendras-key` does not.
+
+### Mint the JWT
+
+The IdP does not accept the API key. It needs a JSON Web Token, and you obtain one by sending a `GET` to the `/v1/authenticate` API with Basic Auth: the API key ID as the username and the authentication token as the password. The `token` field in the response is your JWT.
+
+```bash
+# Illustrative. Host, key ID and token are placeholders; check the exact
+# /v1/authenticate URL for your instance in the MAS API reference.
+export MAS_API="https://api.${MAS_INSTANCE_ID}.${MAS_DOMAIN}"
+
+curl -sS -u "${SCIM_KEY_ID}:${SCIM_KEY_TOKEN}" \
+  -H "mas-jwt-expiry-duration: P90D" \
+  "${MAS_API}/v1/authenticate" | jq -r '.token' > scim.jwt
+```
+
+The `mas-jwt-expiry-duration` header is the setting that matters. IBM's documentation says:
+
+- By default the JWT has a **short expiry** and requires frequent regeneration and reconfiguration of the IdP connection.
+- The header takes an **ISO 8601 duration**. IBM's example is `P90D`, 90 days.
+- `P100Y` (100 years) and `NEVER` (no expiration) are supported on **9.2, 9.1.7 and 9.0.18 or later**.
+
+### Choosing an expiry
+
+The tempting answer is `NEVER`, because it ends the "SCIM stopped working on Tuesday" tickets. The honest answer is that a non-expiring token with user-administration rights is a permanent credential for creating accounts and changing their group membership.
+
+| Expiry | Operational effect | Security effect | Our recommendation |
+|---|---|---|---|
+| Default (short) | Sync breaks on a schedule nobody wrote down | Low exposure | Never for production |
+| `P90D` | Four rotations a year; calendar it | Bounded exposure | Good default for regulated shops |
+| `P1Y` | One rotation a year | Moderate exposure | Acceptable with vaulting and alerting |
+| `P100Y` / `NEVER` | No rotation tickets | Permanent credential | Only with a vault, an owner and a documented compensating control |
+
+Whatever you pick, record three facts next to the secret: **owner, creation date, rotation date**. Then make the rotation visible. A JWT carries its expiry in the `exp` claim, so you can check it without calling MAS:
+
+```bash
+# Print the expiry date of the JWT stored in scim.jwt (GNU date)
+payload=$(cut -d. -f2 < scim.jwt | tr '_-' '/+' | base64 -d 2>/dev/null)
+exp=$(echo "$payload" | jq -r '.exp // "none"')
+[ "$exp" = "none" ] && echo "No exp claim (non-expiring?)" \
+  || date -u -d "@$exp" +"JWT expires: %Y-%m-%d %H:%M UTC"
+```
+
+Run that from a scheduled job, and page someone at 30 days remaining. The point is that the IdP will not warn you. Entra's provisioning logs will show the failures after the fact, and a leaver who is not deprovisioned while the token is dead is the audit finding from the top of this post.
+
+> ⚠️ **Rotation is also a rebuild.** Replacing the JWT means editing the secret in the IdP application. In Entra that is a one-field change; in either IdP, test with the Provision on demand or equivalent feature straight afterwards, not three weeks later.
+
+## 🧩 Step 3: The SCIM Profile, a One-Shot Template
+
+SCIM defines users and groups. It does not define what a Maximo user needs to be useful: how they log in, what entitlement they hold, which workspace and application they can open. IBM's answer is the **MAS SCIM profile**, a template identified by the `{profileId}` that appears in your base URL.
+
+### Profile structure
+
+IBM's documented shape has five top-level fields: `id`, `version`, `identities`, `entitlement` and `workspaces`:
+
+```json
+{
+  "id": "entra-prod",
+  "version": 1,
+  "identities": [
+    { "type": "saml", "id": "default-saml", "samlId": "userName" }
+  ],
+  "entitlement": { "application": "BASE" },
+  "workspaces": [
+    { "id": "workspace1", "applications": ["manage"] }
+  ]
+}
+```
+
+(The IBM example also shows `local` and `ldap` identity entries; we trimmed to the SAML case. The `id` values shown, `default-saml` and `workspace1`, are placeholders. Use the IdP ID from your own MAS SAML configuration and your real workspace ID.)
+
+| Field | Meaning | Detail from IBM Docs |
+|---|---|---|
+| `id` | Profile ID used in the base URL | User-selected; how MAS knows which profile to apply to an incoming request |
+| `version` | Profile model version | The only valid value in 9.0 is `1` |
+| `identities[].type = local` | MAS username and password | SCIM `userName` becomes the MAS username; a random password is generated and emailed |
+| `identities[].type = saml` | SAML login | Needs `id` (MAS ID of the IdP) and `samlId` (the SCIM attribute used as the SAML ID) |
+| `identities[].type = ldap` | LDAP login | Needs `id` and `ldapUsername` |
+| `entitlement.application` | Licence tier | `NONE`, `SELF_SERVICE`, `LIMITED`, `BASE`, `PREMIUM` |
+| `workspaces[].id` | Workspace to add the user or group to | Applied to users and groups pushed in |
+| `workspaces[].applications` | Application IDs | Users get the USER role; groups are synchronised with them |
+
+Look up application IDs with a `GET` to `https://api.{mas-instance-id}.{mas-domain}/applications`, as IBM suggests, rather than guessing.
+
+### The samlId expression is where Part 1 meets Part 2
+
+The `samlId` field names which SCIM attribute becomes the user's SAML ID. IBM's example: use `userName`, or, when the primary email is the identifier but differs from `userName`, the limited path expression `emails[primary eq true].value`. This must equal the NameID your IdP sends in the SAML assertion, the subject of [Part 1](/blog/mas-secops-saml-sso-mfa). SCIM can create a perfect user that still cannot log in because the SAML ID it stored does not match what the assertion carries. (A September 2025 IBM Community thread, referenced in Part 1, makes the same point from the symptom side: a SAML user needs a SAML ID in MAS, and SCIM or LDAP synchronisation is how it normally gets one.)
+
+### The three rules that will hurt you
+
+IBM states these explicitly:
+
+1. **No profile, no configuration.** If the profile does not exist when a user or group is added, nothing is applied and an administrator must configure the user by hand.
+2. **Not retroactive.** If you update the profile after users were imported, the changes apply only to users and groups created afterwards.
+3. **Admin edits win.** If an administrator changes a user or group in MAS, applying a profile does not undo that.
+
+The practical consequences:
+
+- **Rehearse in a non-production Suite.** A wrong `workspaces` entry on day one means every user pushed that day needs a manual fix, because editing the profile will not repair them.
+- **Create the profile before you assign anyone.** The order is API key, JWT, profile, IdP app, assignments. Assigning first is the classic way to create a hundred half-configured users.
+- **Treat entitlement as a cost control.** `BASE` and `PREMIUM` matter commercially. A profile that grants `PREMIUM` to everyone is a licensing event. Use separate profiles, and separate IdP applications, for populations that need different entitlements.
+- **One profile per population, not one profile per user.** Contractors, planners, and mobile-only technicians can each have their own `profileId`, and therefore their own Tenant URL.
+
+> 🔐 **A note for 9.2.** IBM's SCIM concept page says that in 9.2 entitlement is calculated dynamically from workspace and application assignments. We cover what else changes in 9.2, including where user and group data now lives, in [Part 4](/blog/mas-secops-user-management-92). Before a 9.1 to 9.2 upgrade, IBM's upgrade documentation says a pre-upgrade datamodel-migration job synchronises the required SCIM fields, including `externalId`. Do not treat that as a reason to skip your own check of `externalId` values.
+
+## 🟦 The Entra ID Path
+
+Microsoft's Entra gallery has a Maximo Application Suite tutorial, but it covers **single sign-on**, not provisioning. For SCIM you use a **non-gallery enterprise application**, which is Entra's standard route for any SCIM 2.0 endpoint.
+
+### Setup sequence
+
+1. **Create the application.** In the Entra admin center: *Enterprise applications → New application → Create your own application → Integrate any other application you don't find in the gallery (Non-gallery)*. Name it clearly, for example `MAS Prod SCIM`.
+2. **Open Provisioning** and set the provisioning mode to **Automatic**.
+3. **Admin credentials.** Set the **Tenant URL** to `https://api.{mas-instance-id}.{domain}/scim/v2/{profileId}` and the **Secret Token** to the JWT from Step 2. IBM says to use header-based authentication with the JWT; in Entra that is the Secret Token field, which Entra sends as a bearer credential. (The Entra field-level behaviour is Microsoft's general SCIM design; the IBM page does not show Entra screens.)
+4. **Add the compatibility flag** to the Tenant URL (next section) *before* you click Test Connection.
+5. **Test Connection**, then save.
+6. **Review attribute mappings** for Users and Groups. At minimum check `userName`, `emails`, `displayName`, `active` and `externalId`.
+7. **Scope.** Under Settings, choose *Sync only assigned users and groups* so that nothing is pushed unless you assign it.
+8. **Assign** one pilot user and one pilot group. Use *Provision on demand* for the first push, then switch the status to On.
+
+### The compatibility flag
+
+IBM Support article 7272019, titled "Fix Maximo Application Suite SCIM Deprovisioning and Update Errors with aadOptSCIM062020 Flag in Microsoft Entra", was modified on 21 July 2026. The page lists these symptoms:
+
+- Users not properly deprovisioned in MAS.
+- Updates not reflected correctly.
+- Attribute mismatches or skipped updates.
+- Multiple group members removed after a PATCH that targets a single user.
+- Unable to change user status.
+
+The fix is to append the flag to the Tenant URL in the Entra application's provisioning settings:
+
+```text
+https://api.<instance>.<domain>/scim/v2/<profileId>?aadOptscim062020
+```
+
+Three honest caveats from reading that page:
+
+- IBM states the flag "has been observed to resolve" these issues. It does not give a root cause and does not promise a cure.
+- The page's metadata lists MAS 9.0.0 and 9.1.0 as versions affected and the environment as "MAS 9+". It does not say the problem stops after a particular release, so keep the flag on 9.2 unless IBM or Microsoft tells you otherwise.
+- IBM spells the flag two ways, `aadOptSCIM062020` in the title and `aadOptscim062020` in the example URL. Microsoft's documentation writes it `aadOptscim062020`. Use Microsoft's spelling, and verify the behaviour in the provisioning log rather than trusting the capitalisation.
+
+### What the flag changes on the wire
+
+Microsoft's documentation explains the mechanism, and it makes IBM's symptom list understandable. Without the flag, Entra's PATCH requests for these four cases are not what a strict SCIM server expects. With the flag they are RFC 7644 compliant. Microsoft lists the affected requests as: requests to disable users, requests to add a single-value string attribute, requests to replace multiple attributes, and requests to remove a group member.
+
+| Operation | Without the flag (Microsoft's sample) | With the flag |
+|---|---|---|
+| Disable a user | `"op": "Replace", "path": "active", "value": "False"` (string) | `"op": "replace", "path": "active", "value": false` (boolean) |
+| Add a single-value attribute | `"op": "Add"` (capitalised) | `"op": "add"` |
+| Replace several attributes | One Replace operation per attribute path | One `replace` with a value object for the simple attributes |
+| Remove one group member | `"op": "Remove", "path": "members", "value": [{ "value": "u1091" }]` | `"op": "remove", "path": "members[value eq \"<member-id>\"]"` |
+
+Read the first and last rows against IBM's symptom list. A string `"False"` in `active` is a classic way to make "unable to change user status" and "users not deprovisioned" happen against a strict server. A `remove` on `members` with no filter is a classic way to wipe more members than intended: a server that reads the bare path as "all members" removes them all. We are inferring the mapping from Microsoft's documented request shapes and IBM's symptoms. Neither vendor states that these specific payload differences are the cause in MAS.
+
+Microsoft's page also says this behaviour would become the default "over the next few months" and that the flag does not currently work with on-demand provisioning. That text dates from 2025; the page was updated again in February 2026 and still documents the flag. Two consequences. First, do not assume the default has changed for your tenant. Second, if you test with *Provision on demand* and see the old behaviour, that is the documented limitation, not proof the flag is ignored. Confirm with a real provisioning cycle.
+
+### Entra scoping and the leaver path
+
+Entra's common deprovisioning behaviour is to send an update setting `active` to false when a user falls out of scope (unassigned, disabled or deleted), and to delete after its own grace period. Whether MAS then deactivates, and what that does to entitlement and group membership, is exactly what to test. We cover the test below.
+
+## 🟩 The Okta Path
+
+For Okta we have less to give you, and we would rather say so than invent steps. IBM's SCIM concept page names Okta alongside Microsoft Entra as example identity providers. We did not find an IBM or Okta page that walks through a MAS-specific Okta configuration. What follows is IBM's documented MAS side combined with Okta's published rules for custom app SCIM.
+
+### The documented limit
+
+Okta's support article on SCIM for custom apps says SCIM provisioning is available for custom **SAML 2.0** and **SWA** app integrations and states that enabling SCIM provisioning with a custom **OpenID Connect** integration is not currently supported. You enable it in the app's **General** tab by editing App Settings and ticking the SCIM provisioning option. The article was current when we read it; check it again before you rely on this.
+
+Why this matters for MAS: if you configured MAS with OIDC (Part 1 covers where IBM's pages disagree about OIDC), you cannot attach SCIM to that same Okta OIDC app. You need a separate SAML 2.0 application used only for provisioning. That is a perfectly legitimate pattern, but the two applications need matching user identifiers, or provisioned users will not line up with the identity that signs in.
+
+### Mapping IBM's endpoint onto Okta's SCIM connector
+
+The generic Okta SCIM connector asks for a SCIM connector base URL, a unique identifier field for users, a list of supported provisioning actions, and an authentication mode. We did not confirm in this run the exact label of the header-based mode in Okta's current admin console, so verify it in your tenant. The mapping to IBM's values:
+
+| Okta setting | Value for MAS | Source |
+|---|---|---|
+| SCIM connector base URL | `https://api.{mas-instance-id}.{domain}/scim/v2/{profileId}` | IBM Docs |
+| Unique identifier field for users | `userName` | Okta convention; MAS profile uses `userName` by default in IBM's samples |
+| Authentication mode | HTTP header with the JWT as the credential | IBM Docs says to use header-based authentication with the JWT; the Okta label is unverified |
+| Provisioning actions | Push New Users, Push Profile Updates, Push Groups | Okta feature names from general knowledge; confirm in your tenant |
+| Deactivation | "Deactivate Users" to propagate leavers | Okta feature name from general knowledge; test the MAS result |
+
+Then, as with Entra: scope to assigned users, push one pilot user and one pilot group, check what MAS created, and only then widen.
+
+### Entra versus Okta at a glance
+
+| Topic | Entra ID | Okta |
+|---|---|---|
+| App type | Non-gallery enterprise application | Custom SAML 2.0 or SWA app with SCIM enabled; not custom OIDC |
+| IBM guidance specific to the IdP | Yes: Support article 7272019 | None found; IBM names Okta as an example IdP |
+| Known payload quirks with MAS | Documented, with the `aadOptscim062020` flag | Not documented by IBM in the pages we read |
+| Group push | Groups assigned to the app | Push Groups (verify behaviour with your MAS version) |
+| Who documents the flags | Microsoft Learn | Okta Help Center |
+
+## 👥 Groups, Security Groups and the Suffix Trap
+
+Users are the easy half. Groups are where permissions come from, so groups are where SCIM projects produce incidents.
+
+IBM's profile applies the `workspaces` block "to both users and groups", with the line that groups are "synchronized with" the listed applications. What IBM's SCIM pages do not explain, in the text we could read, is the relationship between a SCIM group and a **Manage security group**. A June 2026 IBM Community question asked exactly that. The visible answers were:
+
+- One reply suggested the Suite API and pointed to the SCIM interface of the MAS 9.0.x Admin APIs, noting that the answer depends on version.
+- An IBM Champion answered that users can be assigned to groups through SCIM, and added: set the profile parameter `useGroupDisplayNameAsGroupId` to `true`, because otherwise MAS adds suffixes to the names of the groups.
+- A follow-up asking whether SCIM groups are the same as Manage security groups, and whether existing security groups must be recreated through the API, had no answer when the thread closed.
+
+That is a community lead, not an IBM statement. The IBM concept page we read does not document that parameter, and the thread gives neither the suffix format nor the MAS version it applies to. So here is how to use it responsibly:
+
+1. In a non-production Suite, create two profiles: one with `useGroupDisplayNameAsGroupId` set to `true` and one without.
+2. Push the same group through each.
+3. Compare the group IDs MAS created, then check what Manage shows for security groups.
+4. Write down the result with the MAS version. That version-stamped note is worth more than the thread.
+
+### Design the group model before you push anything
+
+| Decision | Options | Our guidance |
+|---|---|---|
+| Which IdP groups sync? | All groups, or only a dedicated `MAS-*` set | A dedicated prefix. Never push an entire directory into a Suite. |
+| Who owns membership? | The IdP or Manage | One system only. Dual ownership guarantees drift. |
+| Naming | Match Manage security group names, or translate | Match, and test the suffix behaviour first |
+| Nesting | Flat groups or nested | Flat. Test nested behaviour separately; we found no IBM statement about nested group flattening. |
+| Removal | Remove user from group, or deactivate user | Test both. They are different SCIM operations. |
+
+### The single-member removal problem
+
+One of the five IBM Entra symptoms is "multiple group members removed after a PATCH operation that targets a single user." From the Microsoft payloads above, a membership removal that is not scoped to a member ID is the likely shape of the problem. The consequence is the dangerous kind: an IdP change that should remove one person from `MAS-PLANNERS` empties the group. Test it with a group of three or more members: remove one, then list the others in MAS. If any other member disappears, stop and check the flag before going further.
+
+## 📜 The Defect Trail: DT434846 and Everything After
+
+The series brief names DT434846. Here is what IBM's pages say, and what they do not.
+
+**DT434846, "SCIM Group Sync Performance Issue"**, appears in two IBM documents:
+
+- The **9.0.11 patch readme**, release date 5 May 2025.
+- The **9.1.0 fixed-known-issues page**, release date 24 June 2025.
+
+Both give the title only. IBM does not say how slow, at what group size, or what the cause was. We will not guess. The usable fact is the fix boundary: a 9.0 build older than 9.0.11, or a 9.1 build older than 9.1.0, does not carry the documented fix.
+
+The same two pages list neighbours that read like a map of the first year of SCIM in production:
+
+| Release (IBM page date) | DT id | IBM title (shortened where IBM's page was) |
+|---|---|---|
+| 9.0.11 (5 May 2025) | DT434846 | SCIM Group Sync Performance Issue |
+| 9.0.11 | DT423292 | MAS SCIM Profiles not applied on SCIM ownership transfer |
+| 9.0.11 | DT435171 | Auto Assign Entitlement for users being removed when usersync is run |
+| 9.0.11 | DT426383 | "+" prefix in phone numbers is removed automatically while importing users through .CSV file |
+| 9.1.0 (24 June 2025) | DT424418 | SCIM API replaces the entire name object when a nested object is being replaced via the SCIM Patch Operation |
+| 9.1.0 | DT423528 | MAS SCIM API is not honouring the Extensions Schema Attribute (title truncated on IBM's page) |
+| 9.1.0 | DT422313 | Using SCIM Group Synchronization in bulk from MS Entraid causes a race condition issue (title truncated) |
+| 9.1.0 | DT423064 | When a SCIM user is added to various groups in SCIM, they get reported as added from MAS Core APIs (title truncated) |
+| 9.1.0 | DT422317 | Using SCIM Group Synchronization from MS Entra ID results in the email being updated on the user |
+| 9.1.0 | DT396875 | Errors noticed in groupsync-coordinator pod log: groupsync entered FATAL state, too many start retries too quickly |
+| 9.1.18 (27 May 2026) | DT469197 | Users are not getting added to the security group when sync happens via SCIM v2 Integration and LDAP |
+| 9.1.18 | DT469631 | SCIM API to fetch Users bringing the DELETED Users |
+| 9.1.21 (27 Aug 2026) | DT495866 | SCIM API does not return enterprise user extension in the retrieve user request |
+| 9.2.3 (27 Aug 2026) | DT498948 | If a user's MAXUSER.USERID differs from MAXUSER.PERSONID, SCIM user sync may fail with HTTP 404 error |
+| 9.2.3 | DT499272 | SCIM sync fails when person locale is "en" (no country) |
+| 9.2.3 | DT498522 | Login Failure for SAML Users with Mismatched Person and User Name value |
+
+A few of these deserve a sentence beyond the title, strictly using what IBM's titles say:
+
+- **DT422313 and DT422317** both involve Microsoft Entra bulk group synchronisation, and the first is described as a race condition. If you are on a pre-9.1.0 build and your first bulk push of a large group produced inconsistent membership, that is a documented defect, not user error.
+- **DT396875** names the `groupsync-coordinator` pod. If groups are not syncing, that pod's log is a legitimate place to look on builds that carry it.
+- **DT469631** is the one that touches leavers: the SCIM user fetch returning deleted users. A reconciliation script that lists users through the SCIM API will include ghosts on a build without the fix.
+- **DT498948** is a data-quality trap: `MAXUSER.USERID` differing from `MAXUSER.PERSONID` can cause SCIM user sync to fail with HTTP 404. Mixed identifiers are common in Maximo estates that predate SCIM.
+- **DT499272** is another: a person locale of `en` with no country. IBM's page ties it to the Manage value list rejecting `en_` with error BMXAA4190E.
+
+### Pre-flight data checks
+
+If you are about to onboard an existing Maximo user base, check for the two data conditions that IBM's 9.2.3 readme calls out. These queries are illustrative; confirm table and column names in your own Manage database before running anything.
+
+```sql
+-- DT498948: users whose USERID and PERSONID differ
+SELECT userid, personid
+FROM   maxuser
+WHERE  userid <> personid;
+
+-- DT499272: person records with a bare "en" locale (no country)
+SELECT personid, locale
+FROM   person
+WHERE  locale = 'en';
+```
+
+These are read-only and safe. Fix the data, or patch to a release that carries the fix, before you let SCIM loose on it.
+
+### A custom-attribute limit you should know about
+
+An IBM Ideas request, MASM-I-1243, "Allow custom attributes from the User object to be defined for the SCIM integration", was created on 5 November 2024, shows a status of "Planned for future release", and had its latest comment on 19 August 2025. It states that custom attributes added to the MAXUSER object cannot be exposed through the SCIM interface, and an IBM Support comment says multiple customers need this to move from LDAP user registration, which already supports it. Practical reading: if your Maximo users carry custom MAXUSER fields that LDAP sync used to populate, SCIM may not be a like-for-like replacement today. Check IBM's current position before you promise anyone a migration date.
+
+## 🔍 Troubleshooting SCIM Sync
+
+Work from the IdP outward. Most failures are visible in the IdP's provisioning log before you ever touch an OpenShift pod.
+
+| Symptom | First check | Likely cause | Fix |
+|---|---|---|---|
+| IdP shows 401 or 403 on every call | Is the JWT expired? Run the `exp` check above | Default short-lived JWT | Mint a new JWT with an explicit `mas-jwt-expiry-duration`; update the secret |
+| Test Connection fails | Tenant URL and `profileId` | Typo, missing `/scim/v2/`, wrong instance ID or domain | Re-check against `https://api.{mas-instance-id}.{domain}/scim/v2/{profileId}` |
+| Users created but cannot open Manage | Profile `workspaces` and `applications` | Profile missing at creation time, or wrong application ID | Fix manually for existing users; fix the profile for future users |
+| Users created but SAML login fails | `samlId` expression versus NameID | Stored SAML ID differs from the assertion | Align `samlId` with Part 1's NameID decision |
+| Users not deactivated when they leave | Provisioning log for the PATCH on `active` | Entra without `aadOptscim062020` | Add the flag; re-test the leaver |
+| One removal empties a group | Provisioning log for the group PATCH | Unscoped member removal | Add the flag; retest with a group of three or more |
+| Sync fails for specific users with 404 | Compare USERID and PERSONID | DT498948 on a build before the fix | Align IDs or patch |
+| Sync fails for specific users, BMXAA4190E | Check person locale | DT499272 | Correct the locale or patch |
+| Large group never finishes | Core version | DT434846 on older builds | Patch to 9.0.11 / 9.1.0 or later, then measure |
+| Group names carry odd suffixes | Profile parameters | Possibly `useGroupDisplayNameAsGroupId` (community lead) | Test in non-production as described above |
+| Entitlement disappears after a user sync run | Core version | DT435171 | Patch to 9.0.11 or later |
+
+When the IdP side is clean and the call reaches MAS, the log trail is the Core namespace. Start with the pod that served the request and the `groupsync-coordinator` pod for group issues. We did not verify the exact deployment names for SCIM request handling on a live 9.2 cluster, so list the pods in your Core namespace and match on what you see rather than copying a name from a blog post:
+
+```bash
+oc get pods -n mas-${MAS_INSTANCE_ID}-core | grep -Ei 'scim|groupsync|usersync|coreapi'
+```
+
+## 🧪 The Leaver Test: Prove It Before the Auditor Does
+
+Run this on a pilot population before you trust SCIM with production leavers, and re-run it after every MAS upgrade and every JWT rotation.
+
+| # | Scenario | Action in the IdP | Expected result in MAS | Evidence to keep |
+|---|---|---|---|---|
+| 1 | Joiner | Assign test user to the app and the pilot group | User created with profile identity, entitlement and workspace access | Screenshot of the user; profile ID used |
+| 2 | Login | Sign in as the test user with SAML | Login succeeds; user lands in the intended app | Browser trace or login time |
+| 3 | Attribute change | Change display name and phone in the IdP | Change appears in MAS after the next cycle | Before and after values |
+| 4 | Group add | Add the user to a second pilot group | Group membership appears; other members unchanged | Member lists before and after |
+| 5 | Group remove | Remove one of three members from a group | Only that member removed | Member lists before and after |
+| 6 | Disable | Disable the account in the IdP | MAS user deactivated or status changed per design | MAS user status; provisioning log entry |
+| 7 | Unassign | Remove the user from the app assignment | MAS user deactivated or removed per design | MAS user status |
+| 8 | Delete | Delete the account in the IdP | Behaviour documented, whatever it is | Result plus the build number |
+| 9 | Reconcile | List users through the SCIM API and compare with the IdP | No ghosts; no orphans | Diff output; check DT469631 on older builds |
+| 10 | Token | Check JWT expiry and owner | At least 30 days remaining; owner named | Output of the `exp` check |
+
+Rows 6 to 8 should be agreed with your security team before you test. The point is not that MAS must do any particular thing. The point is that the behaviour is **known, written down and repeatable**. If it is "user is deactivated but keeps group memberships," that may be acceptable, but it needs to be someone's decision.
+
+## 🛡️ Running SCIM as a Security Control
+
+Once the sync works, treat it as an access-control system, not an integration.
+
+- **The SCIM API key is a privileged identity.** User management access can create accounts and change group membership. Give it an owner, store it in a vault, and review it with the rest of your service identities in [Part 3](/blog/mas-secops-ldap-api-keys).
+- **Limit what the IdP can push.** Scope the IdP application to a dedicated group of groups. If your whole directory is in scope, your directory is your entitlement boundary.
+- **Separate profiles by risk.** Elevated roles such as administrators and approvers should not arrive through the same profile as read-only users.
+- **Alarm on the quiet failures.** Expired JWT, provisioning job in quarantine (Entra), and a growing "skipped" count are the usual ones. None of them page anyone by default.
+- **Log the baseline.** Record the number of active MAS users against the number of assigned IdP users monthly. A divergence you cannot explain is the early warning for the orphaned-account finding.
+- **Keep the MAS password path in mind.** A profile with a `local` identity makes MAS generate a random password and email it to the user. If your policy is SSO-only, do not put `local` in the profile's identities.
+- **Patch as part of the programme.** The defect table above is the case for [Part 5's](/blog/mas-secops-cve-patching-2026) argument: stability and security both ride on staying current.
+
+## 🔟 The Ten Commandments of SCIM in MAS
+
+1. **Order matters.** API key, JWT, profile, IdP app, assignments. In that order.
+2. **The profile is applied once.** Rehearse it before the first real user arrives.
+3. **Choose the JWT expiry on purpose.** Short breaks sync; `NEVER` is a permanent credential.
+4. **Write the owner and the rotation date next to the secret.**
+5. **On Entra, add `aadOptscim062020` before the first Test Connection.**
+6. **Align `samlId` with the NameID.** SCIM and SAML must agree.
+7. **Sync a dedicated set of groups.** Never the whole directory.
+8. **One owner for group membership.** The IdP or Manage, not both.
+9. **Check your build against the defect table.** Patch before you tune.
+10. **Test the leaver, in writing.** Disable, unassign, delete: know what each does.
+
+## 📅 What To Do This Week
+
+| Day | Action | Evidence to keep |
+|---|---|---|
+| Monday | List every SCIM or LDAP-owned user population, and the IdP applications that feed them | Inventory table |
+| Tuesday | Check the Core version against the defect table; plan any needed patch | Version and DT checklist |
+| Wednesday | Find the SCIM JWT: owner, creation date, expiry. If unknown, mint a new one with a deliberate duration | Secret metadata record |
+| Thursday | On Entra, confirm the Tenant URL carries the compatibility flag; on Okta, confirm the app type is SAML or SWA | Screenshot of provisioning settings |
+| Friday | Run the leaver test on one pilot user and one three-member group | Completed test table |
+
+## 🔭 Open Items We Could Not Close
+
+| Open item | Why it is open | What would close it |
+|---|---|---|
+| Naviam's guidance on Entra SCIM with MAS | Our brief pointed to a Naviam source; we could not locate it in two searches, so nothing here is attributed to Naviam | The original URL, or an IBM case |
+| What DT434846 actually fixed | IBM's pages give the title only | The DT detail page behind an IBM ID, or an IBM case |
+| `useGroupDisplayNameAsGroupId` | One community answer; not in the IBM page we read; suffix format and version unknown | A test in your own Suite; IBM confirmation |
+| Okta console labels for header authentication and provisioning actions | No MAS-specific Okta guide found; labels from general knowledge | Walk through your Okta tenant; Okta documentation |
+| Whether the Entra flag is still required on 9.2 | IBM article lists 9.0.0 and 9.1.0 as affected versions | A 9.2 pilot with the flag removed, in non-production only |
+| SCIM profile UI | IBM's 9.0 text says profiles are API-only; we did not confirm a later UI | Check the 9.2 Suite administration console |
+| Behaviour of delete versus deactivate in MAS | IBM's pages do not specify the end state per operation | The leaver test above, recorded per build |
+| Custom MAXUSER attributes through SCIM | IBM Ideas MASM-I-1243 is "Planned for future release" | IBM roadmap confirmation |
+
+## ❓ Frequently Asked Questions
+
+**How do I set up SCIM from Entra ID to MAS?**
+API key with User management access, JWT from `/v1/authenticate` with a deliberate expiry, a SCIM profile, then a non-gallery Entra application with the Tenant URL `https://api.{mas-instance-id}.{domain}/scim/v2/{profileId}?aadOptscim062020` and the JWT as the secret token. Assign one pilot user and group first.
+
+**What does `aadOptscim062020` do?**
+It switches Entra to RFC-compliant SCIM PATCH payloads for disabling users, adding single-value attributes, replacing several attributes and removing a group member. IBM Support 7272019 lists the MAS symptoms it was observed to resolve.
+
+**Why do my groups have odd suffixes?**
+A community answer from an IBM Champion says to set `useGroupDisplayNameAsGroupId` to `true` on the SCIM profile. It is not in the IBM page we read; test it before relying on it.
+
+**Does Okta work?**
+IBM names Okta as an example IdP, and Okta supports SCIM on custom SAML 2.0 and SWA apps, not custom OIDC apps. We found no MAS-specific Okta guide.
+
+**What is DT434846?**
+"SCIM Group Sync Performance Issue", listed in the 9.0.11 readme (5 May 2025) and the 9.1.0 fixed-known-issues page (24 June 2025). IBM gives no detail beyond the title.
+
+## References
+
+- [Configuring Maximo Application Suite to synchronize user and groups with SCIM 2.0 (IBM Docs)](https://www.ibm.com/docs/en/SSRHPA_cd/appsuite/admin/t_config_synch_scim20.html)
+- [User synchronization with SCIM 2.0 (IBM Docs)](https://www.ibm.com/docs/en/SSRHPA_cd/appsuite/admin/c_scim_user_sync.html)
+- [Fix Maximo Application Suite SCIM Deprovisioning and Update Errors with aadOptSCIM062020 Flag in Microsoft Entra (IBM Support 7272019)](https://www.ibm.com/support/pages/node/7272019)
+- [Known issues with SCIM 2.0 protocol compliance, flags to alter SCIM behavior (Microsoft Learn)](https://learn.microsoft.com/en-us/entra/identity/app-provisioning/application-provisioning-config-problem-scim-compatibility)
+- [Readme file for Maximo Application Suite 9.0.11, including DT434846 (IBM Support)](https://www.ibm.com/support/pages/readme-file-maximo-application-suite-9011)
+- [IBM Maximo Application Suite 9.1.0 fixed known issues, including DT434846 and DT422313 (IBM Support)](https://www.ibm.com/support/pages/node/7235938)
+- [Readme file for Maximo Application Suite 9.1.18, including DT469197 and DT469631 (IBM Support)](https://www.ibm.com/support/pages/readme-file-maximo-application-suite-9118)
+- [Readme file for Maximo Application Suite 9.2.3, including DT498948 and DT499272 (IBM Support)](https://www.ibm.com/support/pages/node/7285205)
+- [Readme file for Maximo Application Suite 9.1.21, including DT495866 (IBM Support)](https://www.ibm.com/support/pages/node/7285204)
+- [Manage security group assignment using SCIM API (IBM Community)](https://community.ibm.com/community/user/question/manage-security-group-assignment-using-scim-api)
+- [Allow custom attributes from the User object to be defined for the SCIM integration, MASM-I-1243 (IBM Ideas)](https://ibm-ai-apps.ideas.ibm.com/ideas/MASM-I-1243)
+- [SCIM Provisioning Enabled in Custom App (Okta Help Center)](https://support.okta.com/help/s/article/SCIM-Provisioning-Enabled-in-Custom-App)
+- [Configure Maximo Application Suite for single sign-on with Microsoft Entra ID (Microsoft Learn)](https://learn.microsoft.com/en-us/entra/identity/saas-apps/maximo-application-suite-tutorial)
+
+---
+
+## Series Navigation
+
+[← Part 1: SAML SSO and MFA](/blog/mas-secops-saml-sso-mfa) · [Part 3: LDAP, API Keys and Service Identities →](/blog/mas-secops-ldap-api-keys)
+
+| Part | Title |
+|---|---|
+| 0 | [MAS Security Operations: Identity, Access and Patching (Series Guide)](/blog/mas-secops-series-index) |
+| 1 | [SAML SSO and MFA in MAS: Why MFA Lives in Your Identity Provider](/blog/mas-secops-saml-sso-mfa) |
+| **2** | **SCIM User and Group Sync from Entra ID and Okta** |
+| 3 | [LDAP, API Keys and Service Identities in MAS](/blog/mas-secops-ldap-api-keys) |
+| 4 | [MAS 9.2 User-Management Changes Admins Must Know](/blog/mas-secops-user-management-92) |
+| 5 | [Patching as a Security Program: The 2026 MAS CVE Year](/blog/mas-secops-cve-patching-2026) |
+| 6 | [Securing MAS for AI Agents and MCP](/blog/mas-secops-securing-ai-agents-mcp) |
+
+---
+
+**About TheMaximoGuys:** We help Maximo teams cut through vendor messaging and make grounded decisions about their asset management platform. Every date, version and score in this series is labeled by how we verified it, and where IBM has not said, we say so instead of guessing.
+
+<!--
+REVIEWER NOTES (night-shift, 2026-10-18, secops-02):
+- BRIEF vs RESEARCH (Naviam): the brief cites Naviam for the Entra JWT/group-suffix gotchas. Two web searches found no Naviam page. The JWT-from-API-key flow is from IBM Docs (t_config_synch_scim20); the group-suffix claim is from the June 2026 IBM Community thread (IBM Champion answer). Nothing in the post is attributed to Naviam.
+- DISCREPANCY (flag spelling): IBM 7272019 writes aadOptSCIM062020 (title) and aadOptscim062020 (example URL); Microsoft Learn writes aadOptscim062020. A search summary showed "?aadOptSCIM062020=true"; the fetched IBM page showed no "=true", so the post uses the bare flag as in IBM's example URL and Microsoft's docs.
+- IBM 7272019: modified 21 July 2026; metadata versions affected 9.0.0 and 9.1.0; environment MAS 9+. No root cause stated. The post's payload-to-symptom mapping is our inference from Microsoft's sample requests, and is labelled as inference.
+- Microsoft page: ms.date 2025-08-25, updated_at 2026-02-05; still says the compliant PATCH becomes default "over the next few months" and the flag doesn't work with on-demand provisioning. Not re-verified against a live tenant.
+- DT434846: IBM titles only (9.0.11 readme, 5 May 2025; 9.1.0 fixed-known-issues, 24 June 2025). Dates/DT ids for 9.1.18 (27 May 2026), 9.1.21 and 9.2.3 (27 Aug 2026; 9.2.3 page modified 1 Sep 2026) read directly this run. DT423292 and DT426383 come from the 9.0.11 page; several 9.1.0 titles were truncated by the fetch tool and are marked.
+- A search result suggested a 9.0.9 readme also lists DT423064; not fetched, not stated in the post.
+- Okta: only the Okta support article (SAML/SWA yes, custom OIDC not supported) was read. Okta console labels, "Push New Users/Profile Updates/Push Groups/Deactivate Users" and the header-auth label are general knowledge, flagged as unverified in the post.
+- Entra provisioning field names (Tenant URL, Secret Token, Provision on demand, scope setting) are Microsoft's general SCIM UI, not shown on any IBM page.
+- SQL block: column names (maxuser.userid/personid, person.locale) assumed from standard Maximo schema; marked illustrative.
+- /v1/authenticate: IBM page states Basic Auth with key ID/token; host path pattern is a placeholder.
+- The "9.2 entitlement is calculated dynamically" line is from IBM's concept page; the pre-upgrade datamodel-migration/externalId line is from DOC15 UPG-06 and IBM's upgrade-considerations page in knowledge_base/MAS92-SOURCES.
+-->
