@@ -1,0 +1,538 @@
+---
+title: "From Docker to Desktop: Three Generations of MAF Configuration Tooling"
+description: "How Maximo Application Framework tooling moved from the maf-tools Docker image (8.4-9.0) to in-suite Application Configuration (9.1+) to the MAF Local Configuration extension for VS Code and IBM Bob: side-by-side table, the pain that drove each change, and what is still early-access."
+date: "2026-10-19"
+slug: "mas-maf-dev-04-tooling-generations"
+tags: ["Maximo", "MAS", "MAF", "Graphite", "Application Configuration", "maf-tools", "Local Configuration", "VS Code", "IBM Bob", "Developer"]
+draft: true
+tier: "developer"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-maf-dev-04-tooling-generations.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Can I still use the maf-tools Docker image on MAS 9.1 or 9.2?"
+    answer: "Not as a supported path. IBM's support page on configuring and customizing Maximo Mobile lists the Docker container images for versions 8.10 through 9.0, describes the 9.0 image as the latest version of the configuration application, and says that from 9.1 the tool is called Application Configuration and is deployed with MAS. IBM Community replies in the research for this post say the same thing: from 9.1 there is no standalone image in the IBM registry. A user-submitted idea on the IBM ideas portal (MASM-I-1831, April 2026) asked IBM to keep publishing the container for 9.1 and later; IBM's answer, dated 30 April 2026, pointed to the new VS Code plug-in instead, and the idea was later marked delivered through that extension. Read that as IBM choosing a different local-development answer, not as the Docker image coming back. If your environment is on 9.0 or earlier, the image remains the supported local tool for that version."
+  - question: "What do I need to switch on Application Configuration in MAS 9.1 or 9.2?"
+    answer: "Three things. First, enable it in the MAS administration dashboard under Configurations, Application configuration, and supply a persistent volume: a name, a size and a storage class. Second, from 9.2 you also choose the access mode, RWX or RWO, and IBM states the value is set at creation and cannot be changed later without data loss. Third, add your developers to the MAFCONFIGADMIN security group (IBM-reported; an alternative group can be configured). Early 9.1 guidance assumed RWX storage, and practitioners on RWO-only clusters reported recreating the operator-created PVC by hand to get the pods to start. Plan the storage class with your platform team before the first developer logs in, because the access-mode decision is the one you cannot cheaply undo."
+  - question: "Why did practitioners complain about Application Configuration after 9.1?"
+    answer: "The complaints in the community threads we reviewed cluster around the edit-preview-test loop rather than the idea of an in-suite tool. Early 9.1 preview for TECHMOBILE timed out (IBM defect DT450848), so teams published to a test environment just to see a change. Zip uploads were reported capped at 500 KB through 9.1.7, which hurts large cloned apps. After a 9.1 patch the graphite-configuration image could be left stale, producing errors such as an on-drill-in component not defined in the registry. Developer documentation lives inside the product rather than on the public web. IBM fixed several of these in 9.2, which also cut preview build time by 50 to 80 percent according to the 9.2 what's-new text. Quotes are practitioner opinion, not IBM statements."
+  - question: "Is MAF Local Configuration supported for production use?"
+    answer: "Treat it as a developer convenience on non-production work. IBM offers it AS IS with no warranty, and the packaged VSIX carries an IBM proprietary license that permits use only with a valid MAS license (vendor-reported; read from the released package, not from IBM prose). Earlier IBM wording described it as an early access preview not for production use, and the releases are numbered v0.0.1-beta.N, the latest being beta.6 on 22 September 2026. We could not re-confirm the early-access sentence on the public pages on the day we wrote this, so we repeat it as IBM-reported rather than current fact. It also cannot create or clone apps, so you still need Application Configuration for that step. The code you write is the same app.xml and AppCustomizations.js either way, so the tool's status does not change what is supported."
+  - question: "Which generation should my team use today?"
+    answer: "Match the tool to your MAS version, then add Local Configuration where it helps. On 9.0 or earlier, use the Docker image because it is the supported tool. On 9.1 and later, Application Configuration is the supported and only built-in tool, and it is also where you duplicate apps, because Local Configuration cannot clone. If your environment is 9.1.21 or later, or 9.2.1 or later, and your developers want Git, code review, a real editor and a local preview server, add Local Configuration for non-production development, and keep publishing to shared environments a reviewed, recorded step. All three tools write to the same place, a new ACTIVE revision in the MAFAPPDATA table, so mixing them is safe as long as the workspace in Git stays the source of truth."
+keyTakeaways:
+  - "MAF tooling has three generations: the maf-tools Docker image (8.4 to 9.0), in-suite Application Configuration (9.1 and later), and the MAF Local Configuration extension for VS Code and IBM Bob (9.1.21+ and 9.2.1+)"
+  - "Moving the tool into the suite in 9.1 removed Docker and entitlement-key friction but added a PVC, the MAFCONFIGADMIN group, a browser-only editor and, in early 9.1, broken preview; practitioners reported publishing just to test"
+  - "9.2 improved Application Configuration: auto-generated deltas on upload, a preview and publish queue, downloadable logs, 50-80% faster preview builds and an RWX/RWO choice that cannot be changed later (IBM-reported)"
+  - "MAF Local Configuration is early-access, AS IS, IBM proprietary software; it cannot create or clone apps and its biggest field problem is the offline npm mirror"
+  - "All three generations publish to the same place: a new ACTIVE revision in MAFAPPDATA, so choose a tool by version and workflow, and keep Git as the source of truth"
+series:
+  name: "MAS MAF-DEV"
+  part: 4
+  total: 9
+tldr: "MAF configuration tooling has changed three times. Docker maf-tools (8.4 to 9.0, ports 3001 and 3006) ran on your laptop. Application Configuration (9.1+) moved into MAS on a PVC behind the MAFCONFIGADMIN group, removed Docker friction, and introduced a slow, sometimes broken publish-to-test loop that 9.2 largely improved. MAF Local Configuration (9.1.21+, 9.2.1+) brings the editor back to VS Code or IBM Bob with a local preview on port 3000. It is IBM proprietary, offered AS IS, early access and cannot create or clone apps. All three publish to the same MAFAPPDATA revision."
+seoTitle: "MAF Tooling: Docker, App Config, Local Config"
+seoDescription: "Compare the three generations of Maximo MAF configuration tooling: maf-tools Docker, in-suite Application Configuration and MAF Local Configuration."
+targetQuestions:
+  - "How do I configure Maximo Mobile apps in MAS 9.1 and 9.2?"
+  - "What happened to the maf-tools Docker image in MAS 9.1?"
+  - "What is the MAFCONFIGADMIN security group in Maximo Application Suite?"
+  - "What is MAF Local Configuration for VS Code and IBM Bob?"
+  - "Can I do local Maximo Mobile development with Git and a local preview?"
+  - "Why does Application Configuration preview fail or time out?"
+semanticKeywords:
+  - "maf-tools Docker image"
+  - "Application Configuration MAS 9.1"
+  - "MAFCONFIGADMIN"
+  - "graphite-configuration pod"
+  - "MAF Local Configuration"
+  - "maximo-developer-configuration-tools"
+  - "Maximo Mobile customization tooling"
+  - "MAFAPPDATA revision"
+  - "Maximo Application Framework preview"
+  - "Local Dev Mode"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Parts 1 to 3 of this series: what MAF is, app.xml anatomy, controllers and AppCustomizations.js"
+  - "Basic Docker, OpenShift and Git familiarity"
+  - "Access to a non-production MAS or Manage environment"
+speakableSections:
+  - "Generation 1: The maf-tools Docker Image"
+  - "Generation 2: Application Configuration Moves Into the Suite"
+  - "Generation 3: MAF Local Configuration"
+clusterSlugs:
+  - "mas-maf-dev-00-series-index"
+  - "mas-maf-dev-01-what-is-maf"
+  - "mas-maf-dev-03-controllers-appcustomizations"
+  - "mas-maf-dev-05-local-configuration-handson"
+relatedSlugs:
+  - "mas-manage-work-centers-to-rba"
+  - "mas-bob-04-bob-and-maximo"
+  - "mas-92-upgrade-watchlist"
+  - "mas-java-extensions-series-index"
+  - "mas-manage-maximo-mobile"
+---
+
+# From Docker to Desktop: Three Generations of MAF Configuration Tooling
+
+<aside>
+
+🎯 **Who this is for:** Maximo developers and configurators who have inherited a Technician-app customization and need to know which tool to open; MAS platform admins who are asked to "turn on the mobile config thing"; leads deciding whether to let a team adopt IBM's new editor extension.
+
+</aside>
+
+**Series:** MAS MAF-DEV | **Part 4 of 9** | Previous: [Part 3 - Controllers and AppCustomizations.js](/blog/mas-maf-dev-03-controllers-appcustomizations) | Next: [Part 5 - Hands-On with MAF Local Configuration](/blog/mas-maf-dev-05-local-configuration-handson)
+
+---
+
+## 🔥 Three Tools, One Output
+
+You search for "how do I customize the Technician app" and find three different answers, each with confident screenshots. One tells you to `docker login cp.icr.io` and run a privileged container. One tells you to open Application Configuration from the MAS admin menu. One tells you to install a VSIX and press a command-palette entry. They are all correct. They are correct for **different MAS versions**, and nobody labelled them.
+
+This is the part of the MAF story that wastes the most developer time, and it is worth fixing in one post. The good news is that the artifact never changed. In all three generations you edit `app.xml`, included XML files, `AppCustomizations.js` and `i18n/labels.json`, and in all three generations the result ends up as a new **ACTIVE revision in the Manage table `MAFAPPDATA`**. What changed is *where the editor runs*, *who has to operate it*, and *how quickly you see your change*.
+
+A note on sourcing, as in earlier parts. We tag vendor claims **IBM-reported**: they come from IBM Documentation, IBM Support pages, IBM's MAF Configuration Practices site, IBM-authored GitHub material or IBM's ideas portal, and we have not independently audited them. **Practitioner** means a community thread or partner blog. Where we re-fetched something on the day of writing we say so; where a claim rests on cached research only, we say that and hedge.
+
+<aside>
+
+⚠️ **Status of the newest tool, stated once.** **MAF Local Configuration** is offered by IBM **AS IS**, with no warranty, as **IBM proprietary software** (the released package's license limits use to customers with a valid MAS license). IBM's earlier descriptions called it an **early access preview, not for production use**. It is numbered `v0.0.1-beta.N`. It is not a replacement for the supported in-suite tool, and it **cannot create or clone applications**. Everything in this post about that tool should be read with those caveats attached.
+
+</aside>
+
+By the end you should be able to:
+
+1. Name the three generations, the MAS versions each covers, and where each one runs.
+2. Explain what pain each generation was built to remove, and what new pain it added.
+3. Enable Application Configuration correctly on OpenShift, including the storage decision you cannot undo.
+4. Choose a tool for your MAS version and team, using the decision table at the end.
+5. Describe the one thing all three have in common, and why that makes mixing them safe.
+
+---
+
+## 🗺️ The Timeline at a Glance
+
+| Period | Tool | Where it lives | What triggered the next change |
+|---|---|---|---|
+| 2022 (8.4) to 9.0 | **`maf-tools` Docker image**, "MAF Configuration application" | Developer laptop, Docker or Podman | IBM folded configuration into the suite for 9.1 |
+| 9.1 (2025) onward | **Application Configuration** | OpenShift pod `graphite-configuration`, PVC-backed, opened from the MAS admin menu | Slow or broken preview, upload caps, no local loop, no Git workflow |
+| 9.1.21+ and 9.2.1+ (alpha May 2026, beta.6 September 2026) | **MAF Local Configuration** extension | VS Code or IBM Bob on the developer desktop, previewing against live MAS | Still early access; offline mirror and clone gaps |
+
+Two dates frame the story. The community idea that asked IBM to keep the Docker image for 9.1 and later was created on **24 April 2026**. The first Local Configuration drop landed on **21 May 2026**. In other words, IBM was being asked for a local tool back at roughly the same time it was shipping one, and the idea record was closed as delivered on **14 October 2026** (IBM ideas portal, re-fetched while writing this post).
+
+---
+
+## 🐳 Generation 1: The maf-tools Docker Image
+
+### What it was
+
+From MAS and Manage 8.4 through 9.0, IBM shipped the "Maximo Application Framework Configuration application" as a container image on the IBM Entitled Registry, `cp.icr.io/cp/manage/maf-tools`. You ran it on your own machine, opened a browser UI, and pointed it at a Manage server. IBM's support page for configuring Maximo Mobile lists image builds per version (its snapshot shows several 8.7 builds that depend on specific mobile ifixes), and describes the 9.0 image as the latest version of the configuration application. For 9.1 and later it says the tool is part of MAS and accessed from the admin menu, with no separate container mentioned (IBM-reported; re-fetched 2026-10-19).
+
+The command shape, from IBM's guidance and our research base, looks like this:
+
+```bash
+docker login cp.icr.io            # username cp, password = IBM entitlement key
+
+docker run -it --privileged \
+  -p 3001:3001 -p 3006:3006 \
+  -v /home/core/maximo_workspace_directory:/graphite/.workspace \
+  cp.icr.io/cp/manage/maf-tools:9.0.0
+
+# Dev/demo with self-signed certs only:
+#   --env NODE_TLS_REJECT_UNAUTHORIZED=0
+# Or trust your root CA instead:
+#   -v /path/to/certs:/etc/ssl/certs --env NODE_EXTRA_CA_CERTS=/etc/ssl/certs/maximo.crt
+# Windows / WSL file watching:
+#   -e WATCHPACK_POLLING=true
+```
+
+The image tag is a placeholder: use the tag that matches your Manage patch. The last build listed in the research base is the 9.0 line at **9.0.30**, paired with Manage patch 32 and framework 2.13.687 (IBM support page, modified 30 September 2026). Do not copy `9.0.0` literally.
+
+**Ports.** The configuration UI is on `http://localhost:3001` and the preview server on **3006** (IBM-reported). An OpenShift variant documented on IBM Developer in October 2025 runs the same image in a cluster with ports 3000, 3001 and 3006 and a `maf-tools-preview-...` route.
+
+### What you needed
+
+| Requirement | Detail | Source |
+|---|---|---|
+| Entitlement | IBM entitlement key to log in to `cp.icr.io` | IBM-reported |
+| Machine | At least 8 GB RAM, 16 GB recommended | IBM 8.4 PDF |
+| Privileges | `--privileged` container | IBM-reported |
+| Login to Manage | API key (default), MAS credentials via OIDC, or Maximo user and password | IBM-reported |
+| Security | OSLCMAFAPPDATA and WPEDITSETTING set to "Use Object Structure for Authorization Name" and granted; API keys enabled | IBM-reported |
+| Topology | Do not host the container and the browser in one VM while Manage is in another | IBM-reported |
+
+Generating the API key was a single call: `POST /oslc/apitoken/create` with a body of `{"expiration":-1}` for a non-expiring key. Treat non-expiring keys with the caution they deserve.
+
+### What was good about it
+
+- **Everything was local.** Your workspace was a folder on your disk. You could put it in Git, diff it, zip it, and delete it.
+- **Command-line operations.** Through `graphite-tools.js` you could `build:production`, `upload`, `diff` and `apply` deltas, which is how teams scripted upgrades. In 8.11 and later, an `app.delta.xml` was generated automatically next to `app.xml`.
+- **Device preview** (unsupported, IBM Community blog from November 2022, "provided as is"): a DEBUG Android build plus `GRAPHITE_PREVIEW=1` and a call to `preview.preview("http://<host>:3006","techmobile",{live:true})` from Chrome remote debugging let you iterate on a physical device.
+- **CI/CD friendliness.** A community project (`bmarchewka/mas-maftool-app-publish`) drove the Docker image from a pipeline on 9.0.
+
+### What hurt
+
+- **Privileged containers.** Many security teams will not allow them on a developer laptop, and Windows with WSL added file-watching and `localhost:3006` problems (practitioner, January 2025).
+- **Version drift.** One image per Manage patch meant you had to track the right tag. Image and server mismatch produced confusing errors, and IBM recorded defects such as DT458704, where 9.0.16 through 9.0.19 builds broke preview with a `ModuleNotFoundError` after a save.
+- **Entitlement-key logistics.** Every developer needed registry access.
+- **Not part of the platform.** The suite administrator could not see it, govern it, or standardize it. It was a developer's own tool.
+
+That last point is the one IBM acted on.
+
+---
+
+## 🏢 Generation 2: Application Configuration Moves Into the Suite
+
+### The change
+
+IBM's wording is direct: starting with MAS 9.1, the Maximo Application Framework Configuration application is called **Application Configuration**, it is deployed with MAS, and it is opened from the application administration menu (IBM support page, re-fetched 2026-10-19). Documentation moved from the Manage section to the MAS section. IBM Community replies in the research say that from 9.1 the tool is no longer available as a standalone image in the IBM registry.
+
+The pod is named `graphite-configuration`. It runs on OpenShift, keeps your workspaces on a **persistent volume claim**, and signs users in with MAS SSO. Admins no longer hand out entitlement keys.
+
+### Enabling it (IBM-reported, cached IBM documentation)
+
+1. In the MAS administration dashboard go to **Administration → Configurations → Other → Application configuration → Configure** and enable it.
+2. Give it a **persistent volume**: a name (the example is `config-workspace`), a size (the example is `8Gi`) and a storage class (the example is `nfs-client`).
+3. From **9.2** you also pick the **access mode**, RWX or RWO. IBM's 9.2 what's-new text states the value "is set during initial creation and cannot be modified later without data loss".
+4. Add users to the **`MAFCONFIGADMIN`** security group (an alternative group can be configured). They then see *Application Administrator → Application configuration*.
+
+On first open you enter the **MAS** server address, not the Manage address.
+
+An illustrative PVC, to make the access-mode decision concrete. This is **our sketch of what the choice means**, not an IBM-supplied manifest, and the operator normally creates the claim for you:
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: config-workspace
+spec:
+  accessModes:
+    - ReadWriteMany      # RWX: the 9.1 guidance assumed this
+    # - ReadWriteOnce    # RWO: allowed from 9.2; fixed at creation
+  resources:
+    requests:
+      storage: 8Gi
+  storageClassName: nfs-client
+```
+
+**Why the storage detail matters.** An IBM Community thread notes that the 9.1 configuration guide only worked on clusters offering RWX storage, and a workaround on RWO-only clusters was to let the operator create the claim, then recreate it with only RWO in its access modes so the MAF pods would start (practitioner). An IBM ideas record separately observes that the `ManageWorkspace` custom resource exposes access modes with ReadWriteMany as the default while the `HealthWorkspace` resource lacked the field, so one poster patched it by hand (practitioner). In 9.2, IBM made the choice a first-class setting. Decide it with your platform team on day one.
+
+### What you get
+
+The editor has an application list (duplicate, re-download, delete, revision history), an XML editor plus `AppCustomizations.js` and `i18n/labels.json`, a **Canvas** with drag-and-drop for a subset of elements, and **Preview**, **Save** and **Publish** actions (IBM-reported).
+
+### What was good about it
+
+- **No laptop prerequisites.** A browser and a security group.
+- **Governed.** The platform team controls who can use it through `MAFCONFIGADMIN`.
+- **Duplicate and delta tooling built in.** Duplicate `TECHMOBILE` to `MYTECHMOBILE`, and the **Migrate prior configurations** action brings deltas forward on upgrade.
+- **Shared infrastructure.** The preview runs where the data is.
+
+### What hurt, and what is verified
+
+This is where we have to separate IBM-reported facts from practitioner opinion.
+
+| Pain | Evidence | Status |
+|---|---|---|
+| TECHMOBILE preview timing out in early 9.1 | Defect DT450848 reported against 9.1.2 and 9.1.7, "no workaround"; IBM quoted conflicting fix versions (9.1.7 or 9.1.8) | Practitioner thread; fix version unresolved |
+| Zip upload capped at 500 KB | Reported through 9.1.7; 413 / PayloadTooLarge defects DT449679 and DT450721 | IBM says fixed in the 9.2 first-release timeframe (November 2025) |
+| Stale `graphite-configuration` image after a 9.1 patch | Error such as "'on-drill-in' ... not defined in the registry"; fix was aligning the deployment image to the operator's `spec.relatedImages` | Practitioner |
+| "Migrate prior configurations" disabled for duplicated apps | DT451534 | IBM says fixed in 9.2 |
+| App will not open after publish, preview stuck, publish reaching devices but not the browser RBA | DT446092, DT458164, DT422782 | IBM says fixed in 9.2.0 |
+| An invalid `app.xml` saves silently and the publish hangs | DT503372 | No fix noted |
+| Developer documentation hidden inside the product | MRM-EAM partner article: full reference sits under the help menu, "Developer Documentation", not published online | Practitioner |
+
+Two quotes from practitioners in the research sum up the mood, and we present them as opinion, not fact. One said it had been "nothing but a headache since they've merged the tool into Maximo" (November 2025). Another said "Preview does not work... you need to publish the changes" (November 2025). A third pattern shows up repeatedly in threads: **publish-to-test.** If preview is unreliable, the only way to see a change is to push it to a revision that real devices might pick up, which is exactly the risk the Docker preview server existed to avoid.
+
+> *"Nobody complained that the editor is browser-only. The complaints are about preview, upload and versioning."* That is our reading of the research base, and it matters for the next generation: the target was the **loop**, not the idea of a browser editor.
+
+### What 9.2 improved (IBM-reported)
+
+We checked these against IBM's 9.2 what's-new text in our local cache of IBM's documentation. IBM Docs' public pages were not reachable in our earlier research pass, so treat the wording as the cached IBM text rather than a live page.
+
+| 9.2 improvement | What it fixes |
+|---|---|
+| Delta files created and updated automatically on zip upload; publish works immediately after upload | Manual save per file; stale deltas |
+| Preview and publish **queue** with position visible | Concurrent users colliding on the shared pod |
+| Real-time **progress** for preview and publish; downloadable preview, publish and build logs | Blind waiting and "stuck" preview |
+| Preview builds **50-80% faster** (IBM's example: 60 seconds down to 10-30 seconds) | Slow edit-preview loop |
+| `default-log-level` attribute on `<maximo-application>` for preview logging | No log control in preview |
+| **Canvas** renders full pages and dialogs, with guides for box and border-layout | Canvas could not show dialogs or full pages |
+| RWX or RWO access-mode choice, fixed at creation | Storage-class mismatches |
+| Warning when you change default JavaScript: "You might lose your customizations" | Accidental tier-4 edits (see Part 3) |
+| Help menu with links to best practices, REST API docs and training | Discoverability |
+
+IBM also lists delta files now being generated for **all** XML files at publish and `<code-comment>` support in deltas. If you recall nothing else about 9.2 tooling, remember that IBM spent real effort on the *loop*: queue, logs, speed, and warnings. That is a signal that the in-suite approach is the long-term supported path.
+
+---
+
+## 🖥️ Generation 3: MAF Local Configuration
+
+### Identity
+
+| Item | Value | Source |
+|---|---|---|
+| Product name | IBM Maximo Application Framework Local Configuration (renamed 2026-09-09; formerly "Local Dev Mode") | IBM-reported (repository pull request) |
+| Package | `maximo-developer-configuration-tools`, VS Code extension (VSIX) | IBM-reported, read from released package |
+| Supported MAS | 9.1.21 and newer, and 9.2.1 and newer | IBM public site, re-fetched 2026-10-19 |
+| Latest release | `v0.0.1-beta.6`, published 2026-09-22 | GitHub releases API, re-fetched 2026-10-19 |
+| Terms | Offered "AS IS", with no warranty of any kind | IBM public site, re-fetched 2026-10-19 |
+| License | IBM proprietary, valid MAS license required | Read from the VSIX in prior research; not on the public pages we re-fetched |
+| Maturity wording | "Early Access Preview", "Not for production use" | Earlier IBM site and README, per our research base; **not found on the public pages we re-fetched today** |
+| Distribution | GitHub releases plus an install script; Marketplace listing described as coming soon | IBM-reported |
+| Known limit | Cannot create or clone applications; use Application Configuration to clone | IBM-reported |
+
+We want to be precise about the maturity row, because the temptation is to either overstate or understate it. The public landing page we fetched today states the "AS IS" disclaimer and lists features, but it did **not** repeat the earlier early-access and not-for-production language that our research base recorded in the README. We cannot tell whether IBM softened the wording or moved it. Until you read IBM's current text yourself, the safe stance is to behave as if both are still true: version numbers of `0.0.1-beta`, AS IS, proprietary, non-production.
+
+### Why it exists
+
+IBM's own answer on the ideas portal is the clearest statement of intent. The idea, titled "Maintain the Standalone Docker/Podman MAF Tool Container for MAS 9.1+", was created on 24 April 2026, and the portal text says it was based on the loss of local log access and local development after 9.1 replaced the Docker tool. IBM's comment on 30 April 2026 said the capability was already part of 9.2, described a VS Code plug-in that pulls applications locally, edits files, previews locally and publishes by API key, and said IBM would look into backward compatibility with 9.1 and plan further improvements in 9.3 and later. The record was merged into a broader request, "Re-release the Local Docker version of MAF Configuration Tool", and marked delivered on 14 October 2026 with "Available in 9.1.21 and 9.2.1" (IBM ideas portal, re-fetched 2026-10-19).
+
+Notice what IBM did **not** do: it did not re-release the Docker image. It answered the need, not the form.
+
+### How it works, in short
+
+Part 5 is the hands-on guide, so here is only the architecture, because it explains why this generation fixes the loop.
+
+1. **Sign in.** OAuth 2.0 / OIDC with multiple sessions, plus username and password or an API key (IBM-reported). With OIDC the extension registers a public PKCE client, which in prior research needed the MAS OAuth admin credentials once, so plan it as a platform task.
+2. **Download.** It uses the same `/graphite/configtool/packages` backend that Application Configuration uses, and unpacks `app-source.zip` into a workspace on your disk (read from the released package).
+3. **Preview.** A local Graphite dev server, `yarn start`, serves the app at `http://localhost:3000` while proxying data to live Manage with environment variables (read from the released package). IBM's site lists "Preview Server with Live Reload".
+4. **Diff and delta.** XML diff tools and generated deltas, plus Migrate Configuration commands that bring `AppCustomizations.js` and `lookups.json` forward.
+5. **Publish.** Clean, build, production build, deltas, package, then POST to the packages endpoint. The result is **a new ACTIVE revision in MAFAPPDATA**, the same output as Application Configuration or the old Docker tool.
+
+Install is a one-line script for IBM Bob or VS Code (or an interactive mode, or a manual VSIX install from GitHub releases). Prerequisites per IBM: **IBM Bob IDE or VS Code 1.74.0 or later**, **Node.js 20.0.0 or later**, and an internet connection for installation and MAS authentication. Yarn is not in the listed prerequisites but the build shells out to it (read from the released package). Piping a remote script into bash is a supply-chain risk; regulated shops should download the VSIX from the release page, verify it and install it manually.
+
+```bash
+# IBM's documented install forms (shown for reference; review the script first)
+curl -fsSL https://ibm-mas.github.io/maf-local-dev-mode/scripts/install.sh | bash -s vscode
+curl -fsSL https://ibm-mas.github.io/maf-local-dev-mode/scripts/install.sh | bash -s bob
+
+# Manual, auditable alternative
+code --install-extension maximo-developer-configuration-tools-0.0.1-beta.6.vsix
+```
+
+### What it adds
+
+- **A real editor.** Search, multi-file refactor, linting, extensions.
+- **Git.** Commit the pristine download as your baseline, then every XML and JS change is a reviewable diff. Neither earlier generation made this natural for the in-suite editor.
+- **Health check and file protection.** A health check panel (beta.3 onward) tests connectivity and required Graphite versions; file protection warns when you edit core files that IBM will overwrite. It is a software guard for the tier-4 problem from Part 3.
+- **AI hooks.** A "Configure Bob Features (Graphite MCP)" command and a "MAF Config" Bob mode arrived in beta.1 and beta.2. Part 9 covers that, including early issues where the MCP server edited out-of-the-box files.
+
+### What it does not fix (and adds)
+
+| Limit | Detail |
+|---|---|
+| **No create or clone** | You must duplicate the app first in Application Configuration |
+| **Offline npm mirror** | IBM build packages such as `@maximo/maxdev-cli` are not on public npm; without the mirror, `yarn build` fails with a registry "Not found" error. This is the top setup issue (open GitHub issue on Windows 11 with MAS 9.1.22) |
+| **Cache location unclear** | Public site says a local cache directory under the home folder; the released code builds an `offline-mirror` folder in the workspace. We have not resolved which is authoritative (research gap) |
+| **Browser preview is not a device** | Localhost preview does not exercise the offline path; datasource and lookup changes need device testing after publish |
+| **Auth URL confusion** | OIDC works with the MAS home URL; an API key reportedly needs the **Manage** URL |
+| **Platform setup** | OIDC client registration needs privileged secrets once |
+| **Support** | AS IS; there is no support promise beyond the repository's issues |
+
+Independent signal on this tool is thin. In the research for this post, the repository issues and one partner overview dated 14 October 2026 were the only third-party evidence. That is a reason for a pilot, not a rollout.
+
+---
+
+## 📊 Side by Side
+
+| Capability | Gen 1: Docker `maf-tools` | Gen 2: Application Configuration | Gen 3: Local Configuration |
+|---|---|---|---|
+| MAS versions | 8.4 to 9.0 | 9.1 and later | 9.1.21+ and 9.2.1+ |
+| Where it runs | Developer machine, Docker or Podman, `--privileged` | OpenShift pod `graphite-configuration` with PVC | VS Code or IBM Bob, Node 20+, Yarn |
+| Editor | Browser UI on `:3001` | Browser UI inside MAS | Your IDE |
+| Preview | Local React server on `:3006` | In-suite; early 9.1 unreliable, 9.2 queue and 50-80% faster builds | Local `yarn start` on `:3000`, proxied to live Manage |
+| Sign-in | API key, OIDC or user and password | MAS SSO plus `MAFCONFIGADMIN` | OIDC (PKCE), user and password, or API key |
+| Storage of work | Local folder | PVC on the cluster | Local folder, Git-friendly |
+| Clone or duplicate apps | Yes | Yes | **No** |
+| Deltas and upgrade | `graphite-tools.js diff` and `apply`; auto `app.delta.xml` from 8.11 | Auto deltas; Migrate prior configurations; all XML in 9.2 | Delta on publish; Migrate Configuration commands |
+| Source control | Possible, your discipline | Awkward (zip download or pod PVC) | Natural |
+| AI assist | None | None | Bob "MAF Config" mode and Graphite MCP |
+| Ownership | Developer | Platform team | Developer, with platform OIDC setup |
+| Support status | Supported; frozen at 9.0 | Supported | AS IS, proprietary, beta |
+| Output | New ACTIVE `MAFAPPDATA` revision | Same | Same |
+
+**What the table is really saying.** Docker gave developers control and cost them operations burden. Application Configuration gave admins control and cost developers the loop. Local Configuration gives developers the loop back, while still depending on the suite for cloning, storage of shared apps and (via the same backend) publishing. It is not a return to Gen 1. It is a desktop client for Gen 2's server.
+
+---
+
+## 🧪 Worked Example: One Change, Three Tools
+
+To make the comparison concrete, take a small, realistic task: hide the Complete button on a work order detail page when a failure report is missing, and log the decision. (App id, page and datasource names are illustrative.) The XML half is one attribute and the JS half is one handler, both authored the same way in every generation.
+
+```xml
+<!-- app.xml: disable the button using page state set by a controller -->
+<button id="btn_complete" label="Complete"
+        disabled="{!page.state.hasFailureReport}"
+        on-click="completeWorkOrder"/>
+```
+
+```js
+// AppCustomizations.js: set the state when the page is shown
+class AppCustomizations {
+  pageResumed(page) {
+    if (page.name !== 'workOrderDetail') { return; }
+    const ds = page.findDatasource('woDetailDS');
+    const wo = ds && ds.item;
+    page.state.hasFailureReport = !!(wo && wo.failurereport && wo.failurereport.length);
+    page.app.log.d('TMG', 'hasFailureReport=' + page.state.hasFailureReport);
+  }
+}
+export default AppCustomizations;
+```
+
+| Step | Gen 1 Docker | Gen 2 Application Configuration | Gen 3 Local Configuration |
+|---|---|---|---|
+| Get the app | Download in the UI at `:3001` | Open the app, or re-download | Applications view, then commit the pristine download to Git |
+| Edit | Browser editor | Browser editor | VS Code with full diff and search |
+| See it | Preview at `:3006` | Preview inside MAS (queue in 9.2) | Preview at `localhost:3000`, live reload |
+| Log level | `?_graphite_logLevel=trace` | Same, plus `default-log-level` in 9.2 | Same |
+| Review | Manual | Manual | Pull request on XML, JS and `app.delta.xml` |
+| Ship | Publish | Publish | Publish from a reviewed commit |
+| Test on a device | Required | Required | Required, because localhost preview is browser-only |
+
+The last row is the one people forget. **No generation replaces a device test** for an offline mobile app, and Part 7 explains why.
+
+---
+
+## 🩺 Troubleshooting by Generation
+
+| Symptom | Likely generation | First checks |
+|---|---|---|
+| `docker login` succeeds but pull fails | 1 | Entitlement key valid; image tag exists for your patch; registry is `cp.icr.io` |
+| Container starts, UI on 3001 but preview blank on 3006 | 1 | Port mapping, WSL networking, `WATCHPACK_POLLING`, trusted certificates |
+| Preview breaks after a save with a module error | 1 | Known on 9.0.16 to 9.0.19 builds (DT458704); move to a later image |
+| Application Configuration not in the admin menu | 2 | Feature not enabled; user missing from `MAFCONFIGADMIN`; PVC not bound |
+| MAF pods will not start on a fresh cluster | 2 | PVC access mode versus storage class; RWX assumed in early guidance |
+| "'on-drill-in' not defined in the registry" after a patch | 2 | `graphite-configuration` image does not match operator's `spec.relatedImages` |
+| Upload rejected, 413 or "too large" | 2 | 500 KB cap reported on 9.1 builds; fixed in 9.2; zip only changed files as a workaround |
+| Preview times out for TECHMOBILE | 2 | Early 9.1 defect (DT450848); upgrade or publish to a test copy |
+| `yarn build` fails with registry "Not found" for `@maximo/maxdev-cli` | 3 | Offline mirror missing; run Refresh Offline Cache and Health Check |
+| Sign-in works but API calls 401 | 3 | API key needs the Manage URL; OIDC uses the MAS URL |
+| Extension cannot download or install | 3 | Network access to GitHub; use the manual VSIX route |
+| Edits to core JS flagged | 3 | File protection working as designed; move logic to `AppCustomizations.js` |
+
+---
+
+## 🧭 Choosing a Tool: A Decision Table
+
+| Your situation | Use | Why |
+|---|---|---|
+| MAS 8.x to 9.0, no 9.1 upgrade soon | Docker `maf-tools` | The supported tool for those versions; watch the image tag |
+| MAS 9.1 or 9.2, one or two configurators, light changes | Application Configuration | Supported, governed, enough for XML tweaks, especially with 9.2 speed |
+| MAS 9.1 or 9.2, several developers, real JavaScript, code review wanted | Application Configuration for clone and shared publish, plus Local Configuration for development | Git, diff and a local loop; accept the early-access terms |
+| Environment is below 9.1.21 or 9.2.1 | Application Configuration only | The extension's supported floor |
+| Regulated environment, no piping scripts into bash, no proprietary extension without review | Application Configuration; assess Local Configuration manually | Governance and supply-chain controls |
+| Duplicated custom app on an upgrade path | Application Configuration's Migrate prior configurations, with a Git copy of the workspace | Deltas and a rollback record |
+
+**A pragmatic adoption sequence we recommend:**
+
+1. Enable Application Configuration properly first (storage decision, `MAFCONFIGADMIN`, test users).
+2. Duplicate the OOTB app you will customize there, because Local Configuration cannot clone.
+3. Run a small pilot of Local Configuration on a non-production environment, with a defined stop condition if offline-mirror or authentication problems eat more than a day.
+4. Keep the Git repository, not any tool, as the source of truth, and record the `MAFAPPDATA` revision published to each environment.
+
+To check what is live from the database, a read-only query like this one (column list from our research base; verify on your schema) tells you which revision is serving devices:
+
+```sql
+SELECT APPID, VERSION, REVISION, STATUS, DEPLOYBY, DEPLOYDATETIME, ISMOBILE
+FROM   MAFAPPDATA
+WHERE  APPID IN ('TECHMOBILE', 'MYTECHMOBILE')
+ORDER  BY APPID, REVISION DESC;
+```
+
+Do not update that table by hand. If you must revert, the partner-documented approach is unofficial; the cleaner path is `git revert` and republish.
+
+---
+
+## ⚖️ Honest Limits of What We Know
+
+Following the source gaps recorded in our research base:
+
+- **IBM Docs reachability.** IBM's public documentation pages returned HTTP 403 during the earlier research pass. In this run the IBM content API did return a page (the deprecated MAF components list), and we read the 9.2 what's-new text from our local cache of IBM's documentation. We did not re-fetch every 9.1 and 9.2 Application Configuration page live, so statements about `MAFCONFIGADMIN`, the enabling steps, and the 9.2 improvements remain **IBM-reported from cached text**. A web search for `MAFCONFIGADMIN` returned no page that names it, so read the group name as cached-documentation evidence and confirm it in your own environment's Application Configuration help.
+- **Local Configuration maturity wording.** Our research base recorded early-access and not-for-production wording that we did not find on the public pages today. We kept the hedge.
+- **Local Configuration internals.** The `yarn start` proxy, the PKCE client and the endpoints were read from the released package in earlier research, not from IBM prose. Part 5 revisits them. Whether a three-way merge UI exists is unverified; the site claims semantic comparison, and the package shows delta generation.
+- **Cache location.** Unresolved.
+- **9.1 backward compatibility.** IBM's comment said it would investigate; the later availability note says 9.1.21 and 9.2.1.
+- **Fix versions.** DT450848 has two quoted fix versions, so we do not state one.
+
+We would rather give you a labelled gap than a smooth sentence that turns out wrong.
+
+---
+
+## 📜 The Five Commandments of MAF Tooling
+
+1. **Match the tool to the version.** Docker for 9.0 and below, Application Configuration for 9.1 and up, Local Configuration only at 9.1.21+ and 9.2.1+.
+2. **Decide storage before the first login.** RWX or RWO is fixed at creation in 9.2.
+3. **Clone in the suite, develop on the desktop.** Local Configuration cannot clone.
+4. **Git is the source of truth.** Tools come and go; the reviewed workspace is what you promote.
+5. **Always test on a device.** A localhost preview proves your XML, not your offline behavior.
+
+## ✅ Your Next Steps
+
+| When | Action |
+|---|---|
+| This week | Find out which MAS version each environment runs and which of the three tools your team has actually been using |
+| This week | Check `MAFCONFIGADMIN` membership and the PVC access mode on every 9.1+ environment |
+| Next week | Put your current app workspace into Git, even if you only ever download from Application Configuration |
+| Next 2 weeks | Read IBM's current Local Configuration pages, then run a time-boxed pilot (Part 5) |
+| Ongoing | After every upgrade, re-run the AppCustomizations re-test from Part 3 and re-check the tool version table in this post |
+
+---
+
+## 🔗 Continue the Series
+
+- **Previous:** [Part 3 - Controllers and AppCustomizations.js](/blog/mas-maf-dev-03-controllers-appcustomizations)
+- **Next:** [Part 5 - Hands-On: MAF Local Configuration in VS Code and IBM Bob](/blog/mas-maf-dev-05-local-configuration-handson)
+- **Back to:** [Series Index](/blog/mas-maf-dev-00-series-index)
+- **Business-side context:** [MAS-MANAGE Part 2 - Work Centers to RBAs](/blog/mas-manage-work-centers-to-rba)
+- **Using Bob on this work:** [MAS-BOB Part 4 - Bob and Maximo](/blog/mas-bob-04-bob-and-maximo)
+- **Upgrade impact (9.2 deprecations and watch-list):** [MAS-9-2 Part 6 - Upgrade Watchlist](/blog/mas-92-upgrade-watchlist)
+- **The server-side half:** [MAS-JAVA-EXTENSIONS - Series Index](/blog/mas-java-extensions-series-index)
+
+---
+
+## 📚 References
+
+**IBM (vendor sources, IBM-reported)**
+
+1. IBM, *IBM Maximo Application Framework Local Configuration* (public site; "AS IS", supported versions, install and features; re-fetched 2026-10-19): https://ibm-mas.github.io/maf-local-dev-mode/
+2. IBM, `ibm-mas/maf-local-dev-mode` releases (v0.0.1-beta.6 published 2026-09-22; re-fetched via the GitHub API 2026-10-19): https://github.com/ibm-mas/maf-local-dev-mode/releases
+3. IBM Support, *Configuring and customizing IBM Maximo Mobile* (maf-tools image versions; 9.1 rename to Application Configuration; re-fetched 2026-10-19): https://www.ibm.com/support/pages/configuring-and-customizing-ibm%C2%AE-maximo%C2%AE-mobile
+4. IBM ideas portal, *MASM-I-1831, Maintain the Standalone Docker/Podman MAF Tool Container for MAS 9.1+* (merged into MASMOBILE-I-806, delivered 2026-10-14; re-fetched 2026-10-19): https://ibm-ai-apps.ideas.ibm.com/ideas/MASM-I-1831
+5. IBM Documentation, *Deprecated Maximo Application Framework components* (retrieved via the IBM content API 2026-10-19): https://www.ibm.com/docs/api/v1/content/SSRHPA_cd/appsuite/appconfig/deprecated_maximo_application_framework_components.html
+6. IBM, *What's in Maximo Application Suite 9.2* (Application Configuration section; read from the local cache `knowledge_base/MAS92-SOURCES/text/mas-92-whats-new.txt`, not re-fetched live): https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-whats-in-maximo-application-suite-92
+7. IBM, *MAF Configuration Practices* (Applying Configurations and related pages): https://ibm-maximo-dev.github.io/configuration-practices-documentation/
+8. IBM, *Customizing Mobile 8.4 applications with the Maximo Application Framework Configuration application* (PDF, 8 GB RAM prerequisite, Docker workflow): https://www.ibm.com/support/pages/system/files/inline-files/Customizing%20Mobile%208.4%20applications%20with%20the%20Maximo%20Application%20Framework%20Configuration%20application_0.pdf
+
+**Practitioner and community sources (surfaced by search; not independently audited)**
+
+9. IBM Community, *Maximo Application Framework access MAS 9.1*: https://community.ibm.com/community/user/discussion/maximo-application-framework-access-mas-91
+10. IBM Community, *Introducing our MAF Configuration Practices guide* (Vinicius Affonso Santana, 17 April 2026): https://community.ibm.com/community/user/blogs/vinicius-affonso-santana/2026/04/17/introducing-our-maf-configuration-practices-guide
+11. MRM-EAM, *Bringing Maximo Application Framework development back to your desktop: IBM's new local configuration tools*: https://mrm-eam.com/bringing-maximo-application-framework-development-back-to-your-desktop-ibms-new-local-configuration-tools/
+12. MRM-EAM, *Hidden in plain sight: Maximo Mobile developer documentation*: https://mrm-eam.com/hidden-in-plain-sight-maximo-mobile-developer-documentation/
+13. IBM Community, *Preview not working for TECHMOBILE in 9.1* (DT450848 thread): https://community.ibm.com/community/user/discussion/maximo-application-framework-configuration-tool-preview-mode-not-working-correctly-for-techmobile-in-mas-v91x
+
+**TheMaximoGuys companion content**
+
+- [MAS-MANAGE Part 2](/blog/mas-manage-work-centers-to-rba) · [MAS-BOB Part 4](/blog/mas-bob-04-bob-and-maximo) · [MAS-9-2 Part 6](/blog/mas-92-upgrade-watchlist) · [MAS-JAVA-EXTENSIONS Index](/blog/mas-java-extensions-series-index)
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams modernize their skills for the MAS era, with practitioner-to-practitioner guidance grounded in IBM documentation and field experience.
+
+<!--
+REVIEW NOTES FOR HUMAN (night-shift, 2026-10-19, item maf-04-tooling-generations):
+
+1. Re-verified live this run: Local Configuration public site (AS IS, supported versions 9.1.21+/9.2.1+, features), GitHub releases API (beta.6 = 2026-09-22; note the release NAME field says beta.5 while the tag is beta.6), IBM support page (maf-tools 8.7 builds listed; 8.10-9.0 Docker; 9.1+ in-suite), IBM ideas MASM-I-1831 (created 2026-04-24, IBM comment 2026-04-30, delivered 2026-10-14, merged into MASMOBILE-I-806), IBM content API (deprecated components page returned 200 this time, unlike the 403 on 2026-10-16).
+2. DISCREPANCY (knowledge base vs live): DOC17 section 7.1 records "Early Access Preview / Not for production use" and "IBM PROPRIETARY" license. The live landing page and features page show only the "AS IS" disclaimer; no early-access or non-production sentence and no license named. Per policy the KB wins, so the post keeps the hedge and states it could not be re-confirmed today. Please check README/install page wording and update DOC17 if IBM removed it.
+3. 9.1/9.2 Application Configuration claims (MAFCONFIGADMIN, PVC steps, 9.2 improvements) come from the cached IBM docs text (mas-92-whats-new.txt covers RWX/RWO, auto deltas, canvas, 50-80% preview, queue, logs, default-log-level; MAFCONFIGADMIN and the enable-steps are DOC17 cache only). Web search for MAFCONFIGADMIN returned nothing; not re-fetched live. DOC17 section 17 gap 1 therefore only PARTLY closed.
+4. IBM's 30 Apr 2026 ideas comment says a VS Code plug-in was "already part of 9.2" and mentions 9.1 backward-compat investigation; DOC17 lists support as 9.1.21+ / 9.2.1+. Consistent with the later admin note, but "already part of 9.2" predates beta naming; no conflict flagged beyond wording.
+5. The ideas record title says "Re-release the Local Docker version"; IBM delivered the extension instead. Our statement that IBM did not re-release the Docker image is an inference from the pages read, not an IBM statement.
+6. Illustrative only (labelled in post): the PVC YAML, the worked-example XML/JS, and the MAFAPPDATA SELECT (columns from DOC17 11.1). maf-tools tag 9.0.0 is a placeholder; 9.0.30 is from DOC17 (IBM support page modified 2026-09-30), not re-verified because the fetched support page snapshot listed 8.7 builds.
+7. Not verified: the practitioner quotes (Andrew Weaver, Ritesh Ranjan) are paraphrased from DOC17 and unattributed by name in the post; DT numbers are from DOC17. Reference 8 (8.4 PDF) was surfaced by search and listed in DOC17, not fetched. References 9-13 come from search results or DOC17 and were not individually fetched.
+8. SearchMaximo: local baseline/knowledge-base/ibm_userguides_markdown corpus is not present in this checkout (same as maf-03); the only local hits were DOC17 and MAS92-SOURCES.
+9. Cover: see git log for whether nanobanana succeeded in this headless run.
+-->
