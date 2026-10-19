@@ -1,0 +1,823 @@
+---
+title: "Controllers and AppCustomizations.js: The Upgrade-Safe Way to Add Logic to MAF Apps"
+description: "How to add JavaScript logic to Maximo Mobile and Role-Based Applications without forking IBM's code: verified lifecycle hooks, event naming and bubbling, on-click wiring, the four support tiers, the method-wrapping pattern, community recipes and an upgrade re-test routine."
+date: "2026-10-19"
+slug: "mas-maf-dev-03-controllers-appcustomizations"
+tags: ["Maximo", "MAS", "MAF", "Graphite", "AppCustomizations.js", "Controllers", "Maximo Mobile", "JavaScript", "Developer"]
+draft: true
+tier: "developer"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-maf-dev-03-controllers-appcustomizations.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What is AppCustomizations.js and why does IBM call it upgrade-safe?"
+    answer: "AppCustomizations.js is an application-level controller file in a MAF app's src folder. It can implement any event handler that a controller can, which means you can react to application, page, dialog and datasource lifecycle events or to button clicks wired in app.xml. IBM's Configuration Practices site lists it as fully supported and says it is specifically designed to persist through Maximo Mobile upgrades, whereas edits to out-of-the-box controller files are overwritten. Two qualifiers matter. First, IBM's own wording is that support covers carry-over only: it does not mean IBM will help you debug your configuration logic. Second, upgrade-safe is not the same as upgrade-proof, because your code calls IBM APIs and datasource names that can change between releases. Plan a re-test of every handler after each upgrade."
+  - question: "If I add a method to AppCustomizations.js with the same name as an out-of-the-box method, which one runs first?"
+    answer: "Both run, and nobody can tell you the order. IBM's practices pages state that when several controllers define the same method, all of them are called but the execution order cannot be guaranteed by the platform. That is fine for logging, analytics or non-blocking side effects. It is wrong for validation that must happen before the original logic or for anything that needs to stop the original from running. For those cases use the replace pattern: capture the original method in an initialization hook, bound to its controller, then reassign the property to a wrapper that decides when, whether and how to call the original. The wrapper gives you deterministic ordering at the cost of more maintenance on upgrade."
+  - question: "Can I extend an out-of-the-box controller class instead of using AppCustomizations.js?"
+    answer: "You can, and IBM describes it, but it sits in a lower support tier. The pattern is a new file with a unique name that imports the base controller, declares a class that extends it, overrides what you need while calling super.methodName() to keep base behaviour, and then points the page's controller attribute at the new class. IBM's practices page calls this Limited support, says the files are preserved during upgrades, and says you must test after every upgrade because base-class changes can break the extension. Editing the base controller file directly is the unsupported option: IBM states the files are completely overwritten and manual merging is required. Prefer AppCustomizations.js first and extend a class only for genuinely complex logic."
+  - question: "Why does my handler fire for some events but not others, and what are the quoted method names?"
+    answer: "Most MAF events have an on-prefixed camelCase alias, so the kebab-case event before-load-data is handled by a method named onBeforeLoadData. A few events have no alias: before-invoke-action, after-invoke-action and field-warning. To handle those you declare a method whose name is the raw event name in quotes, for example 'field-warning'({item, field, warning}), or you bind a listener directly with ds.on('before-put-data', fn). If a handler never fires, the first suspects are a misspelled name, a wrong signature, or an event that has no alias. Turn on debug logging with the _graphite_logLevel query parameter and confirm the event is being emitted at all."
+  - question: "Is MAF Local Configuration a supported place to write AppCustomizations.js?"
+    answer: "It is a convenient place, but not a supported production dependency. Local Configuration is an early-access preview that IBM offers AS IS as IBM proprietary software usable only with a valid MAS license, and IBM says it is not for production use. It lets you edit AppCustomizations.js on your workstation, in VS Code or IBM Bob, and preview locally. The file you produce is the same file the supported in-suite Application Configuration editor and the older Docker maf-tools image handle, so the supported-versus-unsupported question applies to the tool, not to the code. Keep the file in Git, publish through a reviewed process, and do not let tool status change which customization tier your logic sits in."
+keyTakeaways:
+  - "IBM publishes four tiers: app.xml edits (supported), AppCustomizations.js (supported, designed to persist through upgrades), extended controller classes (limited support) and edits to out-of-the-box controllers (unsupported, manual merge at every release)"
+  - "Lifecycle hooks are verified names: applicationInitialized, pageInitialized, pageResumed, pagePaused, dialogInitialized and the datasource hooks onBeforeLoadData, onAfterLoadData, onBeforeSaveData, onAfterSaveData and onValueChanged; load data in pageResumed, never in pageInitialized"
+  - "Events are kebab-case with on-prefixed camelCase aliases; before-invoke-action, after-invoke-action and field-warning have no alias and need quoted method names"
+  - "Events bubble from UI component to datasource controllers to page controllers to application controllers; same-named methods across controllers all run, in no guaranteed order"
+  - "When order or replacement matters, capture the original method bound to its controller during initialization and reassign a wrapper; keep the wrapper small, wrapped in try-catch, and re-tested after every upgrade"
+series:
+  name: "MAS MAF-DEV"
+  part: 3
+  total: 9
+tldr: "AppCustomizations.js is the supported, upgrade-persistent JavaScript seam in a MAF app. Wire handlers from app.xml with on-click and friends, implement lifecycle hooks on the application, page, dialog or datasource, and remember that same-named methods across controllers all run in no guaranteed order. For ordering or replacement, capture the original method and reassign a wrapper. IBM's tiers: app.xml and AppCustomizations.js supported; extended controller classes limited support; editing OOTB controllers unsupported. Do not use callController; no IBM source shows it. Local Configuration is early-access, AS IS and IBM proprietary."
+seoTitle: "MAF AppCustomizations.js: Upgrade-Safe Controllers"
+seoDescription: "Add logic to Maximo Mobile and MAF apps the supported way: lifecycle hooks, events, method wrapping and IBM's support tiers for AppCustomizations.js."
+targetQuestions:
+  - "What is AppCustomizations.js in Maximo Mobile?"
+  - "How do I add custom JavaScript to a Maximo Application Framework app?"
+  - "How do I override an out-of-the-box controller method in Maximo Mobile?"
+  - "What lifecycle hooks does a MAF page controller support?"
+  - "Which MAF customizations survive a Maximo upgrade?"
+  - "How do I wire a button on-click to a custom function in app.xml?"
+semanticKeywords:
+  - "AppCustomizations.js"
+  - "Maximo Mobile customization"
+  - "MAF controller"
+  - "pageResumed pageInitialized"
+  - "onBeforeLoadData"
+  - "on-click-arg"
+  - "replace existing method MAF"
+  - "extends SchedulePageController"
+  - "Graphite controller events"
+  - "findDatasource setQBE"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 2 of this series: the anatomy of app.xml, datasources and ids"
+  - "Working JavaScript (ES6 classes, promises) and browser DevTools skills"
+  - "Access to a non-production MAS environment with Application Configuration or a local workspace"
+speakableSections:
+  - "The Four Support Tiers"
+  - "Lifecycle Hooks You Can Rely On"
+  - "Replacing a Method: The Wrapper Pattern"
+clusterSlugs:
+  - "mas-maf-dev-00-series-index"
+  - "mas-maf-dev-01-what-is-maf"
+  - "mas-maf-dev-02-app-xml-anatomy"
+  - "mas-maf-dev-04-tooling-generations"
+relatedSlugs:
+  - "mas-manage-work-centers-to-rba"
+  - "mas-bob-04-bob-and-maximo"
+  - "mas-92-upgrade-watchlist"
+  - "mas-java-extensions-series-index"
+  - "mas-manage-maximo-mobile"
+---
+
+# Controllers and AppCustomizations.js: The Upgrade-Safe Way to Add Logic to MAF Apps
+
+<aside>
+
+🎯 **Who this is for:** Maximo developers who have been asked to "just add a validation to the Technician app"; mobile leads who must decide what customization is acceptable in a release; architects reviewing someone else's JavaScript before the next MAS upgrade.
+
+</aside>
+
+**Series:** MAS MAF-DEV | **Part 3 of 9** | Previous: [Part 2 - Anatomy of app.xml](/blog/mas-maf-dev-02-app-xml-anatomy) | Next: Part 4 - From Docker to Desktop: Three Generations of MAF Tooling
+
+---
+
+## 🔥 The Question Behind Every MAF Customization
+
+Sooner or later every Maximo Mobile project hits the same wall. The XML can move a field, hide a button, add a datasource. It cannot, by itself, say "do not let this work order go to COMP until the failure report exists," or "after the technician picks a classification, narrow the next lookup." That is logic, and in MAF logic is JavaScript.
+
+In classic Maximo you would have reached for an automation script or a Java field class, and you could have changed almost anything in place. MAF is different because the application you customize is **IBM's own front-end code**, shipped as a package and replaced on every upgrade and fix pack. In Part 2 we saw that `app.xml` edits are tracked as deltas against generated ids. JavaScript has no such delta engine. If you edit IBM's controller file, the upgrade overwrites it. If you stay out of it, you need somewhere else for your logic to live.
+
+That place is `AppCustomizations.js`, and this part is about using it well: what IBM supports, which hooks are verified, how events travel, how to wire them from XML, how to wrap or replace an IBM method without editing IBM's file, and how to re-test after an upgrade.
+
+A word on sourcing, as in earlier parts. We tag vendor claims **IBM-reported**: they come from IBM-authored sources such as the *MAF Configuration Practices* site, IBM Support pages and IBM Documentation, and we have not independently audited them. Where we re-fetched a page live while writing this part we say so. Where we could only rely on cached research we say that too, and we do not state unverified items as fact.
+
+<aside>
+
+⚠️ **Tooling status, stated once.** Everything in this part applies to all three tooling generations (Docker `maf-tools`, the in-suite Application Configuration editor, and Local Configuration) because the artifact is the same `AppCustomizations.js` file. The newest tool, **MAF Local Configuration**, is an **early-access preview**, offered **AS IS**, **IBM proprietary software** that requires a valid MAS license, and IBM describes it as not for production use. It cannot create or clone applications. Use it as a developer convenience on non-production environments.
+
+</aside>
+
+By the end of this post you should be able to:
+
+1. Place any proposed customization into IBM's four support tiers and defend the choice.
+2. Name the lifecycle hooks for application, page, dialog and datasource, and know which one to use for loading data.
+3. Explain how events are named, aliased and bubbled, and handle the three events that have no alias.
+4. Wire app.xml components to handler methods with `on-click`, `on-click-arg`, `on-change` and dialog actions.
+5. Add logic alongside an IBM method, replace it, or extend its class, and know the trade-off of each.
+6. Run an upgrade re-test routine that finds breakage before your users do.
+
+---
+
+## 🧭 The Four Support Tiers
+
+IBM's practices pages and the research base converge on four approaches. This table is the most important thing in the post, because it tells you where each kind of change is allowed to live.
+
+| Tier | Approach | IBM support | Survives upgrade? | Our guidance |
+|---|---|---|---|---|
+| 1 | `app.xml` edits (components, datasources, states, dialogs) | Supported | Yes, tracked as a delta against ids | First choice for anything declarative |
+| 2 | `AppCustomizations.js` | Supported; "specifically designed to persist through Maximo Mobile upgrades" | Yes | First choice for any logic |
+| 3 | `class X extends SchedulePageController` (or another base) in a separate file, with `controller=` pointing at it | "Limited support"; files are preserved on upgrade | Preserved, but must be re-tested | Only for complex logic that does not fit a wrapper |
+| 4 | Editing out-of-the-box controller files | **Not supported**; files "completely overwritten"; manual merge required | No | Never |
+
+(IBM-reported; tiers 2 to 4 were re-read on IBM's *Applying Configurations* page on 2026-10-19, and tier 4's merge wording matches the FAQ: "Modifying out-of-the-box controllers requires manual merging with every release.")
+
+Three nuances keep this table honest.
+
+**"Supported" means carry-over, not help.** IBM's page is explicit that support for AppCustomizations.js "does not mean IBM will assist with the configurations." You are supported in the sense that IBM designed the file to survive upgrades and will treat a defect in that mechanism as a defect. Your business logic is yours.
+
+**"Persists" is not "keeps working."** IBM's own comparison table notes that AppCustomizations.js "may require adjustments when APIs are deprecated between versions," and illustrates the point with a release-note-style example in which a `saveWorkOrder()` function changes its return type from a boolean promise to a result-object promise. Treat that example as IBM's illustration of the risk, not as a documented change in a specific MAS release. The point is that your code calls IBM code, and IBM code evolves.
+
+**IBM will not stop you from tier 4.** In an IBM Community thread from October 2023, an IBM representative wrote that IBM does not prevent customers from doing unsupported things, that customers should avoid it as much as possible, and that IBM supports only customer-delivered code in AppCustomizations.js. The same answer notes that modifying controllers makes even simple patching harder. That is the reasoning behind the table: tier 4 works until the day it does not, and that day is an upgrade.
+
+The same nuance shows up in the AI-assisted world. As we will see in Part 9, early issues on the Local Configuration repository reported that the bundled Graphite MCP server edited out-of-the-box JavaScript files, which is a tier-4 action. If an agent touches a file that is not `AppCustomizations.js` or `app.xml`, treat the diff as a defect.
+
+---
+
+## 📦 What AppCustomizations.js Actually Is
+
+`AppCustomizations.js` sits in `src/` next to `app.xml` (see the workspace layout in Part 2). IBM describes it as an app-wide controller that can implement **any** event handler. Because it is registered at the application level, it receives events that bubble up to the application controllers, and it can reach pages, datasources and dialogs through the app object.
+
+A minimal, runnable skeleton in the shape IBM's own examples use:
+
+```js
+// AppCustomizations.js
+const TAG = 'MyCustom';
+
+class AppCustomizations {
+  applicationInitialized(app) {
+    this.app = app;
+    app.log.d(TAG, 'AppCustomizations loaded');
+  }
+
+  pageResumed(page, app) {
+    this.app = app;
+    this.page = page;
+  }
+}
+
+export default AppCustomizations;
+```
+
+Two habits are visible even here. First, define a `TAG` constant and use `app.log.d/e/w/t(TAG, ...)` rather than `console.log`, so your output obeys the log-level switch we cover in Part 6. Second, store `this.app` in `applicationInitialized`, because most of your helper methods will need it. IBM's practices pages repeat both patterns in every example.
+
+### The API surface you will touch most
+
+IBM's public examples keep returning to a small set of calls (IBM-reported):
+
+| Need | Call |
+|---|---|
+| Find a datasource | `app.findDatasource('name')`, `page.findDatasource('name')` |
+| Find a page | `app.findPage('schedule')` |
+| Find a controller on a page | `page.findController(c => c.constructor.name === 'ChangeStatusController')` |
+| Show a dialog | `page.showDialog('dialogId')` |
+| Toast message | `app.toast(...)` |
+| Logging | `app.log.d / e / w / t(TAG, ...)` |
+| User and device context | `app.client.userInfo`, `app.device.isMaximoMobile` |
+| Localized text | `app.getLocalizedLabel()`, `app.getLocalizedMessage()` |
+| Datasource operations | `ds.load`, `ds.save`, `ds.addNew`, `ds.deleteItem`, `ds.forceReload`, `ds.undoChanges`, `ds.applyInMemoryFilter`, `ds.updateBaseQuery`, `ds.initializeQbe`, `ds.setQBE`, `ds.searchQBE` |
+| Navigation (reported in IBM Community answers) | `app.setCurrentPage({name: '...'})` |
+
+We did not audit this list against a formal reference, because IBM publishes none publicly; the full property and API tables live in the in-product Developer Documentation (Application Configuration, Help, Developer Documentation, available from MAF 8.11 per a community pointer). Treat the table as "known to exist in IBM's examples."
+
+---
+
+## 🔔 Lifecycle Hooks You Can Rely On
+
+IBM's *Page Component Guide* and *Data Sources Guide* name the hooks below. We re-read both pages live on 2026-10-19; the DOC17 research base had carried the same names from cached IBM text.
+
+| Scope | Hook | When it fires | Notes |
+|---|---|---|---|
+| Application | `applicationInitialized(app)` | Once at app start | Store `this.app`; register app-level listeners |
+| Application | `applicationResumed(app)` | When the app returns to the foreground | Re-check connectivity and session state |
+| Page | `pageInitialized(page, app)` | **Once**, after page XML is parsed and page datasources are initialized, **before render** | Datasources exist but data is **not loaded** |
+| Page | `pageResumed(page, app)` | Every time the page becomes active, including the first visit | **The place to load data**, update the breadcrumb |
+| Page | `pagePaused(page, app)` | When navigating away | Save drafts, stop timers, cancel pending requests |
+| Page | `onPageSerialize({page})` / `onPageDeserialize({page})` | Before state is saved / after it is restored | Relevant to offline and state restore |
+| Dialog | `dialogInitialized(dialog)` | When a dialog is initialized | The hook IBM uses to swap a method on a dialog's controller |
+| Dialog | `dialogOpened({dialog})`, `dialogClosed` | Open and close | Reset or validate dialog state |
+| Datasource | `onDatasourceInitialized(ds, owner, app)` | Once, when the datasource is created | Set up listeners |
+| Datasource | `onBeforeLoadData(ds, query)` | Before a load | **Return `false` to cancel** |
+| Datasource | `onAfterLoadData(ds, items, query)` | After load, before items merge into the datasource | Items can be mutated here |
+| Datasource | `onLoadDataFailed(error, ds, query)` | A load failed | Log, toast, retry policy |
+| Datasource | `onBeforeSaveData({datasource, items})` | Before modified items are saved | **Return `false` to cancel** |
+| Datasource | `onAfterSaveData({datasource, items})` | After a successful save | Refresh dependent data |
+| Datasource | `onValueChanged({datasource, item, field, oldValue, newValue})` | A field value changed on any item | Cross-field logic |
+
+A discrepancy to be aware of: the datasource hook signatures differ slightly between IBM's sources. The *Data Sources Guide* table shows `onDatasourceInitialized(datasource)` with one argument, while the cached text behind our research base shows three (`ds, owner, app`). We recommend defensive code: take the first argument as the datasource and treat the others as optional until you have confirmed them in your own version's Developer Documentation. IBM's guide also states that only two hooks support cancellation by returning `false`: `onBeforeLoadData` and `onBeforeSaveData`. Do not assume other hooks cancel anything.
+
+### Navigation order
+
+When a user moves between pages, IBM states the sequence is:
+
+1. the old page's `pagePaused`
+2. the new page's `pageInitialized` (first visit only)
+3. the new page's `pageResumed`
+4. datasource dynamic properties are processed
+
+This is why loading data belongs in `pageResumed`: it runs every time the page is shown, so a detail page reloads when the user navigates back to it, and the datasource is already initialized from the first visit.
+
+### Four rules IBM states about hook code
+
+IBM's page guide is blunt on these, and each one costs somebody a day:
+
+| Rule | Why |
+|---|---|
+| Do not declare lifecycle methods as `async` | Start async work inside the method with promises; do not `await` at the method level |
+| Do not do async work or read datasource items in `pageInitialized` | Data is not loaded yet |
+| Do not load datasources in `pageInitialized` | Load them in `pageResumed` |
+| Do not run long operations in `pagePaused`, and do not assume the page is destroyed afterward | The user may come straight back |
+
+A pattern that respects all four:
+
+```js
+class AppCustomizations {
+  pageInitialized(page, app) {
+    // runs once, no data yet: just capture references
+    this.app = app;
+    this.woDS = page.findDatasource('woDetailds');
+  }
+
+  pageResumed(page, app) {
+    // runs on every activation: safe place to load
+    if (page.name === 'workOrderDetails') {
+      this.woDS.load().catch((e) => app.log.e(TAG, 'load failed', e));
+    }
+  }
+
+  pagePaused(page, app) {
+    // quick cleanup only
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+  }
+}
+```
+
+(The page name `workOrderDetails` and datasource id `woDetailds` follow IBM's naming style but are illustrative; copy the real ids from your own downloaded `app.xml`, per Part 2.)
+
+---
+
+## 🏷️ Event Naming, Aliases and Quoted Methods
+
+Under the lifecycle hooks is one event system. IBM's FAQ explains the naming rule (re-read live):
+
+- Most events carry an alias. Lifecycle events get an `on` prefix and are converted from kebab-case to camelCase. The emitted event `before-load-data` is handled by the method `onBeforeLoadData`.
+- A few events have **no alias**: `before-invoke-action`, `after-invoke-action` and `field-warning`. Because of the dashes you must quote the name.
+
+```js
+class AppCustomizations {
+  // no alias exists: declare the raw event name as a quoted method
+  'field-warning'({ item, field, warning }) {
+    this.app.log.w(TAG, 'field warning on', field, warning);
+  }
+
+  // alias exists: plain camelCase hook
+  onBeforeLoadData(ds, query) {
+    return true; // return false to cancel the load
+  }
+}
+```
+
+You can also bind a listener directly, which IBM shows with `ds.on('before-put-data', fn)`. If you do, IBM's FAQ says to attach the listener during application or page initialization (for example in `pageResumed`) and to remove it when it is no longer needed. A listener you forget to remove in `pagePaused` is a classic cause of a handler that fires twice after the user navigates back.
+
+A caution from our own research notes: the *Page Component Guide* does not itself document the kebab-case-to-alias rule, and its examples use both styles (`'value-changed'` on a datasource, `'workOrderSaved'` on `app.eventManager`). The rule above comes from the FAQ. If a handler does not fire, check the FAQ rule first, then the log level.
+
+### Bubbling order
+
+IBM's page guide states: "Events bubble up from UI components → Datasource controllers → Page controllers → Application controllers." A controller bound to the application, page or datasource handles any dispatched event whose name matches one of its functions.
+
+| Level | Where it is attached | Typical use |
+|---|---|---|
+| UI component | The component's `on-*` attribute in app.xml | Name the handler for a click or change |
+| Datasource controller | `controller="DataController"` on a datasource (class in `DataController.js`, `export default`) | Load, save and value-change hooks for that data |
+| Page controller | `controller=` attribute, or one or more `<controller src="..."/>` children on `<page>` | Page lifecycle and page-specific actions |
+| Application controller | `AppCustomizations.js` and IBM's app controller | App-wide hooks; **your supported seam** |
+
+Because bubbling ends at the application level, `AppCustomizations.js` sees events that no lower controller consumed, and it also gets same-named events that lower controllers handled, which is how the "add a method alongside IBM's" pattern below works. That also means a very hot event (`onValueChanged` on a big list) will call your code frequently; keep handlers cheap.
+
+---
+
+## 🔌 Wiring Handlers From XML
+
+Handlers are named in `app.xml` and resolved on the bound controllers or on `AppCustomizations.js` (IBM-reported). Typical wiring, in the shapes IBM's examples use:
+
+```xml
+<button label="Save" on-click="saveWorkOrder" on-click-arg="{item}" id="mytag_btn_save"/>
+<text-input value="{item.description}" on-change="handleDescriptionChange"/>
+<lookup id="mytag_positionLookup" datasource="dsposition" on-item-click="choosePosition"
+        lookup-attributes="{['value','description']}"/>
+```
+
+The matching handler methods receive what the XML passes:
+
+```js
+saveWorkOrder(item) { /* item is whatever on-click-arg evaluated to */ }
+handleDescriptionChange(evt) { /* change event payload */ }
+choosePosition(item) { /* the selected lookup row */ }
+```
+
+Dialogs support `on-open-action` / `on-open-action-arg`, `on-close-action` and `on-primary-action` (IBM-reported), and IBM's additional-logic example uses `on-secondary-action="closeWorkLogSaveDiscard"` on a dialog with id `saveDiscardWorkLog`.
+
+| Attribute | Fires when | Argument |
+|---|---|---|
+| `on-click` + `on-click-arg` | A button or link is clicked | Value of `on-click-arg`, often `{item}` |
+| `on-change` | An input value changes | Change event |
+| `on-item-click` | A lookup row is chosen | The row item |
+| `on-open-action` / `on-open-action-arg` | A dialog opens | Optional argument |
+| `on-close-action` | A dialog closes | None |
+| `on-primary-action` / `on-secondary-action` | Dialog primary or secondary button | None |
+
+### The `callController` warning
+
+Some online threads mention a `callController` helper. **No IBM source we found shows it, and we could not verify it, so do not use it.** If you inherit code that calls it, replace it with an `on-click` handler that resolves through the supported mechanisms above, or with `app.findPage()` / `page.findController()` as shown below. Unverified helpers are exactly the kind of dependency that disappears on upgrade.
+
+### Choosing where a handler method lives
+
+When you add `on-click="myHandler"` to XML, `myHandler` must exist on a controller in the bubbling chain for that component. Our rule: if the XML element is one you added, put the handler in `AppCustomizations.js` and prefix its name (`myTag_validateStatus`) so that nobody confuses it with an IBM method. If the XML element is IBM's, you usually do not add an on-click, you change an existing method (see below).
+
+---
+
+## 🪄 Recipe 1: The "Hello World" Button
+
+The simplest useful customization, from a widely-read IBM Community thread (a request for "Hello world level" examples, answered by Maycon Belfort of BPD Zenith, an IBM Champion, with a class that has `applicationInitialized`, `pageResumed` and a custom button function). The pattern: store the app and page, find the page's main datasource, set a field on its current item.
+
+```js
+class AppCustomizations {
+  applicationInitialized(app) { this.app = app; }
+
+  pageResumed(page, app) {
+    this.app = app;
+    this.page = page;
+  }
+
+  myCustomButton() {
+    const ds = this.page.datasources['woDetailds']; // or page.findDatasource('woDetailds')
+    ds.item.description = 'Hello World!';
+  }
+}
+export default AppCustomizations;
+```
+
+```xml
+<button id="mytag_btn_hello" label="Set Description" on-click="myCustomButton"/>
+```
+
+The thread's key lesson, in its own words, is that setting a field is a datasource operation, not a free-standing `setValue`: you reach the datasource, then the item. A second community thread (October 2023) gives two ways to get that datasource into your function: look it up with `this.app.findDatasource('dsCreateWo')`, or pass it in from the XML through `on-click-arg`. The second keeps the handler independent of ids hard-coded in JavaScript, and is our preference when the button already sits inside the datasource's scope.
+
+Use Recipe 1 to confirm your toolchain works end to end before writing real logic. If the button does nothing, the likeliest causes are a misspelled method name or `AppCustomizations.js` not saved (see the troubleshooting table, and the defect DT424062 below).
+
+---
+
+## ➕ Recipe 2: Adding Logic Alongside an IBM Method
+
+IBM's *Additional Logic to Existing Methods* page documents the simplest tier-2 pattern. The idea: your method subscribes to the **same event** as IBM's method, and both run.
+
+```js
+const TAG = 'WorkLogExt';
+
+class AppCustomizations {
+  applicationInitialized(app) { this.app = app; }
+
+  // same name and signature as the IBM method named in app.xml:
+  // <dialog id="saveDiscardWorkLog" on-secondary-action="closeWorkLogSaveDiscard" ...>
+  closeWorkLogSaveDiscard() {
+    try {
+      this.app.log.d(TAG, 'Discard pressed, custom logic running');
+      this.recordDiscard();
+    } catch (error) {
+      this.app.log.e(TAG, 'Error in custom logic', error);
+    }
+  }
+
+  recordDiscard() { /* analytics, audit, non-blocking side effect */ }
+}
+export default AppCustomizations;
+```
+
+IBM's page is clear about both the power and the limit:
+
+> "The execution order of methods with the same name cannot be guaranteed."
+
+| Do (IBM) | Don't (IBM) |
+|---|---|
+| Log with descriptive tags | Rely on execution order |
+| Wrap logic in try-catch | Modify parameters that affect the original |
+| Document why the logic exists | Add heavy processing |
+| Keep logic small and focused | Skip error handling |
+| Use async/await for I/O, keep it light for the device | Assume your method runs before or after the original |
+
+The page also gives a validation routine worth copying: enable `?_graphite_logLevel=debug`, trigger the action, confirm your log output, confirm IBM's behavior still works, and test the failure path, including whether the original still executes if your code throws. That last test is the one people skip.
+
+**Use this recipe for:** logging, analytics, audit trails, side effects, non-blocking validation, tracking page navigation, logging datasource loads.
+
+**Do not use it for:** anything that must run *before* the original, anything that must *stop* the original, anything that depends on the original's result. For those, replace the method.
+
+---
+
+## 🔁 Replacing a Method: The Wrapper Pattern
+
+When you need order, you take control. IBM's *Replace Existing Method* page (last updated 21 September 2026, re-read live) shows the pattern for the Technician app's `woStatusChangeDialog`: capture the original method **bound to its controller**, then reassign the property to a new function.
+
+IBM's three steps, in its own code:
+
+```js
+// 1. find the controller and keep the original, bound
+let page = app.findPage('schedule');
+let controller = page.findController((c) => c.constructor.name === 'ChangeStatusController');
+let oldChangeStatus = controller.changeStatus.bind(controller);
+
+// 2. reassign
+controller.changeStatus = (evt) => { /* your function */ };
+
+// 3. do it in an initialization hook
+class AppCustomizations {
+  applicationInitialized(app) { this.app = app; }
+  dialogInitialized(obj) {
+    if (obj.name === 'woStatusChangeDialog') {
+      // find controller, save original, assign wrapper
+    }
+  }
+}
+```
+
+IBM's published step-3 sample is truncated (the body of `dialogInitialized` and the closing braces are missing on the page we fetched), and it does not show how to call the original from the replacement or how to handle the return value. So the complete wrapper below is **our illustration**, not an IBM sample. Treat it as a template to verify in your own preview:
+
+```js
+const TAG = 'StatusGuard';
+
+class AppCustomizations {
+  applicationInitialized(app) { this.app = app; }
+
+  dialogInitialized(dialog) {
+    if (dialog.name !== 'woStatusChangeDialog') return;
+
+    const page = this.app.findPage('schedule');
+    const ctrl = page.findController((c) => c.constructor.name === 'ChangeStatusController');
+    if (!ctrl || ctrl.__mytagWrapped) return;       // guard: wrap once only
+
+    const original = ctrl.changeStatus.bind(ctrl);   // keep it bound
+    ctrl.changeStatus = (...args) => {
+      try {
+        if (!this.statusAllowed(page)) {
+          this.app.toast('Complete the failure report before closing.', 'error');
+          return;                                    // original never runs
+        }
+      } catch (e) {
+        this.app.log.e(TAG, 'guard failed, falling through', e);
+      }
+      return original(...args);                      // preserve return value
+    };
+    ctrl.__mytagWrapped = true;
+  }
+
+  statusAllowed(page) { /* read datasource, return boolean */ return true; }
+}
+export default AppCustomizations;
+```
+
+Design choices in that sketch, each one deliberate:
+
+| Choice | Reason |
+|---|---|
+| Wrap once with a flag | `dialogInitialized` can fire again; wrapping twice stacks guards and can double-fire the original |
+| Bind the original | IBM's pattern; the original method relies on `this` |
+| `return original(...args)` | Preserve whatever the original returns, including a promise |
+| Guard inside try/catch, fall through on guard error | A bug in our check should not brick the status dialog |
+| Early return on failure | The only way to stop the original from running |
+
+Also note the controller class name comes from `c.constructor.name`. DOC17's cached example finds a controller named `WorkOrderDetailController` the same way. **Class names are an IBM implementation detail.** If IBM renames the class in a release, your `findController` returns nothing, and the guard above (`if (!ctrl) return`) fails silently. Log when the lookup fails, and add it to your upgrade re-test list.
+
+### Wrap versus alongside
+
+| Aspect | Alongside (Recipe 2) | Wrapper (this section) |
+|---|---|---|
+| Complexity | Simple | More complex |
+| Execution order | Not guaranteed | Fully controlled |
+| Original method | Runs unchanged | You decide if, when and how |
+| Can block the original? | No | Yes |
+| Risk | Low | Higher |
+| Upgrade maintenance | Easier | Needs re-verification on each upgrade |
+
+(IBM-reported comparison, re-read live on the *Additional Logic* page.)
+
+---
+
+## 🧬 Extending a Controller Class (Tier 3)
+
+For substantial logic you may extend a base class. IBM's *Applying Configurations* page describes it in three steps: create a new file with a unique name that imports the logging utility and the base controller; extend the base class and override methods, calling `super.methodName()`; point the XML `controller` attribute at the new class.
+
+```js
+// ExtendedSchedulePageController.js
+class ExtendedSchedulePageController extends SchedulePageController {
+  pageResumed(page, app) {
+    super.pageResumed(page, app);   // keep base behavior
+    // custom additions here
+  }
+}
+export default ExtendedSchedulePageController;
+```
+
+```xml
+<page id="schedule" controller="ExtendedSchedulePageController">
+```
+
+(Sketch of IBM's pattern; import paths and base class names must come from your own downloaded app.)
+
+| Consideration | Detail |
+|---|---|
+| Support | IBM: "Limited support" |
+| Upgrade | Files preserved, but IBM says you must test after upgrades so base-class changes do not break the extension |
+| Coupling | You inherit every internal of the base class, which AppCustomizations.js wrappers avoid |
+| When it is worth it | Large overrides across many methods of one controller; reuse across several pages |
+
+Our position: tier 3 is a legitimate tool, but it is a bigger commitment than a wrapper. Every method you override is a method you must re-read when IBM changes the base. In a customer review we count extended-controller methods and ask the project to justify each one against a tier-2 alternative.
+
+---
+
+## 🧪 Recipes From the Field
+
+These patterns come from community and IBM-affiliated sources. We tag them **community** and mark each as a pattern to verify rather than IBM guidance.
+
+### Recipe 3: Cancel a load or save with a datasource hook
+
+IBM documents that returning `false` from `onBeforeLoadData` or `onBeforeSaveData` cancels the operation. A datasource controller (or `AppCustomizations.js` filtered on the datasource) can use it as a gate:
+
+```js
+onBeforeSaveData({ datasource, items }) {
+  if (datasource.name === 'woDetailds') {
+    const bad = items.find((i) => i.status === 'COMP' && !i.failurecode);
+    if (bad) {
+      this.app.toast('Failure code required to complete.', 'error');
+      return false;                      // cancels the save
+    }
+  }
+  return true;
+}
+```
+
+(Illustrative. The `datasource.name` property and item field names should be confirmed in your preview; the hook name and the `false` semantics are IBM-documented.)
+
+This is the cleaner alternative to wrapping a save method when the rule is about **data**, not about a specific button. It also works for saves triggered from several places, which a button-level wrapper would miss.
+
+### Recipe 4: Derive a display value in `onAfterLoadData`
+
+When an IBM computed function cannot be changed (a 2023 IBM answer states that computed functions only fire the controller method and, as of 8.11, cannot be defined in AppCustomizations.js), a community-suggested workaround is to set a local attribute on the loaded items in `onAfterLoadData`, filtered by datasource name, and bind to it in XML. IBM's hook guide confirms items can be mutated before they merge into the datasource.
+
+```js
+onAfterLoadData(ds, items, query) {
+  if (ds.name === 'woListDS') {
+    items.forEach((i) => { i.mytag_label = `${i.wonum} - ${i.description}`; });
+  }
+}
+```
+
+```xml
+<text value="{item.mytag_label}" id="mytag_txt_label"/>
+```
+
+A caveat: a locally added attribute is not in the schema, so it is not downloaded and it is not saved. That is exactly what you want for a display value, and exactly what you do *not* want for data you expect to persist.
+
+### Recipe 5: Restrict a status choice
+
+Community author Biplab Das Choudhury documented restricting the work order status choices using states named `allowCustomWOStatus` and `customAllowedStates`. The shape of the pattern is: a state holds the allowed list, a hook sets it based on conditions, and XML bindings use it to filter the dropdown or lookup. We have not reproduced the code because we did not independently run it; read the original and test in preview. IBM's own *Restrict Complete Status and Set Default Values* page (linked from the additional-logic page) is the supported-source counterpart.
+
+### Recipe 6: Narrow a lookup with `setQBE`
+
+BPD Zenith's hierarchical classification lookup is the best public example of combining `findDatasource`, `setQBE` and `showDialog`: a button handler sets a filter on the lookup's datasource, then opens the dialog. The general shape:
+
+```js
+openClassificationLookup() {
+  const ds = this.app.findDatasource('dsClassification');
+  ds.initializeQbe();
+  ds.setQBE('classstructureid', this.page.state.selectedClass);
+  ds.searchQBE().then(() => this.page.showDialog('classificationLookup'));
+}
+```
+
+(Our rendering of the pattern from the call names IBM and BPD Zenith use; attribute and dialog ids are illustrative.)
+
+### Recipe 7: Validation examples and the community repo
+
+For validation before a status change (worklog present, failure codes, tasks complete), community members point at the `ibm-maximo-mobile-dev/mobile-scripting` repository. It is IBM-affiliated, GPL-3.0 licensed, and labelled "Work in Progress". The GPL license matters if your code is distributed: read it before you paste anything into a customer deliverable.
+
+| Recipe | Mechanism | Tier | Verified source |
+|---|---|---|---|
+| 1 Hello World | `on-click` plus datasource item set | 2 | IBM Community (practitioner) |
+| 2 Alongside | Same-named method | 2 | IBM practices (re-read live) |
+| Wrapper | Reassign controller method | 2 | IBM practices (re-read live), our full sample |
+| 3 Cancel save | `onBeforeSaveData` returns `false` | 2 | IBM Data Sources Guide |
+| 4 Derived value | `onAfterLoadData` | 2 | IBM hook guide plus community |
+| 5 Status restriction | States plus bindings | 1 and 2 | Community only |
+| 6 Lookup filter | `setQBE`, `showDialog` | 2 | Community |
+| 7 Validation library | External repo | 2 | Community, GPL-3.0 |
+
+---
+
+## 🧱 Controllers and Datasource Hooks: Where Does My Code Go?
+
+A recurring design question is whether code belongs in `AppCustomizations.js`, a page controller or a datasource controller. For **your own** logic we recommend one rule: put it in `AppCustomizations.js`, filtered by page, dialog or datasource name inside the method. This keeps all customer code in one file that survives upgrades and shows up in one diff. Create separate controller files only for the extended-class pattern or when a file becomes unwieldy.
+
+A convention that scales:
+
+```js
+class AppCustomizations {
+  applicationInitialized(app) { this.app = app; this.routes = buildRoutes(app); }
+  pageResumed(page, app)      { (this.routes.page[page.name] || noop)(page, app); }
+  onAfterLoadData(ds, items)  { (this.routes.ds[ds.name]   || noop)(ds, items); }
+}
+```
+
+where `buildRoutes` returns maps of small functions keyed by page and datasource names, each in its own module. Each handler stays small, each can be tested on its own, and the one big class is only a dispatcher.
+
+| Smell | Fix |
+|---|---|
+| 600-line `AppCustomizations.js` with one giant `pageResumed` | Dispatcher plus per-page modules |
+| `if (page.name === ...)` repeated in five hooks | Routing map |
+| Handler names like `save`, `load`, `change` | Prefix with a team tag |
+| Business rule duplicated in a wrapper and a datasource hook | One rule function, called from both |
+| `console.log` everywhere | `app.log.d(TAG, ...)` |
+
+---
+
+## 🛠️ Testing and Debugging Your Logic
+
+You cannot test mobile logic in a browser alone (Part 7 explains the offline reasons), but the browser is where you debug first. IBM's guidance, consistent across its pages:
+
+1. **Enable debug logging** with `?_graphite_logLevel=debug` on the URL, and use unique log tags such as `CustomFeature_MethodName`. Log method entry and exit and key values with `JSON.stringify`.
+2. **Use DevTools breakpoints** to confirm when IBM's method is called before you decide how to extend it.
+3. **Check both behaviors**: yours runs and IBM's still works.
+4. **Test the failure path**: throw inside your handler and confirm the original still behaves.
+5. **Use the Debug UI and logs** as first-line diagnostics, per the FAQ's support section.
+
+Part 6 covers log levels, streamed logs and device inspection in depth.
+
+### Troubleshooting table
+
+| Symptom | Likely cause | First check |
+|---|---|---|
+| Handler never runs | Misspelled name or wrong signature (IBM's top cause) | Compare to the name in `app.xml` |
+| Event with a dash never reaches you | No alias; needs a quoted method name | `'field-warning'(...)`, not `fieldWarning` |
+| IBM behavior breaks after adding a same-named method | Exception in your code | Wrap in try-catch, read the error log |
+| Order-dependent bug that "sometimes" happens | Relying on same-name ordering | Switch to a wrapper |
+| Data missing on first view of a page | Loading in `pageInitialized` | Move load to `pageResumed` |
+| Handler fires twice after navigating back | Listener added in resume, never removed | Remove in `pagePaused` |
+| Wrapper stops working after an upgrade | `findController` class name changed | Log when lookup returns nothing |
+| Customization references a missing datasource after upgrade | IBM removed or renamed it | See the 9.2 `wodetails` example below |
+| Saving `AppCustomizations.js` shows `app.xml` content | IBM-tracked defect DT424062 | See status note below |
+| Custom save fails with network errors in preview | Wrong port (configuration utility instead of preview) or framework class making requests | IBM answer: check the preview window console |
+
+### A defect note: DT424062
+
+Saving changes in the MAF configuration utility could make the editor show `app.xml` content in place of `AppCustomizations.js`. Our research base (DOC17) listed DT424062 as a known issue in 9.2.0. IBM's 9.2.0 readme, surfaced through a web search during this run, lists the same defect among the **fixed** items in 9.2.0, and the same fix appears in patch notes for 9.0.15 and 9.1.4. We could not reconcile the two on a live IBM page, so treat it as: fixed in the readme for 9.2.0, but verify by saving a trivial change and re-opening the file. Per our hard rule that the knowledge base wins on disagreement, the discrepancy is recorded for human review at the end of the file.
+
+---
+
+## 🔄 The Upgrade Re-Test Routine
+
+"Persists through upgrades" is a promise about files, not behavior. IBM's FAQ gives a five-step triage after an upgrade, which we expand into a routine:
+
+| Step | IBM's triage | What we add |
+|---|---|---|
+| 1 | Confirm ID references still exist, especially states and datasources declared in XML | `grep` your JS for every datasource and page name it looks up; confirm each exists in the new `app.xml` |
+| 2 | Verify MAS and MAF versions are compatible with IBM's matrix | Record the versions in the PR description |
+| 3 | Review `app.delta.xml` | Look for NOT_FOUND warnings from delta apply (Part 8) |
+| 4 | Re-test all custom logic in AppCustomizations.js | Run every handler in the matrix below |
+| 5 | Review server and client logs | Search for your TAG, and for undefined-property errors |
+
+A concrete example of why step 1 matters: IBM's 9.2.0 readme (IBM-reported) states that the `wodetails` datasource was removed from the Technician mobile application because it duplicated the existing `woDetailds` datasource, and that customizations referencing `wodetails` need updating. A handler that did `app.findDatasource('wodetails')` would stop finding anything. That is a pure AppCustomizations.js regression caused by an IBM data model cleanup, in a release whose notes you might otherwise skim.
+
+For the wider upgrade picture, see the MAF items in our [MAS 9.2 Upgrade Watchlist](/blog/mas-92-upgrade-watchlist) (for example, the `chat-log` component deprecation that affects XML, not JS), and Part 8 of this series for delta files and the migrate-configuration actions.
+
+### The regression matrix
+
+Keep this table next to the code. One row per customization:
+
+| # | Customization | Mechanism | Depends on (names) | Test steps | Last verified on |
+|---|---|---|---|---|---|
+| 1 | Block COMP without failure report | Wrapper on `ChangeStatusController.changeStatus` | `schedule` page, `woStatusChangeDialog`, `ChangeStatusController` | Try to complete with and without a report | 9.1.x |
+| 2 | Asset description on card | Schema plus `onAfterLoadData` | `woListDS`, `assetdesc` | Open list online and offline | 9.1.x |
+| 3 | Discard audit | Same-name `closeWorkLogSaveDiscard` | `saveDiscardWorkLog` | Discard a work log, check the audit | 9.1.x |
+
+The "Depends on" column is the point. Every name in it is something IBM can rename. Reviewing that column against the new release's `app.xml` is faster than re-testing blind.
+
+---
+
+## 🧰 A Decision Guide
+
+| If you need to... | Use | Why |
+|---|---|---|
+| Hide, show, move or add a component | `app.xml` (tier 1) | Declarative, tracked by delta |
+| Run something when a button is pressed | `on-click` plus a method in `AppCustomizations.js` | Tier 2, simple |
+| Log, audit or track without changing behavior | Same-named method alongside | Low risk; order does not matter |
+| Run a check before an IBM action, or block it | Wrapper | Only way to control order and stop the original |
+| Block or validate a **save** of data | `onBeforeSaveData` returning `false` | Covers every save path |
+| Reshape data after load | `onAfterLoadData` | Items can be mutated before they merge |
+| React to a field changing | `onValueChanged` | Cross-field logic |
+| Override many methods on one controller | Extended class (tier 3) | Accept limited support and more testing |
+| Change IBM's controller file | **Do not** | Overwritten; manual merge at every release |
+| Use `callController` | **Do not** | Not shown in any IBM source |
+| Need new data fields | Add to the datasource schema first (Part 2) | Logic cannot read what was never fetched |
+| Need a new object structure or server rule | Manage-side change | See the Java extension series |
+
+---
+
+## 🤖 Where Bob, MCP and Server-Side Logic Fit
+
+Because tier 2 is plain JavaScript with a strict set of conventions, it is a good target for AI assistance, and a risky one. IBM's Local Configuration extension bundles a Graphite MCP server and a "MAF Config" mode for IBM Bob (covered in Part 9), and our [MAS-BOB Part 4](/blog/mas-bob-04-bob-and-maximo) discusses Bob in a Maximo context. From the research base, an early issue on the extension's repository reported that the MCP server edited out-of-the-box JavaScript files. That is a tier-4 action, forbidden by the table at the top of this post. Review rules we recommend for any AI-authored MAF logic:
+
+1. Allow edits only in `app.xml` and `AppCustomizations.js`.
+2. Never let an agent rewrite component ids.
+3. Require a pull request containing the generated `app.delta.xml`.
+4. Reject any use of `callController` or other unverified helpers.
+5. Run the regression matrix before publishing from a reviewed commit.
+
+The other half of any MAF feature is server-side. A validation that must hold for the classic UI, integrations and the app alike belongs in Manage as an automation script, a field class or a Java extension; the browser check in `AppCustomizations.js` is a convenience for the user, not a control. Our [MAS-JAVA-EXTENSIONS series](/blog/mas-java-extensions-series-index) covers the server side, and [MAS-MANAGE Part 2](/blog/mas-manage-work-centers-to-rba) tells the business-side story of why these apps replaced Work Centers. For Maximo Mobile as a product, see [MAS-MANAGE Part 6](/blog/mas-manage-maximo-mobile).
+
+A practical rule for splitting the work:
+
+| Rule must hold for... | Put it in |
+|---|---|
+| Every client and integration | Manage (server) |
+| This app only, for user guidance | `AppCustomizations.js` |
+| Both | Server for the rule, app for the early warning |
+
+---
+
+## 🔭 What You Should Do This Week
+
+1. Open your current `AppCustomizations.js` and classify every method into tiers 1 to 4. Anything in tier 3 or 4 gets a ticket.
+2. Search the repository for `callController`; replace every instance.
+3. Build the regression matrix, including the "Depends on" column.
+4. Move any data loading out of `pageInitialized` and into `pageResumed`.
+5. Replace order-dependent same-name methods with wrappers, and add a "wrapped once" guard.
+6. Add `app.log` calls with a team TAG and test with `?_graphite_logLevel=debug`.
+7. Before the next upgrade, grep your JS for every datasource and page name it looks up and compare with the new release's `app.xml`.
+
+---
+
+## ✅ Key Takeaways
+
+- IBM publishes four tiers: `app.xml` (supported), `AppCustomizations.js` (supported, designed to persist), extended controller classes (limited support) and OOTB controller edits (unsupported).
+- Verified hooks: `applicationInitialized`, `pageInitialized`, `pageResumed`, `pagePaused`, `dialogInitialized` and the datasource hooks; load data in `pageResumed`, and never declare lifecycle methods `async`.
+- Events are kebab-case with `on` aliases; `before-invoke-action`, `after-invoke-action` and `field-warning` need quoted method names.
+- Events bubble UI to datasource to page to application controllers; same-named methods all run in no guaranteed order.
+- To control order or stop an IBM action, capture the original bound to its controller and reassign a wrapper; wrap once, guard errors, preserve return values.
+- Upgrade-safe means the file survives, not that the code still works: re-test with a regression matrix of every name your code depends on.
+
+## 🔗 Continue the Series
+
+- **Previous:** [Part 2 - Anatomy of app.xml](/blog/mas-maf-dev-02-app-xml-anatomy)
+- **Next:** Part 4 - From Docker to Desktop: Three Generations of MAF Tooling
+- **Back to:** [Series Index](/blog/mas-maf-dev-00-series-index)
+- **Business-side context:** [MAS-MANAGE Part 2 - Work Centers to RBAs](/blog/mas-manage-work-centers-to-rba)
+- **Using Bob on this work:** [MAS-BOB Part 4 - Bob and Maximo](/blog/mas-bob-04-bob-and-maximo)
+- **Upgrade impact:** [MAS-9-2 Part 6 - Upgrade Watchlist](/blog/mas-92-upgrade-watchlist)
+- **The server-side half:** [MAS-JAVA-EXTENSIONS - Series Index](/blog/mas-java-extensions-series-index)
+
+---
+
+## 📚 References
+
+**IBM (vendor sources, IBM-reported)**
+
+1. IBM, *MAF Configuration Practices: Add Additional Logic to Existing Methods*: https://ibm-maximo-dev.github.io/configuration-practices-documentation/advanced/additional-logic
+2. IBM, *MAF Configuration Practices: Replace Existing Method* (last updated 21 September 2026): https://ibm-maximo-dev.github.io/configuration-practices-documentation/advanced/replace-existing-method
+3. IBM, *Applying Configurations* (support tiers, extended controllers, merging warnings): https://ibm-maximo-dev.github.io/configuration-practices-documentation/concepts/applying-configurations
+4. IBM, *Page Component Guide* (lifecycle hooks, order, async rules, bubbling): https://ibm-maximo-dev.github.io/configuration-practices-documentation/page-component-guide
+5. IBM, *Data Sources Guide* (datasource hooks, cancel semantics, controller binding): https://ibm-maximo-dev.github.io/configuration-practices-documentation/datasources-guide
+6. IBM, *FAQ* (event naming, quoted methods, upgrade triage): https://ibm-maximo-dev.github.io/configuration-practices-documentation/faq
+7. IBM Support, *Readme file for IBM Maximo Application Suite 9.2.0* (DT424062; Technician `wodetails` datasource removal): https://www.ibm.com/support/pages/node/7277376
+8. IBM, *MAF Local Configuration* (early access, AS IS, IBM proprietary): https://ibm-mas.github.io/maf-local-dev-mode/
+
+**Practitioner and community sources**
+
+9. IBM Community, *MAF Mobile - Simple javacustomizations.js examples for customization* (Vincent Wanders, Bartosz Marchewka, Maycon Belfort): https://community.ibm.com/community/user/discussion/maf-mobile-simple-javacustomizationsjs-examples-for-customization-1
+10. IBM Community, *Maximo Mobile: Make changes to an existing Controller Class* (Steven Shull, IBM; Maycon Belfort): https://community.ibm.com/community/user/discussion/maximo-mobile-make-changes-to-an-existing-controller-class
+11. BPD Zenith, *Maximo Mobile customisation*: https://www.bpdzenith.com/the-bpd-blog/maximo-mobile-customisation
+12. MRM-EAM, *Hidden in plain sight: Maximo Mobile developer documentation*: https://mrm-eam.com/hidden-in-plain-sight-maximo-mobile-developer-documentation/
+13. `ibm-maximo-mobile-dev/mobile-scripting` (GitHub, GPL-3.0, "Work in Progress")
+
+**TheMaximoGuys companion content**
+
+- [MAS-MANAGE Part 2](/blog/mas-manage-work-centers-to-rba) · [MAS-BOB Part 4](/blog/mas-bob-04-bob-and-maximo) · [MAS-9-2 Part 6](/blog/mas-92-upgrade-watchlist) · [MAS-JAVA-EXTENSIONS Index](/blog/mas-java-extensions-series-index)
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams modernize their skills for the MAS era, with practitioner-to-practitioner guidance grounded in IBM documentation and field experience.
+
+<!--
+REVIEW NOTES FOR HUMAN (night-shift, 2026-10-19, item maf-03-controllers-customizations):
+
+1. Re-verified live this run (IBM Configuration Practices): additional-logic, replace-existing-method, page-component-guide, applying-configurations, datasources-guide, faq. IBM Docs content API was not re-queried; no 9.1/9.2 claim in this post relies solely on the 2026-08-12 cache except as stated.
+2. DISCREPANCIES: (a) DT424062: DOC17 lists it as a "known issue in 9.2.0"; a web search of IBM's 9.2.0 readme says it is FIXED in 9.2.0 (also 9.0.15, 9.1.4). Per policy the knowledge base wins, but the post hedges and asks readers to verify; please resolve against the readme at node/7277376 and update DOC17. (b) Datasource hook signature: Data Sources Guide shows onDatasourceInitialized(datasource); DOC17 shows (ds, owner, app). Post says use first arg, others optional. (c) Page Component Guide does not document kebab-case/on-alias naming; FAQ does. (d) DOC17 credits Bartosz Marchewka with two patterns for setting a field from a button (findDatasource vs on-click-arg); the fetched "simple examples" thread shows Maycon Belfort posting the Hello World class and Bartosz pointing to Developer Documentation. Post attributes the sample to Maycon Belfort and the two patterns generically to "a second community thread"; verify attribution. (e) IBM's page says dialogInitialized-based replace; DOC17's example uses page.findController with WorkOrderDetailController; both shown.
+3. IBM's replace-existing-method page sample is truncated; the full wrapper, the onBeforeSaveData, onAfterLoadData and setQBE samples are OUR illustrations (labelled). Ids and datasource names are illustrative.
+4. Not verified: app.setCurrentPage (from a search snippet of IBM Community answers, no fetched page); the IBM-affiliated mobile-scripting repo URL (13) has no resolved link, kept as name only; Biplab Das Choudhury status-restriction recipe taken from DOC17 only. callController remains unverified and is explicitly marked do-not-use per the work item.
+5. The DOC17 section 17 gaps relevant here (IBM Docs 403 on 2026-10-16) remain: the Developer Documentation reference was not read in-product.
+6. SearchMaximo: the local baseline/knowledge-base/ibm_userguides_markdown corpus is not present in this checkout; no hits from it.
+7. Cover pending if nanobanana headless fails API_KEY_INVALID; see git log.
+-->
