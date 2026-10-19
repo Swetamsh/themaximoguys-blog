@@ -1,0 +1,401 @@
+---
+title: "Maximo Application Framework Development: The Complete Series Guide"
+description: "A nine-part, hands-on developer series on the Maximo Application Framework (MAF/Graphite): app.xml, AppCustomizations.js, three generations of tooling, IBM's new early-access Local Configuration extension for VS Code and Bob, debugging, offline mobile data, promotion without Migration Manager, and AI-assisted MAF work."
+date: "2026-10-19"
+slug: "mas-maf-dev-00-series-index"
+tags: ["Maximo", "MAS", "MAF", "Graphite", "Maximo Mobile", "Application Configuration", "Local Configuration", "IBM Bob", "Developer"]
+draft: true
+tier: "developer"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-maf-dev-00-series-index.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What exactly is MAF, and is it the same thing as Graphite?"
+    answer: "Yes, for practical purposes. The Maximo Application Framework (MAF) is the framework behind every modern, non-classic Maximo UI: the Maximo Mobile apps (Technician, Inspections, Service Request, Inventory) and the browser Role-Based Applications (RBAs) that replaced Work Centers. 'Graphite' is IBM's internal name for it, and you see it everywhere under the hood: the /graphite/configtool/packages REST path, the graphite-configuration pod, the ?_graphite_logLevel= debug parameter, and the graphite-tools.js command-line script. You author apps as declarative XML (app.xml plus included XML files) with a small amount of JavaScript, and a build step compiles them into React applications. Part 1 covers the architecture in full; for blog purposes, MAF equals Graphite."
+  - question: "Can I still customize MAF apps the way I customized classic Maximo screens in Application Designer?"
+    answer: "No, and the two worlds do not mix. IBM states that configuration changes made to applications on the previous Maximo Application Framework (Application Designer and presentation XML) cannot be migrated to MAF applications. Classic Manage screens such as Work Order Tracking, Purchasing, Item Master and Job Plans still use Application Designer, while MAF apps use Application Configuration or, now, the Local Configuration extension. Within MAF, IBM supports exactly two customization seams: edits to the application XML, and JavaScript in AppCustomizations.js, which persists through upgrades. Extending IBM controllers in separate files has limited support, and editing out-of-the-box controllers is unsupported and requires manual merging at every release. Parts 2 and 3 are built around those two supported seams."
+  - question: "Is IBM's MAF Local Configuration extension ready for production use?"
+    answer: "Treat it as an early-access preview, because that is how IBM positions it. The extension (formerly 'Local Dev Mode', published at ibm-mas.github.io/maf-local-dev-mode) is labeled early access and not for production use. Its license is IBM proprietary software, usable only with a valid MAS license, and the site describes it as offered AS IS. As of 2026-10-19 the latest GitHub release is v0.0.1-beta.6 (published 2026-09-22), it is not yet on the VS Code Marketplace, and it cannot create or clone applications. That does not mean you should ignore it: it brings Git, diff, code review and a local preview server to MAF work, and your published output is the same MAFAPPDATA revision any other tool produces. Use it on a development environment, keep your source in Git, and keep Application Configuration as the fallback. Part 5 covers the setup and its open issues in detail."
+  - question: "Which MAS versions does each MAF tooling generation support?"
+    answer: "There are three generations. Generation 1 is the maf-tools Docker image, which ran on the developer's desktop for MAS and Manage 8.4 through 9.0; the last line is the 9.0 image. Generation 2 is Application Configuration, deployed inside the suite on OpenShift with a persistent volume from MAS 9.1 onward; IBM states that beginning with MAS 9.1 the MAF Configuration application is referred to as Application Configuration, and local Docker is not supported for 9.1. Generation 3 is the MAF Local Configuration extension for VS Code and IBM Bob, which IBM lists as supporting MAS 9.1.21 and newer and MAS 9.2.1 and newer. Each generation has a different edit-and-preview loop, which is why Part 4 compares them side by side and explains the pain that drove each change."
+  - question: "Can I promote a MAF app from development to production with Migration Manager?"
+    answer: "No. IBM's own guidance is that Maximo Migration Manager does not support migrating Maximo Mobile or Role-Based (Graphite) applications from one environment to another. Teams instead republish the same reviewed workspace to each environment, copy app.xml and AppCustomizations.js between workspaces and publish, upload the built zip through REST, or drive publishing from CI. Every publish inserts a new ACTIVE revision into the MAFAPPDATA table, and there is no IBM-documented revert action, so a Git-based release flow is the practical safety net. Part 8 lays out the options, the delta diff and apply model for upgrades, and a Git-driven release process for MAF."
+keyTakeaways:
+  - "MAF (internally Graphite) is the single framework behind Maximo Mobile and the browser Role-Based Applications; you write declarative XML plus minimal JavaScript, it compiles to React, and the built app lives as a zip revision in the Manage table MAFAPPDATA"
+  - "IBM supports only two customization seams: app.xml edits and AppCustomizations.js. Editing out-of-the-box controllers is unsupported and forces manual merges at every release"
+  - "MAF tooling has had three generations: the maf-tools Docker image (8.4-9.0), in-suite Application Configuration (9.1+), and the early-access, IBM-proprietary, AS IS MAF Local Configuration extension for VS Code and IBM Bob (9.1.21+ and 9.2.1+) - the third brings Git, diff, review and local preview back to the desktop"
+  - "Migration Manager cannot promote MAF apps between environments, so promotion, revert and upgrade merging are your responsibility - delta files, MAFAPPDATA revisions and a Git-driven release flow replace it"
+  - "A browser preview on localhost does not exercise the offline mobile path; any change touching datasources, lookup data or mobile-qbe-filter needs a device test after publish"
+series:
+  name: "MAS MAF-DEV"
+  part: 0
+  total: 9
+tldr: "A nine-part, hands-on developer series on the Maximo Application Framework (MAF, internally 'Graphite'), the XML-to-React framework behind Maximo Mobile and the Role-Based Applications. It covers what MAF is and how an app is built (app.xml, datasources, states), the two supported customization seams (app.xml and AppCustomizations.js), the three generations of tooling (maf-tools Docker, in-suite Application Configuration, and IBM's early-access Local Configuration extension for VS Code and IBM Bob), debugging, the mobile offline data model, promotion and upgrade without Migration Manager, and AI-assisted MAF work with Bob's MAF Config mode and the Graphite MCP server. Vendor claims are tagged as IBM-reported, and the Local Configuration extension is called out as early access, AS IS and IBM proprietary throughout."
+seoTitle: "Maximo Application Framework (MAF) Developer Guide"
+seoDescription: "Nine-part MAF developer series: app.xml, AppCustomizations.js, Local Configuration for VS Code and Bob, debugging, offline data, promotion."
+targetQuestions:
+  - "What is the Maximo Application Framework (MAF) and how do I develop apps with it?"
+  - "What is the difference between MAF, Graphite, and Application Designer?"
+  - "How do I customize Maximo Mobile and Role-Based Applications in a way that survives upgrades?"
+  - "What is IBM's MAF Local Configuration (Local Dev Mode) extension for VS Code and Bob?"
+  - "How do I promote MAF apps between Maximo environments without Migration Manager?"
+semanticKeywords:
+  - "Maximo Application Framework"
+  - "Graphite MAF customization"
+  - "app.xml AppCustomizations.js"
+  - "Maximo Mobile customization"
+  - "MAF Local Configuration VS Code"
+  - "Application Configuration MAS 9.1"
+  - "MAFAPPDATA revisions"
+  - "Role-Based Applications development"
+  - "Graphite MCP server IBM Bob"
+  - "Maximo Mobile offline data"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Working knowledge of Maximo Manage objects and object structures (MXAPIWODETAIL, MXAPIASSET)"
+  - "Basic XML and JavaScript literacy; Git familiarity is helpful"
+  - "Helpful but not required: the MAS-MANAGE series (Work Centers to RBAs) and the MAS-MOBILE series"
+speakableSections:
+  - "Why This Series Exists"
+  - "The Series at a Glance"
+  - "Three Generations of Tooling"
+clusterSlugs:
+  - "mas-maf-dev-01-what-is-maf"
+  - "mas-maf-dev-02-app-xml-anatomy"
+  - "mas-maf-dev-03-controllers-appcustomizations"
+  - "mas-maf-dev-04-tooling-generations"
+  - "mas-maf-dev-05-local-configuration-handson"
+  - "mas-maf-dev-06-debugging"
+  - "mas-maf-dev-07-offline-data"
+  - "mas-maf-dev-08-promotion-upgrades"
+  - "mas-maf-dev-09-ai-assisted-maf"
+relatedSlugs:
+  - "mas-manage-work-centers-to-rba"
+  - "mas-bob-04-bob-and-maximo"
+  - "mas-92-upgrade-watchlist"
+  - "mas-java-extensions-series-index"
+  - "mas-manage-maximo-mobile"
+---
+
+# Maximo Application Framework Development: The Complete Series Guide
+
+<aside>
+
+🎯 **Who this is for:** Maximo developers and configurators who have been handed a Maximo Mobile or Role-Based Application change request and discovered there is no Application Designer to open; mobile leads who need to know why a change worked in the browser preview and failed on the device; MAS platform admins who own the OpenShift pod, the persistent volume and the security groups behind Application Configuration; and architects deciding how much custom MAF work is safe to carry through the next upgrade.
+
+</aside>
+
+**Series:** Series Index - *Maximo Application Framework Development* | **9 parts** | **Total read time:** ~2.5 hours
+
+---
+
+## 📖 Why This Series Exists
+
+You know how to customize classic Maximo. You open Application Designer, drag a field onto `presentation.xml`, add an automation script, run a quick Database Configuration, and ship it. Then someone asks for a change to the Technician mobile app, or the new work order Role-Based Application, and none of that applies.
+
+> *"Where's Application Designer for the mobile app?"*
+> *"There isn't one. It's XML, JavaScript and a React build."*
+
+That exchange is where most Maximo developers meet MAF. The **Maximo Application Framework** is the framework IBM uses for every modern, non-classic Maximo UI: the Maximo Mobile apps (Technician `TECHMOBILE`, Inspections `INSPECTION`, Service Request `SRMOBILE`, Inventory `IRMOBILE`/`ICMOBILE`) and the browser Role-Based Applications that replaced Work Centers. Health and Monitor ship MAF apps too. Internally IBM calls the framework **Graphite**, so if you have seen `/graphite/configtool/packages`, `graphite-tools.js` or `?_graphite_logLevel=trace`, you have already seen MAF under its other name.
+
+Until now the content gap on MAF has been real. Our own MAS-MANAGE Part 2 and MAS-BOB Part 4 *mention* MAF, but they do not teach it. IBM's component reference, in turn, lives inside the product, under the Developer Documentation entry of the Application Configuration help menu, and is not published online. That is a recurring complaint among practitioners: the remaining difficulties are not configuration problems, they are framework questions with no public answer.
+
+Two things changed in 2026 that make this the right moment for a developer-grade series:
+
+1. **IBM brought MAF development back to the desktop.** In May 2026 IBM began shipping an early-access VS Code and IBM Bob extension, **MAF Local Configuration** (formerly "Local Dev Mode"). After two years of publishing-to-test inside a browser editor, you can once again edit in your own IDE, keep the source in Git, run a local preview server and review a diff.
+2. **MAS 9.2 reshaped the surface.** The "Role Based Applications" menu was removed, mobile apps are now labelled "(Mobile)", `chat-log` is deprecated, and Application Configuration got a faster preview, a publish queue and downloadable build logs.
+
+<aside>
+
+💡 **Key insight:** The organizing idea of this series is a single sentence: **MAF work is ordinary front-end engineering with three Maximo-specific constraints - two supported customization seams, no Migration Manager, and an offline device you cannot test in a browser.** Every part either teaches you to work inside those constraints or shows you the tooling that makes them manageable.
+
+</aside>
+
+---
+
+## 🧭 Where This Series Fits
+
+This series is the **hands-on developer line** on MAF. It does not re-teach the business case for Role-Based Applications or the mobile app catalogue, and it does not cover server-side Java. There is a division of labor across TheMaximoGuys content so you are never reading the same material twice:
+
+| If you want... | Read... |
+|---|---|
+| Why Work Centers became RBAs and what that means for Manage users | **MAS-MANAGE Part 2** - [Work Centers to RBAs](/blog/mas-manage-work-centers-to-rba) |
+| How IBM Bob fits into Maximo work generally (modes, governance, pilots) | **MAS-BOB Part 4** - [Bob and Maximo](/blog/mas-bob-04-bob-and-maximo) |
+| Which 9.2 changes (including MAF deprecations) break upgrades | **MAS-9-2 Part 6** - [Upgrade Watchlist](/blog/mas-92-upgrade-watchlist) |
+| Server-side Java extensions: the other half of Manage customization | **MAS-JAVA-EXTENSIONS** - [Series Index](/blog/mas-java-extensions-series-index) |
+| **How to build, debug, ship and upgrade MAF apps with the tools IBM actually provides** | **This series** |
+
+<aside>
+
+💡 **Key insight:** MAF and Java extensions are two halves of one customization strategy. Java extensions change server behavior (business objects, field classes, cron tasks). MAF changes what the user sees and what the device caches. A feature that adds a field needs both: the attribute in the object structure and the schema entry in the MAF datasource. Read the Java series alongside this one if your changes cross that boundary.
+
+</aside>
+
+---
+
+## 📊 The Series at a Glance
+
+| Part | Title | Focus Area | Tier | Read Time |
+|------|-------|-----------|------|-----------|
+| 1 | What Is the Maximo Application Framework? Graphite, XML to React and the Mobile Shell | One framework, two delivery surfaces; MAFAPPDATA; what MAF replaced; MAF vs Application Designer | Developer | 16 min |
+| 2 | Anatomy of app.xml: Pages, States, Datasources and Schemas | Workspace layout, skeleton, three datasource types, object structures, the id/lowercase/order rules | Developer | 18 min |
+| 3 | Controllers and AppCustomizations.js: The Upgrade-Safe Way to Add Logic | Lifecycle hooks, event names and bubbling, support tiers, method wrapping, community recipes | Developer | 18 min |
+| 4 | From Docker to Desktop: Three Generations of MAF Tooling | maf-tools Docker, Application Configuration, Local Configuration; the pain behind each change | Developer | 17 min |
+| 5 | Hands-On: MAF Local Configuration in VS Code and IBM Bob | Install, OIDC and API-key auth, the offline mirror, preview on :3000, publish pipeline, open issues | Developer | 20 min |
+| 6 | Debugging MAF Apps: Log Levels, Stream Logs and Device Inspection | `_graphite_logLevel`, streamLog, DOM-to-XML ids, build.json, chrome://inspect, defect table | Developer | 16 min |
+| 7 | Offline by Design: How Maximo Mobile Downloads, Filters and Syncs Data | Preloaded database, master schema merge, `mobile-qbe-filter`, cross-app sharing | Developer | 17 min |
+| 8 | Ship It: Promoting and Upgrading MAF Apps Without Migration Manager | Revisions, revert, promotion options, delta diff and apply, Git-driven release flow | Admin | 19 min |
+| 9 | AI-Assisted MAF: Bob's MAF Config Mode, the Graphite MCP Server and Guardrails | Bundled MCP server, skill catalog, known issues, review guardrails | Developer | 16 min |
+
+---
+
+## 🧱 MAF in One Page
+
+Before the part-by-part guide, here is the whole framework on one page. Everything below is expanded in the parts that follow.
+
+| Dimension | Fact | Where it is covered |
+|---|---|---|
+| Internal name | Graphite (`/graphite/...` paths, `graphite-tools.js`) | Part 1 |
+| Authoring model | Declarative XML compiled to React; minimal JavaScript | Parts 1-2 |
+| Data access | `maximo-datasource` over OSLC object structures, e.g. `MXAPIWODETAIL` | Part 2 |
+| Storage | `MAFAPPDATA` table, zip BLOB, one revision per insert | Parts 1, 8 |
+| Supported customization | `app.xml` and `AppCustomizations.js` (plus CSS from 9.0) | Parts 2-3 |
+| Configuration support floor | 8.10 and later | Part 4 |
+| Environment promotion | Not via Migration Manager | Part 8 |
+| Mobile runtime | Store app is a shell that downloads Graphite apps from the server | Parts 1, 7 |
+
+*Source for the table: IBM documentation and IBM support pages (IBM-reported); see References.*
+
+And here is how an app travels from source to screen:
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│                      THE MAF APP LIFECYCLE                         │
+│                                                                    │
+│  app.xml ──┐                                                       │
+│  *.xml     ├──► build ──► zip ──► MAFAPPDATA (new ACTIVE revision) │
+│  AppCustomizations.js ─┘                         │                 │
+│                                                  ├──► RBA in browser│
+│                                                  └──► Mobile shell  │
+│                                                       (downloads)  │
+│                                                                    │
+│  Authoring tool = Docker maf-tools │ Application Configuration │   │
+│                   Local Configuration (VS Code / Bob)              │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+The point of the diagram is that **the authoring tool changes but the artifact does not**. Whichever generation of tooling you use, the output is a zip stored as a new revision in `MAFAPPDATA`. That is why the three generations can coexist in one shop, and why a team can adopt the new one without abandoning the others.
+
+---
+
+## 🛠️ Three Generations of Tooling
+
+Most of the pain and most of the opportunity in MAF development sits in the tooling, so the series gives it two dedicated parts (4 and 5). The summary table is below; the evidence behind each row is in Part 4.
+
+| Generation | MAS versions | Where it runs | Edit and preview loop |
+|---|---|---|---|
+| **1. `maf-tools` Docker image** | 8.4 - 9.0 | Developer desktop, a privileged container pulled from `cp.icr.io` with an entitlement key | Browser UI on :3001, local React preview on :3006, publish to Manage |
+| **2. Application Configuration** | 9.1+ | OpenShift pod (`graphite-configuration`) with a persistent volume; users in the `MAFCONFIGADMIN` group | In-suite browser editor; early 9.1 preview was reported broken, so teams "published to test" |
+| **3. MAF Local Configuration** | 9.1.21+ and 9.2.1+ | Your editor (VS Code or IBM Bob) with Node.js 20+ and Yarn | `yarn start` preview on `localhost:3000` against live Manage, local diff and delta, Git, publish |
+
+*Sources: IBM documentation, IBM support pages and the ibm-mas/maf-local-dev-mode site (IBM-reported); practitioner reports for field behavior.*
+
+The narrative in one paragraph: IBM moved MAF configuration off developers' laptops and into the suite in 9.1. That removed the Docker friction (privileged containers, 8 GB of RAM minimum, a separate image for every patch), but it replaced it with a browser-only editor, a preview that timed out on some 9.1 builds, upload size caps, and images that went stale after patches. Practitioners reported publishing to a server just to see whether a change worked. The Local Configuration extension is IBM's answer to that loop.
+
+<aside>
+
+⚠️ **Read this before you plan around Local Configuration.** The extension is **early access**, IBM describes it as **not for production use**, it is **IBM proprietary software** usable only with a valid MAS license, and the project site offers it **AS IS**. At the time of writing the latest release is **v0.0.1-beta.6 (2026-09-22)**, it is distributed through GitHub Releases rather than the Marketplace, and it **cannot create or clone applications** - you still need Application Configuration for that. Everything this series says about it is tagged accordingly, and Part 5 lists the open GitHub issues (notably the Windows build failure caused by the offline npm mirror). Nothing here should be read as a support commitment from IBM or from us.
+
+</aside>
+
+---
+
+## 🧩 Part-by-Part Guide
+
+### Part 1: What Is the Maximo Application Framework?
+
+**Read Part 1 - [What Is MAF?](/blog/mas-maf-dev-01-what-is-maf)** · 16 minutes
+
+The foundation: one framework, two delivery surfaces (offline-capable Maximo Mobile and online Role-Based Applications), and the architecture IBM describes as XML transformed into ReactJS applications and stored as zip files in a BLOB column of `MAFAPPDATA`.
+
+**You learn:** why "MAF = Graphite" is a safe mental model; the application inventory (which apps are MAF and which are still classic Application Designer screens, including the list of back-office apps that are not moving); what MAF replaced (Maximo Anywhere, Work Centers) and why neither migrates; and how to confirm the app IDs on your own system with `GET /graphite/configtool/packages` or `SELECT APPID FROM MAFAPPDATA`.
+
+### Part 2: Anatomy of app.xml
+
+**Read Part 2 - [Anatomy of app.xml](/blog/mas-maf-dev-02-app-xml-anatomy)** · 18 minutes
+
+The file you will edit most. A downloaded app is a project with `src/app.xml`, included XML files, `AppCustomizations.js`, `i18n/labels.json` and, from 8.11, an auto-generated `app.delta.xml`.
+
+**You learn:** the skeleton (`maximo-application`, `pages`, `states`, `dialogs`); the three datasource types (`maximo-datasource`, `json-datasource`, `custom-datasource`) and the properties that matter (`saved-query`, `where`, `page-size`, `pre-load`, `offline-immediate-download`); why `id` values must never be edited, attribute names must be lowercase and declaration order matters; and how to read a schema against an object structure such as `MXAPIWODETAIL`. A short taste of what the part works through:
+
+```xml
+<maximo-datasource id="woListDS" object-structure="MXAPIWODETAIL" saved-query="ASSIGNEDWORK">
+  <schema>
+    <attribute name="wonum" searchable="true" id="attr_001"/>
+    <attribute name="description" searchable="true" id="attr_002"/>
+  </schema>
+</maximo-datasource>
+```
+
+### Part 3: Controllers and AppCustomizations.js
+
+**Read Part 3 - [Controllers and AppCustomizations.js](/blog/mas-maf-dev-03-controllers-appcustomizations)** · 18 minutes
+
+The only supported place for custom JavaScript, and the reason your customizations can survive a fix pack. IBM's own wording is that `AppCustomizations.js` "persists through upgrades".
+
+**You learn:** the lifecycle hooks (`applicationInitialized`, `pageInitialized`, `pageResumed`, `onBeforeLoadData`, `onAfterSaveData` and friends) and the order they fire; event bubbling from component to datasource to page to application controllers; the support tiers (app.xml supported, AppCustomizations.js supported, separate controller classes "limited support", edited OOTB controllers unsupported); how to wrap an existing controller method safely; and community recipes for setting a field from a button, restricting work order statuses and building a hierarchical classification lookup.
+
+### Part 4: From Docker to Desktop
+
+**Read Part 4 - [Three Generations of MAF Tooling](/blog/mas-maf-dev-04-tooling-generations)** · 17 minutes
+
+The tooling history with the receipts: commands, versions, defects and the practitioner quotes that explain why IBM kept changing the model.
+
+**You learn:** the `docker run` pattern and entitlement-key login for `maf-tools`; how Application Configuration is enabled (persistent volume, access mode, `MAFCONFIGADMIN`); the 9.2 improvements IBM reports (zip upload auto-creating deltas, a FIFO queue for preview and publish, downloadable logs, a claimed 50-80% faster preview build); the known-defect table; and a decision guide for which generation to use for which job. Note that several 9.1 and 9.2 claims in this part rest on IBM Documentation pages, which we re-checked where IBM's content API allowed, and flag where we could not.
+
+### Part 5: Hands-On with MAF Local Configuration
+
+**Read Part 5 - [Local Configuration in VS Code and IBM Bob](/blog/mas-maf-dev-05-local-configuration-handson)** · 20 minutes
+
+The longest part and the one most readers will bookmark. A step-by-step workflow on the early-access extension, from install to publish, including the things that are not in IBM's quick-start.
+
+**You learn:** prerequisites (VS Code 1.74+ or IBM Bob, Node.js 20+, and Yarn, which the build and preview tasks shell out to); the install script and why regulated shops should download and verify the VSIX instead of piping a script into bash; the three authentication methods (OIDC with a PKCE client, username and password, API key) and the rule that API keys work against the Manage URL while OIDC uses the MAS Home URL; why registering the OIDC client needs cluster-level secrets once and should be a platform-team task; the offline npm mirror that makes or breaks `yarn build`; the preview server on `localhost:3000`; the publish pipeline; and the open issues. Where IBM's site and the extension's code disagree (for example the offline-cache location), the part says so instead of picking a winner.
+
+### Part 6: Debugging MAF Apps
+
+**Read Part 6 - [Debugging MAF Apps](/blog/mas-maf-dev-06-debugging)** · 16 minutes
+
+A practical debugging toolbox, because MAF failures rarely announce themselves. An invalid `app.xml` can save with no error and then hang the publish.
+
+**You learn:** the `?_graphite_logLevel=trace|debug|info|warn|error` URL parameter; tagged logging with `this.app.log.d(TAG, ...)`; the server-side `streamLog` endpoint; mapping a DOM id in the browser inspector back to a component id in `app.xml`; checking what is really deployed through `/maximo/oslc/graphite/<app>/build.json`; mobile device inspection with `chrome://inspect`; what to do when a publish does not show up in the RBA; and the defect table by reference number.
+
+### Part 7: Offline by Design
+
+**Read Part 7 - [Offline by Design](/blog/mas-maf-dev-07-offline-data)** · 17 minutes
+
+The part that explains why "it worked in the browser" is not a test result for a mobile app.
+
+**You learn:** the preloaded reference database and how datasources opt in; the mobile master schema, which Maximo merges by object rather than by datasource id (which is why duplicating object structures causes trouble); `offline-immediate-download`, `download-page-size` and `mobile-qbe-filter`; cross-app data sharing introduced in 9.2.0; how errored transactions surface; and a device test checklist. Open questions in IBM's material, such as conflict-resolution rules and how a device detects a new app version, are marked as unverified rather than guessed.
+
+### Part 8: Ship It
+
+**Read Part 8 - [Promoting and Upgrading MAF Apps](/blog/mas-maf-dev-08-promotion-upgrades)** · 19 minutes
+
+The admin-tier part, and the one that saves the most pain. IBM states that Migration Manager cannot move a Maximo Mobile or Role-Based (Graphite) application from one environment to another, so you need a deliberate strategy.
+
+**You learn:** the `MAFAPPDATA` columns and revision behavior; why there is no IBM-documented revert and what the unofficial SQL approach risks; the promotion options compared (republish a Git workspace per environment, manual copy, REST upload, CI/CD); the delta model for upgrades (`diff` to create a delta against the original, `apply` to bring it forward) and the 9.2 behavior of generating deltas for all XML files; the security grants (`MAFCONFIGADMIN`, `OSLCMAFAPPDATA`); and a Git-driven release flow.
+
+### Part 9: AI-Assisted MAF
+
+**Read Part 9 - [AI-Assisted MAF](/blog/mas-maf-dev-09-ai-assisted-maf)** · 16 minutes
+
+The extension bundles a Graphite MCP server and a "MAF Config" mode for IBM Bob. This part evaluates both honestly, including the open issues where the MCP server edited out-of-the-box JavaScript files, which IBM's own support policy forbids.
+
+**You learn:** what the bundled `@maximo/graphite-mcp-server` and the MAF Config mode's skill catalog do; the review guardrails for AI-authored MAF changes (restrict edits to `app.xml` and `AppCustomizations.js`, never let an agent rewrite component ids, require a Git pull request that includes `app.delta.xml`, publish only from a reviewed commit, test offline behavior on a device); and where agent-neutral MCP assets such as Max_mcp and Max_Interfaces complement it on the data and API side. Whether IBM's MCP server works from non-Bob agents is unverified, and the part says so.
+
+---
+
+## 🧭 Recommended Reading Paths
+
+### Maximo Developer / Configurator
+**"I have a change request for a MAF app."**
+Read **Part 1 → Part 2 → Part 3 → Part 5 → Part 6.** Learn the model, the file, the JavaScript seam, then the tool, then how to debug what you built. Add Part 7 the moment the app runs on a device.
+
+### Mobile Lead
+**"I own the field experience."**
+Read **Part 1 → Part 7 → Part 6 → Part 8.** Start with what is and is not MAF, then the offline data model, debugging, and the release process that keeps devices consistent.
+
+### MAS Platform Admin
+**"I own the pod, the PVC and the groups."**
+Read **Part 4 → Part 8 → Part 5.** Start with the three generations and how Application Configuration is enabled, then promotion and upgrade, then the one-time platform tasks (OIDC client registration, security grants) that Local Configuration puts on your plate.
+
+### Architect / Tech Lead
+**"I own the customization strategy."**
+Read **Part 1 → Part 3 → Part 8 → Part 9.** Decide how much custom MAF work to carry, how it is reviewed, and what the guardrails are if AI agents contribute changes. Read Part 4 for the support-status picture.
+
+### New to Maximo Development
+**"I know the business, not the stack."**
+Start with MAS-MANAGE Part 2, then **Parts 1 → 2 → 6**, and come back for Parts 3 and 5 once you have broken something.
+
+---
+
+## 💡 Key Themes Across the Series
+
+**Two supported seams, and everything else is on you.** App XML and `AppCustomizations.js` are what IBM supports and what survives upgrades. Every part repeats the same discipline: stay in those two files, keep IBM's component ids untouched, and treat edits to out-of-the-box controllers as a decision to merge by hand at every release.
+
+**Duplicate or modify in place - decide once.** If you configure the default app, an upgrade archives it and the new version becomes active; if you configure a duplicate (say `TECHMOBILE` to `MYTECHMOBILE`), IBM does not touch it, but it falls behind and you bring your configuration forward with deltas. Parts 4 and 8 give the trade-off, and Part 5 notes that the local tool cannot clone, so the duplicate is made in Application Configuration first.
+
+**The browser is not the device.** A localhost preview does not exercise the offline path. Parts 6 and 7 build a device-testing habit because datasource, lookup-data and `mobile-qbe-filter` changes behave differently once data is on a handset.
+
+**Source control is the missing safety net.** Because there is no Migration Manager and no IBM-documented revert, Git plus a publish pipeline is the only reliable history. Local Configuration is the first IBM tool that makes that natural, which is why it gets two parts.
+
+**Vendor claims are labelled.** Performance figures, support statements and roadmap items come from IBM's own documentation and site and are tagged IBM-reported; they are not independently audited. Items that rest on a single weak source (the live-reload mechanism, whether a three-way merge UI exists, whether the Graphite MCP server works outside Bob, conflict-resolution rules) are carried as open questions, not facts.
+
+---
+
+## ✅ What We Re-Verified for This Index
+
+The research base for this series was assembled on 2026-10-16, when IBM Documentation returned HTTP 403 and several 9.1 and 9.2 claims rested on cached copies. For this index we re-checked what we could on 2026-10-19:
+
+| Claim | Check | Result |
+|---|---|---|
+| `container` deprecated in 8.10 (use `box` / `border-layout`), `page-header` deprecated in 8.11 (use `header-template`), `chat-log` deprecated in 9.2 | IBM Documentation content API page "Deprecated Maximo Application Framework components" | Confirmed |
+| Latest Local Configuration release is v0.0.1-beta.6 (2026-09-22) | GitHub releases API for ibm-mas/maf-local-dev-mode | Confirmed; no newer tag |
+| Local Configuration requires Node.js 20.0.0 or higher | Project install page | Confirmed |
+| Migration Manager cannot migrate applications between environments | IBM MAS user guide text (local knowledge base) | Confirmed in the knowledge-base copy; the IBM support technote body is login-gated and not re-read |
+| Offline cache location (`~/.maximo-dev-tools/cache/` per the site vs `offline-mirror/` per the extension code) | Not resolvable from public pages | **Still open**; Part 5 carries the hedge |
+
+Where Parts 4 and 8 rely on further 9.1 and 9.2 IBM Documentation claims, they will be re-checked at drafting time and the hedge kept if IBM's pages cannot be reached.
+
+---
+
+## 🧰 How to Use This Series
+
+- **Starting your first MAF change?** Read Parts 1 to 3, then open the app in Application Configuration and compare what you see with Part 2's skeleton.
+- **Evaluating Local Configuration?** Read Part 4 for context and Part 5 for the workflow, and run it on a development environment only, with the pristine download committed to Git first.
+- **Planning a release process?** Go straight to Part 8, then read Part 7 so your test plan includes a real device.
+- **Inheriting a heavily customized app?** Read Part 3's support tiers first, to find out how many customizations sit in unsupported places, then Part 8's delta section.
+- **Piloting AI on MAF?** Read Part 9, and keep the guardrails list on the review checklist.
+
+---
+
+## References
+
+- [IBM Documentation - Deprecated Maximo Application Framework components](https://www.ibm.com/docs/api/v1/content/SSRHPA_cd/appsuite/appconfig/deprecated_maximo_application_framework_components.html)
+- [IBM Support - IBM Maximo Mobile architecture](https://www.ibm.com/support/pages/ibm-maximo-mobile-architecture)
+- [IBM Support - Migrating mobile application configuration](https://ibm.com/support/pages/migrating-mobile-application-configuration)
+- [IBM Support - Configuring and customizing IBM Maximo Mobile](https://www.ibm.com/support/pages/configuring-and-customizing-ibm%C2%AE-maximo%C2%AE-mobile)
+- [IBM Maximo Application Framework Configuration Practices](https://ibm-maximo-dev.github.io/configuration-practices-documentation/)
+- [IBM Maximo Application Framework Local Configuration - project site](https://ibm-mas.github.io/maf-local-dev-mode/)
+- [ibm-mas/maf-local-dev-mode - GitHub repository, releases and issues](https://github.com/ibm-mas/maf-local-dev-mode)
+- [MRM-EAM - Bringing MAF development back to your desktop: IBM's new local configuration tools](https://mrm-eam.com/bringing-maximo-application-framework-development-back-to-your-desktop-ibms-new-local-configuration-tools/)
+- [TRM Group - Getting started with the Maximo Application Framework](https://trmgroup.com/resource/getting-started-with-the-maximo-application-framework-maf)
+- [Maximo Secrets - Maximo User Interface 9.1](https://maximosecrets.com/2025/08/15/maximo-user-interface-9-1/)
+
+---
+
+## Start the Series
+
+Begin with **[Part 1 - What Is the Maximo Application Framework?](/blog/mas-maf-dev-01-what-is-maf)**, or jump to the part your role needs using the reading paths above. Coming from the Work Centers story? Read **[MAS-MANAGE Part 2](/blog/mas-manage-work-centers-to-rba)** first for the business context, then return here for the engineering.
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | October 2026*
+
+<!--
+Editorial note for human review: Index drafted before Parts 1-9 exist; part links point to the planned
+slugs in automation/off-hours/queue.json (maf-01 through maf-09) and will 404 until those posts land.
+Source: knowledge_base/DOC17_MAF_LOCAL_DEVELOPMENT_FIELD_GUIDE.md. Re-verified 2026-10-19 via the IBM
+content API (deprecations: container 8.10, page-header 8.11, chat-log 9.2) and GitHub releases
+(beta.6 still latest). Still hedged per DOC17 section 17: offline cache location (site vs code), live-reload
+mechanism, three-way merge UI, Graphite MCP with non-Bob agents, RBAs online-only, conflict-resolution rules.
+Local Configuration is early access, AS IS, IBM proprietary. "50-80% faster preview" is an IBM-reported
+claim from the cached 9.2 what's-new page; not re-fetched. Cross-link slugs verified against posts/ on disk:
+mas-manage-work-centers-to-rba, mas-bob-04-bob-and-maximo, mas-92-upgrade-watchlist,
+mas-java-extensions-series-index, mas-manage-maximo-mobile.
+-->
