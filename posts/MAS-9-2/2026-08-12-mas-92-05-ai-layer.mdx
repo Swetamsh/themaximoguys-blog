@@ -2,6 +2,7 @@
 title: "The AI Layer in MAS 9.2: What IBM Documented, What It Only Announced, and What Nobody Can Verify Yet"
 description: "IBM framed MAS 9.2 around asset-first AI and agentic workflows. This is an evidence-tiered assessment of what that actually means — the agentic Maximo Assistant, the Maximo MCP server, AI-generated insights with confidence scores, RAG lease extraction, watsonx Orchestrate in Maximo IT, and AI Service AppPoint tracking — separating what product documentation confirms from what only the announcement claims."
 date: "2026-08-12"
+updatedAt: "2026-10-20"
 slug: "mas-92-ai-features"
 tags: ["Maximo", "MAS 9", "MAS 9.2", "AI Service", "Maximo Assistant", "MCP", "watsonx Orchestrate", "AppPoints", "EAM"]
 draft: false
@@ -144,6 +145,15 @@ This also changes the failure mode you should test for, and it is worth being bl
 
 One more documented detail that the suite what's-new does not mention: **the assistant is available in the Maximo Mobile app**, provided the assistant is configured for Manage and the user has permission to access it. IBM's Mobile 9.2 documentation notes it currently works **online only** — no offline assistant. For a mobile technician population working in areas with poor connectivity, that constraint is not a footnote, it is the deployment plan.
 
+> **Update (October 2026): what IBM has said since this post was published.**
+>
+> - **The agent has a name and a tool list.** IBM's Think article of 12 August 2026, *Working smarter with agentic workflows in Maximo Assistant*, describes a **Supervisor ALM agent** that orchestrates four kinds of tools: knowledge search, product-guidance RAG, data retrieval and condition insights. That answers the "what is in the tool set" question above, at least for IBM's own tools.
+> - **It can write, through MCP.** The same article describes write actions going **through the Maximo MCP server**, with examples of changing work order status, creating follow-up work orders and creating service requests. These are IBM's only documented write examples. Anything else, such as creating items, raising purchase requisitions or issuing inventory, is a tool you build and govern yourself.
+> - **Automation scripts as tools is still future tense.** The article says "you will also be able to use any of your automation scripts as custom tools". Treat that as announced, not shipped.
+> - **Data scope is every Manage object.** The April 2026 Feature Channel entry "AI assistant supports all objects" lets the assistant find data for any Manage object and its child objects, including custom objects. Defaults cover assets, service requests, work orders, meters, PMs, work logs, assignments, job plans and persons. The same entry noted that the agentic option was "not fully available and is not usable in the feature channel" at that point, so confirm agentic behaviour on your exact 9.2 build.
+>
+> Sources: [IBM Think, 12 Aug 2026](https://www.ibm.com/think/perspectives/working-smarter-agentic-workflows-maximo-assistant), [MAS Feature Channel what's new](https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-in-maximo-application-suite-feature-channel).
+
 ---
 
 ## 🔌 The Maximo MCP Server: The Most Consequential Item in the Release
@@ -189,6 +199,8 @@ Three rules we would apply to a first implementation:
 3. **Log every tool invocation with its arguments.** When an agent produces a wrong answer, the only way to diagnose it is to see which tools it called and what they returned.
 
 IBM does not publish a catalogue of pre-built tools here, which means the design responsibility — and the security responsibility — is yours. That is the trade-off for the flexibility.
+
+> **Update (October 2026):** Since publication, IBM's own agent has been described writing through this server (work order status, follow-up work orders, service requests; see the Think article above). The server runs as an `<instance>-mcp` deployment on OpenShift, and external agents connect through its route with a Maximo API key or access token. ansible-devops 37.x added an MCP route to the Manage DNS entries. Because the built-in assistant and your custom tools share this server, scaling it down or restricting the route can affect the assistant too. We cover the controls in [Securing MAS for AI agents and MCP](/blog/mas-secops-securing-ai-agents-mcp). Separately, keep **AI Service** on its own patch line: AI Service **9.2.3** shipped with Manage 9.2.4 on 29 September 2026 and fixes CVE-2026-15687 ([IBM bulletin](https://www.ibm.com/support/pages/node/7290472)). IBM's 5 October 2026 bulletin ([7290833](https://www.ibm.com/support/pages/node/7290833)) gives the same fixed versions (9.1.19 / 9.2.3) for the critical CVE-2026-90920 (CVSS 9.8, code injection), with no workaround, so treat 9.2.3 or later as the floor.
 
 ---
 
@@ -343,7 +355,7 @@ Seven moves, in the order we would actually make them.
 - **Agentic means tool selection over a defined set**, not autonomy. The right question is what is in the tool set — and the failure mode to test for is the agent choosing the wrong tool and answering confidently.
 - **The high/medium/low confidence score on alert insights is what makes them operationalisable.** It is an evidence measure, not a probability — calibrate it on your own assets before automating anything.
 - **AI Service AppPoint consumption is now trackable**, turning AI into a measurable cost line. IBM publishes no per-feature ratio, so measure with a small enablement rather than forecasting.
-- **Several announced capabilities are not documented, and the Granite-to-GPT-OSS model swap is unverified.** Plan against the documented set; ask IBM directly for the model bill of materials.
+- **Several announced capabilities are not documented.** The Granite-to-gpt-oss-120b move *is* documented (January 2026 Feature Channel, opt-in, with Granite 3.2 8b Instruct deprecated 25 November 2025). Plan against the documented set, and ask IBM directly for the model bill of materials for your build.
 
 ---
 
@@ -382,6 +394,10 @@ Documented in IBM product documentation: agentic Maximo Assistant, AI-generated 
 - [What's new in Maximo Real Estate and Facilities 9.2 (IBM Documentation)](https://www.ibm.com/docs/SSZBD7_cd/topics/mref_whats_new_92.html)
 - [What's new in Maximo Visual Inspection 9.2 (IBM Documentation)](https://www.ibm.com/docs/SSRU69_cd/base/whats_new_92.html)
 - [What's new in Maximo Health and Predict 9.2 (IBM Documentation)](https://www.ibm.com/docs/SS7PRM_cd/com.ibm.ah.doc/overview/whats_new_92.html)
+- [What's new in the MAS Feature Channel (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-in-maximo-application-suite-feature-channel)
+- [Working smarter with agentic workflows in Maximo Assistant (IBM Think, 12 August 2026)](https://www.ibm.com/think/perspectives/working-smarter-agentic-workflows-maximo-assistant)
+- [IBM Security Bulletin: Maximo AI Service, CVE-2026-15687 (IBM Support 7290472)](https://www.ibm.com/support/pages/node/7290472)
+- [Maximo Application Suite releases information (IBM Support)](https://www.ibm.com/support/pages/maximo-application-suite-releases-information-0)
 
 ---
 

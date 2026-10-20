@@ -1,7 +1,8 @@
 ---
-title: "AI Assist & Optimizer: Generative AI and Mathematical Scheduling in MAS 9"
-description: "How Maximo AI Assist uses watsonx.ai for natural language queries, WO creation, and field recommendations — plus Optimizer's constraint-based scheduling with route optimization. Also covers Civil Infrastructure and Parts Identifier."
+title: "AI Assistant & Optimizer: Generative AI and Mathematical Scheduling in MAS 9"
+description: "How the watsonx-powered Maximo Assistant and AI Service handle natural language queries and field recommendations — plus Optimizer's constraint-based scheduling with route optimization. Also covers Civil Infrastructure and Parts Identifier."
 date: "2026-03-17"
+updatedAt: "2026-10-20"
 slug: "mas-features-ai-assist-optimizer"
 tags: ["Maximo", "MAS 9", "MAS Features", "AI Assist", "Optimizer", "watsonx", "Generative AI", "Scheduling", "Route Optimization", "Civil Infrastructure"]
 draft: false
@@ -13,14 +14,14 @@ authorTitle: "Maximo Technical Team"
 authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across industries."
 authorCredentials: ["IBM Certified Maximo Consultants", "Cloud-Native Architecture Specialists"]
 faqs:
-  - question: "Can AI Assist create work orders from plain English?"
-    answer: "Yes. You can say 'The HVAC unit is making noise and not cooling, fix today' and AI Assist will draft a work order with the appropriate asset, work type, priority, description, failure class, and problem code."
+  - question: "Can the Maximo Assistant create work orders from plain English?"
+    answer: "Not as a documented native feature in 9.1. The assistant answers questions over enabled Maximo objects, and AI Service separately recommends field values such as problem codes on work orders. In MAS 9.2, IBM describes an agentic assistant whose write actions (changing work order status, creating follow-up work orders, creating service requests) go through the Maximo MCP server. Drafting a complete work order from one sentence, as in the example in this post, is a pattern you build and govern with 9.2 MCP tools and a human confirmation step. It is not an out-of-the-box capability."
   - question: "What does Maximo Optimizer actually optimize?"
     answer: "Optimizer balances multiple constraints — technician skills, tools, travel time, WO priority, parts availability, SLAs, and dependencies — to create optimal schedules. It can minimize cost, maximize completed work, reduce travel, or balance workload."
   - question: "Does Optimizer require ArcGIS?"
     answer: "ArcGIS integration enables route optimization with real road network data and traffic-aware travel estimates. Optimizer works without ArcGIS but travel optimization is limited to straight-line distance calculations."
 keyTakeaways:
-  - "AI Assist enables natural language queries, WO creation, and field recommendations via watsonx.ai"
+  - "The Maximo Assistant (not the legacy Maximo Assist product, now Maximo Collaborate) answers natural language queries over Maximo data, and AI Service adds field recommendations; actions in 9.2 go through MCP tools"
   - "MAS 9.1 adds field value recommendations with confidence scores and similar record detection"
   - "Optimizer solves NP-hard scheduling problems with constraint programming — 20-30% travel time reduction typical"
   - "Civil Infrastructure provides regulatory-compliant bridge/road/tunnel inspection with LVMs"
@@ -29,9 +30,9 @@ series:
   name: "MAS FEATURES"
   part: 14
   total: 25
-tldr: "AI Assist brings generative AI to Maximo — natural language queries, WO creation from plain English, and field recommendations via watsonx.ai. Optimizer solves scheduling with constraint programming and route optimization. Together they complete the MAS AI ecosystem."
-seoTitle: "MAS 9 AI Assist & Optimizer: GenAI and Scheduling Guide"
-seoDescription: "Complete guide to Maximo AI Assist (watsonx.ai natural language, WO creation, field recommendations) and Optimizer (constraint-based scheduling, route optimization, ArcGIS)."
+tldr: "The Maximo Assistant and AI Service bring generative AI to Maximo: natural language queries, field recommendations via watsonx.ai, and (in 9.2) agentic actions through MCP tools. Optimizer solves scheduling with constraint programming and route optimization. Together they complete the MAS AI ecosystem."
+seoTitle: "MAS 9 AI Assistant & Optimizer: GenAI and Scheduling"
+seoDescription: "Guide to Maximo Assistant (watsonx.ai natural language, field recommendations) and Optimizer (constraint-based scheduling, route optimization, ArcGIS)."
 proficiencyLevel: "intermediate"
 pillarSlug: "mas-features-series-index"
 relatedSlugs:
@@ -39,7 +40,7 @@ relatedSlugs:
   - "mas-features-apppoints-roadmap"
 ---
 
-# AI Assist and Optimizer: Generative AI and Mathematical Scheduling in MAS 9
+# AI Assistant and Optimizer: Generative AI and Mathematical Scheduling in MAS 9
 
 > **Who this is for:** Maximo administrators, functional leads, and IT architects evaluating the AI and optimization capabilities in MAS 9 — whether you are planning a pilot, building a business case, or trying to understand what these applications actually do under the hood.
 
@@ -59,9 +60,18 @@ We will also cover two additional applications in this part — Civil Infrastruc
 
 ## AI Assist: Generative AI Comes to Maximo
 
+> **Update (October 2026): naming and scope corrections.** In this post, "AI Assist" is shorthand for IBM's **Maximo Assistant** and the AI Service features around it. It is **not** the legacy **Maximo Assist** product: that was the MAS 8.x technician-assistance and remote-expert add-on, which became **Maximo Collaborate** in 9.1 and an add-on inside Maximo Manage in 9.2. What IBM actually documents:
+>
+> - **Assistant scope:** in 9.1 it answers questions about assets, work orders and service requests by default. Since the April 2026 Feature Channel it can find data for **any Manage object and its child objects, including custom objects**, once they are enabled.
+> - **Actions:** the 9.1 assistant is read-and-answer. In 9.2 it can act as a single agent over a defined set of AI tools. IBM's documented write examples are changing work order status, creating follow-up work orders and creating service requests, all through the **Maximo MCP server**. Anything else, including drafting a full work order from one sentence, is something you build as an MCP tool from automation scripts, object structures or workflows, with human confirmation.
+> - **Not IBM-documented as Assistant features:** the PM optimization recommendations, document-repository knowledge search across your own manuals, and step-by-step troubleshooting below. Read those subsections as TMG's view of where the capability is heading, not as shipped features. SME video collaboration belongs to Maximo Collaborate.
+> - **Mobile:** the assistant is available in Maximo Mobile 9.2, **online only**.
+>
+> Sources: [MAS 9.2 what's new](https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-whats-in-maximo-application-suite-92), [Feature Channel what's new](https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-in-maximo-application-suite-feature-channel), [IBM Think: agentic workflows in Maximo Assistant](https://www.ibm.com/think/perspectives/working-smarter-agentic-workflows-maximo-assistant).
+
 ### The watsonx.ai-Powered Conversational Interface
 
-Maximo AI Assist — and the broader Maximo Assistant capability — brings generative AI directly into the maintenance workflow. Powered by IBM watsonx.ai foundation models, it replaces complex search filters and multi-screen navigation with a conversational interface.
+The Maximo Assistant (IBM's watsonx-powered generative assistant, introduced in Manage 9.1) brings generative AI directly into the maintenance workflow. Powered by IBM watsonx.ai foundation models, it replaces complex search filters and multi-screen navigation with a conversational interface.
 
 Instead of building a query in the List tab with six WHERE clauses, a planner types:
 
@@ -97,6 +107,8 @@ AI Assistant:
 
   "I've drafted this work order. Would you like me to submit it?"
 ```
+
+> **Update (October 2026):** The exchange above is **illustrative**. IBM does not document one-sentence work order drafting as a native Assistant feature. On MAS 9.2 you can build it as a custom MCP tool (an object structure or automation script that creates the work order in WAPPR), with the agent proposing and a human confirming before anything is written.
 
 Think about what the AI is doing here. It identified the asset from a location description ("3rd floor of Building B"). It inferred the work type from the problem description. It set priority based on the urgency language ("today"). It selected the appropriate failure class and problem code from the organization's configured failure hierarchy. It resolved the location code. All from one sentence of plain English.
 
@@ -155,7 +167,7 @@ This is particularly valuable for organizations facing the skilled trades shorta
 
 ### Field Value Recommendations with Confidence Scores
 
-MAS 9.1 introduces AI-native field value recommendations directly within the Manage interface. When users are filling out records — work orders, service requests, assets — the AI recommends values for key fields:
+MAS 9.1 introduces AI-native field value recommendations directly within the Manage interface. When users are filling out records, the AI recommends values for key fields. IBM documents this for **work orders**; treat the field list below as indicative and check which fields your AI configuration actually covers:
 
 | Field | How AI Recommends |
 |---|---|
@@ -184,7 +196,7 @@ This is a practical solution to the duplicate work order problem that every larg
 
 ### Multi-Language Support
 
-AI recommendations work across all supported languages in MAS 9.1. A technician entering a work order description in Spanish receives the same quality of field recommendations as one working in English. This matters for global operations where maintenance teams operate in multiple languages but share the same Maximo instance.
+*Update (October 2026): corrected.* IBM states that AI Service training and output data is currently **English**. Do not assume equal recommendation quality for descriptions entered in other languages. Pilot with your real multilingual data before committing global teams to it.
 
 ---
 
@@ -202,6 +214,8 @@ Understanding how AI Assist works under the hood matters for planning and deploy
 |                   |     | Feedback Loop     |     | Predict            |
 +-------------------+     +-------------------+     +-------------------+
 ```
+
+> **Update (October 2026):** The diagram and component table below are TMG's conceptual view, not IBM component names. What IBM documents: **AI Service** replaced the earlier **AI broker** (from 1 August 2025, broker users must uninstall it and deploy AI Service 9.1). It bundles limited-use watsonx.ai and consumes AppPoints. Similarity features use an embedding model, and since the January 2026 Feature Channel you can run the `mcc`, `pcc`, `fmea` and `nl2oslc` (assistant) templates on **gpt-oss-120b**. **IBM Granite 3.2 8b Instruct was deprecated on 25 November 2025.** The current patch level is AI Service 9.2.3, released with Manage 9.2.4 on 29 September 2026.
 
 The AI Service consists of several components:
 
@@ -429,7 +443,7 @@ The system also suggests alternative or substitute parts when the exact match is
 
 ## Key Takeaways
 
-- **AI Assist is the most significant change in how users interact with Maximo since the web interface** — natural language queries, work order creation from plain English, and AI-powered field recommendations change the daily experience for planners, technicians, and supervisors
+- **The Maximo Assistant is the most significant change in how users interact with Maximo since the web interface** — natural language queries over any enabled object, AI-powered field recommendations, and (in 9.2) agentic actions through governed MCP tools change the daily experience for planners, technicians, and supervisors
 - **The feedback loop is the key to AI value** — every accepted or rejected recommendation makes the model more accurate for your organization. Plan for the retraining cycle, not just the initial deployment
 - **Optimizer replaces manual scheduling with mathematical optimization** — constraint programming that considers skills, tools, travel, priorities, parts, SLAs, and dependencies simultaneously
 - **ArcGIS integration transforms travel optimization** from straight-line estimates to real road network routing with traffic awareness
@@ -440,7 +454,10 @@ The system also suggests alternative or substitute parts when the exact match is
 
 ## References
 
-- [IBM Maximo AI Assist Documentation](https://www.ibm.com/docs/en/mas-cd/maximo-manage/continuous-delivery?topic=applications-ai-assist)
+- [Enabling Maximo Assistant — IBM Documentation](https://www.ibm.com/docs/en/masv-and-l/cd?topic=features-maximo-assistant)
+- [What's new in the MAS Feature Channel — IBM Documentation](https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-in-maximo-application-suite-feature-channel)
+- [What's new in Maximo Application Suite 9.2 — IBM Documentation](https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-whats-in-maximo-application-suite-92)
+- [Working smarter with agentic workflows in Maximo Assistant — IBM Think](https://www.ibm.com/think/perspectives/working-smarter-agentic-workflows-maximo-assistant)
 - [IBM watsonx.ai Platform](https://www.ibm.com/products/watsonx-ai)
 - [IBM Maximo Optimizer Documentation](https://www.ibm.com/docs/en/mas-cd/maximo-manage/continuous-delivery?topic=applications-optimizer)
 - [Esri ArcGIS for Maximo](https://www.esri.com/en-us/arcgis/products/arcgis-for-ibm-maximo)
