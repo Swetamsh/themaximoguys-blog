@@ -1,0 +1,611 @@
+---
+title: "Ship It: Promoting and Upgrading MAF Apps Without Migration Manager"
+description: "An admin's guide to shipping Maximo Mobile and Role-Based (MAF) applications: MAFAPPDATA revisions, why there is no official revert, security grants, six promotion options, delta diff and apply commands, Migrate prior configurations, the 9.2 delta changes and a Git-driven release flow."
+date: "2026-10-20"
+slug: "mas-maf-dev-08-promotion-upgrades"
+tags: ["Maximo", "MAS", "MAF", "Graphite", "Maximo Mobile", "Promotion", "Upgrade", "Delta Files", "MAFAPPDATA", "Administrator", "Git"]
+draft: true
+tier: "admin"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-maf-dev-08-promotion-upgrades.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Can I use Migration Manager to promote a Maximo Mobile or Role-Based application from dev to test to production?"
+    answer: "No. IBM's support technote on migrating mobile application configuration states that Migration Manager functionality cannot migrate a Maximo Mobile or Role Based (Graphite) application from one Maximo environment to another (IBM-reported; the full article is login-gated, so we quote only its public abstract). The reason is architectural: a MAF app is not a set of Manage metadata rows, it is a zipped build stored as a binary in the MAFAPPDATA table. Migration Manager moves metadata packages, not that blob. A community workaround exists that points a Migration Manager object structure at the latest MAFAPPDATA row, but it runs into the mxe.doclink.maxfilesize limit and is not supported, so we would not build a release process on it. The supported options are in the promotion table in this post: republish the same workspace to each target, copy app.xml and AppCustomizations.js, upload the built zip over REST, or automate the same steps in CI/CD."
+  - question: "How do I roll back a bad MAF publish?"
+    answer: "There is no IBM-documented revert action. Every publish inserts a new MAFAPPDATA row with the next revision number and status ACTIVE, and re-downloading an app in Application Configuration only discards your unpublished local edits (IBM-reported). A Maximo partner, MRM-EAM, published a method in September 2026 that uses SQL to set the older revision to ACTIVE and the current one to DISABLE and then republishes; that method is unofficial, so test it in a non-production environment and take a database backup first. If your source is in Git, the practical revert is simpler and safer: git revert the bad commit, rebuild and publish again, which creates a new ACTIVE revision containing the old behaviour. That is the strongest argument for putting MAF source under version control."
+  - question: "What does the Migrate prior configurations action actually do?"
+    answer: "From the user's side, it takes an app you customized in an earlier release, detects that a newer version of the app has been deployed, and applies your customizations to the newer version (IBM-reported). In MAS 9.1 IBM changed the source of the customization from local files to the zip stored in the database, which is why the process became automated. What it does internally, the exact merge algorithm and how it decides what to keep, is not documented, so we do not describe it. Three practitioner-relevant caveats are documented: the action was reported disabled for duplicated apps after upgrade to 9.1.1 (DT451534, listed as fixed in the November 2025 feature channel and the 9.1.6 readme), a later July 2026 readme lists another disabled-option report (DT471585), and an IBM Ideas response confirms the 9.1.5 feature does not retain XML comments or attribute order. Review the result of every migration before you publish it."
+  - question: "What changed about delta files in MAS 9.2?"
+    answer: "IBM's 9.2 what's-new for Application Configuration says delta file generation is more reliable and complete. Delta files are now generated during publishing for all XML files, custom files added from the src directory and internationalization files from public/i18n are included in migration, and delta files now support code-comment elements, which helps upgrade and migration scenarios (IBM-reported, read from IBM's 9.2 what's-new text cached on 2026-08-12). The same page says that when you upload a compressed application package, delta files are created and updated automatically, with no manual save per file, and that publish works immediately after the upload. We have not re-read the Delta file overview page itself, because IBM Docs returned HTTP 403 to our tooling, so treat the exact element syntax as something to confirm on your own 9.2 environment."
+  - question: "Is a Git-driven release flow supported by IBM?"
+    answer: "Git itself is outside IBM's product, so there is nothing for IBM to support or not support, but the pieces it relies on are IBM's own. The MAF Local Configuration extension, which is early-access, AS IS and IBM proprietary software, builds a normal package and posts it to the same configtool endpoint that creates a new MAFAPPDATA revision as any other publish does (derived from the extension's code and IBM's CPD FAQ). The supported-by-IBM parts are the publish paths themselves: Application Configuration, UpdateDB, maxdev-cli upload-app and the REST upload. A practitioner-built GitHub action, bmarchewka/mas-maftool-app-publish, automates the Docker route on 9.0 and the Application Configuration REST API on 9.1. Our recommended flow keeps the app source in Git, uses one environment connection per target, and treats every publish as a deployment with an owner, a ticket and a rollback commit."
+keyTakeaways:
+  - "Migration Manager cannot move Maximo Mobile or Role-Based (Graphite) apps between environments (IBM technote ibm17045770); a MAF app is a zipped build stored in MAFAPPDATA, so promotion is a publish operation, not a metadata migration"
+  - "Every publish inserts a new MAFAPPDATA revision set to ACTIVE; there is no IBM-documented revert, the partner SQL swap is unofficial, and a git revert plus republish is the practical rollback"
+  - "Promotion has six options (republish per target, copy app.xml and AppCustomizations.js, REST upload, 9.1 zip upload, CI/CD, unsupported Migration Manager workaround); the right default is republishing the same Git workspace to each target"
+  - "Upgrades are a two-step delta model: create a delta of your changes against the original, then apply it to the new version; Gen 1 uses graphite-tools diff and apply, 8.11+ auto-generates app.delta.xml, and 9.1+ uses Migrate prior configurations"
+  - "MAS 9.2 generates delta files at publish for all XML files and includes custom src and public/i18n files in migration; MAF Local Configuration is early-access, AS IS, IBM proprietary, and what Migrate prior configurations does internally is undocumented"
+series:
+  name: "MAS MAF-DEV"
+  part: 8
+  total: 9
+tldr: "MAF apps cannot be promoted with Migration Manager, because an app is a zipped build stored as a MAFAPPDATA revision rather than Manage metadata. Every publish adds a revision set to ACTIVE; IBM documents no revert, so keep source in Git and rollback by git revert plus republish (a partner's SQL swap exists but is unofficial). Grant MAFCONFIGADMIN, OSLCMAFAPPDATA and every new object structure before first publish. Promote by republishing the same workspace to each environment, by REST upload of the build zip, or by CI/CD. Upgrade with the two-step delta model: diff your changes against the original, apply them to the new version. 9.1 automated this as Migrate prior configurations, and 9.2 generates deltas for all XML at publish. MAF Local Configuration is IBM's early-access, AS IS, proprietary tool and is not production-supported. Internals of the migrate action are undocumented, so always review the merged result before you ship."
+seoTitle: "Promote and Upgrade MAF Apps Without Migration Manager"
+seoDescription: "Promote and upgrade Maximo Mobile and Role-Based MAF apps: MAFAPPDATA revisions, no official revert, delta diff and apply, 9.2 changes, Git flow."
+targetQuestions:
+  - "How do I promote a Maximo Mobile app from dev to production?"
+  - "Can Migration Manager migrate Maximo Mobile or Role-Based applications?"
+  - "How do I revert a MAF application to a previous version?"
+  - "What is MAFAPPDATA in Maximo?"
+  - "How do I upgrade a customized Maximo Mobile app to a new MAS version?"
+  - "What does Migrate prior configurations do in Application Configuration?"
+  - "How do MAF delta files work?"
+  - "What security groups does Application Configuration need?"
+semanticKeywords:
+  - "MAFAPPDATA"
+  - "OSLCMAFAPPDATA"
+  - "MAFCONFIGADMIN"
+  - "Migrate prior configurations"
+  - "app.delta.xml"
+  - "graphite-tools diff apply"
+  - "maxdev-cli upload-app"
+  - "Migration Manager Maximo Mobile"
+  - "Application Configuration upload-files"
+  - "Maximo Mobile promotion dev test prod"
+  - "MAF rollback revision"
+  - "ibm17045770"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 4 of this series: the three generations of MAF configuration tooling"
+  - "Part 5 of this series if you want the Git-driven local workflow"
+  - "Admin access to a non-production MAS Manage environment with Application Configuration"
+  - "Database access to read (not edit) the MAFAPPDATA table in a test environment"
+speakableSections:
+  - "Why Migration Manager Cannot Help"
+  - "MAFAPPDATA: Every Publish Is a Revision"
+  - "The Two-Step Delta Model"
+clusterSlugs:
+  - "mas-maf-dev-00-series-index"
+  - "mas-maf-dev-04-tooling-generations"
+  - "mas-maf-dev-05-local-configuration-handson"
+  - "mas-maf-dev-07-offline-data"
+relatedSlugs:
+  - "mas-manage-work-centers-to-rba"
+  - "mas-bob-04-bob-and-maximo"
+  - "mas-92-upgrade-watchlist"
+  - "mas-java-extensions-series-index"
+---
+
+# Ship It: Promoting and Upgrading MAF Apps Without Migration Manager
+
+<aside>
+
+🎯 **Who this is for:** Maximo and MAS administrators who own the release process for Maximo Mobile and Role-Based Applications; configurators who have finished a change in dev and now have to get it into test and production; upgrade leads who need to know what happens to customized MAF apps when Manage moves to a new version; and DevOps engineers asked to "put MAF in the pipeline."
+
+</aside>
+
+**Series:** MAS MAF-DEV | **Part 8 of 9** | Previous: [Part 7 - Offline by Design](/blog/mas-maf-dev-07-offline-data) | Next: Part 9 - AI-Assisted MAF
+
+---
+
+## 🔥 The Friday Deploy With No Undo Button
+
+You spent three weeks on a customized Technician app. Dev is clean, UAT signed off, and the change window is tonight. You open Migration Manager, the tool you have used for fifteen years to move everything else, and you look for the package that carries a Maximo Mobile app.
+
+It is not there. It never was.
+
+That is the first surprise of shipping MAF applications, and the second one arrives at 9 p.m. when the publish goes through, the first technician logs in, and the work order list is empty. You reach for the revert button. There is no revert button.
+
+> *"We always had Migration Manager. Now we have a zip file and a prayer."*
+
+This is a solvable problem, and it is mostly a process problem, not a product gap you have to live with. Once you understand what a MAF app really is on the server (a versioned zip in one table), the release process becomes obvious: build it from source you control, publish it to each environment on purpose, and keep the previous build one command away.
+
+This part covers the full ship-it story: what is stored where, the security you need before the first publish, six ways to promote, the **two-step delta model** that carries your customizations across upgrades, the 9.1 and 9.2 changes, and a Git-driven release flow you can adopt this month.
+
+<aside>
+
+⚠️ **Status and sourcing, stated once.** **MAF Local Configuration** (the VS Code and IBM Bob extension from Part 5) is IBM's **early-access**, **AS IS**, **IBM proprietary** tooling. It is not a production-supported product. Where this post describes publishing from it, that is derived from the extension's code and IBM's own FAQ, and we flag it. **IBM-reported** means IBM documentation, IBM support pages, release notes and readmes; **practitioner-reported** means IBM Community threads and partner sources. Several items are **unverified** in our research base (DOC17 section 17), and we do not state them as fact: what Migrate prior configurations does internally, the body of IBM technote ibm17045770 (login-gated), and the exact permission behind a `MAFCONFIG` entry seen in one 9.1 pod log. IBM Docs returned HTTP 403 to our tooling on 16 October 2026, so the 9.1 and 9.2 claims below rest on IBM text cached on 12 August 2026, the local copy of the IBM Manage and Application Suite user guide, and IBM support pages and readmes we re-read through search on 20 October. Where we could not re-open the original, we say so.
+
+</aside>
+
+By the end you will be able to:
+
+1. Explain what MAFAPPDATA stores and why every publish is a deployment you can inspect.
+2. State plainly what can and cannot be reverted, and set up the rollback that actually works.
+3. Grant the exact security a publishing user and a runtime user need.
+4. Pick the right promotion method for your team from six options.
+5. Run the two-step delta model by hand and recognize it inside Migrate prior configurations.
+6. Adopt a Git-driven release flow and a go-live checklist.
+
+---
+
+## 🧭 Why Migration Manager Cannot Help
+
+Migration Manager works on **metadata**: object definitions, application designer XML, domains, conditions and other rows in the Manage database that it can package, compare and replay in another environment. A classic Application Designer screen is exactly that kind of thing.
+
+A MAF application is something else. When you publish from Application Configuration, from the local extension, or from the old Docker tool, what lands in Manage is a **built, zipped application** stored as a binary in a table. The runtime unpacks that zip and serves it. There is no row-per-control metadata for Migration Manager to read.
+
+IBM says it directly in its technote on migrating mobile application configuration (ibm17045770, June 2026):
+
+> *"Migration Manager functionality cannot migrate a Maximo Mobile or Role Based (Graphite) application from one Maximo environment to another."*
+
+(IBM-reported. We could read only the public abstract; the technote body is behind an IBM login, which is the reason DOC17 lists it as a low-priority gap.)
+
+<aside>
+
+💡 **Key insight:** Stop thinking "migrate the app" and start thinking "publish the build." A MAF release is a deployment of an artifact, closer to shipping a WAR file than to moving configuration rows. Treat it with the same discipline.
+
+</aside>
+
+There is a related trap on the other side of the fence. The things a MAF app *depends on* **are** Manage metadata: object structures, security groups and sigoption grants, domains, saved queries, and any new fields the app reads. Those still travel with Migration Manager (or whatever your normal metadata process is). The MAF zip travels separately, so a clean release has two lanes that must land in the right order:
+
+| Lane | What it carries | How it moves | Order |
+|---|---|---|---|
+| **Metadata lane** | New or changed object structures, fields, domains, security grants, saved queries, cron settings | Migration Manager or your normal metadata process | First |
+| **App lane** | The built MAF zip: `app.xml`, `AppCustomizations.js`, lookups, i18n, components | Publish, REST upload or CI/CD | Second |
+| **Verification lane** | Device test, preview check, log review | Humans plus Part 6 and Part 7 habits | Last |
+
+If the app lane lands first, the app references an object structure that does not exist yet, and you get the empty-screen failure from the opening story.
+
+---
+
+## 🗄️ MAFAPPDATA: Every Publish Is a Revision
+
+The table that holds your application is **MAFAPPDATA**. Everything in this part makes more sense once you have read its columns.
+
+| Column | Meaning | Why an admin cares |
+|---|---|---|
+| `APPID` | The app, for example `TECHMOBILE` or your duplicate's id | Identifies what the row is |
+| (binary) | Zip BLOB of the built app | The actual artifact the runtime serves |
+| `VERSION` | Taken from `build.json` | Compare against what you think you shipped |
+| `REVISION` | Increments with every insert | Your deployment counter |
+| `CHECKSUM` | Integrity value for the package | Detects a corrupted or altered upload |
+| `STATUS` | `ACTIVE` or `DISABLE` | Which revision is live |
+| `DEPLOYBY`, `DEPLOYDATETIME` | Who published and when | Your free audit trail |
+| `ISMOBILE` | Whether the app is pushed to devices | A duplicate's "Mobile?" flag is **off** by default |
+
+IBM states the rule in its CPD FAQ: every insert creates a new revision set to ACTIVE, **whether through UpdateDB, `maxdev-cli upload-app`, or the Configuration Application (through a publish)** (IBM-reported). Through 9.1 the Application Configuration dashboard showed only the active version. Our reading of the extension's code is that the Local Configuration publish does the same, because it posts the package to the same `configtool/packages/{appId}/binary` endpoint (derived from code; the extension is early-access, AS IS and IBM proprietary).
+
+You can read the table for a quick audit. This query is read-only and safe to run in any environment; the column names are the ones DOC17 records from IBM's FAQ, so confirm them against your own schema first:
+
+```sql
+-- Who deployed what, newest first, for one app (read-only)
+SELECT appid, version, revision, status, ismobile, deployby, deploydatetime
+FROM   mafappdata
+WHERE  appid = 'TECHMOBILE'
+ORDER  BY revision DESC;
+```
+
+Two things to look for. First, **exactly one ACTIVE row per app**. Second, whether `DEPLOYDATETIME` and `DEPLOYBY` match the change ticket. If someone published straight to production on a Tuesday, this is where it shows.
+
+The `ISMOBILE` flag deserves its own sentence, because it bites duplicates. If you duplicate an app and publish it, the duplicate's **Mobile?** flag defaults to off, which means the server will not push it to devices. The publish succeeds, the revision is ACTIVE, and nobody's phone ever sees it. Add "Mobile? is on" to your go-live checklist.
+
+---
+
+## ↩️ Revert: What Exists and What Does Not
+
+Here is the sentence you need in your runbook: **IBM does not document a revert action for MAF applications.** Re-downloading an app in Application Configuration only discards your unpublished edits; it does not roll back a published revision (IBM-reported). An IBM Ideas request asks for the option to select between specific versions through a History screen in the MAF Configuration tool, which tells you the capability was not there when it was filed.
+
+So what do you do at 9 p.m. when the publish is bad?
+
+| Rollback method | How it works | Status | Our view |
+|---|---|---|---|
+| **Git revert and republish** | Revert the bad commit, rebuild, publish; a new revision is created with the old behaviour | Works with any tool; uses only supported publish paths | **Default.** Safest and auditable |
+| **Republish the previous build zip** | Keep every released zip as a pipeline artifact; upload the last good one with REST or `upload-app` | Supported publish path | Good for CI/CD shops |
+| **SQL status swap** | Set the older revision `STATUS='ACTIVE'` and the current one to `DISABLE`, then republish | **Unofficial.** Published by partner MRM-EAM on 2026-09-09 (practitioner-reported) | Emergency only, in non-prod first, with a DB backup |
+| **Re-download in Application Configuration** | Discards unpublished edits only | IBM-documented, but not a rollback | Does not help after a publish |
+
+The SQL swap deserves a clear warning. It edits a table IBM owns, it bypasses whatever the publish path does besides inserting a row, and IBM has not said it is safe. We would not use it on production without an IBM support case open, and we would not build a process around it. If you are tempted, ask why you do not have the last good zip.
+
+<aside>
+
+💡 **Key insight:** The cheapest rollback is the one you rehearsed. Publish a deliberately trivial change to test, then roll it back with your chosen method, and time it. If that drill takes more than ten minutes, fix the process before the real deployment, not during it.
+
+</aside>
+
+One more nuance: a rollback creates a **new** revision, so `REVISION` keeps climbing and your history is a log, not a stack. That is fine. It is also why `DEPLOYBY` and a ticket number in your commit message matter: the table tells you *that* a revision was published, not *why*.
+
+---
+
+## 🔐 Security: Grants to Check Before the First Publish
+
+Most "my publish works but nobody can use the app" tickets are security tickets. The table below consolidates the grants that DOC17 records from IBM documentation.
+
+| Need | Grant | Source |
+|---|---|---|
+| Use Application Configuration (9.1+) | Membership of the `MAFCONFIGADMIN` group (the group name is configurable) | IBM-reported |
+| Read and write app packages | Authorization on the `OSLCMAFAPPDATA` object structure | IBM-reported |
+| Edit settings (Gen 1, Docker tool) | `WPEDITSETTING` | IBM-reported |
+| Run a published app | Assign security groups on the first publish; duplicates inherit the source app's security | IBM-reported |
+| Datasource objects | Grant every **new** object structure your datasources use | IBM-reported |
+| 9.2 cloned and custom apps | "Entitlements for cloned and custom applications" (a 9.2 security-groups feature) | IBM-reported |
+| A `MAFCONFIG` permission | Seen in a 9.1 pod log only | **Unverified**, do not rely on it |
+
+The OSLCMAFAPPDATA grant is the one people miss, because it is not an application sigoption. IBM's Application Suite guide walks through it: open Object Structures, select OSLCMAFAPPDATA, and grant the Application Configuration user group access to it (IBM-reported). If you automate with REST, the service account needs that grant too.
+
+The runtime side is the mirror image. Mobile apps read through object structures, and Manage's own security tables for the shipped Mobile apps list OSLCMAFAPPDATA with READ for the mobile security groups (visible in IBM's Inspections and Issues and Transfers app sections of the Manage guide). So the runtime user needs to *read* MAFAPPDATA, and the publishing user needs to *write* it.
+
+A practical security checklist for any MAF release:
+
+1. Does the publishing identity belong to `MAFCONFIGADMIN` in the **target** environment (not just in dev)?
+2. Is OSLCMAFAPPDATA authorized for that group in the target?
+3. Does every new object structure used by a new datasource exist in the target, and does each runtime security group have access to it?
+4. If this is a duplicate: was security assigned at first publish in the target, and is **Mobile?** on?
+5. On 9.2, if the app is cloned or custom: is the entitlement assigned?
+
+---
+
+## 🚚 Promotion: Six Ways to Get an App From Dev to Prod
+
+IBM's own wording is the starting point: Migration Manager cannot do it. What you can do falls into six options. They differ mainly in *where the source of truth lives*.
+
+| # | Method | How it works | Notes | Source |
+|---|---|---|---|---|
+| 1 | **Republish the same workspace to each target** | Point the tool at the target environment and publish. With the local extension, keep one connection per environment, driven from Git | Our default. The artifact is rebuilt per target, so pin tool and framework versions | IBM-reported, practitioner-reported |
+| 2 | **Copy `app.xml` and `AppCustomizations.js` between workspaces, then publish** | IBM's documented manual migration (9.0 and earlier). Duplicated apps must be duplicated in **both** environments first | Misses anything else you changed (lookups, i18n, components) | IBM-reported |
+| 3 | **REST upload of the built zip** | `POST /maximo/api/os/OSLCMAFAPPDATA?appid=INSPECTION&action=wsmethod:uploadFile&version=9.0.0.0`, body is the zip of `{workspace}/{user}{app}/build/app`. IBM says it is "not environment specific" | Builds once, deploys many. Good for pipelines | IBM-reported |
+| 4 | **9.1 zip "Upload file"** | Upload through Application Configuration; keep the `<APPID>/` folder structure. A Windows `application/x-zip-compressed` type was rejected (technote). **500 KB cap** reported through 9.1.7; the 413 errors were fixed in 9.2 | Mind the size on large cloned apps | practitioner-reported, IBM-reported |
+| 5 | **CI/CD** | `bmarchewka/mas-maftool-app-publish`: uses the Docker `maf-tools` on 9.0; on 9.1 uses the Application Configuration REST API `/config/server/application/{appId}/upload-files` and `/upload-status` | Community-built, not IBM-supported | practitioner-reported |
+| 6 | **Migration Manager on MAFAPPDATA** | A community workaround: an object structure with a where clause that selects the latest row. Hits `mxe.doclink.maxfilesize` | **Not supported.** Do not build on it | practitioner-reported |
+
+### Choosing between them
+
+- **Small team, one or two apps:** option 1. Keep the workspace in Git, switch the connection, publish. Nothing exotic to maintain.
+- **Many apps, regulated change control:** option 3 or 5, so you build once and promote the *same bytes*. The artifact that passed UAT is the artifact that reaches production, which is what auditors mean by "no changes after test."
+- **A duplicated app with no source control:** option 2 as a stopgap, then fix the root cause by putting the source in Git.
+- **Never option 6** for production. If you find it in someone's runbook, move it to the "known unsupported" list.
+
+### Build once or rebuild per target?
+
+Options 1 and 3 look similar and behave differently. Republishing a workspace rebuilds the app against the target's framework and libraries, so two environments on different 9.1 patch levels can produce slightly different builds from identical source. Uploading a single zip promotes identical bytes, but the zip was built against the *dev* environment's framework. For most teams this does not matter. If your dev, test and prod environments run different patch levels, pick one rule and write it down, and make the version in `build.json` part of your release record.
+
+### A REST upload, concretely
+
+The shape below follows IBM's published endpoint. Treat the host, app id, version and token as placeholders for your environment, and test it against a non-production target first:
+
+```bash
+# Upload a built MAF app zip to a target Manage environment (IBM-reported endpoint)
+curl -sS -X POST \
+  -H "apikey: ${MAXIMO_API_KEY}" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @TECHMOBILE-build.zip \
+  "${MANAGE_URL}/maximo/api/os/OSLCMAFAPPDATA?appid=TECHMOBILE&action=wsmethod:uploadFile&version=9.1.0.0"
+```
+
+Notes: the API key authenticates against the Manage URL (Part 5 explains why OIDC uses the MAS Home URL instead). Keep the key in a secrets store and pass it through an environment variable, never in the script. The `version` value should match the `build.json` version you intend to record. After the call, query MAFAPPDATA as shown earlier and confirm the new row is ACTIVE and the previous one is not.
+
+---
+
+## 🧮 The Two-Step Delta Model
+
+Promotion moves *your* build between environments of the same version. **Upgrade** is harder, because the base app itself changes underneath you. IBM's own description of why:
+
+> *"In either scenario, you bring forward configurations to the latest version."* (IBM-reported)
+
+Here is the situation. An upgrade or fix pack replaces the **default** apps. If you configured the default app, IBM archives your version and activates the new one. If you configured a **duplicate**, IBM does not touch it, but it falls further behind the original with every release. Either way, your changes have to be carried forward.
+
+IBM's answer has always been the same two steps:
+
+1. **Create a delta** that records your changes relative to the original IBM version.
+2. **Apply the delta** to the new IBM version.
+
+```
+ ORIG (IBM v8.10)        CONF (your edits on v8.10)
+        \                      /
+         \                    /
+          ───── diff ────────┘
+                  │
+            DIFF (delta XML)  ← only YOUR changes
+                  │
+          apply onto new ORIG (IBM v8.11)
+                  │
+        CONF on v8.11  (+ log of ADD/REMOVE/MODIFY/MOVE, warnings)
+```
+
+This is why the **original** matters. The delta is a diff of *your configured file against IBM's unmodified file*, so you need IBM's original for the version you started from. In the manual era you kept three folders (`ORIG/`, `CONF/`, `DIFF/`); from 8.11 the tool keeps the original in an `ibm-config` subdirectory so it can generate the delta for you.
+
+### What a delta looks like
+
+A delta is a transaction-style XML script, not a copy of your file:
+
+```xml
+<updatescript version="">
+  <app apptype="maf" id="TECHMOBILE">
+    <add before="xd5k8" container="w224k" control="attribute">
+      <set property="id" value="jvggb"/><set property="name" value="risk"/>
+    </add>
+    ...
+```
+
+Each entry says *add this control before that control inside that container*, or remove, modify or move something. Because it addresses controls by **id**, IBM's instruction in the Application Suite guide is strict: **do not change component ID values in the XML of default Maximo Mobile applications.** Change an id and the delta no longer finds its anchor.
+
+### Generation 1, manual (8.10 to 8.11)
+
+For the Docker tool, IBM's documented commands look like this (shown as published for 8.10/8.11; tag versions and paths are examples):
+
+```bash
+# 1. Create the delta of your changes against the original
+docker run -it --privileged \
+  --entrypoint "/graphite/scripts/graphite-tools.js" \
+  --workdir /graphite/app -v ~/810to811:/graphite/app \
+  cp.icr.io/cp/manage/maf-tools:8.11 \
+  diff --original 810ORIG/TECHMOBILE/app.xml \
+       --modified 810CONF/TECHMOBILE/app.xml \
+       --deltaOutput 810DIFF/TECHMOBILE/app.xml -d
+
+# 2. Apply the delta to the new original
+docker run -it --privileged \
+  --entrypoint "/graphite/scripts/graphite-tools.js" \
+  --workdir /graphite/app -v ~/89to810:/graphite/app \
+  cp.icr.io/cp/manage/maf-tools:8.10 \
+  apply --delta 89DIFF/TECHMOBILE/app.xml \
+        --input 810ORIG/TECHMOBILE/app.xml \
+        --output 810CONF/TECHMOBILE/app.xml -d
+```
+
+(The second example in IBM's guide walks an 8.9-to-8.10 upgrade, which is why the folder names differ. The pattern is the point: `diff` then `apply`.) Both commands need an IBM entitlement key to pull the image from `cp.icr.io`, covered in Part 4.
+
+### Reading what `apply` tells you
+
+`apply` logs each change as **ADD**, **REMOVE**, **MODIFY** or **MOVE**, and emits warnings such as:
+
+```
+Cannot MOVE control ... NOT_FOUND_ERR
+```
+
+IBM's guidance is that a warning like that usually means the target component was **deprecated** in the new version. You do not fix the delta; you re-implement your change on the component that replaced it. Part 2 and the IBM deprecated-components page (listed in References) tell you which components went away. **XML comments are not preserved** by this process (IBM-reported), so move any documentation you care about out of comments and into your Git history.
+
+### 8.11 and later: the tool does it for you
+
+From 8.11, IBM says Application Configuration automatically creates delta files such as `app.delta.xml` next to your `app.xml`. To upgrade, copy the delta files from the previous version's workspace, **including subfolder content**, into the `/src` folder of the new workspace, and rename them so each contains `delta` in its name (`app.xml` becomes `app.delta.xml`; `wo-card-group.xml` becomes `wo-card-group.delta.xml`). Then choose **Upgrade** from the action menu, confirm that you want to apply the delta, read the **Upgrade results**, open the `app.xml.log` file to review what changed, and publish. The Upgrade action processes every delta XML file under `/src`, subfolders included (IBM-reported).
+
+---
+
+## ⬆️ Migrate Prior Configurations (9.1 and Later)
+
+With 9.1, IBM stopped asking you to carry files by hand. The Application Suite guide explains the change: earlier releases of Application Configuration relied on **local files** to upgrade; version 9.1 uses **the zip stored in the database**, because that zip was saved when you published (IBM-reported). That is a quiet but important consequence of MAFAPPDATA: the previous customization is already on the server.
+
+The procedure, per IBM's guide:
+
+1. Log into Maximo Application Suite and open **Application Configuration**.
+2. Open an application that was customized in a previous release.
+3. From the drop-down menu, choose **Migrate prior configurations**. A dialog tells you a newer version has been deployed and offers to import your earlier customizations.
+4. Click **Migrate prior configurations**. Your customizations are applied to the latest version.
+
+It is a two-minute operation when it works. This is what the practitioner record says about when it does not:
+
+| Issue | What is reported | Status | Source |
+|---|---|---|---|
+| Option disabled for duplicated apps after upgrade to 9.1.1 | "Migrate prior configurations" greyed out | DT451534; listed as fixed in the November 2025 feature channel and the 9.1.6 patch readme | IBM readmes (found via search, 20 Oct 2026) |
+| Option disabled again | A later report of the same symptom | DT471585; listed in the July 2026 9.1.20 readme; we did not confirm that its listed fix resolves it | IBM readme (found via search) |
+| Duplicates always warn on upgrade | The app id differs from the source app | DT421931, DT446654 (DOC17) | IBM-reported |
+| XML attribute order and comments not retained | Observed in 9.1.5; shows up as noise in Git history | IBM Ideas MASMOBILE-I-804: "candidate for a future release," 12 to 18 months | IBM Ideas |
+| Internal behaviour of the action | How it merges, and what it keeps on conflict | **Not documented.** We do not describe it | Unverified |
+
+While the duplicate bug was open, teams worked around it by running `node graphite-tools.js` by hand against the downloaded files, which is the Gen 1 model from the previous section. Knowing the manual version is therefore not nostalgia; it is your fallback.
+
+### What to do about the black box
+
+Because IBM does not document the internals, treat the output as **untrusted until reviewed**. A migration review is not complicated:
+
+1. Download the app before you migrate and commit it to Git (or copy the folder). That is your "before."
+2. Run **Migrate prior configurations** in the **test** environment.
+3. Download the migrated app and diff it against your "before" and against IBM's new original. In a Git workspace this is a normal diff.
+4. Read the migration log, if one is produced, and check that every customization you expect is still present.
+5. Only then publish onward.
+
+The review step is exactly where the MAF Local Configuration extension earns its keep. Its Check for Configuration Migration and Migrate Configuration from Previous Version commands (alpha.9 and later) copy `AppCustomizations.js` and `lookups.json` and apply deltas for both out-of-the-box and duplicated apps (derived from the extension's code). They run on your workstation, so you can look at the merged files in your editor *before* anything touches a server. Remember the status: that extension is early-access, AS IS and IBM proprietary, so use it for review and development on non-production environments and keep Application Configuration as the supported fallback.
+
+---
+
+## 🆕 What MAS 9.2 Changed
+
+IBM's 9.2 what's-new text for Application Configuration (cached 12 August 2026; the public IBM Docs page was not re-openable for this series) lists several changes that affect shipping and upgrading. Quoting IBM closely, because this is vendor-reported:
+
+| 9.2 change | What IBM says | Why an admin cares |
+|---|---|---|
+| **Delta migration improvements** | Delta file generation is "more reliable and complete." Delta files are generated during publishing for **all XML files** | Fewer silently dropped customizations on the next upgrade |
+| **Custom src and i18n in migration** | Custom files added from the `src` directory and internationalization files from `public/i18n` are included as part of migration | Your custom components and translations now travel too |
+| **`<code-comment>` support** | Support for `<code-comment>` elements added to delta files | Comments have a supported place in the delta model |
+| **Upload improvements** | When you upload a compressed application file, delta files are created and updated automatically, with no manual save per file; publish works immediately after the upload | A scripted zip upload now produces correct deltas |
+| **Preview and publish queue** | A queue runs preview and publish requests in sequence; you can see your position | Two admins publishing at once no longer collide |
+| **Downloadable preview and publish logs** | Logs can be downloaded from the UI | A deployment record you can attach to the change ticket |
+| **413 upload errors** | Fixed in 9.2 (practitioner-reported 500 KB cap through 9.1.7) | Large cloned apps can use zip upload |
+| **Entitlements for cloned and custom applications** | Cloned and custom apps can be given entitlement to operate within standard security, access and licensing | Add to your security checklist |
+
+Two cautions. First, we have **not** re-read IBM's *Delta file overview* page, so the exact syntax for `<code-comment>` in a delta is something to confirm in a 9.2 environment. Second, the 9.2.0 readme (June 2026) found through search lists fixes but did not mention Migrate prior configurations or delta files, so do not assume that 9.2 fixed every 9.1 migration quirk. Test with your own app.
+
+<aside>
+
+💡 **Key insight:** The 9.2 delta improvements matter most for the apps you *haven't* upgraded yet. If you publish a custom app from 9.2 onward, deltas for all its XML files are captured at publish. Apps last published on an older version only have the deltas that version produced.
+
+</aside>
+
+There is also a rule from the Part 9.2 upgrade watchlist (see Where This Connects) that applies here: `chat-log` is deprecated in MAS 9.2, so if your customization depends on it, the upgrade warning you see in `apply` or in the migration log is probably that.
+
+---
+
+## 🧱 A Git-Driven Release Flow
+
+Everything above points the same way: **the source of truth for a MAF app should be a Git repository, and a publish should be a deployment from it.** Here is a flow that works with the three generations of tooling, using the local extension where available.
+
+```
+ feature branch ──► pull request ──► main ──► tag vX.Y.Z
+      │                 │              │            │
+  edit app.xml      diff review     UAT build    publish to PROD
+  AppCustomizations  (humans, Bob)   to TEST      (same commit)
+```
+
+### Repository layout
+
+| Path | Contents | Notes |
+|---|---|---|
+| `apps/TECHMOBILE/` | The downloaded workspace for the app: `app.xml`, `AppCustomizations.js`, `lookups.json`, i18n, custom components | One folder per app |
+| `apps/TECHMOBILE/ibm-config/` | IBM's original files for the version you are on (where the tool creates them) | Needed for diffs; commit it |
+| `release/` | One folder per release with the built zip, or a manifest of its checksum | Your rollback artifact |
+| `docs/RELEASE.md` | The runbook: connections, order of lanes, rollback drill | Keep short |
+| `.gitignore` | `node_modules`, local cache, `.env` | Never commit credentials |
+
+Do not commit secrets. The extension's connection file and any API keys belong in a secrets store or in files outside the repository.
+
+### The steps
+
+1. **Branch and edit** in your editor, preview against the dev environment on `localhost:3000` (Part 5), and fix what the logs show (Part 6).
+2. **Device-test anything offline-relevant** (Part 7), because the browser preview never exercises the offline path.
+3. **Open a pull request.** Reviewers read an XML diff, which is far easier than reading screenshots of a browser editor. An AI assistant can summarize the diff, but a human approves it (Part 9).
+4. **Merge and tag.** The tag is the release identifier you will write in the change ticket.
+5. **Metadata lane first:** promote object structures, grants and domains to the target.
+6. **App lane:** publish the tagged commit to test with that environment's connection. Re-run the device tests.
+7. **Production:** publish the *same tag* to production in the change window; confirm the new MAFAPPDATA row is ACTIVE and `ISMOBILE` is correct.
+8. **Rollback ready:** keep the previous tag's build available. If the release fails, revert, rebuild and publish; do not rely on the unofficial SQL swap.
+
+### One connection per environment
+
+The local extension is built around **connections**: you create one per environment (dev, test, prod), and the same workspace can be pointed at each. That maps neatly onto option 1 of the promotion table. A good habit is to give production a distinct, restricted identity that only the release owner can use, so day-to-day developers physically cannot publish there. This is a practice we recommend, not an IBM requirement.
+
+### What the extension publishes
+
+According to the extension's code, a publish runs clean, build, a production build, delta generation, reads the version and description from `app.xml`, packages the app with `maxdev-cli package-app -a <app> -v <ver>`, and POSTs the zip to `/graphite/configtool/packages/{appId}/binary`. The result is a new ACTIVE revision, the same as any other publish (derived from code and IBM's CPD FAQ). It also performs a core-file hash check before publishing, to warn you if you modified protected core application files (the file-protection setting, on by default). Remember its status: early access, AS IS, IBM proprietary, and its GitHub issue tracker is the only independent signal we found.
+
+---
+
+## 🧰 Upgrade Playbook: From "We're On 9.1" to "We're On 9.2"
+
+A condensed runbook for carrying customized apps through a Manage upgrade:
+
+| Step | Action | Why |
+|---|---|---|
+| 1 | Inventory every customized app: default apps you configured and duplicates | The two behave differently on upgrade |
+| 2 | Export each app's current build from MAFAPPDATA and commit it | Your "before" and your rollback |
+| 3 | Check the published deprecations (IBM deprecated-components page; `chat-log` in 9.2) against each app's XML | You will see the warnings in `apply` anyway; find them earlier |
+| 4 | Upgrade a **test** environment first | Never discover merge problems in production |
+| 5 | Run **Migrate prior configurations** for each app, default and duplicate | In 9.1.1 the option was disabled for duplicates; check it is available |
+| 6 | Diff migrated apps against your "before" and IBM's new original | The migration is a black box; verify the output |
+| 7 | Re-implement anything a warning says was deprecated | Re-do the change on the replacement component |
+| 8 | Device-test offline paths | Datasource and lookup behaviour (Part 7) is the usual casualty |
+| 9 | Publish to the test environment, UAT, then promote with your normal flow | Same lanes, same order |
+| 10 | Keep the pre-upgrade build for at least one release cycle | Your rollback |
+
+### The cloned-app question nobody has answered
+
+Mark Fritz (GM) described in February 2026 a cloned GMTECHNICIAN app of over 20 MB, a 500 KB upload cap and no published guidance on whether to re-clone and re-apply deltas, or to migrate in place. As far as we could find, IBM has not answered that publicly. If you maintain a heavily cloned app, the safest posture is to decide *per app* whether the clone is worth carrying: a clone owns every future merge, while a small AppCustomizations.js on a default app rides along with IBM's updates. That connects directly to the support tiers in Part 3.
+
+---
+
+## 🩺 Troubleshooting a Release
+
+| Symptom | Likely cause | First check |
+|---|---|---|
+| Publish succeeds, app not on devices | Duplicate's **Mobile?** flag off; or security not assigned | `ISMOBILE` in MAFAPPDATA; security groups on the app |
+| Users get an empty screen after promotion | Object structure or grant missing in the target | Metadata lane landed first? OSLCMAFAPPDATA and datasource objects authorized? |
+| Publish rejected on upload | Size cap (500 KB through 9.1.7) or zip content type on Windows | Upload from Linux or macOS, or move to 9.2 where the 413 is fixed |
+| "Changes not reflecting after publish" | Stale cache or wrong revision ACTIVE | IBM technote ibm16988871; confirm exactly one ACTIVE row |
+| Migrate prior configurations greyed out | Known defects DT451534, DT471585 | Your patch level against the readme; fall back to the manual delta |
+| `apply` shows `NOT_FOUND_ERR` | Target control was deprecated | Find the replacement component, re-implement |
+| Customizations vanish after upgrade | A component id was changed, or an out-of-the-box controller was edited | Do not change ids in default apps; use AppCustomizations.js |
+| Git history noisy after migration | Attribute order and comments not preserved | IBM Ideas MASMOBILE-I-804; normalize XML in review |
+| Local extension build fails on `@maximo/maxdev-cli` | The offline mirror is missing | Part 5 offline mirror section |
+
+---
+
+## 🤖 Using AI Assistance on the Release Path (Carefully)
+
+The release path is a good place for an AI assistant, and a bad place to let one act alone.
+
+- **Good uses:** summarizing an XML diff for reviewers; drafting the release notes from a tag range; writing the runbook; spotting that a delta warning refers to a deprecated component and suggesting its replacement from the IBM list.
+- **Bad uses:** running a publish; running the SQL status swap; deciding that a migration "looks fine."
+
+Part 9 covers IBM Bob's MAF mode and the Graphite MCP server in detail, including reported issues where the MCP edited out-of-the-box JavaScript files. That is precisely the thing the delta model cannot protect you from, so the rule for the pipeline is simple: **an agent may propose a change in a branch; only a human with the release identity publishes.** The same advice appears in the MAS-BOB series.
+
+---
+
+## 🔗 Where This Connects
+
+- **[MAS-MANAGE Part 2: From Work Centers to Role-Based Applications](/blog/mas-manage-work-centers-to-rba)**: why RBAs exist at all, and why the apps you now have to ship replaced Work Centers.
+- **[MAS-BOB Part 4: Bob and Maximo](/blog/mas-bob-04-bob-and-maximo)**: using IBM Bob with Maximo, and the guardrails that apply to an assistant near a release.
+- **[MAS-9-2 Part 6: The 9.2 Upgrade Watchlist](/blog/mas-92-upgrade-watchlist)**: the deprecations (`chat-log`, the removed Role Based Applications menu) that your migration log will point at.
+- **[MAS-JAVA-EXTENSIONS Index](/blog/mas-java-extensions-series-index)**: the server-side counterpart. A MAF app's data comes from Manage; if your customization crosses into Java, it follows a different, stricter upgrade path.
+- **[Part 5: MAF Local Configuration](/blog/mas-maf-dev-05-local-configuration-handson)**: the tool behind the Git flow.
+- **[Part 7: Offline by Design](/blog/mas-maf-dev-07-offline-data)**: the device tests you owe a release.
+
+---
+
+## 📜 The Commandments of Shipping MAF
+
+1. **Thou shalt not trust Migration Manager with an app.** It cannot carry one.
+2. **Thou shalt keep the source in Git.** The database is a deployment target, not a repository.
+3. **Thou shalt promote metadata first, the app second.**
+4. **Thou shalt check `ISMOBILE` and security on every duplicate.**
+5. **Thou shalt rehearse the rollback** before the day you need it.
+6. **Thou shalt not edit MAFAPPDATA** in production without IBM support and a backup.
+7. **Thou shalt not change component ids** in default apps.
+8. **Thou shalt diff every migration** before you publish it.
+9. **Thou shalt device-test** what the browser cannot.
+10. **Thou shalt remember that Local Configuration is early-access, AS IS and proprietary,** and keep the supported path warm.
+
+---
+
+## 🗓️ Your Release Checklist This Week
+
+**Day 1:** Run the read-only MAFAPPDATA query in every environment. Is there exactly one ACTIVE row per app? Who deployed last?
+
+**Day 2:** Verify `MAFCONFIGADMIN` and OSLCMAFAPPDATA grants in test and prod, and `ISMOBILE` on every duplicate.
+
+**Day 3:** Download each customized app and commit it to Git, along with IBM's original where the tool provides it.
+
+**Day 4:** Rehearse the rollback in test: publish a trivial change, revert it with `git revert`, republish, time it.
+
+**Day 5:** Write the one-page runbook: lane order, who holds the production identity, who approves, where the previous build lives.
+
+**Next upgrade:** Run Migrate prior configurations in a test environment first and diff the result.
+
+---
+
+## 📚 References
+
+**IBM (vendor sources, IBM-reported)**
+
+1. IBM Support, *Migrating mobile application configuration* (ibm17045770; the public abstract states Migration Manager cannot migrate a Maximo Mobile or Role Based (Graphite) application between environments; body login-gated; fetched 2026-10-20): https://www.ibm.com/support/pages/node/7045770
+2. IBM Docs, *What's new in Maximo Application Suite 9.2* (delta migration improvements, upload improvements, preview and publish queue, entitlements for cloned and custom applications; read from the 2026-08-12 cache): https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-whats-in-maximo-application-suite-92
+3. IBM Docs, *Delta file overview*: https://www.ibm.com/docs/ja/masv-and-l/cd?topic=example-delta-file-overview and *Applying delta file, Maximo Mobile 8.11*: https://www.ibm.com/docs/en/masv-and-l/cd?topic=overview-applying-delta-file-maximo-mobile-811 (cited from DOC17; not re-opened, IBM Docs returned HTTP 403 on 2026-10-16)
+4. IBM, *Maximo Application Suite user guide, Application Configuration* (upgrade by delta file, Migrate prior configurations in 9.1, OSLCMAFAPPDATA authorization, REST uploadFile; local copy of the IBM user guide, Section 158 Parts 25-26)
+5. IBM Support, *Maximo Mobile MAF Configuration tool changes not reflecting after publishing* (ibm16988871): https://www.ibm.com/support/pages/maximo-mobile-maf-configuration-tool-changes-are-not-reflecting-maximo-mobile-after-publishing-changes
+6. IBM Support, *Readme file for Maximo Application Suite 9.2.0* (June 2026): https://www.ibm.com/support/pages/readme-file-maximo-application-suite-920
+7. IBM Docs, *Deprecated Maximo Application Framework components* (fetched 2026-10-20; confirms component deprecations, no delta text): https://www.ibm.com/docs/api/v1/content/SSRHPA_cd/appsuite/appconfig/deprecated_maximo_application_framework_components.html
+8. IBM Ideas, *MASMOBILE-I-804* (Migrate prior configurations does not retain XML attribute positions and comments, tested in 9.1.5): https://ibm-ai-apps.ideas.ibm.com/ideas/MASMOBILE-I-804
+9. IBM Support, *Maximo Application Suite 9.1.x readmes* (DT451534 in the 9.1.6 patch readme; DT471585 in the 9.1.20 readme): https://www.ibm.com/support/pages/readme-file-maximo-application-suite-916 and https://www.ibm.com/support/pages/readme-file-maximo-application-suite-9120
+10. IBM, *MAF Local Configuration* (early access, AS IS, IBM proprietary): https://ibm-mas.github.io/maf-local-dev-mode/ and https://github.com/ibm-mas/maf-local-dev-mode
+
+**Practitioner and community**
+
+11. MRM-EAM, *How to revert a role-based application to a previous version in Maximo Application Suite* (SQL status swap, 2026-09-09; unofficial): https://mrm-eam.com/how-to-revert-a-role-based-application-to-a-previous-version-in-maximo-application-suite/
+12. MoreMaximo, *Deploying MAF application changes across environments*: https://moremaximo.com/question/deploying-maf-application-changes-across-environments
+13. MoreMaximo, *Looking for updated guidance on upgrading custom mobile apps to MAS Manage 9.1.7* (M. Fritz): https://moremaximo.com/discussion/looking-for-updated-guidance-on-upgrading-custom-mobile-apps-to-mas-manage-917
+14. IBM Community, *MAS 9.1 MAF configuration tool error during zip file upload*: https://community.ibm.com/community/user/discussion/mas-91-maximo-application-framework-configuration-tool-error-during-zip-file-upload-action
+15. GitHub, `bmarchewka/mas-maftool-app-publish` (CI/CD publishing action, cited from DOC17; not re-opened this run)
+
+**TheMaximoGuys companion content**
+
+- [MAS-MAF-DEV Part 5](/blog/mas-maf-dev-05-local-configuration-handson) · [Part 7](/blog/mas-maf-dev-07-offline-data) · [MAS-MANAGE Part 2](/blog/mas-manage-work-centers-to-rba) · [MAS-BOB Part 4](/blog/mas-bob-04-bob-and-maximo) · [MAS-9-2 Part 6](/blog/mas-92-upgrade-watchlist) · [MAS-JAVA-EXTENSIONS Index](/blog/mas-java-extensions-series-index)
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams modernize their skills for the MAS era, with practitioner-to-practitioner guidance grounded in IBM documentation and field experience.
+
+<!--
+REVIEW NOTES FOR HUMAN (night-shift, 2026-10-20, item maf-08-promotion-upgrades):
+
+1. Re-verified this run: ibm17045770 public abstract (WebFetch of node/7045770 and search); 9.2 delta text (cached knowledge_base/MAS92-SOURCES/text/mas-92-whats-new.txt lines 266-315); upgrade by delta and Migrate prior configurations procedure (local IBM user guide, Section 158 Part 25-26); REST uploadFile endpoint (Part 26); DT451534/DT471585 and IBM Ideas MASMOBILE-I-804 via web search of IBM readmes and Ideas.
+2. NOT re-verified: IBM Docs Delta file overview page (403 in DOC17 gap #1; not re-opened); technote ibm17045770 body (login-gated, DOC17 gap #13); internals of Migrate prior configurations (gap #5, kept undocumented); MAFCONFIG permission (gap #4, kept unverified, not stated as fact); mas-maftool-app-publish repo and the 500 KB/413 claims (DOC17 only).
+3. The SELECT on MAFAPPDATA uses column names from DOC17 section 11.1 (IBM CPD FAQ); physical column names were not checked against a live schema. Flagged in the post.
+4. The curl example is an illustration of IBM's published endpoint; the 9.1 version parameter and header style are placeholders.
+5. DT471585 "fix in readme" was not confirmed to resolve the problem; post says so.
+6. Claim that the 9.2.0 readme does not mention Migrate prior configurations comes from a search summary, not a full read.
+7. MRM-EAM revert page is cited from DOC17 and via search; the search of 2026-10-20 did not return the page itself, so its content is still practitioner-reported by DOC17 only.
+8. Knowledge base wins: DOC17 says 9.2 delta for all XML; consistent with cached IBM text. No conflict found.
+9. Cover: see commit message; nanobanana headless key issue may block it.
+-->
