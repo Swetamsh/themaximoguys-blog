@@ -1,0 +1,700 @@
+---
+title: "Hands-On: MAF Local Configuration in VS Code and IBM Bob"
+description: "A practitioner walkthrough of IBM's early-access MAF Local Configuration extension: prerequisites, install, OIDC versus API-key sign-in, the offline mirror gotcha, preview on localhost:3000, the publish pipeline, commands, settings, a Git workflow and the open issues."
+date: "2026-10-19"
+slug: "mas-maf-dev-05-local-configuration-handson"
+tags: ["Maximo", "MAS", "MAF", "Graphite", "Local Configuration", "VS Code", "IBM Bob", "Maximo Mobile", "Developer", "Git"]
+draft: true
+tier: "developer"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-maf-dev-05-local-configuration-handson.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Which Node.js and editor versions does MAF Local Configuration need?"
+    answer: "IBM's public install page lists Node.js 20.0.0 or later, and either IBM Bob IDE or VS Code 1.74.0 or later with the bobide or code command on your PATH. Git is described as optional but recommended. Yarn is not in IBM's prerequisite list, but earlier research on the released package showed that build, preview and publish all shell out to yarn, so install it before your first build. The extension also needs internet access for installation and for authenticating to MAS. IBM does not publish an operating-system support matrix; the installer is a bash script, and the open Windows issue (#16 on the repository) shows that Windows needs extra care. Supported MAS versions are 9.1.21 and newer and 9.2.1 and newer (IBM-reported)."
+  - question: "Why does my API key not work when OIDC sign-in does?"
+    answer: "Because the two methods expect different URLs, which is the subject of open repository issue #5. A maintainer comment recorded in our research says OIDC works with the MAS Home URL, while an API key only works with the Manage URL, so use the Manage home URL for API-key connections. A 302 redirect problem for API-key sessions was fixed in beta.4, which also changed the call path from oslc to api, so first make sure you are on the latest release. If you still get 401 or 302 errors, check that the key belongs to a user whose security groups can read and write the OSLCMAFAPPDATA object structure, that API keys are enabled for the environment, and that you are not pasting a MAS URL into an API-key connection."
+  - question: "Why does yarn build fail with 'Not found' for @maximo/maxdev-cli?"
+    answer: "Because IBM's build packages are not published on the public npm registry, so a plain yarn install cannot resolve them. The extension is designed to compensate with an offline mirror: npm tarballs served by MAS that are downloaded into the workspace so yarn can install from them. When the mirror is missing or stale, yarn falls back to registry.yarnpkg.com and fails with a Not found error. Repository issue #16 (open, filed 4 October 2026, ASSETMOBILE on Windows) is exactly this. Run Refresh Offline Cache and the Health Check panel, use the Offline Mirror Docs button added in beta.6, confirm the workspace actually contains the mirror content, and re-download the app if it does not. This is the number one setup problem, so budget time for it in a pilot."
+  - question: "Can I use MAF Local Configuration to create a new app or clone TECHMOBILE?"
+    answer: "No. IBM states that the extension cannot create or clone applications and tells you to use the MAF configuration tool for that. On MAS 9.1 and later, that means duplicating the application inside Application Configuration (for example TECHMOBILE to MYTECHMOBILE), assigning security groups on the first publish, and only then downloading the duplicate into your local workspace. Duplicating is also the practice most practitioners recommend, because a duplicate is not overwritten by fix packs, although it then needs delta migration after upgrades. Plan the clone as a one-time platform step before developers start working locally."
+  - question: "Is it safe to publish from the extension to a shared environment?"
+    answer: "Technically it uses the same backend and creates the same result as Application Configuration: a new ACTIVE revision in the MAFAPPDATA table. Practically, you should treat it with the care its status demands. IBM offers the extension AS IS with no warranty, it is numbered v0.0.1-beta.6, and our research base records early-access and not-for-production wording that we could not re-confirm on the public pages on 19 October 2026. Publish to development first, from a reviewed Git commit, record the revision number, smoke-test on a real device or browser, and keep a git revert plus republish as your rollback. Avoid publishing while the preview server is still starting, and do not publish to production straight from an experiment."
+keyTakeaways:
+  - "MAF Local Configuration is IBM's AS IS, proprietary, early-access VS Code and IBM Bob extension (latest v0.0.1-beta.6, 2026-09-22); it supports MAS 9.1.21+ and 9.2.1+ and cannot create or clone apps"
+  - "Prerequisites are Node.js 20+, VS Code 1.74+ or IBM Bob, and in practice Yarn; piping install.sh into bash is a supply-chain risk, so regulated shops should install the VSIX manually"
+  - "OIDC sign-in uses the MAS Home URL; an API key reportedly needs the Manage URL (open issue #5). OIDC client registration needs privileged cluster secrets once, so make it a platform-team task"
+  - "The offline mirror is the number one gotcha: IBM's @maximo/maxdev-cli is not on public npm, so a missing mirror produces a yarn 'Not found' failure (open issue #16); the cache location is documented two ways and we hedge it"
+  - "A Git baseline commit of the pristine download, a localhost:3000 preview, and a reviewed publish to a new MAFAPPDATA revision give you the loop that Application Configuration lacked, but localhost preview never replaces a device test"
+series:
+  name: "MAS MAF-DEV"
+  part: 5
+  total: 9
+tldr: "IBM's MAF Local Configuration extension brings Maximo Application Framework development back to your desktop: install it into VS Code or IBM Bob, sign in to MAS (OIDC with the MAS URL, or an API key with the Manage URL), download a duplicated app, commit the pristine copy to Git, fix the offline mirror, run the preview on localhost:3000, edit app.xml and AppCustomizations.js, and publish a new MAFAPPDATA revision. It needs Node 20+ and Yarn, cannot create or clone apps, is offered AS IS and IBM proprietary, and is early access at v0.0.1-beta.6. The offline npm mirror is the top gotcha."
+seoTitle: "MAF Local Configuration Hands-On: VS Code and Bob"
+seoDescription: "Step-by-step guide to IBM's MAF Local Configuration extension: install, OIDC vs API key, offline mirror, localhost preview, publish and Git workflow."
+targetQuestions:
+  - "How do I install MAF Local Configuration for VS Code or IBM Bob?"
+  - "What are the prerequisites for Maximo Application Framework local development?"
+  - "Why does yarn build fail with @maximo/maxdev-cli not found?"
+  - "Which URL do I use for OIDC and which for an API key?"
+  - "How do I preview a Maximo Mobile app on localhost:3000?"
+  - "How do I publish a MAF app from VS Code to Maximo Manage?"
+  - "Can I put Maximo Mobile app customizations in Git?"
+semanticKeywords:
+  - "MAF Local Configuration"
+  - "maximo-developer-configuration-tools"
+  - "Local Dev Mode"
+  - "maxdev-cli"
+  - "offline mirror"
+  - "OIDC PKCE configtoolpkce"
+  - "yarn start localhost:3000"
+  - "GRAPHITE_PROXY_MANAGE_URL"
+  - "MAFAPPDATA revision"
+  - "IBM Bob MAF Config mode"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 4 of this series: the three generations of MAF tooling"
+  - "Parts 2 and 3: app.xml anatomy and AppCustomizations.js"
+  - "A non-production MAS 9.1.21+ or 9.2.1+ environment with Application Configuration enabled"
+  - "Node.js 20+, Yarn and VS Code or IBM Bob on a developer workstation"
+speakableSections:
+  - "Prerequisites and Install"
+  - "The Offline Mirror: Your First Gotcha"
+  - "Preview on localhost:3000"
+clusterSlugs:
+  - "mas-maf-dev-00-series-index"
+  - "mas-maf-dev-03-controllers-appcustomizations"
+  - "mas-maf-dev-04-tooling-generations"
+relatedSlugs:
+  - "mas-manage-work-centers-to-rba"
+  - "mas-bob-04-bob-and-maximo"
+  - "mas-92-upgrade-watchlist"
+  - "mas-java-extensions-series-index"
+---
+
+# Hands-On: MAF Local Configuration in VS Code and IBM Bob
+
+<aside>
+
+🎯 **Who this is for:** Maximo developers who customize Technician, Inspections or Role-Based Applications and want a real editor, Git and a local preview; MAS platform admins who will be asked to set up the sign-in; team leads deciding whether a time-boxed pilot is worth a week.
+
+</aside>
+
+**Series:** MAS MAF-DEV | **Part 5 of 9** | Previous: [Part 4 - Three Generations of MAF Configuration Tooling](/blog/mas-maf-dev-04-tooling-generations) | Next: Part 6 - Debugging MAF Apps
+
+---
+
+## 🔥 The Day You Stop Publishing to Test
+
+You changed one attribute on a Technician page. To see it, you pressed Publish in the browser editor, waited, opened a test device, and discovered you misspelled a datasource id. Now there is a new revision in `MAFAPPDATA` with your typo in it, and you are explaining to a supervisor why the test phone showed a blank screen.
+
+That loop is the problem Part 4 described. This part is the fix, and it is a hands-on one: we install IBM's **MAF Local Configuration** extension, connect it to MAS, pull an app to disk, commit it to Git, preview it on `localhost:3000`, and publish it back. We also spend real time on the three things that will bite you: the **API-key URL mismatch**, the **offline mirror**, and the **fact that this tool is not finished**.
+
+<aside>
+
+⚠️ **Status, stated once and meant.** MAF Local Configuration is offered by IBM **AS IS**, with no warranty, as **IBM proprietary software** that is **not yet on the VS Code Marketplace**. IBM's earlier README wording, as recorded in our research base, calls it an **early access preview, not for production use**. On 19 October 2026 we re-fetched the public landing, install, features and manual pages and the repository page; they show the AS IS disclaimer but **do not repeat the early-access sentence**, and the repository page lists the license only as "IBM". We cannot tell whether IBM softened or relocated the wording, so we keep the hedge: it is a `v0.0.1-beta.6` tool, and everything below is **IBM-reported** unless we say we read it from the released package or from a practitioner source. It also **cannot create or clone applications**.
+
+</aside>
+
+By the end you will be able to:
+
+1. Install the extension in VS Code or IBM Bob, and decide when **not** to use IBM's one-line installer.
+2. Choose the right URL for OIDC versus API-key sign-in, and explain why OIDC setup is a platform-team job.
+3. Diagnose the offline-mirror failure that stops `yarn build`.
+4. Run the preview server, edit, and publish a new revision, knowing what the pipeline does.
+5. Set up a Git-based workflow with review, and know the issues that are still open.
+
+A note on sourcing, as in earlier parts. **IBM-reported** means IBM's public site, repository, release notes or issue tracker. **Package-reported** means we read it from the compiled released VSIX (`package.json` and code) during earlier research, not from prose documentation. **Practitioner** means a partner or community source. Items marked **UNVERIFIED** are in our research base as single or weak sources; we do not state them as fact.
+
+---
+
+## 🧭 Where This Fits: The Workflow in One Picture
+
+```
+╔══════════════════════════════════════════════════════════════════╗
+║  PLATFORM TEAM (once)             DEVELOPER (every change)       ║
+║  ┌──────────────────────┐         ┌───────────────────────────┐  ║
+║  │ Application Config   │         │ 1. Sign in (OIDC / key)   │  ║
+║  │ enabled + PVC        │         │ 2. Download duplicated app│  ║
+║  │ MAFCONFIGADMIN group │         │ 3. git commit (pristine)  │  ║
+║  │ Duplicate TECHMOBILE │ ──────► │ 4. Health Check + mirror  │  ║
+║  │  → MYTECHMOBILE      │         │ 5. Start Preview :3000    │  ║
+║  │ OIDC client register │         │ 6. Edit XML / JS, commit  │  ║
+║  └──────────────────────┘         │ 7. PR review, publish DEV │  ║
+║                                   │ 8. Device test, promote   │  ║
+║                                   └───────────────────────────┘  ║
+╚══════════════════════════════════════════════════════════════════╝
+```
+
+The left column is why Part 4 told you to enable and govern Application Configuration first. The extension is a desktop client for that server. It uses the same `/graphite/configtool/packages` backend (package-reported), so it depends on the suite for cloning, for shared storage of the published app, and for the revision it creates.
+
+| Question | Answer |
+|---|---|
+| Does it replace Application Configuration? | No. IBM describes it as "an enhancement to the supported MAF Config tool" (IBM README wording). You still clone there. |
+| Does it work on Manage 9.0? | No. Supported MAS is 9.1.21+ and 9.2.1+ (IBM-reported). On 9.0, use the Docker image. |
+| Does it work in both editors? | Yes: VS Code 1.74+ and IBM Bob IDE (IBM-reported). Bob adds a "MAF Config" mode and Graphite MCP setup. |
+| Where does the output land? | A new ACTIVE revision in `MAFAPPDATA`, same as any other tool. |
+
+---
+
+## 🧰 Prerequisites and Install
+
+### What you need before you start
+
+| Requirement | Detail | Source |
+|---|---|---|
+| Editor | IBM Bob IDE, or VS Code 1.74.0+; the `bobide` or `code` command on PATH | IBM-reported |
+| Node.js | 20.0.0 or later; used by the preview server and dev tools | IBM-reported |
+| Yarn | Not in IBM's public list, but build, preview and publish shell out to `yarn` | Package-reported |
+| Git | Any recent version; "optional, but recommended" | IBM-reported |
+| Network | Internet for installation and for MAS authentication; GitHub reachable for the installer | IBM-reported |
+| MAS | A valid license and an environment at 9.1.21+ or 9.2.1+ | IBM-reported |
+| Operating system | No official support matrix; installer is bash; Windows needed fixes (#11 closed, #16 open) | IBM issue tracker |
+| Platform | Application Configuration enabled, `MAFCONFIGADMIN` membership, a duplicated app | Cached IBM docs; see limits below |
+
+Check your toolchain in one go:
+
+```bash
+node --version        # expect v20.x or later
+yarn --version        # any current Yarn
+git --version
+code --version        # or: bobide --version
+```
+
+If Node is too old, IBM's install page suggests `nvm install 20 && nvm use 20` or installing from nodejs.org. If `code` is not found, run "Shell Command: Install 'code' command in PATH" from the Command Palette and restart your terminal (IBM-reported troubleshooting).
+
+### Install option 1: the one-liner
+
+IBM's documented install forms are:
+
+```bash
+# IBM Bob IDE
+curl -fsSL https://ibm-mas.github.io/maf-local-dev-mode/scripts/install.sh | bash -s bob
+
+# VS Code
+curl -fsSL https://ibm-mas.github.io/maf-local-dev-mode/scripts/install.sh | bash -s vscode
+
+# Interactive: prompts for an editor if several are found
+curl -fsSL https://ibm-mas.github.io/maf-local-dev-mode/scripts/install.sh | bash
+```
+
+Per IBM, the script checks prerequisites, downloads the latest `.vsix` from GitHub Releases, installs and configures the extension, and prints next steps. In earlier research we read the script's logic: it queries the GitHub `releases/latest` API, takes the first `.vsix`, runs `<cli> --install-extension <vsix> --force`, and tells you that local Manage needs no extra setup while remote MAS needs the OIDC setup inside the plugin.
+
+<aside>
+
+💡 **Key insight:** `curl ... | bash` runs whatever that URL returns at the moment you run it. For a personal sandbox that is a judgement call. For a regulated shop it is a supply-chain risk, and security teams are right to refuse it.
+
+</aside>
+
+### Install option 2: the auditable way
+
+IBM documents the manual path on its install and manual pages, and it is the one we recommend in a controlled environment:
+
+```bash
+# 1. Download the script and read it first
+curl -fsSL https://ibm-mas.github.io/maf-local-dev-mode/scripts/install.sh -o install.sh
+less install.sh
+chmod +x install.sh && ./install.sh vscode
+
+# 2. Or skip the script entirely: download the .vsix from GitHub Releases,
+#    record its SHA-256 in your change ticket, then install it
+sha256sum maximo-developer-configuration-tools-0.0.1-beta.6.vsix
+code --install-extension maximo-developer-configuration-tools-0.0.1-beta.6.vsix
+# Bob:
+bobide --install-extension maximo-developer-configuration-tools-0.0.1-beta.6.vsix
+```
+
+The GitHub Releases page is `https://github.com/ibm-mas/maf-local-dev-mode/releases`. The Marketplace listing is described as "Coming Soon", so you will not find the extension by searching the Marketplace today. In the UI, use Extensions, then the "..." menu, then "Install from VSIX...".
+
+If the extension does not appear after install, IBM's guidance is to **fully quit and restart** the editor (reloading the window is not enough), confirm it is enabled, and check the Output panel. IBM also says not to use `sudo` for the install and to check write access to `~/.vscode/extensions/`.
+
+### Which release?
+
+Beta versions move quickly. We re-fetched the releases page on 19 October 2026:
+
+| Tag | Date | What changed (IBM release notes) |
+|---|---|---|
+| alpha.9 | 2026-06-24 | Local Migration Utility for moving configuration from a previous Graphite version, with backups and migration logging |
+| beta.1 | 2026-07-15 | `configureBobFeatures` command for Graphite MCP setup; `.js` duplicates reconciled with `.jsx`; Applications panel rewritten as Lit web components |
+| beta.2 | 2026-07-28 | "MAF Config" Bob mode |
+| beta.3 | 2026-08-04 | **Health Check** panel with environment and **offline mirror checks**; "Get Support" button that pre-fills a GitHub issue; file protection moved to a lean manifest-checksum guard; fix for publish hanging on file watchers |
+| beta.4 | 2026-08-11 | Phased loading messages; connection save from about 20 seconds to under 2; fix for 302 redirect errors on API-key sessions |
+| beta.5 | 2026-08-11 | Portable commands to fix Windows issue #11; IBM notes it is untested on Windows |
+| **beta.6** | **2026-09-22** | Error documentation and remediation service that classifies API, HTTP and network errors; **"Offline Mirror Docs" button** in Health Check; `maximoDevTools.download.keepZip` setting; more reliable zip extraction |
+
+One oddity: the top release on the page is headed "v0.0.1-beta.5" while its tag and changelog point to beta.6. Trust the tag. Because the tool is a beta, **pin the version you tested** in your team's runbook, and re-read the release notes before every upgrade.
+
+---
+
+## 🔐 Signing In: OIDC, API Key, and the URL Trap
+
+The extension supports three sign-in methods: OAuth 2.0 / OIDC, username and password, and API key (IBM-reported). Sessions appear in the editor's Accounts menu because the extension registers an authentication provider (package-reported). You can keep several sessions and switch between environments, and connections can be exported and imported (package-reported).
+
+### Which URL goes with which method
+
+This is open repository issue **#5**, "Different URL expected based on the authentication method" (opened 2026-07-15, still open on 19 October 2026). A maintainer's answer recorded in our research is blunt: use the **MAS Home URL** with OIDC; for an **API key you HAVE to use the Manage URL**.
+
+| Method | URL to enter | Typical failure if wrong |
+|---|---|---|
+| OIDC / OAuth 2.0 | MAS Home URL, for example `https://home.<instance>.<domain>` | Redirect loop or "unable to register" if you use the Manage host |
+| API key | **Manage** home URL, for example `https://<instance>.manage.<domain>` | 302 redirects or 401s if you use the MAS Home host |
+| Username / password | Manage URL (local or classic Manage) | Authentication failure; common on non-OIDC dev boxes |
+
+The hostnames above are illustrative patterns; confirm yours from the MAS admin dashboard.
+
+A related fix: before beta.4, API-key sessions hit 302 redirect errors, and the release notes say the call path moved from `/oslc/` to `/api/`. If your API-key connection still fails, check your version before debugging anything else.
+
+### Why OIDC is a platform task
+
+For OIDC the extension registers a **public PKCE client** named `configtoolpkce` ("Maximo Configuration Tool") with the MAS OIDC server, then obtains tokens by authorization code and refreshes them automatically (package-reported). Registration needs the **MAS OAuth admin credentials**. The in-extension help points to the OpenShift secret `<instance>-credentials-oauth-admin` in the `mas-<instance>-core` namespace, and otherwise says to ask your cluster administrator to register the OIDC configuration from the plugin.
+
+```bash
+# Platform admin only. Illustrative: read the OAuth admin secret for the registration step.
+# Instance name is a placeholder; do NOT hand these values to individual developers.
+oc get secret <instance>-credentials-oauth-admin -n mas-<instance>-core \
+  -o jsonpath='{.data.oauth-admin-username}' | base64 -d; echo
+```
+
+**Governance takeaway.** Registering the client needs cluster-admin-level secrets once. Make it a ticket to the platform team, record that it was done, and give developers a connection that works. Do not circulate the admin secret.
+
+### The API-key alternative
+
+On a development environment you may prefer API keys, which skip the client registration. In Gen 1 the key came from a single call, `POST /oslc/apitoken/create` with `{"expiration":-1}` (IBM-reported, Part 4), and a non-expiring key deserves the caution it implies. For this extension, give the key a short life, scope its user's security groups to what the work needs, and store it in your OS credential store, not in a repo. The extension stores credentials securely (IBM features page), but your `.env` file is your responsibility.
+
+Whichever method you use, the signed-in user's groups need authorization on the **OSLCMAFAPPDATA** object structure, and on any object structure your datasources use (IBM-reported, Part 4).
+
+### Self-signed certificates
+
+Dev environments often use self-signed certificates. The extension allows this per connection (`allowSelfSignedCerts`, package-reported), and IBM's features page describes "configurable security settings". Use it for a lab, not for a shared environment with a proper CA.
+
+---
+
+## 📥 Download the App and Make Git Your Safety Net
+
+Prerequisite: the app you want to change has already been **duplicated** in Application Configuration, for example `TECHMOBILE` to `MYTECHMOBILE`. The extension cannot create or clone applications. IBM's own limitation text says to use the MAF tool to clone for now.
+
+1. Open the **Maximo Configuration Tools** view in the activity bar. You get a **Connections** view and an **Applications** view (package-reported).
+2. Add a connection (name, URL, auth method), then sign in. In the Command Palette the equivalent is **Maximo Dev Tools: Sign In to MAS**.
+3. In Applications, search for your app. The panel lists packages from five categories: `manage`, `core`, `addons`, `assist` and `monitor` (package-reported).
+4. Download it.
+
+A practitioner who tested the Technician app (MRM-EAM, 14 October 2026) describes the download as extracting the application, installing helper files, syncing offline development packages, and preparing dependencies and the build. After it finishes, the actions Open, Build, Publish, Duplicate, Migrate and Preview become available. Under the hood, the download calls `GET /graphite/configtool/packages/{app}/binary` and unpacks `app-source.zip` into the workspace (package-reported). The beta.6 setting `maximoDevTools.download.keepZip` controls whether the zip is retained.
+
+### The one step that earns the tool its keep
+
+```bash
+cd <workspace>/MYTECHMOBILE
+git init
+cat > .gitignore <<'EOF'
+node_modules/
+build/
+.env
+*.log
+EOF
+git add -A
+git commit -m "baseline: pristine download of MYTECHMOBILE from DEV rev <n>"
+```
+
+Do this **before** you touch a file, and note the `MAFAPPDATA` revision in the message. Now every XML and JS change is a diff, every review is a pull request, and the baseline is your rollback point. Neither Gen 1 nor Gen 2 gave you that cleanly.
+
+Two cautions on the `.gitignore`. First, whether `build/` should be ignored depends on your promotion model; we ignore it because the pipeline rebuilds it, but check what your workspace contains before you copy that line. Second, do not commit `offline-mirror/` blindly: it is large, and it is served by MAS, so it can be regenerated. Decide with your team whether to keep it out of the repository (we do).
+
+| What to commit | What to keep out |
+|---|---|
+| `src/app.xml`, included XML, `AppCustomizations.js`, `i18n/labels.json`, `app.delta.xml` | `node_modules/`, `.env`, logs |
+| A baseline tag (`baseline-<rev>`) | The offline mirror (regenerable) |
+| Any custom CSS (9.0+) | Credentials or API keys, ever |
+
+The repository's own pre-commit secret scan, if you use TheMaximoGuys conventions, will block commits containing API keys. Use the same habit in your app repo.
+
+---
+
+## 🪞 The Offline Mirror: Your First Gotcha
+
+Here is the failure, from open issue **#16** (filed 2026-10-04, still open on 19 October 2026): on Windows 11 against MAS 9.1.22, building the **ASSETMOBILE** app in VS Code fails with:
+
+```
+error An unexpected error occurred: "https://registry.yarnpkg.com/@maximo%2fmaxdev-cli: Not found".
+```
+
+### Why it happens
+
+IBM's build packages, including `@maximo/maxdev-cli`, are **not published on the public npm registry**. A normal `yarn install` therefore has nowhere to fetch them. The extension compensates with an **offline mirror**. In the released package we read a `tools/configure.cjs` that builds an `offline-mirror/` directory in the workspace, holding npm tarballs **served by MAS**, plus `vendors/` and a `libraries.json` (package-reported). Yarn is then pointed at that local mirror. If the mirror is missing, incomplete or stale, yarn falls back to the public registry and you get the error above. A commenter on the issue said the fix is the offline mirror and that this "should [be] more clearly documented", which is a fair summary of where the docs stand.
+
+### A documentation conflict we are not going to smooth over
+
+DOC17's open gap #2 asked where the cache lives. We re-checked on 19 October 2026:
+
+| Source | What it says | Status |
+|---|---|---|
+| IBM features page (re-fetched) | "Offline Cache Support" caches application metadata, object structures and configuration data; location `~/.maximo-dev-tools/cache/`; says nothing about a mirror | IBM-reported |
+| Released package code | Builds `offline-mirror/` inside the workspace, with tarballs, `vendors/` and `libraries.json` | Package-reported |
+| MRM-EAM walkthrough (practitioner) | Download "syncs offline development packages" and prepares dependencies | Practitioner |
+| Release notes beta.3 and beta.6 | Health Check does "offline mirror checks"; beta.6 adds an "Offline Mirror Docs" button | IBM-reported |
+
+**Our reading, flagged as inference:** these are probably two different things sharing a word. The home-folder cache looks like a *metadata cache* for working disconnected, and the workspace `offline-mirror/` is an *npm package mirror* for building. IBM's own release notes treat the mirror as a first-class concept with its own health checks, so the mirror exists and matters. We have **not** verified which directory is authoritative for any given operation, so do not write either path into a runbook as fact. Use the Health Check output to tell you what the tool is checking on your machine.
+
+### A troubleshooting sequence that works in practice
+
+1. Confirm you are on the latest release (beta.6 or newer) and that the Node version is 20+.
+2. Open the **Health Check** panel (Command: **Maximo Dev Tools: Run Health Check**). It checks the environment, the connection, the required Graphite version and the mirror (IBM release notes for beta.3 and later).
+3. Run **Maximo Dev Tools: Refresh Offline Cache**.
+4. Click **Offline Mirror Docs** in Health Check if the checks fail (beta.6).
+5. Look in the workspace for the mirror and confirm it is not empty:
+   ```bash
+   ls -la offline-mirror | head
+   test -f libraries.json && echo "libraries.json present" || echo "libraries.json missing"
+   ```
+6. Re-run `yarn build --no-upgrade` from the workspace. The preview flow can offer this itself before it starts the server.
+7. If it still fails, delete `node_modules/` only (not the mirror) and retry. If the mirror itself is missing, re-download the app.
+8. Use **Get Support** in Health Check, which pre-fills a GitHub issue, and attach your OS, editor and extension versions, as IBM's own troubleshooting asks.
+
+Check also that your corporate proxy allows the MAS host: the mirror is served by MAS, so a proxy that allows the public npm registry but blocks your MAS API host breaks the very thing the mirror needs. On Windows, issue #11 (closed) found that downloads failed without `unzip` and that a `&&` in a post-download command is unsupported in some PowerShell versions. beta.5 switched to portable commands but IBM says it is untested on Windows, so a WSL or Linux or macOS workstation is the lower-risk choice for a pilot.
+
+<aside>
+
+💡 **Key insight:** If `yarn build` says "Not found" for a `@maximo/` package, you do not have an npm problem. You have a mirror problem. Stop retrying `yarn install`.
+
+</aside>
+
+---
+
+## 👀 Preview on localhost:3000
+
+### Starting the server
+
+Run **Maximo Dev Tools: Start Preview Server with MAS Session** from the Command Palette. It may first offer `yarn build --no-upgrade`. IBM's site describes the result as a local development server "with an authenticated MAS session and live reload, without deploying", and says the app is expected to start at `http://localhost:3000`. Only one preview server is intended to run at a time (package-reported).
+
+In earlier research we read the mechanism: the extension runs `yarn start` as a VS Code task and injects environment variables that tell the local Graphite server how to proxy data to live Manage (package-reported):
+
+| Variable | Purpose |
+|---|---|
+| `GRAPHITE_PROXY_MANAGE_URL` | Manage URL (with `/maximo`) the dev server proxies to |
+| `GRAPHITE_PROXY_SECURE` | Whether to use TLS to the target |
+| `GRAPHITE_PROXY_MANAGE_XACCESSTOKEN` and `GRAPHITE_PROXY_MAS_EMULATION=true` | OIDC sessions |
+| `GRAPHITE_PROXY_MANAGE_MAXAUTH` | Username and password sessions |
+| `GRAPHITE_PROXY_MANAGE_APIKEY` | API-key sessions |
+
+If you ever run the proxy by hand, for example from a terminal in a CI job, the bundled MCP documentation describes a `.env` with these variables, and warns that after editing it you "MUST run `yarn clean && yarn build`" before `yarn start`. A sketch, with every value a placeholder:
+
+```bash
+# .env (never commit). API-key flavour; the Manage URL is the one that works for keys.
+GRAPHITE_PROXY_MANAGE_URL=https://<instance>.manage.<domain>/maximo
+GRAPHITE_PROXY_SECURE=true
+GRAPHITE_PROXY_MANAGE_APIKEY=<your-key>
+
+yarn clean && yarn build && yarn start   # then open http://localhost:3000
+```
+
+Treat that as package-reported behaviour, not a supported interface; the extension manages it for you.
+
+### Live reload and what it means
+
+IBM's features page says changes to XML configuration files "are reflected in your browser without manual refresh". The mechanism most likely comes from the Graphite dev server's own file watcher (UNVERIFIED mechanism), so treat reload as a convenience, not a guarantee: if you see stale output after changing a datasource or JS file, restart the server. A note from earlier releases is relevant here: beta.3 fixed "publish hanging on file watchers", so file-watcher behaviour has been a source of bugs.
+
+### What the preview proves, and what it does not
+
+| Proves | Does not prove |
+|---|---|
+| XML renders, bindings resolve, controllers run | Offline behaviour: transaction queue, preloaded database, sync |
+| Datasources return live data through the proxy | `mobile-qbe-filter` and lookup-data behaviour on a disconnected device |
+| `AppCustomizations.js` hooks fire (watch the console) | Device-only APIs and signature options, which are evaluated only when connected |
+| Layout in a desktop browser | Layout on a phone or tablet screen |
+
+Part 7 covers the offline model in detail. For now, remember: **the preview is a browser against live data.** Any change that touches datasources, lookup data or `mobile-qbe-filter` needs a device test after publish.
+
+### Debugging in the preview
+
+Append `?_graphite_logLevel=trace` to the preview URL, for example `http://localhost:3000/?_graphite_logLevel=trace#/createwo`, and use `app.log.d(TAG, ...)` in your controller. The `default-log-level` attribute on `<maximo-application>` (9.2) sets a default for preview. Part 6 is a full debugging guide.
+
+---
+
+## ✏️ The Edit Loop: A Worked Example
+
+Using the example from Part 4, we hide the Complete button when no failure report exists. App id, page and datasource names are illustrative. Confirm yours in your own `app.xml`.
+
+```xml
+<!-- src/app.xml: disable the button using page state set by a controller -->
+<button id="btn_complete" label="Complete"
+        disabled="{!page.state.hasFailureReport}"
+        on-click="completeWorkOrder"/>
+```
+
+```js
+// src/AppCustomizations.js: set the state when the page is shown
+class AppCustomizations {
+  pageResumed(page) {
+    if (page.name !== 'workOrderDetail') { return; }
+    const ds = page.findDatasource('woDetailDS');
+    const wo = ds && ds.item;
+    page.state.hasFailureReport = !!(wo && wo.failurereport && wo.failurereport.length);
+    page.app.log.d('TMG', 'hasFailureReport=' + page.state.hasFailureReport);
+  }
+}
+export default AppCustomizations;
+```
+
+The loop, step by step:
+
+1. Edit the XML and JS in the editor. Keep component `id` values unchanged and attribute names lowercase (Part 2).
+2. Save. The preview reloads. Open DevTools with the log level set to `trace`.
+3. If you hit a file-protection warning, read it. The next section explains why.
+4. Review `git diff`. Both your changes and the `app.delta.xml` that the pipeline produces are reviewable text.
+5. Commit with a message that says *what* and *why*.
+
+```bash
+git diff --stat
+git add src/app.xml src/AppCustomizations.js
+git commit -m "TECH-142: disable Complete until failure report present (pageResumed + app.xml)"
+```
+
+### File protection: the tier-4 guard
+
+Part 3 explained that editing out-of-the-box controllers is unsupported and has to be merged by hand at every release. The extension adds a software guard: it **warns when you modify core application files that are not upgradeable** (IBM features page). It is implemented as a manifest-checksum check (package-reported, and beta.3 notes call it "leaner"). Settings and commands:
+
+| Item | Value | Source |
+|---|---|---|
+| Setting | `maximoDevTools.fileProtection.enabled` (default true) | Package-reported |
+| Setting | `maximoDevTools.fileProtection.showWarnings` (default true) | Package-reported |
+| Command | Maximo Dev Tools: Check If Current File Is Protected | Package-reported |
+| Command | Maximo Dev Tools: View IBM Package Manifest | Package-reported |
+
+If the guard fires, move the logic into `AppCustomizations.js`. Do not turn it off to get past it.
+
+---
+
+## 🚀 Publishing: What Actually Happens
+
+### The pipeline
+
+From the released package, the publish sequence is (package-reported):
+
+1. `yarn clean`
+2. `yarn build`
+3. `yarn build:production`
+4. Generate diffs (deltas) for modified XML
+5. Read the version and description from `app.xml`
+6. `maxdev-cli package-app -a <app> -v <ver>`
+7. `POST /graphite/configtool/packages/{appId}/binary?workspaceId=...&appid=...&appDesc=...&version=...&isMobile=...` with the zip and an `x-access-token` header
+
+The result is a **new ACTIVE revision in `MAFAPPDATA`**, the same outcome as a publish from Application Configuration, UpdateDB or `maxdev-cli upload-app`. Since alpha.8 the extension also checks core-file hashes before publish.
+
+| Pipeline stage | If it fails | Where to look |
+|---|---|---|
+| clean and build | Mirror problem; Node version | Health Check, terminal output |
+| production build | Invalid XML, duplicate ids, JS syntax | Task output; fix and rebuild |
+| deltas | Unexpected diff on core files | File-protection warnings; `git status` |
+| package-app | Missing `maxdev-cli` | Mirror |
+| upload | 401/403/413, TLS, wrong URL type | Error documentation service (beta.6) |
+
+beta.6 added an **error documentation and remediation service** that classifies API, HTTP and network errors and surfaces notifications with links to documentation. That helps with the upload stage in particular.
+
+### History of publish bugs
+
+The repository shows that publish has been the least stable stage: issues **#9** ("Publish button does not work") and **#10** ("Publish button get stuck in Running mode" on a WOSUMMARY build) were both closed in late July and early August 2026, and beta.3 fixed "publish hanging on file watchers". Both are closed, but they are a reminder to publish only when the preview is not mid-start, which IBM's own workflow guidance also warns about.
+
+### A publish checklist
+
+| Before you publish | Why |
+|---|---|
+| Commit and tag the workspace | The Git commit is your record of what shipped |
+| Note the current `MAFAPPDATA` revision | You need it to explain a rollback |
+| Check the target connection name | One connection per environment, so DEV is never confused with PROD |
+| Confirm Mobile? flag intent | A duplicate's "Mobile?" flag is off by default (cached IBM docs) |
+| Assign security groups on first publish | Duplicates need them (cached IBM docs) |
+| Confirm no preview server is starting | Avoid publishing mid-start (IBM guidance) |
+
+After publishing, verify from the database. A read-only query like this one (column list from DOC17 and not re-verified on a live schema) shows which revision is serving devices:
+
+```sql
+SELECT APPID, VERSION, REVISION, STATUS, DEPLOYBY, DEPLOYDATETIME, ISMOBILE
+FROM   MAFAPPDATA
+WHERE  APPID IN ('MYTECHMOBILE')
+ORDER  BY REVISION DESC;
+```
+
+Never update that table by hand. IBM does not document a revert action, and a partner SQL method is unofficial (Part 4). With this extension the practical revert is `git revert` and a republish.
+
+### Promotion
+
+IBM's technote ibm17045770 (June 2026, content login-gated; cited from our research base) says Migration Manager cannot migrate Maximo Mobile or Role-Based (Graphite) apps between environments. The workable pattern is to **republish the same reviewed workspace to each environment's connection**, one connection per environment, driven from Git. Duplicated apps must be duplicated in both environments first. Record the revision published to TEST and PROD next to the Git tag.
+
+---
+
+## 🧰 Commands and Settings Reference (beta.6, package-reported)
+
+The commands are in the Command Palette under the category **Maximo Dev Tools**. We read this list from the released package; IBM's public pages do not list commands, so verify against your own Command Palette.
+
+| Command | Use |
+|---|---|
+| Sign In to MAS / Sign Out | Start and end a session |
+| Show MAS Sessions | See active sessions in the Accounts provider |
+| Start / Stop Preview Server (with MAS Session) | Local `yarn start` on :3000 |
+| Check for Configuration Migration | Detect that a newer base version has arrived |
+| Migrate Configuration from Previous Version | Copy `AppCustomizations.js` and `lookups.json` forward and apply deltas (alpha.9+) |
+| Refresh Offline Cache | Rebuild the offline content (see the mirror section) |
+| Manage / Refresh / Export / Import Connections | Maintain environment connections |
+| Check for Updates | Look for a newer extension version |
+| View IBM Package Manifest | See IBM's file manifest (file protection) |
+| Check If Current File Is Protected | Test one file |
+| Configure Bob Features (Graphite MCP) | Set up Bob (beta.1+) |
+| Run Health Check | Environment, connection, mirror (beta.3+) |
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `maximoDevTools.fileProtection.enabled` | true | Turn the guard on or off |
+| `maximoDevTools.fileProtection.showWarnings` | true | Show warnings when editing protected files |
+| `maximoDevTools.download.keepZip` | see release notes | Keep the downloaded zip (beta.6) |
+
+The package readme also lists `maximoDevTools.enable`, `.defaultEnvironment` and `.configPath`, but we did not find them in the beta.6 manifest. Do not rely on them.
+
+---
+
+## 🤖 IBM Bob: What Is Different
+
+The extension runs in both editors, and IBM Bob adds two things (IBM release notes): a **Configure Bob Features (Graphite MCP)** command (beta.1) and a **"MAF Config" Bob mode** (beta.2, with the `maf-config` mode added to the extension's Bob configuration in beta.3). The Graphite MCP server package is `@maximo/graphite-mcp-server` (package-reported). Part 9 covers AI-assisted work in depth, and the general Bob material is in [MAS-BOB Part 4](/blog/mas-bob-04-bob-and-maximo).
+
+Early field reports matter if you plan to try it:
+
+| Issue | State on 19 Oct 2026 | Lesson |
+|---|---|---|
+| #6 MCP updated OOTB JS files instead of a custom file | Closed 2026-07-16 | Review every AI edit against file protection; AI does not know your support tiers |
+| #7 MCP seemed to use a lot of tokens (one prompt consumed one Bob coin) | Closed 2026-07-16 | Watch Bob coin consumption in a pilot |
+| #8 MCP cannot discover domains | Open (enhancement) | Supply domain values yourself |
+
+Whether the Graphite MCP server works with non-Bob agents is an open question in our research base; we make no claim about it.
+
+---
+
+## 🔁 Git-Based Workflow and Team Hygiene
+
+| Practice | How |
+|---|---|
+| One repo per app, or per series of apps | Keep `MYTECHMOBILE` separate from `MYINSPECTION` |
+| Baseline tag per IBM revision | `git tag baseline-r<rev>` after downloading |
+| Branch per change | `feature/TECH-142-failure-report-gate` |
+| Review the delta | Include `app.delta.xml` in pull requests; it is what survives upgrades |
+| Protected `main` | Publish only from `main`, only after review |
+| Release notes | Put the `MAFAPPDATA` revision in each tag message |
+| Upgrade branch | Run **Check for Configuration Migration**, commit the result separately from feature work |
+
+IBM's guidance when you contact support is to attach `app.delta.xml`. A repository that tracks it makes that trivial.
+
+### A review checklist for MAF pull requests
+
+1. No component `id` changed (diff the XML for `id=` edits).
+2. Attribute names are lowercase where they bind to server JSON.
+3. No edits to IBM controller files; custom logic lives in `AppCustomizations.js`.
+4. Any new object structure is granted in the target environment's security groups.
+5. Object structures are not duplicated, because mobile merges by root object (Part 10 of DOC17; Part 7 of this series).
+6. A device test is recorded for any datasource, lookup or QBE change.
+
+---
+
+## 🧱 Open Issues and Honest Limits
+
+Open repository issues on 19 October 2026 (IBM issue tracker; the only independent signal on this tool apart from one partner overview):
+
+| # | Issue | Practical impact |
+|---|---|---|
+| 16 | Windows `yarn build` fails: `@maximo/maxdev-cli` Not found (ASSETMOBILE, MAS 9.1.22) | Offline mirror; use Linux, macOS or WSL for a pilot |
+| 14 | "Downloading..." status shown on the wrong list item when a search filter is on | Cosmetic; wait for the download to complete |
+| 13 | Search results stale after download | Clear the filter |
+| 12 | No "app outdated" indicator (enhancement) | Check revision history in Application Configuration |
+| 8 | MCP cannot discover domains (enhancement) | Supply domains in your prompt |
+| 5 | URL differs by auth method | OIDC: MAS Home; API key: Manage URL |
+
+What we could and could not close from DOC17 §17:
+
+| DOC17 gap | Status after this run |
+|---|---|
+| #2 Cache location conflict | Not resolved. Documented both ways; inference given; hedged |
+| #1 IBM Docs claims | Partly: the Local Configuration site, releases and issues were re-fetched live. Application Configuration steps (`MAFCONFIGADMIN`, PVC) remain cached-documentation claims; a web search found no page naming the group on 19 October 2026, only a community thread that mentions it |
+| #3 Live reload and three-way merge UI | Live reload mechanism unverified. IBM's features page claims "semantic XML comparison and three-way merge"; the package shows delta generation. We have not seen a merge UI, so we do not claim one |
+| #14 OS support matrix | None published |
+
+We would rather give you a labelled gap than a smooth sentence that turns out wrong.
+
+---
+
+## 📜 The Commandments of Local MAF Development
+
+1. **Clone first, in the suite.** The extension cannot create or clone apps.
+2. **Commit the pristine download before you edit.** Your baseline is your safety net.
+3. **Match the URL to the sign-in.** OIDC with the MAS Home URL; API key with the Manage URL.
+4. **When `yarn` says "Not found" for `@maximo/`, fix the mirror.**
+5. **Only edit what IBM supports:** `app.xml` and `AppCustomizations.js`.
+6. **A browser preview is not a device.** Test offline-sensitive changes on hardware.
+7. **Publish from a reviewed commit, record the revision, and keep `git revert` as your rollback.**
+8. **Pin the extension version and read the release notes.** It is a beta, offered AS IS.
+
+## ✅ Your Pilot Plan
+
+| When | Action |
+|---|---|
+| Day 1 | Platform team: duplicate the app, verify `MAFCONFIGADMIN`, register the OIDC client or issue a short-lived API key |
+| Day 1 | Developer: install Node 20+, Yarn, and the VSIX via the manual route; record its SHA-256 |
+| Day 2 | Download, baseline commit, run Health Check, fix the mirror (stop condition: more than one day here means escalate) |
+| Day 3 | Preview, one small change, review, publish to DEV, device test |
+| Day 4 | Write down what failed; read the open issues again; decide go or no-go |
+| Ongoing | Re-read the release notes before every upgrade of the extension |
+
+---
+
+## 🔗 Continue the Series
+
+- **Previous:** [Part 4 - From Docker to Desktop: Three Generations of MAF Configuration Tooling](/blog/mas-maf-dev-04-tooling-generations)
+- **Back to:** [Series Index](/blog/mas-maf-dev-00-series-index) and [Part 3 - Controllers and AppCustomizations.js](/blog/mas-maf-dev-03-controllers-appcustomizations)
+- **Business context:** [MAS-MANAGE Part 2 - Work Centers to RBAs](/blog/mas-manage-work-centers-to-rba)
+- **Using Bob on Maximo:** [MAS-BOB Part 4 - Bob and Maximo](/blog/mas-bob-04-bob-and-maximo)
+- **Upgrade impact:** [MAS-9-2 Part 6 - Upgrade Watchlist](/blog/mas-92-upgrade-watchlist)
+- **The server-side half:** [MAS-JAVA-EXTENSIONS - Series Index](/blog/mas-java-extensions-series-index)
+
+---
+
+## 📚 References
+
+**IBM (vendor sources, IBM-reported)**
+
+1. IBM, *IBM Maximo Application Framework Local Configuration* (landing page: supported MAS versions, AS IS terms, prerequisites; re-fetched 2026-10-19): https://ibm-mas.github.io/maf-local-dev-mode/
+2. IBM, *Installation Guide* (install forms, troubleshooting; re-fetched 2026-10-19): https://ibm-mas.github.io/maf-local-dev-mode/install.html
+3. IBM, *Features* (offline cache location, preview, diff tools, file protection; re-fetched 2026-10-19): https://ibm-mas.github.io/maf-local-dev-mode/features.html
+4. IBM, *Manual Installation* (VSIX install; re-fetched 2026-10-19): https://ibm-mas.github.io/maf-local-dev-mode/manual.html
+5. IBM, `ibm-mas/maf-local-dev-mode` releases (v0.0.1-beta.6, 2026-09-22; re-fetched 2026-10-19): https://github.com/ibm-mas/maf-local-dev-mode/releases
+6. IBM, `ibm-mas/maf-local-dev-mode` issues (#5, #8, #12-#16 open; retrieved via the GitHub API 2026-10-19): https://github.com/ibm-mas/maf-local-dev-mode/issues
+7. IBM, *MAF Configuration Practices*: https://ibm-maximo-dev.github.io/configuration-practices-documentation/
+8. IBM Support, *Configuring and customizing IBM Maximo Mobile* (Application Configuration rename at 9.1): https://www.ibm.com/support/pages/configuring-and-customizing-ibm%C2%AE-maximo%C2%AE-mobile
+9. IBM, *IBM Bob*: https://bob.ibm.com/
+
+**Practitioner and community**
+
+10. MRM-EAM, *Bringing Maximo Application Framework development back to your desktop: IBM's new local configuration tools* (retrieved 2026-10-19): https://mrm-eam.com/bringing-maximo-application-framework-development-back-to-your-desktop-ibms-new-local-configuration-tools/
+11. IBM Community, *Maximo Application Framework access MAS 9.1* (MAFCONFIGADMIN mention): https://community.ibm.com/community/user/discussion/maximo-application-framework-access-mas-91
+12. IBM Community, *Introducing our MAF Configuration Practices guide* (17 April 2026): https://community.ibm.com/community/user/blogs/vinicius-affonso-santana/2026/04/17/introducing-our-maf-configuration-practices-guide
+
+**TheMaximoGuys companion content**
+
+- [MAS-MAF-DEV Part 4](/blog/mas-maf-dev-04-tooling-generations) · [MAS-MANAGE Part 2](/blog/mas-manage-work-centers-to-rba) · [MAS-BOB Part 4](/blog/mas-bob-04-bob-and-maximo) · [MAS-9-2 Part 6](/blog/mas-92-upgrade-watchlist) · [MAS-JAVA-EXTENSIONS Index](/blog/mas-java-extensions-series-index)
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams modernize their skills for the MAS era, with practitioner-to-practitioner guidance grounded in IBM documentation and field experience.
+
+<!--
+REVIEW NOTES FOR HUMAN (night-shift, 2026-10-19, item maf-05-local-configuration-handson):
+
+1. Re-fetched live this run: landing, install, features and manual pages; repo page; releases (beta.6 = 2026-09-22; heading says beta.5 but tag is beta.6); issues API (16 issues; open: #5, #8, #12, #13, #14, #16); MRM-EAM overview.
+2. DISCREPANCY (KB vs live): DOC17 7.1 records "Early Access Preview / Not for production use" and "IBM PROPRIETARY" license. Live pages show only the AS IS disclaimer; repo page lists license as "IBM". KB wins, hedge kept. Please check README/DEPLOYMENT.md and update DOC17.
+3. DOC17 gap #2 (cache location): live features page says ~/.maximo-dev-tools/cache/ (no mention of a mirror); package code builds workspace offline-mirror/. Post presents both and labels our "metadata cache vs npm mirror" reading as inference. NOT resolved.
+4. Issue #16 now says ASSETMOBILE (DOC17 did not name the app); issue #5 maintainer quote ("For API key you HAVE to use Manage URL") is from DOC17, the API listing did not include comment text.
+5. Commands, settings, publish pipeline, PKCE client, proxy env variables, endpoints are package-reported (DOC17 7.5-7.11); IBM public pages do not list them. Not re-verified against the VSIX this run.
+6. MAFCONFIGADMIN, PVC and Application Configuration steps: cached IBM docs via DOC17; web search found no IBM page naming the group (only a community thread). IBM Docs content API not re-queried for this part. DOC17 gap #1 only partly closed.
+7. keepZip default value not found; left as "see release notes". Illustrative items: URL host patterns, .gitignore, oc command, SQL, worked-example XML/JS.
+8. The "5. Object structures not duplicated ... (Part 10 of DOC17; Part 7 of this series)" checklist item refers to DOC17 section 10; part numbering of later series posts is from the plan and may shift.
+9. Cross-links: Part 6 (debugging) has no published slug yet, so "Next" is plain text. relatedSlugs per the item: manage RBA, bob-04, 92-watchlist, java-extensions index.
+10. SearchMaximo local corpus not present in this checkout (same as prior parts); hits only DOC17 and MAS92-SOURCES. Web searches (2 general) found no independent Bob/VS Code MAF write-up beyond MRM-EAM.
+-->
