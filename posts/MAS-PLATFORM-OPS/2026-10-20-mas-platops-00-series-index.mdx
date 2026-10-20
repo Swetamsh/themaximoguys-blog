@@ -1,0 +1,398 @@
+---
+title: "Running MAS on OpenShift: The Platform Operations Series Guide"
+description: "An eight-part day-2 operations series for MAS admins: the monthly patch train, Db2 12 upgrades, Db2 tuning, backup and DR, observability, Manage performance, the OCP/CPD/MongoDB support window, and GitOps. This index maps the whole job and what we re-verified."
+date: "2026-10-20"
+slug: "mas-platops-00-series-index"
+tags: ["Maximo", "MAS", "OpenShift", "Platform Operations", "Db2", "Backup", "Observability", "GitOps", "MAS CLI", "Administrator"]
+draft: true
+tier: "admin"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-platops-00-series-index.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Why does MAS need a platform operations discipline when Maximo 7.6 never did?"
+    answer: "Because the thing you operate is no longer one application server and one database. A MAS 9 estate is a set of operators on OpenShift: Core, Manage, a Db2 instance run by the Db2u operator, MongoDB, Suite License Service, often Kafka, and for some add-ons Cloud Pak for Data. Each has its own version, upgrade path and failure mode, and IBM ships fixes through a monthly operator catalog rather than a fix pack you schedule yourself. The work that used to be 'the DBA tunes the database and the admin restarts WebSphere' is now catalog selection, operator upgrades, storage classes, backup pipelines and monitoring. This series covers that day-2 layer."
+  - question: "What does the MAS CLI backup and restore actually cover?"
+    answer: "More than the Manage-only scope many people assume, but less than a full cluster backup. IBM's CLI guide lists Core configuration, operator catalog definitions, Certificate Manager configuration (Red Hat provider only), MongoDB Community Edition and Suite License Service as defaults, plus optional Manage or Facilities application resources and persistent volume data, and the Db2 instance and database for those two applications. Monitor, IoT, Predict and other add-ons are not covered, CP4D is not covered, external or enterprise MongoDB is not covered, and the Db2 support is for the standalone Db2u operator, not Db2uInstance. Restore from the pipeline works only from S3 or Artifactory storage. Part 4 walks through the details and what you must layer on yourself."
+  - question: "Do I have to move to Db2 12, and what happens if I forget the license file?"
+    answer: "Db2 12 is supported with MAS 9.2, and IBM's `mas update` guide documents two flags for the move: `--db2-v12-upgrade` to confirm the major version change and `--db2-license-file` to supply the Db2 v12 activation file for 11-to-12 upgrades. Our local copy of IBM's 9.2 factbase states that without the licence file the upgrade is deliberately blocked, because Db2 12 would otherwise run under a 30-day trial licence that can cause outages on expiry. New Db2 12 installs do not need the file. Part 2 covers sequencing, the Db2uCluster-to-Db2uInstance change, and the DT502701 reference."
+  - question: "How do I read IBM's MAS releases page when the version numbers skip?"
+    answer: "Read it as a set of independent trains. Since 9.2, Core, Manage and AI Service carry their own version numbers, so Core 9.2.8 can sit beside Manage 9.2.4 and AI Service 9.2.3. IBM also marks some numbers as 'reserved for internal use': the page notes that Core 9.2.4 and 9.2.5 are reserved, 9.2.2 is reserved, and so on, which is why you see 9.2.3 followed by 9.2.6. Interim releases are flagged, and security fixes such as Core 9.2.8 (7 October 2026) arrive through them. Part 1 teaches the method in detail with real examples."
+  - question: "Should we run MAS through GitOps or keep using the MAS CLI?"
+    answer: "They solve different problems and most mature estates end up using both. The CLI (`mas install`, `mas update`, `mas backup`) drives Tekton pipelines in the cluster and is the fastest, best-documented route for a single environment. The ibm-mas/gitops repository packages MAS as Argo CD applications so that desired state lives in Git and drift is visible, which pays off once you have several environments or need an audit trail of who changed what. Recent gitops releases (8.7.0 on 12 October 2026, 8.7.1 on 16 October) added MongoDB CE through Argo CD and CPD 5.3.1 support, so the tooling is moving quickly. Part 8 compares them and shows where ansible-devops fits underneath both."
+keyTakeaways:
+  - "Running MAS is operator-and-catalog management on OpenShift. The monthly catalog, not a fix pack, is your unit of change, and v9-261007 (7 October 2026) supports OCP 4.18 to 4.22, CPD 5.3.1 and MongoDB 7.0 to 8.0"
+  - "Component versions are independent and some numbers are reserved. Read Core, Manage and AI Service separately on IBM's releases page, and never assume Core 9.2.8 contains Manage 9.2.4"
+  - "Db2 11 to 12 is a deliberate, flagged upgrade: `mas update` needs `--db2-v12-upgrade` plus `--db2-license-file`, and the licence file is the part teams forget"
+  - "The MAS CLI backup covers Core, MongoDB CE, SLS and optionally Manage or Facilities with their Db2, but not add-ons, CP4D, external MongoDB or Db2uInstance, so a real DR plan needs more than one tool"
+  - "Alerts, performance baselines and GitOps are what turn a working cluster into an operated one; the series ends with Argo CD because repeatability is the real goal"
+series:
+  name: "MAS PLATFORM-OPS"
+  part: 0
+  total: 8
+tldr: "An eight-part day-2 operations series for people who run IBM Maximo Application Suite on OpenShift. It covers how to read the monthly patch train and version skew, the Db2 11 to 12 upgrade, Db2 tuning for Manage, what the MAS CLI backup does and does not protect, monitoring with Prometheus, Grafana and Instana, Manage performance tuning, staying inside the OCP, CPD and MongoDB support window, and GitOps with ibm-mas/gitops, the CLI and ansible-devops. This index gives the map, a September-to-October 2026 fact base re-verified against IBM and GitHub, and reading paths by role."
+seoTitle: "Running MAS on OpenShift: Platform Ops Guide"
+seoDescription: "Eight-part MAS day-2 series: patch train, Db2 12, tuning, backup and DR, monitoring, performance, support window and GitOps."
+targetQuestions:
+  - "How do I operate IBM Maximo Application Suite on OpenShift after go-live?"
+  - "How do I read the MAS monthly catalog and release numbers?"
+  - "What does MAS CLI backup and restore cover and what does it miss?"
+  - "Which OpenShift versions does the current MAS catalog support?"
+  - "Should I manage MAS with GitOps, the MAS CLI or Ansible?"
+semanticKeywords:
+  - "MAS operations OpenShift"
+  - "MAS operator catalog v9-261007"
+  - "Db2 12 upgrade MAS 9.2"
+  - "mas update db2-v12-upgrade"
+  - "mas backup restore"
+  - "MAS Prometheus Grafana monitoring"
+  - "Maximo Manage performance tuning"
+  - "ibm-mas gitops Argo CD"
+  - "MAS support window OCP 4.18"
+  - "ansible-devops MAS"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Working knowledge of OpenShift (projects, operators, storage classes, routes)"
+  - "Familiarity with Maximo Manage administration; Db2 basics are helpful"
+  - "Helpful but not required: MAS-ADMIN series for the role change from classic admin to platform admin"
+speakableSections:
+  - "Why This Series Exists"
+  - "The Series at a Glance"
+  - "The Operating Picture in One Table"
+clusterSlugs:
+  - "mas-platops-01-patch-train"
+  - "mas-platops-02-db2-12-upgrade"
+  - "mas-platops-03-db2-tuning"
+  - "mas-platops-04-backup-restore-dr"
+  - "mas-platops-05-observability"
+  - "mas-platops-06-manage-performance"
+  - "mas-platops-07-support-window"
+  - "mas-platops-08-gitops-cli-ansible"
+relatedSlugs:
+  - "mas-admin-series-index"
+  - "mas-92-upgrade-watchlist"
+  - "mas-lifecycle-series-index"
+  - "mas-secops-series-index"
+---
+
+# Running MAS on OpenShift: The Platform Operations Series Guide
+
+<aside>
+
+🎯 **Who this is for:** Maximo administrators, platform engineers and OpenShift teams who own a running MAS 9 environment (or are about to) and need an operations map: what to patch and when, what to back up, what to watch, and how to keep the whole thing repeatable.
+
+</aside>
+
+**Series:** Series Index - *MAS Platform Operations* | **8 parts** | **Total read time:** ~2.5 hours
+
+---
+
+## 📖 Why This Series Exists
+
+Go-live was the easy part. Three months later the questions change.
+
+> *"Which of these catalogs are we supposed to be on?"*
+> *"Why does the release page say Core 9.2.8 and Manage 9.2.4?"*
+> *"If the cluster dies tonight, what do we actually get back?"*
+> *"Who gets paged when the Manage pods start restarting?"*
+
+In Maximo 7.6 most of those questions had one-word answers: the fix pack, the DBA backup, the WebSphere console. In MAS 9 the answers live in an operator catalog, a Tekton pipeline, a Db2u custom resource and a Prometheus rule, and they are scattered across IBM's release pages, GitHub repositories and a performance wiki. Our [MAS-ADMIN series](/blog/mas-admin-series-index) explains how the administrator's *role* changed. This series is the *runbook* that role needs.
+
+We built it from four kinds of source, and we label which is which:
+
+- **IBM documentation and support pages**, the primary source for versions and dates.
+- **IBM's own GitHub repositories** (`ibm-mas/cli`, `ibm-mas/gitops`, `ibm-mas/ansible-devops`) and the CLI documentation site, which is often *ahead* of the product documentation.
+- **IBM's MAS Performance wiki**, which holds practitioner-grade tuning guidance.
+- **Community reports**, used for colour and always flagged as such.
+
+<aside>
+
+💡 **Key insight:** The unit of change in MAS is the **monthly operator catalog**, and the unit of risk is **version skew** between the pieces that catalog installs. Every part in this series is, one way or another, about controlling those two things.
+
+</aside>
+
+---
+
+## 🧭 Where This Series Fits
+
+| If you want... | Read... |
+|---|---|
+| How the Maximo administrator role changed in MAS | **MAS-ADMIN** - [Series Index](/blog/mas-admin-series-index) |
+| What changed in 9.2 and what breaks on upgrade | **MAS-9-2 Part 6** - [Upgrade Watchlist](/blog/mas-92-upgrade-watchlist) |
+| Which Maximo support dates end when, and the business case to move | **MAS-LIFECYCLE** - [Series Index](/blog/mas-lifecycle-series-index) |
+| Identity, SSO and CVE response | **MAS-SECURITY-OPS** - [Series Index](/blog/mas-secops-series-index) |
+| **How to patch, back up, watch, tune and automate a running MAS on OpenShift** | **This series** |
+
+---
+
+## 📊 The Series at a Glance
+
+| Part | Title | Focus Area | Tier | Read Time |
+|------|-------|-----------|------|-----------|
+| 1 | The MAS Patch Train Explained: Catalogs, Interim Builds and Version Skew | Monthly catalogs, reserved numbers, Core vs Manage vs AI Service versions, reading the releases page | Admin | 16 min |
+| 2 | Db2 12 on OpenShift: The Upgrade Every MAS 9.2 Shop Must Do | `mas update --db2-v12-upgrade`, licence file, Db2uCluster to Db2uInstance, rollback | Admin | 18 min |
+| 3 | Db2 Tuning for Maximo Manage | Workload setting, row-organised tables, sequence caching, RUNSTATS and REORG | Admin | 18 min |
+| 4 | Backup, Restore and Disaster Recovery for MAS | CLI backup scope, OADP and Velero, Kasten, Db2 backups, cross-cluster recovery | Admin | 19 min |
+| 5 | Observability for MAS: Prometheus, Grafana and Instana | User-workload monitoring, PodMonitor, dashboards, what to alert on | Admin | 17 min |
+| 6 | Maximo Manage Performance Tuning on MAS | Pod and JVM sizing, cron and integration load, UI vs MIF bundles, diagnosis tools | Admin | 18 min |
+| 7 | Staying Inside the Support Window: OCP 4.18 to 4.22, CPD 5.3.1, MongoDB 8 | Catalog compatibility, upgrade sequencing, the even-numbered OCP rule | Admin | 16 min |
+| 8 | GitOps for MAS: ibm-mas/gitops, the CLI and ansible-devops | Argo CD-managed MAS, air-gap, cloud Db2, choosing a tool | Admin | 19 min |
+
+Parts 1 and 7 are about *what version should I be on*. Parts 2 and 3 are the database. Parts 4 and 5 are *what happens when it breaks*. Part 6 is *why is it slow*. Part 8 is *how do I stop doing this by hand*.
+
+---
+
+## 🧱 The Operating Picture in One Table
+
+Before the part-by-part guide, here is the estate you are operating. Everything in the table is expanded later in the series.
+
+| Layer | What runs it | What you own | Where it is covered |
+|---|---|---|---|
+| OpenShift | Red Hat (self-managed, ROSA, ARO, IBM Cloud) | OCP version, node sizing, storage classes, cluster monitoring | Parts 5, 7 |
+| Operator catalog | IBM Maximo Operator Catalog (`v9-YYMMDD`) | Which catalog, when you move, mirror in air-gap | Parts 1, 7, 8 |
+| MAS Core | Suite operator | Core version, domain, certificates, license (SLS) | Parts 1, 4 |
+| Manage | Manage operator, workspace | Manage version, pods, bundles, crons | Parts 1, 6 |
+| Database | Db2u operator (or external Db2) | Db2 version, tuning, backups, licence | Parts 2, 3, 4 |
+| MongoDB | MongoDB Community Edition (or MCK) | Version, storage, backup | Parts 4, 7 |
+| Kafka and others | Strimzi or Red Hat Kafka, CP4D for some add-ons | Version alignment, even-numbered OCP rule | Part 7 |
+| Pipelines and automation | Tekton (CLI), Argo CD (gitops), Ansible | Reproducibility, drift, audit | Part 8 |
+
+<aside>
+
+💡 **Key insight:** If you cannot name the owner of each row, you do not yet have a platform operations model. In many estates the OpenShift team owns the cluster, the Maximo team owns Manage, and **nobody owns the database operator, the catalog or the backup pipeline**. This series exists to close that gap.
+
+</aside>
+
+---
+
+## 📅 The Fact Base: What the Last Six Weeks Looked Like
+
+We re-checked these against IBM's pages and GitHub on **2026-10-20**. They are here because they show the *rhythm* of operations: something material changes almost every week.
+
+| Date (2026) | What happened | Primary source |
+|---|---|---|
+| 24 Sep | Catalog v9-260924 supports OCP 4.18 to 4.22, CPD 5.3.1, MongoDB 7.0 to 8.0 | [MAS CLI catalogs page](https://ibm-mas.github.io/cli/catalogs/) |
+| 29 Sep | Manage 9.2.4, 9.1.25 and 9.0.32 released; AI Service 9.2.3 and 9.1.19 | [IBM releases page](https://www.ibm.com/support/pages/maximo-application-suite-releases-information-0) |
+| 7 Oct | Catalog v9-261007; interim Core 9.2.8, 9.1.27, 9.0.33 | IBM releases page |
+| 8 Oct | CLI 23.14.0: 9.0 to 9.1 upgrades with non-standard storage classes, MongoDB CE in gitops | [ibm-mas/cli releases](https://github.com/ibm-mas/cli/releases) |
+| 12 Oct | ibm-mas/gitops 8.7.0: MongoDB CE via Argo CD, CPD 5.3.1 Helm installs, private NLB | [ibm-mas/gitops releases](https://github.com/ibm-mas/gitops/releases) |
+| 16 Oct | CLI 23.15.0 (Db2 audit retention setting, v9-261007 catalog entry); gitops 8.7.1; ansible-devops 37.21.3 | CLI, gitops and [ansible-devops](https://github.com/ibm-mas/ansible-devops/releases) release pages |
+
+### The catalog table, as IBM publishes it
+
+| Catalog | OCP | CPD | MongoDB | OCP end of support (per IBM page) |
+|---|---|---|---|---|
+| v9-261007 | 4.18 - 4.22 | 5.3.1 | 7.0 - 8.0 | Aug 3, 2027 |
+| v9-260924 | 4.18 - 4.22 | 5.3.1 | 7.0 - 8.0 | Aug 3, 2027 |
+| v9-260827 | 4.16 - 4.22 | 5.3.1 | 7.0 - 8.0 | Aug 3, 2027 |
+
+Two operational points jump out. First, **v9-260827 was the last catalog that listed OCP 4.16**, so a cluster still on 4.16 cannot take any later catalog without an OpenShift upgrade first. Second, IBM's page shows the next catalog slots (v9-261029, v9-261126, v9-261224) with every field marked TBD, so treat those as planned dates, not commitments.
+
+<aside>
+
+⚠️ **Gotcha:** The catalogs page does not list Db2 versions, and the 9.2 factbase we hold says IBM deliberately does not publish inline version floors and directs customers to generate a per-version system requirements report (SPCR). Part 7 teaches that method instead of quoting a floor that will date quickly.
+
+</aside>
+
+---
+
+## 🧩 Part-by-Part Guide
+
+### Part 1: The MAS Patch Train Explained
+
+The first thing that confuses new MAS admins is IBM's releases page. It looks like a list of version numbers; it is actually three or four independent release trains. On 20 October the page showed:
+
+| Product | Latest (per IBM page) | Date | Note |
+|---|---|---|---|
+| MAS Core 9.2 | 9.2.8 (interim) | 7 Oct 2026 | 9.2.4 and 9.2.5 reserved for internal use |
+| MAS Core 9.1 / 9.0 | 9.1.27 / 9.0.33 (interim) | 7 Oct 2026 | Same security fix, three branches |
+| Manage 9.2 / 9.1 / 9.0 | 9.2.4 / 9.1.25 / 9.0.32 | 29 Sep 2026 | |
+| AI Service | 9.2.3 / 9.1.19 | 29 Sep 2026 | |
+| Core and Manage 8.x | 8.11.34 / 8.10.37 (Core), 8.7.32 / 8.6.38 (Manage) | 30 Apr 2026 | Maintenance-only |
+
+Part 1 teaches you to read the "reserved" notes, to tell an interim build from a scheduled one, and to use real defect examples (DT501598, where MAXUSER fields are overwritten in a 9.1 to 9.2 upgrade when MASISSUER is NULL; DT500106, where Application Configuration will not open after 9.1.20) to decide whether a given interim build is urgent for you. It also covers the October security fix in Core 9.2.8 for CVE-2026-105052, an unauthenticated path traversal in the login service that IBM's bulletin lists as affecting 8.10, 8.11, 9.0, 9.1 and 9.2.
+
+### Part 2: Db2 12 on OpenShift
+
+For estates using the Db2u operator, the Db2 11 to 12 move is the biggest single platform change in the 9.2 cycle. IBM's `mas update` guide documents the three flags that matter:
+
+```bash
+# Db2 11 -> 12 via the MAS CLI (flags per ibm-mas.github.io/cli/guides/update)
+docker run -ti --rm -v ~/licenses:/licenses quay.io/ibmmas/cli \
+  mas update \
+    --catalog v9-261007-amd64 \
+    --db2-namespace db2u \
+    --db2-v12-upgrade \
+    --db2-license-file /licenses/db2-v12-activation.lic
+```
+
+The flag `--db2-v12-upgrade` "confirms a major version update for Db2 to version 12", and `--db2-license-file` is required for 11-to-12. The command flow then detects dependencies, shows a summary, runs `pre-update-check`, updates the catalog and finishes with `post-update-verify`. Our 9.2 factbase adds that the upgrade is blocked without the licence file on purpose, since Db2 12 would otherwise fall back to a 30-day trial licence. Part 2 covers the order of operations, the Db2uCluster to Db2uInstance change, the pre-upgrade backup you must take, and how to reference DT502701.
+
+> *"We can just do the Db2 upgrade in the same window as the Manage upgrade."*
+
+You can, if you have a tested rollback. Part 2 helps you decide.
+
+### Part 3: Db2 Tuning for Maximo Manage
+
+A containerised Db2 still needs a DBA's attention. Part 3 works through the database settings that matter for Manage: the `db2_workload=maximo` setting, row-organised versus column-organised tables, sequence caching (`maxsequence`), and the RUNSTATS and REORG routine that keeps statistics current. IBM's MAS Performance wiki links to a "DB2 Performance Diagnosis" section and to DBTest utilities for MAS Manage, which are our starting points. We will flag where a setting comes from the wiki and where it comes from practitioners.
+
+### Part 4: Backup, Restore and Disaster Recovery
+
+This is where the brief for the series and IBM's own documentation need careful reconciling, so here is what IBM's CLI guide actually says.
+
+| Component | In `mas backup`? | Notes (from IBM's CLI backup guide) |
+|---|---|---|
+| Core configuration and CRs | Always | |
+| Operator catalog definitions | Yes | |
+| Certificate Manager | Configuration only | Red Hat provider only |
+| MongoDB | By default | Community Edition only; external or enterprise not backed up |
+| Suite License Service | By default | Can be excluded with `--exclude-sls` |
+| Manage app + PV data | Optional | `--backup-manage-app` |
+| Facilities app + PV data | Optional | `--backup-facilities-app` |
+| Db2 for Manage / Facilities | Optional | Standalone Db2u operator only; **Db2uInstance not supported** |
+| Monitor, IoT, Predict and other add-ons | No | |
+| Cloud Pak for Data | No | |
+| DRO | No | Reinstalled fresh on restore |
+
+The guide also states that restore from the pipeline works only from S3 or Artifactory, that Manage database restore is offline, and that you cannot restore backups taken before CLI v19.0.0 with a later CLI. Because the Db2uInstance limit collides with the Db2 12 move in Part 2, Part 4 spends real time on what to do with Db2 outside the CLI: native Db2 backups, OADP with Velero, and storage-level tools such as Veeam Kasten, where vendor timings are labelled as vendor-reported.
+
+<aside>
+
+⚠️ **Gotcha:** The series brief described CLI backup as "Manage and Facilities only". IBM's page shows it also covers Core, MongoDB CE and SLS. We follow IBM's page, and note the discrepancy in a comment at the bottom of this post.
+
+</aside>
+
+### Part 5: Observability
+
+IBM's Grafana guide for Manage lists the order of work: configure the OpenShift monitoring service, confirm the PodMonitor for the Manage pods (the page notes you no longer have to create PodMonitors by hand, so check what your deployment already provides), verify that data is being collected, install the OpenShift Grafana operator into `openshift-user-workload-monitoring`, and import the Manage dashboard. Part 5 turns that into an alerting design: what to page on (pod restarts, JVM health, database latency), what to chart, how long to keep it, and where Instana fits. We will say plainly where guidance is community-sourced; IBM documents Prometheus and Grafana for Manage, not a MAS-specific Instana recipe.
+
+### Part 6: Manage Performance Tuning
+
+IBM's MAS Performance wiki is organised around MAS best practices (OpenShift, Core, MongoDB, cloud platforms), MAS Manage (overall, Mobile, Integration Framework with JMS and Kafka), sizing guidance, monitoring and performance diagnosis. Part 6 follows that structure and adds what we see in the field: separating UI, MIF and cron bundles, sizing pods and JVMs against measured load, and finding the one cron task or integration queue that is quietly eating the cluster. Community checklists in circulation suggest a two-second target for critical transactions; we treat that as a community starting point, not an IBM service level.
+
+### Part 7: Staying Inside the Support Window
+
+This part is a calendar and a sequence. It covers how the catalog table above maps to OCP, CPD and MongoDB, why an OCP 4.16 cluster is stranded after v9-260827, and the rule from IBM's 9.2 documentation that "IBM App Connect and Cloud Pak for Data do not support odd-numbered Red Hat OpenShift Container Platform versions", so if Maximo Collaborate or Maximo Predict is deployed you must use even-numbered OCP versions. That rule collides with a catalog range of 4.18 to 4.22 more often than you would expect. The CLI also handles dependency alignment during `mas update`: MongoDB and Kafka are aligned to tested versions, and a major MongoDB move requires an explicit flag such as `--mongodb-v8-upgrade` plus a backup.
+
+### Part 8: GitOps, the CLI and ansible-devops
+
+The final part compares three ways to drive MAS and shows how they relate. The CLI wraps Tekton pipelines; ansible-devops is the Ansible collection underneath much of that automation (CLI 23.14.2, for example, bundles ansible-devops 37.21.2); `ibm-mas/gitops` packages MAS for Argo CD. Recent gitops releases show where it is heading: 8.7.0 added MongoDB CE through Argo CD, CPD 5.3.1 Helm installs and private NLB support for AWS PrivateLink, and earlier 8.x releases added RHOAI support and Db2 audit-log upload to S3. ansible-devops 37.21.3 mentions "investigative work" on a Db2 Helm installer, which we treat as a signal to watch, not a feature to plan around.
+
+---
+
+## 🧭 Recommended Reading Paths
+
+### New MAS Platform Admin (first 90 days)
+Parts 1, 4, 5, then 7. You need the version model, a recovery plan, alerts and a calendar before you need anything else.
+
+### Maximo DBA
+Parts 2 and 3, then Part 4 for the Db2 backup limits, then Part 6.
+
+### OpenShift / SRE Team Inheriting MAS
+Parts 5, 7 and 8 first, then Part 1 to learn why Maximo version numbers look the way they do.
+
+### Architect Planning an Estate
+Parts 7, 4 and 8, in that order: support window, DR design, then automation.
+
+### Maximo Manager Who Needs the Short Version
+This index, Part 1, and Part 7. Ask your team the question in the next section.
+
+---
+
+## 💡 Key Themes Across the Series
+
+1. **Catalog discipline.** You choose a catalog; operators follow. Never mix catalog months across clusters without meaning to.
+2. **Version skew is normal, surprise skew is not.** Core, Manage and AI Service version independently. Know your three numbers.
+3. **Opt-in upgrades need opt-in evidence.** Db2 12, MongoDB 8 and OCP moves need flags, licences and backups. Capture them in a runbook.
+4. **A backup you have not restored is a hope.** Test the restore path and write down what the tooling does not cover.
+5. **Measure before you tune.** Dashboards first, settings second.
+6. **Automate the boring parts.** Git as the record of intended state beats a wiki page nobody updated.
+
+### The Ten Questions Every MAS Operations Review Should Answer
+
+1. Which catalog is each cluster on, and when was it last updated?
+2. What are the Core, Manage and AI Service versions in each environment?
+3. Is each OCP version inside the catalog's supported range, and is it even-numbered if Predict or Collaborate is deployed?
+4. Is Db2 on 11 or 12, and where is the licence file?
+5. When was the last backup restored in a test, not just taken?
+6. Which add-ons and databases sit outside the CLI backup scope?
+7. Who is paged when a Manage pod restarts three times in an hour?
+8. Which cron tasks and integration queues run in the UI bundle?
+9. Is desired state in Git, or only in someone's terminal history?
+10. What will you do when OCP 4.18 leaves support?
+
+---
+
+## ✅ What We Re-Verified for This Index
+
+The research base came from our knowledge base of 16 October. For this index we re-checked on 2026-10-20 what we could reach.
+
+| Claim | Check | Result |
+|---|---|---|
+| Catalog v9-261007 supports OCP 4.18 to 4.22, CPD 5.3.1, MongoDB 7.0 to 8.0 | MAS CLI catalogs page | Confirmed (the page's column labels are terse, so mapping verified against the column header order) |
+| v9-260827 was last catalog listing OCP 4.16 | Same page | Confirmed |
+| Core 9.2.8, 9.1.27, 9.0.33 on 7 Oct 2026; Manage 9.2.4 on 29 Sep | IBM releases page | Confirmed (final ~10,000 characters of the long page not read) |
+| Reserved numbers (9.2.4, 9.2.5, 9.2.2, 9.1.23, 9.1.24, 9.0.30) | IBM releases page | Confirmed |
+| `--db2-v12-upgrade`, `--db2-license-file`, `--db2-namespace` flags | MAS CLI update guide | Confirmed |
+| Licence-file block and 30-day trial behaviour | Local knowledge base (DOC15) from IBM docs | Not re-read: IBM Documentation was not reachable this run; kept attributed to the knowledge base |
+| CLI backup scope and limits | MAS CLI backup and restore guide | Confirmed; differs from the series brief (see note) |
+| Grafana setup steps for Manage | IBM Documentation page | Confirmed in outline; page omits port and PodMonitor field details |
+| CLI 23.15.0, gitops 8.7.0 and 8.7.1, ansible-devops 37.21.3 | GitHub release pages | Confirmed; dates are day and month only on the pages |
+| CVE-2026-105052 scope and fixed builds | IBM support bulletins (per DOC00) | Not re-fetched; attributed to the knowledge base |
+| Even-numbered OCP rule | Knowledge base quote of IBM 9.2 documentation | Not re-read from IBM; attributed |
+
+Where later parts rely on IBM Documentation pages that were unreachable, they will re-check at drafting time and keep the hedge if still blocked. Vendor timings, community checklists and anything tagged [IND] in our research are labelled as such.
+
+---
+
+## 🧰 How to Use This Series
+
+- **Just inherited a MAS cluster?** Run the ten questions above, then read the parts that answer your "no" and "don't know" rows.
+- **Planning the next catalog update?** Read Part 1, then Part 7, then Part 2 if Db2u is in play. Take a backup using Part 4 before you start.
+- **Building alerts?** Go straight to Part 5, then read Part 6 to decide what "slow" means for you.
+- **Standardising across environments?** Read Part 8 and decide whether Git, the CLI or Ansible will be your source of truth.
+
+---
+
+## References
+
+- [MAS CLI - Operator catalogs and platform compatibility](https://ibm-mas.github.io/cli/catalogs/)
+- [IBM Support - Maximo Application Suite releases information](https://www.ibm.com/support/pages/maximo-application-suite-releases-information-0)
+- [MAS CLI - Update guide (mas update, Db2 12 flags)](https://ibm-mas.github.io/cli/guides/update/)
+- [MAS CLI - Backup and restore guide](https://ibm-mas.github.io/cli/guides/backup-restore/)
+- [IBM Documentation - Configuring Grafana dashboards for Maximo Manage](https://www.ibm.com/docs/SSRHPA_cd/appsuite/manage_deploy/c_ctr_configure_grafana_dashboards.html)
+- [IBM MAS Performance wiki](https://ibm-mas.github.io/mas-performance/)
+- [GitHub - ibm-mas/cli releases](https://github.com/ibm-mas/cli/releases)
+- [GitHub - ibm-mas/gitops releases](https://github.com/ibm-mas/gitops/releases)
+- [GitHub - ibm-mas/ansible-devops releases](https://github.com/ibm-mas/ansible-devops/releases)
+- [IBM Support - Migrating MAS across OpenShift clusters](https://www.ibm.com/support/pages/migrating-ibm-maximo-application-suite-mas-across-openshift-clusters)
+
+---
+
+## Start the Series
+
+Begin with **[Part 1 - The MAS Patch Train Explained](/blog/mas-platops-01-patch-train)**, or jump to the part your role needs using the reading paths above. Coming from the administrator-role story? Read the **[MAS-ADMIN series](/blog/mas-admin-series-index)** first for the context. Planning around support dates? Pair this with the **[MAS-LIFECYCLE series](/blog/mas-lifecycle-series-index)**.
+
+---
+
+**About TheMaximoGuys:** We help Maximo administrators, developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | October 2026*
+
+<!--
+Editorial note for human review: Index drafted before Parts 1-8 exist; part links point to the planned
+slugs in automation/off-hours/queue.json (platops-01 .. platops-08) and will 404 until those posts land.
+Sources: knowledge_base/DOC00_MAXIMO_CHANGES_AND_COVERAGE_GAPS.md (section 5.3, CHG-005..008, 017, 021, 038)
+and DOC15_MAS92_RELEASE_FACTBASE.md (PLAT-01, UPG-03, UPG-04, UPG-15).
+Discrepancy (knowledge base/brief vs IBM web): the queue brief says CLI backup/restore covers "Manage + Facilities only".
+IBM's CLI backup guide (fetched 2026-10-20) lists Core, catalogs, cert-manager config, MongoDB CE and SLS as well,
+with Manage/Facilities and their Db2 optional; Db2uInstance not supported. The post follows the IBM page.
+Not re-verified from IBM primary pages this run: Db2 trial-licence behaviour, DT502701, DT501598/DT500106 descriptions,
+CVE-2026-105052 scope (all from DOC00/DOC15). Part 2's flag example is assembled from documented flags; the
+catalog string "v9-261007-amd64" follows the documented v9-YYMMDD-amd64 pattern but should be checked before reuse.
+Fetch tool's reported years on ansible-devops releases were ignored; dates are day/month from the pages.
+Word count target: index posts 3,000 minimum; FAQ and section depth matched to MAS-MAF-DEV index.
+-->

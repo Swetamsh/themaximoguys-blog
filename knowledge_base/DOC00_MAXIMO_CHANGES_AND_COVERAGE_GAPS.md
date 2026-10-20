@@ -227,7 +227,7 @@ All proposals are **PROPOSED — not queued**. Before queuing a series:
 
 | Part | Title | Content |
 |---:|---|---|
-| 0 | MAS Platform Operations: Series Guide | Day-2 operations map |
+| 0 | MAS Platform Operations: Series Guide | Day-2 operations map — **WRITTEN 2026-10-20** (draft, cover pending) |
 | 1 | The MAS Patch Train Explained: Catalogs, Interim Builds and Version Skew | Monthly catalogs, "reserved" numbers, Core vs Manage versions, how to read the releases page (CHG-005/006/007/008) |
 | 2 | Db2 12 on OpenShift: The Upgrade Every 9.2 Shop Must Do | `mas update --db2-v12-upgrade`, licence file, Db2uInstance, DT502701 |
 | 3 | Db2 Tuning for Maximo Manage | `db2_workload=maximo`, row tables, maxsequence cache, runstats/reorg (IBM Performance Wiki) |
