@@ -1,0 +1,741 @@
+---
+title: "Offline by Design: How Maximo Mobile Downloads, Filters and Syncs MAF Data"
+description: "A developer's guide to the Maximo Mobile offline data model: the preloaded SQLCipher database, the merged mobile master schema, lookup-data, offline-immediate-download, mobile-qbe-filter, 9.1 and 9.2 sync features, transaction errors and why browser preview never tests any of it."
+date: "2026-10-20"
+slug: "mas-maf-dev-07-offline-data"
+tags: ["Maximo", "MAS", "MAF", "Graphite", "Maximo Mobile", "Offline", "Preloaded Database", "Data Sync", "Developer", "Datasources"]
+draft: true
+tier: "developer"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-maf-dev-07-offline-data.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Why does my MAF datasource work in the browser preview but return nothing on the phone?"
+    answer: "Because the two run different data paths. In a browser, including the localhost preview from Part 5 and a Role-Based Application, a datasource is an interactive pull: the where clause and saved query go to Manage over OSLC every time. On a device in offline mode, the datasource reads the local SQLCipher database that was filled by a download, and a where clause is applied during that initial download but not afterwards. An IBM Community answer from 2023 puts it this way: the download has no concept of a record, so a filter that depends on values from the current record returns nothing offline. The fix is to filter on the device with setQBE or mobile-qbe-filter, pair it with a matching qbe so the online and offline results agree, and always test on a real device after publishing. This is practitioner-reported guidance; IBM's own datasource reference is not public."
+  - question: "What is the preloaded database and who builds it?"
+    answer: "The preloaded database is a compressed, pre-populated SQLCipher database holding the supporting data (lookup data such as domains, items, classifications and failure codes) so a new device does not have to download it record by record. IBM's Maximo Manage documentation says a server-side cron task builds it, rebuilds it when applications are updated, writes it under the folder named by the mxe.int.globaldir system property, and chooses which database a user receives from their person groups. MAS 9.1 added generation by site ID and language, and MAS 9.2 added a Mobile Configuration view to see status, disable or delete databases, and to stop a running generation (IBM-reported). Because the data is only as fresh as the last run, plan the cron schedule around how often your reference data changes."
+  - question: "What does mobile-qbe-filter do, and does it support IN lists?"
+    answer: "Our research base records mobile-qbe-filter as a datasource attribute that applies a filter on the device, against the local database, when the app is disconnected (IBM-reported), meant to be paired with the qbe attribute so online and offline results match. Beyond that the details are thin: IBM's JavaScript and component documentation for it is not public, and a March 2026 IBM Community thread about filtering assets by an array of area values reached no confirmed answer. Contributors suggested a comma-separated value form such as =X,Y,Z, an explicit setQBE call with the in operator followed by searchQBE, and a hard-coded test value first. Treat IN support as unverified, test it on a device on your exact MAS version, and fall back to setQBE with an explicit operator if the attribute does not behave."
+  - question: "Can two Maximo Mobile apps share downloaded data in MAS 9.2?"
+    answer: "Our research base records a 9.2.0 element, mobile-shared-data-from, that points a datasource at another app's downloaded data (for example app-id techmobile plus a datasource id) with a fallback to the app's own download if the source is not available (IBM-reported). We could not re-verify the element on IBM's public what's-new page this run, and our searches found no independent write-up, so we show it as a pattern to test rather than a documented contract. The reason it matters is real: duplicate downloads of the same object structure cost device storage, sync time and, as the next question shows, merge risk. Confirm the attribute in the Developer Documentation inside your own 9.2 environment before you build on it."
+  - question: "What happens when two people edit the same record, one of them offline?"
+    answer: "We cannot tell you, and neither can the sources we have. Conflict-resolution rules for offline edits are marked unverified in our research base, and a June 2026 IBM Community thread asking how to warn a mobile user that a work order changed in Maximo Desktop while they were offline had no replies when we read it. What is documented is narrower: errored transactions surface in a sync-transaction datasource and in per-object error datasources, signature options are evaluated only when connected, and 9.0 added data download error details and a Data Sync Statistics page. Design for the worst case. Keep offline edits small, keep ownership clear (one technician per work order), and test the collision scenario on your own environment before you promise a behaviour to the business."
+keyTakeaways:
+  - "A browser preview is an online interactive pull; the device reads a local SQLCipher database filled by a download, so the two paths share XML but not data behaviour, and every offline-relevant change needs a device test"
+  - "The preloaded database carries lookup and supporting data, is built by a server cron task per person group (and in 9.1 per site and language), and is only as fresh as its last run"
+  - "Maximo merges each app's mobileDisconnectedSchema.json by object, not by datasource id, so duplicated object structures cause merge trouble; with several lookup-data datasources on one object structure only one saved query is applied"
+  - "A where clause applies at download time, not afterwards; filter on the device with mobile-qbe-filter or setQBE and keep a matching qbe so online and offline results agree (practitioner-reported syntax, not an IBM contract)"
+  - "9.1 and 9.2 added delta refresh, Mobile Admin sync definitions, individual record sync, background fetch and parallel login downloads; conflict-resolution rules and the MOBILETXN cron remain unverified, so do not promise them"
+series:
+  name: "MAS MAF-DEV"
+  part: 7
+  total: 9
+tldr: "Maximo Mobile is offline-first, and that changes how you write MAF datasources. Static reference data comes down once in a preloaded SQLCipher database built by a server cron task per person group; transactional data arrives through datasources that use download-page-size and offline-immediate-download. Maximo merges every app's mobile schema by object, so do not duplicate object structures. Where clauses run at download time, so filter on the device with mobile-qbe-filter (and keep qbe in step) or setQBE. MAS 9.1 added delta refresh and Mobile Admin sync definitions; MAS 9.2 added individual record sync, background fetch, parallel login downloads and a cross-app shared-data pattern we could not re-verify. A localhost browser preview exercises none of this, so test on a device after every publish. MAF Local Configuration is AS IS, early-access, IBM proprietary tooling. Conflict-resolution rules and the legacy MOBILETXN cron are unverified."
+seoTitle: "Maximo Mobile Offline Data: MAF Download, Filter, Sync"
+seoDescription: "How Maximo Mobile handles offline MAF data: preloaded database, schema merge, mobile-qbe-filter, 9.2 sync features, transaction errors, device testing."
+targetQuestions:
+  - "How does Maximo Mobile work offline?"
+  - "What is the Maximo Mobile preloaded database?"
+  - "What is mobile-qbe-filter in a MAF datasource?"
+  - "Why do lookups return no results offline in Maximo Mobile?"
+  - "What is offline-immediate-download in Maximo Mobile?"
+  - "How do I share data between Maximo Mobile apps in MAS 9.2?"
+  - "Does browser preview test Maximo Mobile offline behaviour?"
+  - "How do I troubleshoot Maximo Mobile data download and sync errors?"
+semanticKeywords:
+  - "Maximo Mobile preloaded database"
+  - "mobileDisconnectedSchema.json"
+  - "offline-immediate-download"
+  - "download-page-size"
+  - "mobile-qbe-filter"
+  - "lookup-data datasource"
+  - "mobile-shared-data-from"
+  - "MobileDbCronTask"
+  - "MOBILEDB table"
+  - "maximo.mobile.customsync"
+  - "maximo.mobile.advanced.delta"
+  - "syncTranscationDS"
+  - "setQBE offline lookup"
+  - "SQLCipher Maximo Mobile"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 2 of this series: datasources, schemas and object structures"
+  - "Part 3 of this series: AppCustomizations.js and controllers"
+  - "Part 6 of this series if you want the device debugging tools"
+  - "A non-production MAS Manage environment with a Maximo Mobile app and a test device"
+speakableSections:
+  - "The Offline Mental Model"
+  - "The Preloaded Database"
+  - "Why Browser Preview Does Not Test Offline"
+clusterSlugs:
+  - "mas-maf-dev-00-series-index"
+  - "mas-maf-dev-02-app-xml-anatomy"
+  - "mas-maf-dev-05-local-configuration-handson"
+  - "mas-maf-dev-06-debugging"
+relatedSlugs:
+  - "mas-manage-work-centers-to-rba"
+  - "mas-bob-04-bob-and-maximo"
+  - "mas-92-upgrade-watchlist"
+  - "mas-java-extensions-series-index"
+---
+
+# Offline by Design: How Maximo Mobile Downloads, Filters and Syncs MAF Data
+
+<aside>
+
+🎯 **Who this is for:** Maximo developers and configurators who build or customize Maximo Mobile apps on the Maximo Application Framework (MAF) and keep hearing "it works in preview, but not on the phone"; Manage administrators who own the preloaded database and sync settings; integration and support leads who need to explain why a technician's list is empty in a basement with no signal.
+
+</aside>
+
+**Series:** MAS MAF-DEV | **Part 7 of 9** | Previous: [Part 6 - Debugging MAF Apps](/blog/mas-maf-dev-06-debugging) | Next: Part 8 - Ship It
+
+---
+
+## 🔥 The Lookup That Worked Everywhere Except the Basement
+
+A developer builds a work order lookup that shows only the assets at the work order's location. In the browser preview it is perfect. In the Role-Based Application it is perfect. The technician takes it to the plant, goes down to the pump room where there is no signal, taps the lookup and sees **NO RESULTS**.
+
+This is not a rare edge case. It is the single most common question in IBM Community threads about Maximo Mobile. In August 2023 a developer posted almost exactly this problem: the filtered lookup worked online and showed no results offline. The answer from an experienced practitioner was blunt: the `where` clause on the datasource "will get passed in during the initial download in Maximo Mobile but won't be used thereafter," and because the offline download has no concept of a record, a filter that depends on a value from the current record returns nothing.
+
+> *"In the web it's an interactive pull of data so it can use the where clause."*
+
+That sentence is the whole post in one line. On the web, a datasource is a question you ask the server each time. On the device, a datasource is a query against a local database that was filled earlier by a download. If you write MAF datasources as if they were always online, you will build apps that pass every test you run at your desk and fail in the field.
+
+This part is the offline map. We cover the **preloaded database** that gets lookup data onto a device, the **mobile master schema** that merges every app's data model, the **download controls** (`offline-immediate-download`, `download-page-size`, `lookup-data`), the **on-device filter** (`mobile-qbe-filter` and its online twin `qbe`), the **9.1 and 9.2 sync features**, the **cross-app data sharing** pattern, **transaction errors**, and the reason a **localhost browser preview never exercises any of it**.
+
+<aside>
+
+⚠️ **Status and sourcing, stated once.** Where we mention **MAF Local Configuration**, it is IBM's **AS IS**, **IBM proprietary**, **early-access** extension, not a production-supported tool. Our Part 5 explains what we could and could not confirm about that wording. On sourcing: **IBM-reported** means IBM documentation, IBM support pages, IBM's own release notes or the IBM-authored practices material, and **vendor claims are tagged that way on purpose.** **Practitioner-reported** means IBM Community threads and partner sources, which are field experience, not IBM contracts. Our research base (DOC17) marks several offline details as **UNVERIFIED**, specifically offline conflict-resolution rules and whether the legacy `MOBILETXN` cron family applies to MAS Mobile; **we do not state those as fact.** IBM Docs pages returned HTTP 403 to our tooling on 16 October 2026. On 20 October the IBM content API answered HTTP 200 for the Maximo Mobile what's-new pages, and that is where we re-checked the 9.1 and 9.2 sync features below. The `mobile-shared-data-from` element could not be re-verified on those pages, and we say so where it appears.
+
+</aside>
+
+By the end you will be able to:
+
+1. Describe the offline data path from Manage to the device database, and where each MAF attribute sits on it.
+2. Explain what the preloaded database holds, who builds it, and how to inspect it.
+3. Write datasources that behave the same online and offline, using `lookup-data`, `qbe` and `mobile-qbe-filter` with the right expectations.
+4. Avoid the duplicated-object-structure trap in the merged mobile schema.
+5. Choose which 9.1 and 9.2 sync features to turn on, and which questions to refuse to answer until you have tested them.
+6. Build a device test plan that replaces the one your browser preview cannot give you.
+
+---
+
+## 🧭 The Offline Mental Model
+
+Maximo Mobile is **offline-first** by design. The app is meant to be useful with no network, so almost everything a technician sees comes from a database on the device, not from a live call to Manage. The server's job is to *prepare* data and to *receive* transactions when the device reconnects.
+
+```
+╔════════════════════════════════════════════════════════════════════════╗
+║                          MAXIMO MANAGE (server)                        ║
+║   Object structures · saved queries · MobileDbCronTask · OSLC          ║
+╠════════════════╦═══════════════════════════════╦═══════════════════════╣
+║  PRELOADED DB  ║   TRANSACTIONAL DOWNLOAD      ║  TRANSACTION UPLOAD   ║
+║  (static data) ║   (work lists, records)       ║  (edits, creates)     ║
+║  domains,items ║   offline-immediate-download  ║  queued on device,    ║
+║  failure codes ║   download-page-size          ║  posted when online   ║
+╠════════════════╩═══════════════╦═══════════════╩═══════════════════════╣
+║                      DEVICE (WebView + SQLCipher DB)                   ║
+║   mobile master schema (merged by OBJECT) · mobile-qbe-filter          ║
+║   datasources read the LOCAL database when disconnected                ║
+╚════════════════════════════════════════════════════════════════════════╝
+      Browser preview skips the bottom box entirely.
+```
+
+Four ideas carry the rest of this post.
+
+| Idea | What it means | Where you will meet it |
+|---|---|---|
+| **Static vs transactional** | Reference data changes rarely and is bulk-built once; work records change constantly and are downloaded per user | `lookup-data` flag, preloaded database |
+| **One local schema** | All apps on the device share one merged data model, keyed by object | Mobile master schema, `mobileDisconnectedSchema.json` |
+| **Download-time vs query-time** | The server-side `where` runs when data is downloaded; the device filters later in a local query | `where` vs `mobile-qbe-filter` and `setQBE` |
+| **Queue on the way up** | Edits are stored as transactions and sent when a connection returns | Sync-transaction and error datasources |
+
+<aside>
+
+💡 **Key insight:** every offline bug is a question about *when* something is evaluated. If you can say for each attribute "this runs on the server at download time" or "this runs on the device at query time," you can predict almost every behaviour in this post.
+
+</aside>
+
+---
+
+## 📦 The Preloaded Database
+
+The first time a technician installs Maximo Mobile and logs in, the device has nothing. Before the preloaded database existed, the app fetched supporting data (domains, items, classifications, failure codes, work types, labor) through paged OSLC calls, and onboarding could take a long time. IBM's Maximo Manage documentation states the problem directly: downloading applications and storing supporting data "took up most of the time that is spent during the onboarding process" (IBM-reported).
+
+The answer is a **preloaded database**: a compressed, pre-populated **SQLCipher** database (an encrypted SQLite variant) that contains the supporting data the mobile apps need, built on the server and delivered to the device as one package. Our DOC17 research base describes it as static reference data generated on the server and downloaded **before** transactional data, with datasources opting in through the lookup-data flag (IBM-reported).
+
+### Who builds it and where it lands
+
+| Question | IBM-reported answer |
+|---|---|
+| What builds it? | A server cron task. IBM's Manage guide names it `MobileDbCronTask`; IBM Support's MustGather page calls the step the `MobileDbGeneration` cron task; the 9.2 what's-new page refers to the `mobiledbCrontask` cron task. These look like names for the same job in different documents, so confirm the exact instance name in Cron Task Setup on your system |
+| When does it rebuild? | On the cron schedule, and when applications are updated |
+| Where is the file written? | The folder named by the `mxe.int.globaldir` system property, and the generated databases are also recorded in the Maximo database |
+| Who gets which database? | Maximo Mobile picks the database from the user's assigned **person groups**; a user in several groups is shown a list |
+| How is it made faster? | Increase the cron task's `ThreadCount` parameter to speed up the download to the device |
+| How fresh is it? | As fresh as the last cron run; users can refresh data in the app at any time |
+
+Two operational details from IBM's guide deserve underlining. First, **when you change a user's profile, confirm they are in the intended person group**, because the group, not the user, decides which database they receive. Second, IBM's own scheduling advice is relative to how often your data changes: if reference data changes daily you might still run the task weekly, and if new users arrive only occasionally you can run it less often.
+
+### 9.1 and 9.2: more control over generation
+
+| Release | What changed | Source |
+|---|---|---|
+| MAS 9.1 | Preloaded databases can be generated and distributed to users assigned to specific **sites** or **languages** (the IBM page title is *Creating preloaded data for mobile using SiteID and language*) | IBM Maximo Mobile 9.1 what's-new, re-read 2026-10-20 |
+| MAS 9.1 | ImgLib controls how record images are sized in downloads, and a property can exclude images from lookup datasources so the preloaded database is created without lookup images | IBM Manage user guide, ImgLib section |
+| MAS 9.2 | **Configure preloaded databases** in the Mobile Configuration application of Manage: view status, disable or delete databases | IBM Maximo Mobile 9.2 what's-new |
+| MAS 9.2 | **Manually stop** a preloaded database generation (it cannot be resumed; the next one starts on the cron schedule) | IBM Maximo Mobile 9.2 what's-new |
+| MAS 9.2 | **Parallel data downloads at login**: configuration data, system information and images download at the same time, and module update checks are consolidated into one request | IBM Maximo Mobile 9.2 what's-new |
+
+For developers, the lesson is that the preloaded database is **an administrator-managed asset**, not something your `app.xml` creates. Your XML only *opts datasources in*. If an admin disables or deletes a database, or a generation fails, your lookups behave as if the data was never preloaded.
+
+### Inspecting what the device received
+
+IBM documents two server URLs for inspection on the preloaded database path (IBM-reported, from the Manage guide; replace the placeholders):
+
+```
+https://<host>:<port>/maximo/oslc/graphite/mobile/db?info=1&user=<username>
+https://<host>:<port>/maximo/oslc/graphite/mobile/db?mobileDbId=<mobiledbid>
+```
+
+The first returns the complete mobile database record as JSON for the named user (with `info=all` for every record). The second downloads the whole generated database as a compressed file so you can open it and check that your expected data is in there. IBM says to find the `mobiledbid` by searching the Maximo Mobile logs for `MOBILEDBID`. IBM Support's MustGather page also describes querying the `MOBILEDB` table for status, build time and generation details, and says the same `mobiledbid` can be used to download the database.
+
+```sql
+-- Illustrative read-only check of preloaded database generation (columns may differ by version)
+SELECT *
+FROM   mobiledb
+ORDER  BY 1 DESC;
+```
+
+We deliberately select all columns. We did not re-verify the column list on a live system, and IBM's pages describe the table by purpose (status, build time, generation details), not by column name.
+
+### What goes wrong when it is built
+
+| Symptom | What IBM and practitioners report | Check first |
+|---|---|---|
+| Generation fails with Java heap space | IBM lists defect DT365902 (heap space when using table domains) and DT422989 (a large set of 100+ preloaded databases causing a memory crash) | Number of databases, table-domain size, memory for the Manage pod |
+| Generation fails after an upgrade | DT436825: preloaded database creation fails after upgrading to Manage 9.0.11 | Your exact Manage fix pack against the defect text |
+| Lookup refresh problems with images | DT436097: refreshing lookup data that includes images | The ImgLib properties; consider excluding lookup images |
+| An error in one query breaks the build | IBM's guide says the log records USERID, SELECT, TABLENAME, SAVEDQUERY, OBJECTSTRUCTURE and ERRORMESSAGE, and the administrator is emailed about cron task failures | The failing saved query and object structure |
+| Wrong data for a user | Community report for Mobile 8.9: lookup data is filtered by the default insert site of the cron task's run-as user, so each insert site needs its own person group and cron instance | Run-as user, person group, insert site (practitioner-reported, older release) |
+| Security restrictions not applied per user | An IBM Ideas request reports databases are generated from a single template user, so dynamic security restrictions are not re-evaluated per mobile user | Treat the preloaded database as the same for everyone in the group (practitioner-reported) |
+
+<aside>
+
+💡 **Key insight:** the last two rows are a design rule. Do not put data in a preloaded lookup that some people in the same person group must not see. Keep sensitive reference data out of lookups, or split the groups.
+
+</aside>
+
+---
+
+## 🧱 The Mobile Master Schema: One Model, Merged by Object
+
+A device does not hold one database per app. It holds **one** local database, and every active app contributes to its schema. Our research base records the mechanism (IBM-reported): each active app ships a `mobileDisconnectedSchema.json`, and Maximo **merges these by object, not by datasource id**, into one shared mobile master schema.
+
+That one sentence explains a family of confusing bugs.
+
+### What "merged by object" means in practice
+
+Suppose two apps each have a datasource on the `WORKORDER` object, with different datasource ids and different attribute lists:
+
+```xml
+<!-- App A: a custom copy of the technician work list -->
+<maximo-datasource id="myWoListDS" object-structure="MXAPIWODETAIL" saved-query="ASSIGNEDWORK">
+  <schema>
+    <attribute name="wonum" id="a1"/>
+    <attribute name="description" id="a2"/>
+    <attribute name="zzcrewnote" id="a3"/>
+  </schema>
+</maximo-datasource>
+
+<!-- App B: an inspection list on the same root object -->
+<maximo-datasource id="inspWoDS" object-structure="MXAPIWODETAIL" saved-query="PMWOLIST">
+  <schema>
+    <attribute name="wonum" id="b1"/>
+    <attribute name="status" id="b2"/>
+  </schema>
+</maximo-datasource>
+```
+
+Different ids, different saved queries, same root object. Because the merge key is the **object**, not the datasource, the device treats these as contributions to the same `WORKORDER` table. Attributes are combined, and the datasources read from shared rows. This is efficient when you intend it (one copy of a work order, both apps see it), and confusing when you did not (a saved query in one app changes what the other app can see).
+
+IBM's own guidance, repeated in Part 2, follows from this: **do not duplicate object structures**, and mobile merges data from object structures with the same root object (IBM-reported).
+
+### The practical rules
+
+| Rule | Why |
+|---|---|
+| Reuse IBM's object structure and extend with `maximo-datasource-override` where you can | One definition means one merge contribution |
+| Never override `object-structure` itself | IBM's examples warn against it |
+| Add attributes through the datasource `schema`; do not create a second object structure that has the same root object | Two structures on one root merge, and attribute mismatches follow |
+| Add a custom attribute in exactly one place, with a consistent type | A conflicting definition in two apps is a merge problem you will meet at sync time |
+| After any schema change, re-test a **clean install** and an **upgrade install** on a device | A device with an old database can hide a schema bug that a fresh device shows, and vice versa |
+
+### The lookup-data limitation
+
+DOC17 records one limitation that follows directly from the shared-object model (IBM-reported, via the Maximo Mobile datasource documentation): **when several lookup-data datasources share one object structure, only one saved query is applied.** If you have three lookups on `MXAPIASSET` with three different saved queries, do not expect three different result sets from the preloaded data. One query wins, and the others quietly return something other than what their XML says.
+
+The practical response is one of three.
+
+1. **Consolidate to one saved query** on the shared object structure and filter on the device.
+2. **Give the second lookup its own object structure with a different root object**, if the data model allows it.
+3. **Do not preload the odd one out.** Let it download transactionally and filter it on the device.
+
+A practitioner (IBM Community, March 2026) suggested a variant for large data sets: replace the stock `MOBILEASSET` saved query with a lighter one on a different object structure and update the preload cron instance so less data downloads to the device. That is a field idea from one thread, not an IBM recommendation.
+
+---
+
+## ⬇️ Download Controls: lookup-data, offline-immediate-download and download-page-size
+
+Part 2 listed the datasource properties that appear in IBM's examples. Three of them control the download. Here is what each does and how it behaves.
+
+| Attribute | Purpose | Notes |
+|---|---|---|
+| `lookup-data` | Marks a datasource as static reference data to be prepared server-side and downloaded in the preloaded database before transactional data | Data can be partitioned by site and by language; the one-saved-query limitation applies (IBM-reported) |
+| `offline-immediate-download` | Download this datasource's data to the device immediately, rather than waiting until the page that uses it is opened | Controls *when* data arrives, so it shapes login time, sync time and battery (IBM-reported) |
+| `download-page-size` | The number of records fetched per page during download | A balance between request count and request size (IBM-reported) |
+
+We have to be straight about how much detail exists. IBM's public documentation does not publish a reference table for these attributes; our research base records them from IBM examples and from the in-product Developer Documentation, and our web search on 20 October 2026 found no public IBM page that documents `offline-immediate-download` by name. A developer in a 2026 IBM Community thread noted that "the JS docs are unfortunately internal IBM only." So treat the table above as the *intent* of each attribute, and verify the exact semantics in the Developer Documentation of your own environment.
+
+### A datasource that downloads on purpose
+
+This is an illustrative sketch built from the attributes DOC17 lists (the ids, saved query and values are examples, not from a shipped IBM app):
+
+```xml
+<maximo-datasource id="assetLookupDS"
+                   object-structure="MXAPIASSET"
+                   saved-query="MOBILEASSET"
+                   lookup-data="true"
+                   offline-immediate-download="true"
+                   download-page-size="200"
+                   qbe="{'status': '=OPERATING'}"
+                   mobile-qbe-filter="{'status': '=OPERATING'}">
+  <schema>
+    <attribute name="assetnum" searchable="true" id="as1"/>
+    <attribute name="description" searchable="true" id="as2"/>
+    <attribute name="location" id="as3"/>
+    <attribute name="status" id="as4"/>
+  </schema>
+</maximo-datasource>
+```
+
+Three notes on that sketch. The `qbe` and `mobile-qbe-filter` values use the quoted-key, operator-prefixed style that appears in community examples; check the exact accepted syntax against your version. `download-page-size="200"` is an arbitrary starting point, not a recommendation. And `lookup-data="true"` together with `offline-immediate-download="true"` is a pairing a practitioner shared in a lookup datasource definition on IBM Community; it is not an IBM-documented recommended combination.
+
+### Choosing what to download immediately
+
+| Datasource kind | `offline-immediate-download`? | Reasoning |
+|---|---|---|
+| The technician's assigned work list | Yes | It is the first thing the user opens, and it must be there offline |
+| Child records of work orders (tasks, materials, labor) | Usually through the parent relationship | The 9.0 release made child data download automatically for cached parent records (IBM-reported) |
+| Large lookups (assets, locations) | Prefer the preloaded database over transactional download | One bulk package beats thousands of paged calls |
+| Rarely used pick lists | No | Do not pay login time for data used once a month |
+| Attachments | Governed by properties, not by the datasource | See the property table below |
+
+### The properties that shape downloads server-side
+
+Several Manage system properties change how and when data reaches devices. These come from IBM's Manage user guide, *System properties that affect mobile apps* (IBM-reported). They are administrator settings, but a developer who does not know them will misdiagnose slow or failing downloads.
+
+| Property | What it does | Default or example |
+|---|---|---|
+| `maximo.mobile.fetch.timeout` | Milliseconds the app waits for the server, and the minimum time the app stays offline after a timeout | Set deliberately; a short value flips users offline quickly |
+| `maximo.mobile.download.parallel` | How many apps the Navigator downloads at the same time; 0 downloads all at once | Default 3 |
+| `maximo.mobile.async.fetch` | Helps prevent timeouts on long asynchronous fetches from Manage | Set to 1 to enable |
+| `maximo.mobile.advanced.delta` | Enables mobile delta synchronization requests that check for changes in related data and controls delta storage in the OSLC and MBO framework | Set to 1 to enable |
+| `maximo.mobile.attachments.bulkDownload.automatically` | Downloads attached files whenever transactional records are downloaded or refreshed | Default true |
+| `maximo.mobile.attachments.bulkdownload.filesizelimit` | Largest file included in bulk download | Default 5120 KB |
+| `maximo.mobile.ios.zipdownload.timeout` | Timeout for native iOS zip downloads, which include application files, the preloaded database package and attachments | Raise for large packages on slow links |
+| `maximo.mobile.disableImagesFromLookupDatasources` | When TRUE, images are left out of lookup datasources and the preloaded database | Useful when lookup images bloat the package |
+
+A frequent field mistake is to tune the XML while the real constraint is a property: a preload that times out on iOS is `maximo.mobile.ios.zipdownload.timeout`, not your datasource.
+
+---
+
+## 🔎 Filtering on the Device: where, qbe and mobile-qbe-filter
+
+This is the section that turns the opening basement story into a rule you can apply.
+
+### Three filters that run at different times
+
+| Filter | Runs where and when | Offline behaviour |
+|---|---|---|
+| `where` on the datasource | On the server, as part of the OSLC request, at download time | Applied during the initial download; not reused afterwards (practitioner-reported) |
+| `qbe` | An online query-by-example applied to the OSLC call | Does nothing for a device with no connection |
+| `mobile-qbe-filter` | On the device, against the local database, when the app is disconnected | The offline twin; pair it with `qbe` so online and offline results match (IBM-reported) |
+
+Our DOC17 base states the pairing rule plainly: **`mobile-qbe-filter` is a client-side filter applied on the device when disconnected; pair it with `qbe` so online and offline results match** (IBM-reported). A practitioner (the same IBM Community answerer, March 2026) described it in nearly the same words: `mobile-qbe-filter` "is specific to on-device behavior"; mobile data queries the local database, so you can use it "in addition to the existing where property to filter the local data." A second practitioner source agrees that a `where` is not applied on a device the way it is online: Maycon Belfort (MoreMaximo, April 2025) wrote that "the where clause is only applied on the Resource Application Roles and not on a device."
+
+### The mistake that creates NO RESULTS
+
+```xml
+<!-- Looks right online. Fails offline for a lookup that depends on the current record. -->
+<maximo-datasource id="woAssetLookupDS" object-structure="MXAPIASSET" saved-query="MOBILEASSET"
+                   where="location={page.state.currentLocation}" />
+```
+
+The `where` binds to a page value. During the offline download there is no page and no record, so the clause either resolves to nothing or is evaluated once and never again. Online, the lookup asks Manage at the moment you open it, so the bound value is present. That is the 2023 IBM Community diagnosis in XML form.
+
+The practitioner fix in that thread was to filter **at the moment the lookup opens**, using `setQBE` on the datasource, rather than relying on `where`. Here is the shape (illustrative; datasource and state names are examples):
+
+```js
+// In a page or dialog controller: filter a lookup on the device at open time.
+async openAssetLookup(event) {
+  const ds = this.app.findDatasource('woAssetLookupDS');
+  await ds.initializeQbe();
+  ds.setQBE('location', '=', this.page.state.currentLocation);
+  await ds.searchQBE();
+  this.app.showDialog('assetLookup');
+}
+```
+
+Two cautions are worth carrying with it.
+
+1. **That thread did not end in a clean win for everyone.** A second developer in the same thread reported `setQBE` still returned no results offline. A related thread from 2023 to 2024 recorded the poster saying the advice eventually helped and the lookup showed data, along with this note: child datasources should not reference the object structure. It is evidence of a workable pattern, not proof it works in every configuration.
+2. **Avoid `forceSync` as a workaround.** The same experienced answerer wrote that you "almost never want to do" a load with `{ noCache: true, forceSync: true }`, because `forceSync` "forces the mobile framework to go back to the server" and ignores device data. The mobile design aims to avoid network dependencies for basic operation, so any `forceSync` lookup needs connectivity, and you should check connectivity first if you must use it.
+
+### What we know and do not know about `mobile-qbe-filter` syntax
+
+A February to March 2026 IBM Community thread asked how to filter asset records on the device by an array of area values held in a state variable. It is a good example of how little is documented.
+
+| Syntax idea from the thread | Who | Status |
+|---|---|---|
+| `mobile-qbe-filter="{{'zzarea': app.state.userAreas}}"` | The original poster | Did not work; unconfirmed whether arrays are accepted |
+| `'status_maxvalue': '!=CAN,CLOSE,WAPPR'` | A contributor | An example of an operator with comma-separated values |
+| `=VALUE1,VALUE2,VALUE3` | An IBM Champion | A suggested format; the same person said they could not remember whether IN is supported |
+| `setQBE("zzarea", "in", app.state.userAreas)`, then `initializeQbe()` and `searchQBE()` | A contributor | Proposed and described as the likeliest to work |
+| `updateBaseQuery` in `onDatasourceInitialized` | A contributor | Explicitly untested |
+
+No answer was marked as confirmed. So: test a **hard-coded value first** (the advice in the thread), then a comma-separated form, then `setQBE` with an explicit operator. Treat IN-list support in `mobile-qbe-filter` as **unverified**.
+
+### Making online and offline results agree
+
+The reason to pair `qbe` with `mobile-qbe-filter` is not tidiness. It is that a user who works online in the morning and offline in the afternoon should see the same list. A short test makes the agreement checkable.
+
+| Test | Online (RBA or connected device) | Offline (airplane mode, after sync) | Pass if |
+|---|---|---|---|
+| Open the filtered lookup with a known location | List A | List B | A equals B |
+| Open it with a location that has no assets | Empty | Empty | Both empty (and the empty state message is sensible) |
+| Open it with a status filter set | List C | List D | C equals D |
+| Change the record's location, reopen | Updated list | Updated list | Both update |
+
+If A and B differ, the `where`, `qbe` and `mobile-qbe-filter` triple is out of step, and the difference tells you which one.
+
+---
+
+## 🔗 Cross-App Data Sharing in MAS 9.2
+
+If every app downloads its own copy of the same work orders, the device pays in storage, bandwidth and sync time. MAS 9.2 is described in our research base as adding an element for reuse (IBM-reported, DOC17 section 10):
+
+```xml
+<mobile-shared-data-from app-id="techmobile" datasource-id="woListDS" />
+```
+
+The behaviour recorded is: the datasource reuses another app's **already downloaded** data, and falls back to its own download if the source data is not available.
+
+### What we verified and what we did not
+
+| Claim | Verification status |
+|---|---|
+| The element exists in 9.2.0 and takes `app-id` and `datasource-id` | In DOC17 as IBM-reported; **not** visible in the public 9.2 Maximo Mobile what's-new page we re-read on 2026-10-20, and no independent write-up found |
+| It falls back to the app's own download | DOC17 only |
+| It works for every datasource type or for lookup data | **Not established** |
+| It removes the merge-by-object concerns | **Not established**; the master schema still merges by object |
+
+We therefore show it as a **pattern to test**, not a contract. If you want to use it, run this checklist in a non-production 9.2 environment:
+
+1. Confirm the element in the in-product Developer Documentation for your 9.2 build.
+2. Install both apps on a clean device, log in, and check that the second app does not trigger a second download of the same data (use the Data Sync Statistics page described later).
+3. Remove the source app from the user's access and confirm the fallback download occurs.
+4. Change the source datasource's saved query and re-test what the dependent app sees.
+5. Repeat after an upgrade of the source app.
+
+<aside>
+
+💡 **Key insight:** sharing data between apps moves risk from bandwidth to coupling. A change to the source app's datasource can change what the dependent app shows. Record the dependency in the app's README and your Git history.
+
+</aside>
+
+---
+
+## 🔄 Sync Features Across 9.0, 9.1 and 9.2
+
+The offline path improved a lot over the 9.x line. This table consolidates the changes our research base records, with the pages we re-read on 20 October 2026 for the 9.1 and 9.2 entries (IBM-reported).
+
+| Release | Feature | What it gives you |
+|---|---|---|
+| 9.0 | Data retrieval optimisation from the local database | Child data is automatically downloaded for records on cached versions of previously loaded parent records |
+| 9.0 | Data download error details | Details to help troubleshoot an error when downloading to a device |
+| 9.0 | Data Sync Statistics and diagnostics | Help and Support shows statistics per category; diagnostics let you manually run data sync for specific application data and queries |
+| 9.0 | Storage usage | Settings shows how much device storage the offline database, attachments, records and cache use, with a way to clear cache |
+| 9.1 | **Enhanced delta refresh** of transactional data | More child data (work order attachments, asset status updates, work logs, labor records, inspection reports) arrives with a delta sync; enabled by configuration and the `maximo.mobile.advanced.delta` property |
+| 9.1 | **Mobile Admin** app | Define data synchronization and control what is refreshed when a sync is started |
+| 9.1 | Preloaded databases by site and language | Smaller, more relevant packages |
+| 9.1 | ImgLib and large files | Controlled image sizing; attachments up to 200 MB on iOS and Android |
+| 9.2 | **Individual record synchronization** | Records such as work orders and assets can be refreshed one at a time |
+| 9.2 | **Background fetch** | Data is prepared on the server for specified user groups so it is ready before the workday |
+| 9.2 | **Parallel downloads at login** | Configuration data, system information and images download together; module update checks are consolidated |
+| 9.2 | Control of record image downloads | In offline data settings, container settings and Manage mobile properties |
+| 9.2 | Configurable image upload compression | Reduces network use and sync time, with an optional full-resolution override |
+| 9.2 | Preloaded database configuration | Mobile Configuration shows status, lets you disable, delete or stop generation |
+| 9.2 | Save log files on Android | Saves Maximo Mobile logs to a chosen folder (useful with Part 6) |
+
+### Custom sync definitions
+
+The `maximo.mobile.customsync` property lets an administrator define **named, partial syncs**, so a technician on a poor connection can refresh only what matters. IBM's documented example uses a JSON array with a label, a `lookup_delta` flag and a list of apps and datasource ids (the datasource ids in IBM's own example are `todaywoassignedDS`, `dsFailureList`, `inspFormLookupDS` and `assignedworkds`):
+
+```json
+[
+  {"name": "Technician worklist only", "lookup_delta": 1,
+   "ds_list": [{"app": "techmobile", "ds": ["todaywoassignedDS"]}]},
+  {"name": "Technician lookup only", "lookup_delta": 1,
+   "ds_list": [{"app": "techmobile", "ds": ["dsFailureList"]}]}
+]
+```
+
+This is where your datasource ids become part of an operations contract. If you rename a datasource id in your app and an administrator's `customsync` entry names the old one, that sync option silently stops covering your datasource. Treat ids used by `customsync` as stable, and tell the admin when they change. That connects directly to Part 3's rule about not renaming IBM component ids.
+
+---
+
+## 🚨 Transactions, Errors and the Honest Gaps
+
+Reading data is half of offline. The other half is **writing**: the technician changes a status, adds a labor line, creates a service request with no signal, and the app must keep that work safe until it can be sent.
+
+### What our research base records
+
+DOC17 section 10 records the following (IBM-reported):
+
+| Behaviour | Detail |
+|---|---|
+| Errored transactions | Surface in `syncTranscationDS` (IBM's spelling, with the extra letter) and in per-object error datasources |
+| Signature options | Evaluated **only when connected**, so an action that needs an e-signature cannot be completed fully offline |
+| Download errors | The 9.0 documentation adds data download error details to help troubleshoot a failing download |
+| Diagnostics | Help and Support > Data Sync Statistics, and a diagnostics feature that runs a manual sync for chosen data |
+
+### What is unverified, and what we will not claim
+
+Two items in DOC17 are explicitly marked **UNVERIFIED**, and this post keeps them that way:
+
+| Question | Status | What we do |
+|---|---|---|
+| What are the **conflict-resolution rules** when the same field is changed on the device and on the server? | UNVERIFIED | We do not describe a rule |
+| Does the legacy **MOBILETXN** cron family (from a 2018 technote) apply to MAS Mobile? | UNVERIFIED | We do not tell you to configure or rely on it |
+
+The IBM Community evidence for the first one is telling. In June 2026 a developer asked whether Maximo Mobile 9 can warn User A, who edited a work order field offline, that User B changed the same field in Maximo Desktop while User A was offline, and offer an update or cancel choice. The thread had no replies when we read it. IBM's patch readmes in the older MAS 8.x line also list sync defects, such as a stuck transaction that could not clear invalid entries and a sync queue that stopped when the device went to sleep (DT144323, DT144579 and DT144696 in the 8.4.2 fix list found by our search). They are historic, but they show the territory where field problems tend to appear: the queue, not the read path.
+
+### A defensive design for offline writes
+
+Without documented conflict rules, design so that conflicts are rare and survivable.
+
+| Practice | Why |
+|---|---|
+| One owner per work order | If only one technician edits a record, there is no device-to-device conflict |
+| Keep offline edits small and in the same field groups | Fewer fields touched means fewer collisions |
+| Do not rely on a server-side automation script to "fix" a conflicting offline update | The behaviour at reconnect is undocumented in our sources |
+| Show sync state to the user | Technicians who believe data synced when it did not cause the worst incidents; an IBM Ideas request from 2022 describes exactly that on weak networks |
+| Test the collision on purpose | Edit a field on the device offline, edit it in Manage, then reconnect, and record what happens in your version |
+| Put the test result in your runbook | It is the only authoritative answer you will have |
+
+---
+
+## 🌐 Why Browser Preview Does Not Test Offline
+
+Part 5 introduced the localhost preview at `http://localhost:3000`, and Part 6 told you to finish every mobile change with a device test. Now you can see why.
+
+| Behaviour | Browser or RBA preview | Real device, offline |
+|---|---|---|
+| Datasource reads | Interactive OSLC pull, every time | Local SQLCipher database |
+| `where` clause | Applied on every request | Applied at download time, not after |
+| `mobile-qbe-filter` | Not exercised (online) | Applied on the device when disconnected |
+| `lookup-data` and the preloaded database | Not used; the server answers directly | The source of lookup values |
+| Merged mobile master schema | Not used | Governs which attributes exist locally |
+| `offline-immediate-download` timing | Irrelevant | Controls what is ready before the user opens a page |
+| Transaction queue and error datasources | Writes go straight to the server | Writes are queued, then posted |
+| E-signature options | Always connected | Evaluated only when connected |
+| Third-party content (maps, tiles) | May be blocked by CSP in preview (a 9.1.4 report) | Behaves per the WebView and device |
+| Storage limits, battery, timeouts | Not present | Real constraints |
+
+The left column is a good development environment: fast, debuggable and honest about XML and JavaScript. It is **not** an offline test. The right column is the product the technician uses.
+
+<aside>
+
+💡 **Key insight:** the browser preview verifies that your XML *means what you wrote*. The device verifies that your data *arrives where you need it*. They test different things, and you need both.
+
+</aside>
+
+### A device test plan you can reuse
+
+Run this after any change that touches datasources, lookup data, schema attributes, `mobile-qbe-filter` or sync properties.
+
+| Step | Action | What you are proving |
+|---|---|---|
+| 1 | Publish to a **non-production** environment and note the `build.json` version and `MAFAPPDATA` revision (Part 6) | You are testing the code you think you are |
+| 2 | Install on a **clean device** (or clear the app data) and log in | The preloaded database path and first-login timing |
+| 3 | Record login time and the first-sync duration | Your baseline for regression |
+| 4 | Open **Help and Support > Data Sync Statistics** and record the numbers per category | What actually downloaded |
+| 5 | Switch to **airplane mode** and open each changed page | Datasources read locally |
+| 6 | Run each lookup with a record-dependent filter, offline | The `where` versus `mobile-qbe-filter` trap |
+| 7 | Create and edit records offline, then reconnect on a good network | The transaction queue |
+| 8 | Check the sync-transaction and error datasources for failures | Errored transactions |
+| 9 | Repeat on a **device that already had the previous version** | The upgrade install, which differs from a clean one |
+| 10 | Repeat once on a poor network profile | Timeouts and partial downloads |
+
+Pair this with Part 6's debugging tools: turn on **Enable debug logging** in Help and Support, share logs after a failure, and use `chrome://inspect` against a debuggable build to look at the WebView console and storage.
+
+---
+
+## 🩺 Troubleshooting Offline Data
+
+| Symptom | Likely cause | First check | Source |
+|---|---|---|---|
+| Lookup is empty offline, full online | Record-dependent `where` not applied after download | Replace with `setQBE` or `mobile-qbe-filter`; test a hard-coded value | Practitioner |
+| New user waits a long time on first login | No preloaded database, or the wrong person group | Person group membership; cron task history; `MOBILEDB` status | IBM |
+| Preloaded database build fails with heap space | Table domains, too many databases | DT365902, DT422989; memory for the Manage pod | IBM |
+| Preloaded database fails right after a Manage upgrade | A known 9.0.11 defect | DT436825 text against your fix pack | IBM |
+| Lookup data refresh fails when images are present | Lookup images | DT436097; consider the lookup images property | IBM |
+| Only one of several lookups behaves | Several lookup-data datasources share an object structure; one saved query applies | Consolidate saved queries | IBM |
+| An attribute exists in one app and is null in another | Merged schema, attribute not in a contributing app | Compare each app's `mobileDisconnectedSchema.json` contribution | IBM |
+| "Failed To Connect To Server" during a full refresh | Database load, network latency or device performance; IBM suggests a raised session timeout in a related note | Network profile, `maximo.mobile.fetch.timeout`, `maximo.mobile.async.fetch` | IBM |
+| iOS download of a large package times out | iOS native zip timeout | `maximo.mobile.ios.zipdownload.timeout` | IBM |
+| Out-of-memory during sync on a device | Large downloads | IBM has a technote on Java heap errors during sync on iOS and Android; check package size and record limits | IBM |
+| A change saved offline never appears on the server | Errored transaction | The sync-transaction and per-object error datasources; sync logs | IBM |
+| A cross-app shared datasource shows stale data | Dependent on the source app's download | Source app sync; the fallback download | Unverified |
+
+For server-side evidence, IBM Support's guidance for sync problems is consistent with Part 6: ask whether the failure happens during full sync, delta sync or posting data, raise the OSLC and SQL loggers to INFO for the reproduction, and collect the Manage pod logs along with the device log.
+
+---
+
+## 🛠️ A Worked Example: Offline-Safe Failure Code Lookup
+
+Let us put the pieces together on a realistic customization. The requirement: on the Technician work order completion page, show failure codes for the work order's failure class, and make it work offline.
+
+**Step 1: classify the data.** Failure codes and failure lists are reference data. They change rarely, every technician needs them, and they are large. Verdict: **preload**, with `lookup-data="true"`.
+
+**Step 2: avoid the shared-object trap.** The Technician app already uses a failure-list datasource (IBM's `customsync` example names `dsFailureList` in `techmobile`). Do not create a second object structure on the same root object. Reuse the existing datasource and **filter on the device**.
+
+**Step 3: choose the filter.** The failure class depends on the current work order, so a static `where` is wrong. Use a runtime `setQBE` when the lookup opens.
+
+```js
+// Illustrative controller method; datasource and field names are examples.
+async openFailureLookup() {
+  const wo = this.app.findDatasource('woDetailResource');
+  const failureClass = wo.item && wo.item.failurecode;
+  const ds = this.app.findDatasource('dsFailureList');
+
+  await ds.initializeQbe();
+  if (failureClass) {
+    ds.setQBE('parent', '=', failureClass);
+  }
+  await ds.searchQBE();
+  this.app.log.d(TAG, 'failure lookup rows ' + ds.items.length + ' for class ' + failureClass);
+  this.app.showDialog('failureLookupDialog');
+}
+```
+
+Notice the `app.log.d` line from Part 6: when this misbehaves on a device, the debug log tells you how many rows the local query returned.
+
+**Step 4: tell the administrator.** The `dsFailureList` datasource id is in a `maximo.mobile.customsync` entry, so do not rename it. Add a sentence to the app README.
+
+**Step 5: decide the preload scope.** Failure lists differ by organization, so the admin should generate preloaded databases per person group (and per site and language where relevant, in 9.1 and later) so a technician does not carry other sites' data.
+
+**Step 6: test it.** Run the device plan above. Specifically: a clean install with the preloaded database, a lookup in airplane mode with a failure class set, and the same lookup with a class that has no children.
+
+**Step 7: record what you could not prove.** If you used `in` lists or multiple values in a filter, write down "unverified syntax, tested on build X" in the pull request.
+
+---
+
+## 🤖 AI Assistance on the Offline Path (Carefully)
+
+If you use IBM Bob with MAF Local Configuration (Part 5; Part 9 covers the MCP side), the offline model is exactly where an assistant is most likely to produce code that looks right and fails on a device. It will happily write a `where` clause bound to page state, because that is what works online. Our MAS-BOB series covers the tool itself; see [Bob Meets Maximo](/blog/mas-bob-04-bob-and-maximo).
+
+| Request | Guardrail |
+|---|---|
+| "Add a lookup filtered by the work order's location" | Require it to use a device-side filter and to state which filter runs when |
+| "Create a second datasource on MXAPIWODETAIL for my page" | Tell it to reuse or override the existing one; do not add another object structure on the same root |
+| "Rename the datasource ids to be consistent" | Refuse; ids may be referenced by `maximo.mobile.customsync` and by controllers |
+| "Make it work offline" | Ask it to list the datasources it changed and the device test steps; run them |
+
+Remember that Local Configuration is AS IS, early-access, IBM proprietary tooling, and that its preview runs in a browser (Part 5). An assistant cannot test offline behaviour for you either.
+
+---
+
+## 🔗 Where This Connects
+
+- **The UI shift.** Role-Based Applications run on the same framework and always have a connection to Manage, which is why they hide the offline problems. See [From Work Centers to Role-Based Applications](/blog/mas-manage-work-centers-to-rba).
+- **The upgrade lens.** 9.2 adds sync features and deprecations that change what your apps can rely on. See [The MAS 9.2 Upgrade Watch-List](/blog/mas-92-upgrade-watchlist).
+- **The server-side counterpart.** If a preloaded database fails because of a heavy object structure query or a cron task, you are in Java and integration territory; start with the [MAS Java Extensions series](/blog/mas-java-extensions-series-index).
+
+---
+
+## 📜 The Commandments of Offline MAF Data
+
+1. **Ask "when is this evaluated?" of every attribute.** Download time or query time.
+2. **Never trust a browser preview for offline behaviour.** Test on a device.
+3. **Preload reference data; download work data.** Static versus transactional.
+4. **Do not duplicate object structures.** The master schema merges by object.
+5. **A `where` clause is not a runtime filter.** Use `mobile-qbe-filter` or `setQBE`.
+6. **Pair `qbe` with `mobile-qbe-filter`.** Online and offline results must agree.
+7. **Avoid `forceSync`.** It defeats offline and needs a connection.
+8. **Treat datasource ids as a contract.** `customsync` and controllers depend on them.
+9. **Do not claim conflict rules you have not tested.** Write down what your build does.
+10. **Test the upgrade install, not only the clean one.** Old databases hide bugs.
+
+---
+
+## 🗓️ Your Offline Checklist This Week
+
+| Day | Action |
+|---|---|
+| 1 | List every datasource in your apps that uses `where` with a page or record binding; mark each as an offline risk |
+| 2 | Ask your administrator which person groups, sites and languages the preloaded databases cover, and when the cron last succeeded |
+| 3 | Check the `MOBILEDB` status and download one generated database via the `mobileDbId` URL to inspect it |
+| 4 | Find any apps that create a second object structure on a root object another app already uses |
+| 5 | Run the ten-step device plan on one app and save the Data Sync Statistics numbers as a baseline |
+| 6 | Run the offline collision test (edit offline, edit in Manage, reconnect) and write the result in the runbook |
+| 7 | Add "device test completed, build.json and MAFAPPDATA revision recorded" to your pull request template |
+
+---
+
+## 📚 References
+
+**IBM (vendor sources, IBM-reported)**
+
+1. IBM Support, *Collecting data for problems with the Maximo Mobile preloaded database* (MobileDbGeneration cron task, Graphite logger, MOBILEDB query, mobileDbId download, defects DT365902, DT422989, DT436825, DT436097; fetched 2026-10-20): https://www.ibm.com/support/pages/collecting-data-preloaded-db
+2. IBM Docs, *Preloaded data on devices*, Maximo Manage continuous delivery (SQLCipher database, MobileDbCronTask, person groups, ThreadCount, mxe.int.globaldir, inspection URLs; fetched 2026-10-20): https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery?topic=mobile-preloaded-data-devices
+3. IBM Docs, *What's new in Maximo Mobile 9.2* (individual record sync, background fetch, parallel downloads, preloaded database configuration and stop generation; content API returned HTTP 200 on 2026-10-20): https://www.ibm.com/docs/api/v1/content/SSLPL8_cd/com.ibm.mam.doc/overview/c_wn_mobile_92.html
+4. IBM Docs, *What's new in Maximo Mobile 9.1* (enhanced delta refresh, Mobile Admin, preloaded databases by site and language, ImgLib; content API returned HTTP 200 on 2026-10-20): https://www.ibm.com/docs/api/v1/content/SSLPL8_cd/com.ibm.mam.doc/overview/c_wn_mobile_91.html
+5. IBM Docs, *What's new in Maximo Mobile 9.0* (data retrieval optimisation, download error details, Data Sync Statistics, storage usage; content API returned HTTP 200 on 2026-10-20): https://www.ibm.com/docs/api/v1/content/SSLPL8_cd/com.ibm.mam.doc/overview/c_wn_mobile_9.0.html
+6. IBM, *Maximo Manage user guide: system properties that affect mobile apps* (maximo.mobile.customsync, download.parallel, advanced.delta, fetch.timeout, bulk download, ImgLib properties; local copy of the Manage user guide, section 129 and the ImgLib section)
+7. IBM, *MAS 9.2 what's new* (cached 2026-08-12): https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-whats-in-maximo-application-suite-92
+
+**Practitioner and community**
+
+8. IBM Community, Kanu Butani and Steven Shull, *In Maximo Mobile lookup values in Offline Mode* (August 2023; where clause applied at initial download only): https://community.ibm.com/community/user/discussion/in-maximo-mobile-lookup-values-in-offline-mode
+9. IBM Community, *Lookup with runtime filters in Maximo Mobile* (August 2023 to October 2024; forceSync guidance): https://community.ibm.com/community/user/discussion/lookup-with-runtime-filters-in-maximo-mobile
+10. IBM Community, *Maximo Mobile mobile-qbe-filter* (February to March 2026; syntax options, no confirmed answer): https://community.ibm.com/community/user/discussion/maximo-mobile-mobile-qbe-filter
+11. IBM Community, Thomas Mejia, *Maximo Mobile work order out of sync notification* (June 2026; no replies when read): https://community.ibm.com/community/user/discussion/maximo-mobile-work-order-out-of-sync-notification
+12. IBM Community, *Offline filter for Maximo Mobile*: https://community.ibm.com/community/user/discussion/offline-filter-for-maximo-mobile
+13. IBM Ideas, *MOBILE1-I-116* (weak-network sync visibility, 2022): https://ibm-ai-apps.ideas.ibm.com/ideas/MOBILE1-I-116
+
+**TheMaximoGuys companion content**
+
+- [MAS-MAF-DEV Part 6](/blog/mas-maf-dev-06-debugging) · [MAS-MANAGE Part 2](/blog/mas-manage-work-centers-to-rba) · [MAS-BOB Part 4](/blog/mas-bob-04-bob-and-maximo) · [MAS-9-2 Part 6](/blog/mas-92-upgrade-watchlist) · [MAS-JAVA-EXTENSIONS Index](/blog/mas-java-extensions-series-index)
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams modernize their skills for the MAS era, with practitioner-to-practitioner guidance grounded in IBM documentation and field experience.
+
+<!--
+REVIEW NOTES FOR HUMAN (night-shift, 2026-10-20, item maf-07-offline-data):
+
+1. Re-verified this run: IBM Support preloaded-DB MustGather page; IBM Docs "preloaded data on devices" page (fetched); Mobile 9.0/9.1/9.2 what's-new via IBM content API (HTTP 200; text read from the 2026-08-12 cache and the 9.2 page re-fetched for "background fetch"); local IBM Manage user guide sections for mobile properties, ImgLib and preloaded data; four IBM Community threads.
+2. NOT re-verified: `mobile-shared-data-from` (DOC17 only; absent from the public 9.2 what's-new text and from web search). Kept as a pattern to test. `offline-immediate-download`, `download-page-size`, `lookup-data` and `mobile-qbe-filter` semantics rest on DOC17 plus community examples; IBM's component/JS reference is not public.
+3. Conflict-resolution rules and MOBILETXN relevance remain UNVERIFIED per DOC17 section 17 gap 7. Gap 6 (how a device detects a new app version) also remains open; this post does not claim a mechanism.
+4. Cron name discrepancy: IBM Manage guide says MobileDbCronTask, IBM Support says MobileDbGeneration, 9.2 what's-new says mobiledbCrontask. Post flags this; please confirm the canonical instance name.
+5. The Belfort quote ("where clause is only applied on the Resource Application Roles and not on a device") comes from DOC17 section 3.3, not re-read at source.
+6. Knowledge base wins on conflicts: DOC17 lists mobile 9.2 features as "individual record sync, background fetch, parallel downloads at login, record image controls", all confirmed in the 9.2 what's-new page. DOC17 calls the 9.1 feature "enhanced delta refresh and Mobile Admin", also confirmed.
+7. The `userAreas`/`setQBE` snippets, the `mobile-qbe-filter` XML and the failure-lookup controller are illustrative; datasource and state names are examples. `dsFailureList` and `todaywoassignedDS` come from IBM's customsync example.
+8. Defect numbers (DT365902, DT422989, DT436825, DT436097) come from the IBM Support MustGather page fetched 2026-10-20; DT144323/144579/144696 come from search summaries of old 8.x readmes and were not opened.
+9. SearchMaximo corpus used: /root/GBS_RFP/baseline/knowledge-base (not present inside this checkout).
+-->
