@@ -1,0 +1,547 @@
+---
+title: "AI-Assisted MAF: Bob's MAF Config Mode, the Graphite MCP Server and Guardrails"
+description: "What IBM ships for AI-assisted MAF work in the early-access Local Configuration extension: the bundled Graphite MCP server, the Configure Bob Features command, the MAF Config Bob mode and its skill catalog, the issues people hit, and the guardrails that keep an agent out of out-of-the-box files."
+date: "2026-10-20"
+slug: "mas-maf-dev-09-ai-assisted-maf"
+tags: ["Maximo", "MAS", "MAF", "Graphite", "IBM Bob", "MCP", "AI Agents", "Guardrails", "Maximo Mobile", "Max_mcp", "Max_Interfaces"]
+draft: true
+tier: "developer"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-maf-dev-09-ai-assisted-maf.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What is the Graphite MCP server and how does it get into Bob?"
+    answer: "It is a Model Context Protocol server, packaged as @maximo/graphite-mcp-server v1.3.0 inside the MAF Local Configuration extension (we read the beta.6 package, published 2026-09-22). It gives an AI assistant live answers about the Graphite component registry and about Manage object structures, so the assistant stops guessing component names, properties and field names. You do not install it separately: the command Configure Bob Features (Graphite MCP) uses your active MAS session, writes a small credentials file at .bob/graphite-mcp.json in the workspace, registers a graphite-mcp entry in the project's .bob/mcp.json that launches a bundled wrapper script over stdio, and copies the MAF Config mode and its skills into the workspace. The extension is early-access, AS IS, IBM proprietary software, so treat all of this as a developer-desktop aid and not as a production component."
+  - question: "What exactly is the MAF Config mode, and does it really have 45 skills?"
+    answer: "MAF Config is a Bob custom mode, added in beta.2 on 2026-07-28, that makes Bob behave like a MAF configuration specialist: it triages a request, picks a matching skill, loads it, and only then writes code. IBM's own README calls it a 45-skill catalog. When we counted the folders in the beta.6 package we found 45 entries in the skills directory, of which one is the README itself and 44 are skills (20 advanced, 14 simple, 4 concept, 3 issues, 2 guide and one graphite-configuration-advisor). That is a documentation-count discrepancy, not a defect, and it is why this series says 44 skills plus a README. The skills mirror IBM's public Configuration Practices site, so in effect Bob is handed IBM's own MAF playbook (IBM-reported, confirmed by reading the files)."
+  - question: "Are the early GitHub issues about the MCP server still a problem?"
+    answer: "Two of the three are closed and one is open, which differs from what our earlier research notes recorded. Issue #6 (the MCP server edits out-of-the-box JavaScript files instead of a custom file) and issue #7 (heavy token use) were both closed as completed on 2026-07-16, a day after they were opened. The maintainer's comment on #6 admitted that there were no guardrails at that point and that modes and rules were the next priority; the MAF Config mode then shipped on 2026-07-28. Issue #8, which asks the server to discover domains, is still open, labeled enhancement and future, and a commenter pointed out that MXAPIDOMAIN is the generic domain API. Whether a closed issue means the behavior is gone is something we cannot prove from outside, which is why the guardrails in this post do not depend on it."
+  - question: "Can I use Claude, Copilot or Cursor with the Graphite MCP server instead of Bob?"
+    answer: "Possibly, but IBM does not document it and we have not tested it, so we keep this hedged. The server is a standard MCP server that the bundled wrapper launches over stdio with the node runtime, and its credentials come from environment variables and a JSON file, so another MCP-capable client could in principle launch the same wrapper. What IBM ships and supports as a workflow is Bob only: the configure command writes Bob's mcp.json, Bob's custom mode file and Bob's skills directory. IBM's license also covers the extension as IBM proprietary software, so check the terms before you redistribute any of its bundled files. The agent-neutral way to get the same effect today is to give any agent the Configuration Practices site, your repository rules and a Maximo-side MCP server such as the MAS 9.2 native server or TMG's Max_mcp."
+  - question: "What guardrails should we require before an agent changes a MAF app?"
+    answer: "Start with five that cost nothing. Keep every change inside app.xml, AppCustomizations.js or a new extended-controller file the developer creates, and never an existing out-of-the-box file; leave the extension's file protection on; never let an agent rewrite component ids, because the delta model addresses controls by id; require a pull request that includes the generated app.delta.xml; and publish only from a reviewed commit, by a human holding the release identity. Add two more for the agent itself: connect it with the least-privilege Maximo identity that works and keep its credentials file out of Git, and never put tools such as fetch-data-from-manage on the auto-approve list for a production-connected session. Finally, test anything offline-relevant on a real device, because no agent and no browser preview exercises the offline path."
+keyTakeaways:
+  - "The early-access MAF Local Configuration extension (v0.0.1-beta.6, 2026-09-22) bundles @maximo/graphite-mcp-server v1.3.0 and a Bob command, Configure Bob Features (Graphite MCP), that wires it up; it is IBM proprietary, AS IS, and not for production use"
+  - "The MAF Config Bob mode (beta.2) forces triage-then-skill-then-code, and its rules require Bob to call the MCP tools to look up components, properties and object-structure fields instead of inventing them"
+  - "Reading the beta.6 package shows 44 skills plus a README (IBM's docs say 45), six read-only tools on Bob's auto-approve list, and a plaintext credentials file at .bob/graphite-mcp.json that must be kept out of Git"
+  - "Issues #6 and #7 were closed on 2026-07-16 and #8 (domain discovery) is open; the 'edits OOTB JS files' risk is still the one that matters, so the guardrails are file protection, id rules, a PR with app.delta.xml, human-only publish and a device test"
+  - "The pattern is agent-neutral: any MCP-capable agent needs the same three inputs (IBM's practices, live component and schema lookups, a Maximo data/API layer), and TMG's Max_Interfaces (MIT) and Max_mcp (proprietary, not open source) cover the data and API side"
+series:
+  name: "MAS MAF-DEV"
+  part: 9
+  total: 9
+tldr: "IBM's early-access MAF Local Configuration extension bundles a Graphite MCP server and a Bob 'MAF Config' mode. One command wires Bob to your MAS session, registers six read-only lookup tools, and installs a triage-then-skill workflow built from IBM's own Configuration Practices. It is genuinely useful for the tedious parts of MAF work and genuinely risky in one place: a model can edit out-of-the-box JavaScript, which IBM's support policy forbids and the delta model cannot absorb. Use it on development environments only, keep file protection on, keep credentials out of Git, review an XML diff plus the generated app.delta.xml in a pull request, and let only a human publish. The approach is agent-neutral, and TMG's Max_Interfaces and Max_mcp cover the Maximo data and API side. The tool is early-access, AS IS and IBM proprietary, and several details below are marked unverified."
+seoTitle: "AI-Assisted MAF: Bob MAF Config Mode and Graphite MCP"
+seoDescription: "How IBM Bob's MAF Config mode and the Graphite MCP server work for Maximo MAF apps, what went wrong early, and the guardrails to require."
+targetQuestions:
+  - "What is the Graphite MCP server for Maximo MAF?"
+  - "How do I configure IBM Bob for Maximo Application Framework development?"
+  - "What is the MAF Config mode in IBM Bob?"
+  - "Can an AI agent safely edit Maximo Mobile app.xml and AppCustomizations.js?"
+  - "Does Claude or Copilot work with the Graphite MCP server?"
+  - "What guardrails should I put around AI-written MAF changes?"
+  - "How do Max_mcp and Max_Interfaces fit with IBM's MAF tooling?"
+semanticKeywords:
+  - "@maximo/graphite-mcp-server"
+  - "Configure Bob Features"
+  - "MAF Config mode"
+  - "Bob custom mode"
+  - ".bob/mcp.json"
+  - "AppCustomizations.js AI"
+  - "app.delta.xml"
+  - "Graphite component registry"
+  - "MXAPIDOMAIN"
+  - "Maximo MCP server"
+  - "Max_mcp"
+  - "Max_Interfaces"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 3 of this series: controllers and AppCustomizations.js"
+  - "Part 5 of this series: MAF Local Configuration hands-on"
+  - "Part 8 of this series: promotion, delta files and the Git release flow"
+  - "A development MAS Manage environment and permission to create a scoped login or API key"
+speakableSections:
+  - "The Agent That Edited the Wrong File"
+  - "Configure Bob Features: What the Command Actually Does"
+  - "Guardrails for AI-Authored MAF Changes"
+clusterSlugs:
+  - "mas-maf-dev-00-series-index"
+  - "mas-maf-dev-03-controllers-appcustomizations"
+  - "mas-maf-dev-05-local-configuration-handson"
+  - "mas-maf-dev-08-promotion-upgrades"
+relatedSlugs:
+  - "mas-manage-work-centers-to-rba"
+  - "mas-bob-04-bob-and-maximo"
+  - "mas-92-upgrade-watchlist"
+  - "mas-java-extensions-series-index"
+---
+
+# AI-Assisted MAF: Bob's MAF Config Mode, the Graphite MCP Server and Guardrails
+
+<aside>
+
+🎯 **Who this is for:** MAF developers and configurators who are being asked "can't Bob just do this?"; technical leads who must decide what an AI agent may touch in a Maximo Mobile or Role-Based app; and architects who want an agent-neutral way to wire any coding assistant to Maximo. Parts 3, 5 and 8 of this series are the background.
+
+</aside>
+
+**Series:** MAS MAF-DEV | **Part 9 of 9** | Previous: [Part 8 - Ship It](/blog/mas-maf-dev-08-promotion-upgrades) | Back to the [series index](/blog/mas-maf-dev-00-series-index)
+
+---
+
+## 🔥 The Agent That Edited the Wrong File
+
+It is the second week of July 2026. A MAF developer opens the brand-new Local Configuration extension in IBM Bob, types one sentence ("add a COLOR field to the Create Service Request page") and watches the assistant go to work. A few seconds later the editor shows a warning. The assistant has changed a JavaScript file that belongs to IBM.
+
+Not a custom file. Not `AppCustomizations.js`. An out-of-the-box controller.
+
+The developer files a GitHub issue the same evening. The maintainer's reply is refreshingly candid: right now there are no guardrails in place at all, and the next job is the part that adds modes and rules.
+
+> *"It worked. It also did the one thing IBM's support policy says never to do."*
+
+That is the whole story of AI-assisted MAF development in one incident. The agent was fast, plausible and wrong in a way that does not show up until your next upgrade, when the delta model has nothing to merge against. Everything IBM added afterwards (a dedicated Bob mode, a skill catalog, file protection, an MCP server that looks things up instead of guessing) is an attempt to keep the speed and remove the plausible-and-wrong.
+
+This final part of the series walks through what IBM actually shipped, what we found when we opened the package up, what went wrong early, and the guardrails we would require before anyone merges an AI-authored MAF change. It also shows the agent-neutral version of the same idea, because the pattern is bigger than one editor.
+
+<aside>
+
+⚠️ **Status and sourcing, stated once.** **MAF Local Configuration** is IBM's **early-access**, **AS IS**, **IBM proprietary** extension. IBM's project site says it is offered "AS IS, WITH NO WARRANTY OF ANY KIND" and positions it as an enhancement to the supported MAF configuration tool; it is not a production-supported product, and its AI features are the newest and least settled part of it. Evidence tags used below: **IBM-reported** means IBM's site, release notes, GitHub issues and documentation; **from the package** means we downloaded the published v0.0.1-beta.6 release asset (2026-09-22) and read the files, treating the contents as untrusted data and never executing them; **practitioner-reported** means community sources. IBM Docs returned HTTP 403 to our tooling on 16 October 2026, so cached 9.1 and 9.2 claims are marked where they appear. Items listed as open questions in our research base (DOC17 section 17) are kept hedged and not stated as fact; the one that matters here is whether the Graphite MCP server works with agents other than Bob. We did not test that.
+
+</aside>
+
+By the end you will be able to:
+
+1. Describe what ships for AI-assisted MAF work and where each piece lives on disk.
+2. Explain what Configure Bob Features really does, including the part that touches credentials.
+3. Read the MAF Config mode's rules and know what they enforce and what they cannot.
+4. Say what is fixed, open and unknown in the early GitHub issues.
+5. Apply a seven-point guardrail set and a review checklist for AI-authored MAF changes.
+6. Wire the same idea to any agent, and place TMG's Max_Interfaces and Max_mcp next to IBM's tooling.
+
+---
+
+## 🧭 What IBM Ships: Three Pieces and a Command
+
+The AI features of the Local Configuration extension are not one thing. There are three components and one command that installs them.
+
+| Piece | What it is | Where it appears | First shipped | Source |
+|---|---|---|---|---|
+| **Graphite MCP server** | `@maximo/graphite-mcp-server` v1.3.0, bundled in the extension; answers questions about the Graphite component registry and Manage object structures | `external-tools/graphite-mcp-server/` in the package; launched over stdio | beta.1, 2026-07-15 | from the package, release notes |
+| **Auth-bridge wrapper** | `graphite-mcp-server-wrapper.cjs`; reads a credentials file, sets the `GRAPHITE_PROXY_*` environment, spawns the server with `--stdio` | `external-tools/` | beta.1 | from the package |
+| **MAF Config Bob mode** | A Bob custom mode (slug `maf-config`, display name "MAF Config") with five rule files | `external-tools/bob/modes/maf-config/` | beta.2, 2026-07-28 | release notes, from the package |
+| **Skill catalog** | Markdown skills derived from IBM's Configuration Practices docs, loaded by the mode with `use_skill` | `external-tools/bob/skills/` | beta.1/beta.2 | from the package |
+| **Command** | **Configure Bob Features (Graphite MCP)**, command id `maximoDevTools.configureBobFeatures` | VS Code / Bob command palette | beta.1 | release notes, from the package |
+
+The practical way to think about it: the MCP server answers "what exists?", the skills answer "how does IBM say to do this?", the mode enforces "look it up, then write it, and never touch IBM's files", and the command copies all of it into your workspace in one step.
+
+<aside>
+
+💡 **Key insight:** Nothing here makes the model smarter about MAF. It narrows the model's room to improvise. The value is a retrieval and process layer wrapped around a general-purpose assistant, and that is exactly how you should evaluate it: by what it stops the assistant from guessing, not by how clever the output looks.
+
+</aside>
+
+The three pieces matter in a particular order. The Bob mode instructs the assistant to use the MCP tools, and the MCP server needs credentials, which only the command supplies. Skip the command and you have a mode with nothing to call. Run the command against a production-connected session and you have just handed an assistant a live token. We will come back to that, because it is the single most important operational fact in this post.
+
+---
+
+## ⚙️ Configure Bob Features: What the Command Actually Does
+
+IBM's release note for beta.1 says the command "automates Graphite MCP server setup for the IBM Bob AI assistant", writing a wrapper file and registering the server in `~/.bob/config.json`. That is what our research base recorded. When we read the beta.6 package, the command's code described something a little different and more specific, so here is the beta.6 behavior (from the package) as a numbered sequence.
+
+1. **It needs an active MAS session.** It reads the session from the extension's connection manager, so you must already be signed in (Part 5), and it determines the auth method: password, OIDC or API key.
+2. **It builds the Manage URL.** It takes the instance URL from the extension's secret store and strips any trailing `/maximo`, because the MCP server adds that itself.
+3. **It creates a `.bob/` directory in your workspace** if it does not exist.
+4. **It writes `.bob/graphite-mcp.json`.** The file holds the URL, the auth method, the credential (the session's access token, a base64 password string, or an API key) and an `allowSelfSignedCerts` flag.
+5. **It patches the project `.bob/mcp.json`**, adding or updating a `graphite-mcp` entry that runs `node` against the bundled wrapper, with one environment variable, `GRAPHITE_MCP_CREDENTIALS_FILE`, pointing at the file from step 4.
+6. **It copies the MAF Config mode and the skills** into the workspace, with the skills landing in `.bob/skills/`.
+7. **It keeps the file fresh.** An OIDC token expires, so the extension listens for session changes and rewrites the token in `.bob/graphite-mcp.json` when the active OIDC session refreshes. API-key and password credentials are not refreshed.
+
+The MCP entry the command writes looks like this (paths shortened; this is the shape from the code, so check the file the command produces on your machine):
+
+```json
+{
+  "mcpServers": {
+    "graphite-mcp": {
+      "command": "node",
+      "args": ["<extension>/external-tools/graphite-mcp-server-wrapper.cjs"],
+      "env": {
+        "GRAPHITE_MCP_CREDENTIALS_FILE": "<workspace>/.bob/graphite-mcp.json"
+      },
+      "disabledTools": [],
+      "disabled": false,
+      "timeout": 300000,
+      "alwaysAllow": [
+        "graphite-list-components",
+        "graphite-show-multiple-component-properties",
+        "graphite-show-component-properties",
+        "graphite-show-component-samples",
+        "graphite-get-json-schema-for-object-structure",
+        "graphite-find-maximo-object-structure"
+      ]
+    }
+  }
+}
+```
+
+And the credentials file it refers to, per the schema documented at the top of the wrapper:
+
+```json
+{
+  "url": "https://<your-manage-host>",
+  "authMethod": "oidc",
+  "credential": "<access token, base64 maxauth, or API key>",
+  "allowSelfSignedCerts": false
+}
+```
+
+Two details deserve a pause.
+
+**First, the credentials are a plaintext file inside the workspace.** In the code we read, the command writes the file with a plain write call. We found no step that adds `.bob/graphite-mcp.json` to `.gitignore`. That is a normal pattern for a developer tool, and it is also exactly how tokens end up in repositories. Put `.bob/graphite-mcp.json` in your `.gitignore` before you run the command, and remember that the repository's pre-commit secret scan is a backstop, not a plan. (This is derived from reading beta.6 code; confirm on your own build.)
+
+**Second, `alwaysAllow` is pre-filled for six tools.** Bob's own MCP documentation says an `alwaysAllow` entry means Bob does not ask before calling that tool, provided auto-approval for MCP servers is switched on in Bob's settings; otherwise Bob proposes each tool use and waits. The six tools on the list are lookups against the framework's component registry and Manage's object-structure schema. One server tool is deliberately not on the list, `graphite-fetch-data-from-manage`, so a call to read live data should still prompt you. That is the right default. Keep it.
+
+<aside>
+
+💡 **Key insight:** The risky part of an MCP setup is never the tool list. It is the credential behind it. A server that can only read component docs is harmless; the same server holding a token for a production Manage is an agent with your identity. Point it at development, with a scoped login, every time.
+
+</aside>
+
+---
+
+## 🔧 The Graphite MCP Server: Eleven Tools, Two Jobs
+
+Reading the bundled server's registered tool names (from the package) gives eleven tools. They split cleanly into two jobs.
+
+| Tool | Job | On the auto-approve list? | What it answers |
+|---|---|---|---|
+| `graphite-list-components` | Component registry | Yes | Does this component exist, and in which category? |
+| `graphite-show-component-properties` | Component registry | Yes | Which properties does it take, which are required, what types? |
+| `graphite-show-multiple-component-properties` | Component registry | Yes | The same, for several components in one call |
+| `graphite-show-component-samples` | Component registry | Yes | Real usage examples from the framework source |
+| `graphite-get-component-enum-values` | Component registry | No | Valid values for an enumerated property (icons, colors, statuses) |
+| `graphite-search-icons` | Component registry | No | Find an icon name |
+| `graphite-search-colors` | Component registry | No | Find a color token |
+| `graphite-find-maximo-object-structure` | Manage metadata | Yes | Which object structure holds "work order labor"? |
+| `graphite-get-json-schema-for-object-structure` | Manage metadata | Yes | Field names and types for a structure, in brief or standard mode |
+| `graphite-fetch-data-from-manage` | Manage data | No | Run a read against live Manage |
+| `graphite-mcp` (guide/overview resources) | Documentation | n/a | Controller and overview guides bundled with the server |
+
+The two jobs map neatly onto the two ways an assistant goes wrong on MAF.
+
+**Job 1: component and property hallucination.** The Graphite component reference is not public (a research gap we listed back in Part 2), so a general-purpose model has only training data, which may be stale or invented. If it writes `<maximo-datasource>` with an attribute that does not exist, the app either ignores it or fails at build time, and the error is not always friendly. The component tools replace memory with a lookup against the framework version your environment actually uses.
+
+**Job 2: object-structure and field hallucination.** A datasource needs a real object structure name and real field names in its `select` and `where`. Guess `WORKORDERLABOR` instead of the structure the app should use, or `COLOUR` instead of `COLOR`, and you get empty lists or a READ-not-allowed error, which Part 8's security checklist covers. The two Manage metadata tools let the assistant find the structure and read its schema before it writes a line.
+
+The MAF Config mode's rule file for these tools spells the discipline out. It tells Bob to call the lookups before generating XML or JavaScript that depends on them, not after drafting. It forbids inventing component names, property names, object structure names and field names. And it says not to ask the user for something a tool can answer, such as "what fields does your object structure have?" (from the package).
+
+### A worked sequence
+
+Take a request every MAF developer has met: add a lookup on a new attribute to a create page. A well-behaved run, following the mode's rules, goes like this.
+
+| Step | What Bob does | Tool or skill used |
+|---|---|---|
+| 1 | Classifies the request: XML only, or does it need JavaScript? | Mode triage |
+| 2 | Finds the object structure for the new data | `graphite-find-maximo-object-structure` |
+| 3 | Reads the field list and types, brief mode first | `graphite-get-json-schema-for-object-structure` |
+| 4 | Confirms the lookup and datasource components and their properties | `graphite-list-components`, `graphite-show-component-properties` |
+| 5 | Loads the matching skill (for example a simple lookup practice) | `use_skill` |
+| 6 | Writes the change in `AppCustomizations.xml` or `AppCustomizations.js` only | Mode safe-edit rules |
+| 7 | Tells you to preview and device-test it | Mode workflow |
+
+It is the maintainers' own issue #8 that shows where this chain breaks. A developer asked Bob to add an attribute with its domain values as a lookup. The server could not find the domain because it was not using the right object structure, and the developer had to feed the domain values to Bob by hand. The maintainer's note was that the server would need support for a get-list style call, and that he was not sure there was a generic domains API in the OSLC REST set. A commenter answered: **MXAPIDOMAIN** is the generic domain API. The issue is open, labeled enhancement and future. Until it lands, domain-driven lookups are a place where you supply the values and the agent supplies the XML.
+
+---
+
+## 🎛️ The MAF Config Mode: Process as a Guardrail
+
+A Bob **custom mode** is a named bundle of role definition and rules that changes how the assistant works. The MAF Config mode (slug `maf-config`, shown as "🔧 MAF Config") arrived in beta.2 on 2026-07-28. Reading its files in the beta.6 package shows five rule documents and a role definition.
+
+| File | What it governs |
+|---|---|
+| `maf-config.yaml` | The role definition: a MAF configuration specialist fluent in AppCustomizations.xml overrides, the global controller lifecycle, class extension, datasource configuration and the Graphite component model, with "safe edit guidance" as a stated competence |
+| `1_workflow.xml` | The seven-step triage flow and a classification gate that separates XML-only changes from ones that need JavaScript |
+| `2_configuration_practices.xml` | The three ways to customize and which are acceptable; the safe-edit rules |
+| `3_decision_logic.xml` | A table of ambiguous phrases ("add validation", "filter data") with the one clarifying question to ask before routing |
+| `4_troubleshooting.xml` | Routes error symptoms to `issues-*` skills instead of improvised fixes |
+| `5_graphite_mcp_tools.xml` | When and how to call each MCP tool, and the sequencing rule: tools before code |
+
+The workflow file's opening line is the philosophy: Bob "never writes configuration code from general knowledge" and always loads the appropriate skill first (from the package).
+
+### The three-approach rule
+
+This is the part that answers the incident from the start of the post. The practices file lists the three ways to customize a MAF app and tells Bob to enforce them in every response.
+
+| Approach | Upgrade-safe? | IBM support | What the mode tells Bob |
+|---|---|---|---|
+| `AppCustomizations.js` | Yes, the file persists through upgrades | Full | Default for simple to moderate changes |
+| Class extension (subclass an OOB controller in a new file) | Yes, the new file persists | Limited | For complex logic or guaranteed method order |
+| Direct edit of an OOB controller | No, overwritten on upgrade | None, voids support | Never; redirect immediately and explain the risk |
+
+This matches the support tiers in Part 3 and the id-and-delta warnings in Part 8. The mode's safe-edit rules add three refinements that are worth quoting in spirit: all custom JavaScript goes in `AppCustomizations.js` or a new extended-controller file the developer creates; **Bob cannot determine programmatically whether a given JavaScript file is out-of-the-box or custom-authored**, so it must state the guidance and must not silently edit JavaScript files that might be OOB without confirming with you; and new `.js` files created by the developer are safe for Bob to create and edit (from the package).
+
+Read that second rule twice. It is IBM's own mode admitting the limit. The assistant has no reliable test for "is this file IBM's?", so it falls back on asking you. That is an honest design, and it also tells you precisely what your own guardrail has to do: provide the check the model cannot, with file protection and review.
+
+### What a mode cannot do
+
+A mode is an instruction, not an enforcement mechanism. It sits in the model's context. A long session, a user who says "just edit it", a skill that conflicts with a rule, or a plain model slip can all route around it. The maintainer's July comment that rules were "coming" was about this exact layer, and the mode is a strong improvement over nothing, but it is advisory. The enforcement layers are elsewhere: the extension's file protection, Bob's approval gates, and your Git review. We cover those in the guardrails section.
+
+---
+
+## 📚 The Skill Catalog: IBM's Playbook in Bob's Hands
+
+The skills README in the package says "45 Bob agent skills for IBM Graphite/MAF configuration practices", and the mode README repeats "45-skill catalog". When we counted the folders in beta.6, the directory had **45 entries, of which one is `README.md`**, leaving **44 skills**. We use 44 plus a README, flag the difference in the review notes, and do not make anything of it. A count mismatch in an early-access doc is normal.
+
+| Prefix | Count | What it holds | Examples (from the package) |
+|---|---:|---|---|
+| `simple-*` | 14 | Single-change recipes | `simple-add-tooltips`, `simple-marking-required-fields`, `simple-making-fields-read-only`, `simple-add-dashboard-tile` |
+| `advanced-*` | 20 | Multi-step recipes with logic | `advanced-dynamic-mobile-filter`, `advanced-cross-app-datasource-sharing`, `advanced-restrict-complete-status`, `advanced-enable-wo-classification` |
+| `concept-*` | 4 | Background the others lean on | `concept-mobile-master-schema`, `concept-preloaded-database`, `concept-dialog-component-guide` |
+| `guide-*` | 2 | Component guides | `guide-datasources`, `guide-page-component` |
+| `issues-*` | 3 | Diagnostic procedures | `issues-read-action-not-allowed`, `issues-debug-ui`, `issues-faq` |
+| `graphite-configuration-advisor` | 1 | A top-level advisor | The entry point for open-ended questions |
+
+These mirror IBM's public **Configuration Practices** site (14 simple and 20 advanced practices, basic concepts, troubleshooting and a FAQ, per the site's own contents page). If you have used that site, you already know the content; the skills turn it into material the assistant can load on demand instead of paraphrasing from memory. In practice, it gives Bob IBM's own MAF playbook.
+
+Three of those skills line up with earlier parts of this series, which is the best test of whether the catalog is worth trusting:
+
+- `advanced-dynamic-mobile-filter` is the `mobile-qbe-filter` pattern from Part 7. An assistant that loads it instead of improvising will write the filter in the place and form that actually works offline.
+- `issues-read-action-not-allowed` is the security failure from Part 8: a user group missing READ on an object structure used by a new datasource.
+- `issues-debug-ui` is the DOM-to-XML id mapping from Part 6.
+
+Where the catalog stops is as informative as where it starts. There is nothing for promotion, delta files or release flow; those are process, and Part 8 plus your pipeline own them. There is nothing for Java-side extensions either, which is why the server-side counterpart lives in the [MAS-JAVA-EXTENSIONS](/blog/mas-java-extensions-series-index) series.
+
+---
+
+## 🩹 The Early Issues: What Happened and What We Can Say
+
+The extension's GitHub tracker is, at the time of writing, the only independent signal about how this works in the field. Three of the early issues concern the AI features. Our earlier research notes listed all three as open. We re-read them on 2026-10-20 through the GitHub API, and two have since closed, so here is the corrected picture.
+
+| Issue | Title | Opened | State on 2026-10-20 | What the thread shows |
+|---|---|---|---|---|
+| #6 | MCP automatically updates OOTB JS files instead of custom one | 2026-07-15 | **Closed as completed**, 2026-07-16 | The reporter said the MCP never chose to create a new JS file, so it always triggered the protected-file warning. Maintainer: part 2 of the MCP server is the modes and rules, "right now there are no guardrails in place at all", implementing modes is the next priority |
+| #7 | MCP Server seems to use a lot of token | 2026-07-15 | **Closed as completed**, 2026-07-16 | One prompt on a fresh task, with only the embedded MCP server and the Graphite mode, used one Bob coin. Maintainer: the server is optimized to be token efficient, but the spend is down to how Bob performs the task; simple JavaScript work typically costs 1 to 10 coins |
+| #8 | Ability for MCP Server to discover domains | 2026-07-16 | **Open**, labels `enhancement` and `future` | The server cannot find the domain behind an attribute; MXAPIDOMAIN suggested as the generic domain API |
+| #5 | Different URL expected based on the authentication method | earlier | **Open**, label `bug` | OIDC works with the MAS Home URL, an API key needs the Manage URL (Part 5) |
+
+Be careful what you conclude from "closed as completed". The maintainer's comment on #6 admitted a gap and promised modes and rules. The MAF Config mode arrived in beta.2 on 2026-07-28, twelve days **after** the issue closed. We cannot tell from the thread what closed #6, and we have not tested whether the assistant still edits an OOB file in a long session. So we do not say the problem is fixed. We say the maintainers treated it as handled, a mode with explicit rules followed, and the rules themselves admit the model cannot tell OOB from custom files.
+
+On #7, the useful lesson is about cost, not a defect. Bob bills in Bobcoins, and every MCP call and every skill load adds tokens to the task. The MAS-BOB series covers pricing and governance; for MAF work, budget a pilot on real tasks and measure it, as the MAS-BOB pilot playbook suggests, rather than relying on anyone's estimate.
+
+<aside>
+
+💡 **Key insight:** The thread on #6 is the most honest sentence in the whole project: "right now there are no guardrails in place at all." Take it as the design brief. An assistant without guardrails is the default state, and every protection you rely on has to be put there deliberately.
+
+</aside>
+
+---
+
+## 🛡️ Guardrails for AI-Authored MAF Changes
+
+Here is the set we would require. It starts from the five guardrails in our research base and adds two for the agent itself. Each guardrail has a reason that traces back to something earlier in this series.
+
+| # | Guardrail | Why | Enforced by |
+|---|---|---|---|
+| 1 | **Keep changes in `app.xml`, `AppCustomizations.js` and developer-created files only** | OOB files are overwritten on upgrade and void IBM support (Part 3) | Mode rules (advisory) plus file protection plus PR review |
+| 2 | **Leave file protection on** (`maximoDevTools.fileProtection.enabled` and `.showWarnings`, both default true) | It warns when you modify core files that are not upgradeable, using a manifest-checksum guard (Part 5) | The extension (the only machine check in the chain) |
+| 3 | **Never let an agent rewrite component ids** | The delta model addresses controls by id; change one and the delta loses its anchor (Part 8) | PR review of the XML diff; a reviewer rule |
+| 4 | **Require a Git pull request that includes the generated `app.delta.xml`** | The delta shows your changes relative to IBM's original, which is the cleanest view of what the agent really did | Branch protection |
+| 5 | **Publish only from a reviewed commit, by a human with the release identity** | A publish creates a new ACTIVE MAFAPPDATA revision and there is no official revert (Part 8) | Credentials: agents never hold the production identity |
+| 6 | **Test offline behavior on a device** | The browser preview never exercises the offline path (Part 7); no agent can see a device | A human with a phone |
+| 7 | **Give the agent the least-privilege, development-only identity, and keep its credentials out of Git** | `.bob/graphite-mcp.json` is plaintext; a token there is a login | `.gitignore`, a scoped Maximo user, secret scanning |
+
+### Turning the list into a pull request template
+
+A checklist reviewers actually use is shorter than a policy. This is the one we would paste into the repository's PR template for a MAF app:
+
+```markdown
+## MAF change review
+- [ ] Files changed are only: app.xml, AppCustomizations.js, new custom files
+- [ ] No edits to files flagged by file protection (screenshot or note if a warning appeared)
+- [ ] No component `id` values changed in default apps
+- [ ] `app.delta.xml` regenerated and included
+- [ ] New datasources use object structures that exist in TEST and PROD
+- [ ] Security groups have READ on every new object structure
+- [ ] Offline path tested on a device (device, OS, result)
+- [ ] AI assistance used? Which tool/mode/skill: ______
+- [ ] Release owner (human) will publish from this commit
+```
+
+The last-but-one line is the cheap one that teams skip and regret. Recording which tool, mode and skill produced a change makes a later bad pattern traceable to its cause, which is the AI-era version of writing the ticket number in the commit message.
+
+### Reviewing an agent's diff
+
+An AI-authored MAF diff has a few characteristic faults. These are the ones we would look for first, each tied to a check the reader can do in a couple of minutes.
+
+| Symptom in the diff | What probably happened | Check |
+|---|---|---|
+| A changed `.js` file that is not `AppCustomizations.js` and not new | The assistant edited an OOB controller | Compare against IBM's original in `ibm-config`; revert |
+| A component id differs from the base app.xml | The assistant "tidied" or regenerated a control | Revert; a delta anchored to the old id will fail |
+| A property you cannot find in any component sample | A hallucinated attribute; the lookup was skipped | Run `graphite-show-component-properties` or read the component reference in-product |
+| A `select` or `where` naming a field the object structure does not have | The schema lookup was skipped | Run the schema tool in brief mode; compare |
+| A datasource on a structure that exists only in DEV | A structure created for the test and not promoted | Metadata lane first (Part 8) |
+| A very large diff for a small request | The assistant regenerated a whole file | Ask for the minimal change; reject wholesale rewrites |
+| Comments or attribute order churn across the file | Not necessarily the agent; the 9.1 migration drops comments and attribute order | Normalize in review (Part 8, IBM Ideas MASMOBILE-I-804) |
+
+---
+
+## 🧪 A Pilot You Can Run This Month
+
+Do not start with a production app. Start with a one-week pilot on a development environment and a copy of one real app, and measure what you would measure for any tool.
+
+| Day | Activity | Output |
+|---|---|---|
+| 1 | Install the extension (Part 5), sign in to a **development** environment with a scoped identity, add `.bob/graphite-mcp.json` to `.gitignore`, then run Configure Bob Features | A working MCP entry and a `.bob/` directory you have read line by line |
+| 2 | Try five simple tasks from the `simple-*` skills (tooltip, required field, read-only field, tile, default query) with MAF Config mode | Time, Bobcoins used, diff size and defects per task |
+| 3 | Try three `advanced-*` tasks (a dynamic mobile filter, a cross-app datasource, a status restriction) | The same four measures |
+| 4 | Break it on purpose: ask for a change that tempts an OOB edit ("change the behavior of the work order list controller") | Did the mode refuse or ask? Did file protection fire? |
+| 5 | Run the PR checklist over everything produced; device-test the offline-relevant ones | A defect log and a go/no-go for continuing |
+
+The fourth day is the one that tells you the most. You are not testing whether the assistant is capable. You are testing whether your guardrails hold when somebody asks it to do the wrong thing, because someone will.
+
+### What to expect, honestly
+
+Nothing here is published as a benchmark for MAF work, and IBM's Bob-for-Maximo efficiency claims elsewhere come with no stated method, as the MAS-BOB series notes. Our expectation, which is an opinion and not a measurement, is that the lookup-driven tasks (component properties, object-structure fields, standard practices) are where an assistant earns its keep, and the judgment-driven tasks (what should this app do, how will it behave offline, is this the right clone-or-extend decision) are where it does not. A community evaluation of Bob on Maximo tasks by Yann Bordelanne, summarized in the MAS-BOB series, reached a similar conclusion: output quality depends heavily on the quality of the context you provide, and human validation stays in the loop.
+
+---
+
+## 🔀 The Agent-Neutral Angle
+
+Everything above is wired to Bob because IBM ships the wiring for Bob. The underlying ideas are not Bob-specific, and you should not let a tool choice lock the practice in.
+
+### What would transfer, and what we do not know
+
+The Graphite MCP server is a standard stdio MCP server. The wrapper reads a credentials file, sets `GRAPHITE_PROXY_*` environment variables and spawns the bundled server with `--stdio`, passing the standard streams straight through (from the package). On paper, any MCP-capable client (Claude, Copilot, Cursor) that can launch a `node` command with an environment variable could launch the same wrapper.
+
+We have **not tested that**. IBM documents and supports only the Bob path, and the claim that other agents can use the server remains unverified in our research base (DOC17 gap 12). There is also a licensing point: the extension is IBM proprietary software usable with a valid MAS license, so read the terms before copying bundled files out of it. What you can safely take from the extension is the **pattern**:
+
+| Ingredient | Bob path | Agent-neutral equivalent |
+|---|---|---|
+| IBM's practices as loadable knowledge | MAF Config skills in `.bob/skills/` | The public Configuration Practices site, converted into your agent's skill, rules or `AGENTS.md` mechanism |
+| Process discipline | A custom mode with five rule files | Repository rules: "triage, look up, then write; never edit OOB files" |
+| Component and schema lookups | Graphite MCP server | A Maximo-side API for schemas and data, plus the in-product developer documentation |
+| Permission gates | Bob approval gates, `alwaysAllow` | Your agent's approval and permission model |
+| Review | PR with `app.delta.xml` | The same PR, with the same template |
+
+### Where TMG's tools fit
+
+TheMaximoGuys maintains two assets that sit on the Maximo data and API side of this picture. Neither replaces IBM's Graphite tools, which cover the component registry and the app-building side that only IBM can see.
+
+| Asset | What it is | License | Role in an AI-assisted MAF workflow |
+|---|---|---|---|
+| **Max_Interfaces** | An API library for Maximo: 2,439+ endpoints across 14 modules, OSLC and NextGen REST, Postman v2.1 and OpenAPI 3.0 collections | **MIT, open source** | Give any agent real endpoint and field names, including `MXAPIDOMAIN`, so it does not guess an object structure or a domain API (the gap in issue #8) |
+| **Max_mcp** | A Maximo MCP server: 175 tools across 20 modules (including Domains, Query, Security Groups, Autoscripts and Developer Tools), TypeScript with Zod validation, rate limiting, caching, retries, multi-environment and Docker; npm package `@themaximoguys/maximo-mcp` v2.0.0 | **Proprietary, not open source**; available through npm and GitHub | An agent-neutral MCP server for reading and, with scoped keys, changing Maximo data through the API layer, across Maximo versions |
+
+A short, careful way to say how they combine: the Graphite server tells an assistant what a MAF page can contain, Max_Interfaces and Max_mcp tell it what the Maximo behind the page contains, and the Git review decides whether the result ships. Neither TMG tool edits a MAF app or understands app.xml, and we do not claim they do.
+
+The MAS 9.2 native Maximo MCP server is the other option on the Maximo side. As the MAS-BOB series covers, it requires MAS 9.2, runs as an `instance-mcp` deployment, and generates tools from Manage; Max_mcp works against earlier versions as well and is something you operate yourself. They complement each other, and in either case the credential and its security group decide what the agent can do, not the tool list. For the connection pattern (a dedicated read-only key first, a scoped write key per use case, never the database), see [MAS-BOB Part 4: Bob and Maximo](/blog/mas-bob-04-bob-and-maximo).
+
+<aside>
+
+💡 **Key insight:** Treat the AI layer as three separable decisions: what knowledge the agent loads (IBM's practices), what live facts it can query (components, schemas, data), and what it may change (a branch, never a publish). You can swap the tool in each slot without changing the guardrails around it.
+
+</aside>
+
+---
+
+## 🧰 Troubleshooting the AI Setup
+
+| Symptom | Likely cause | First check |
+|---|---|---|
+| Bob shows "Request timed out" when the MCP server starts | The wrapper exited before the protocol handshake, for example a missing credentials variable | Run Configure Bob Features again; confirm `.bob/graphite-mcp.json` exists and `GRAPHITE_MCP_CREDENTIALS_FILE` is set. The wrapper sends a JSON-RPC error message on a fatal start-up fault so the client can show a real message |
+| MCP tools return authorization errors after a few hours | The OIDC access token expired | The extension rewrites the token on session refresh; sign in again, or re-run the command. API-key and password credentials do not refresh |
+| Tools return 404 or wrong-host errors | URL mismatch: OIDC uses the MAS Home URL, an API key needs the Manage URL | Issue #5 and Part 5; the command strips `/maximo` itself |
+| The assistant invents component names | The mode is not active, the MCP server is disabled, or the model skipped the lookup | Confirm MAF Config is the selected mode, the server shows as enabled, and the tool list is populated |
+| The assistant cannot find the domain behind a field | Known gap, issue #8 | Supply the domain values, or fetch them through MXAPIDOMAIN with a scoped read key |
+| A change touches an `.js` file that is not yours | The assistant edited an OOB controller | File protection warning; revert and re-prompt with "AppCustomizations.js only" |
+| Token or Bobcoin spend is high | MCP calls and skill loads add to every task | Start with a measured pilot; ask for smaller diffs; load one skill, not several |
+| Self-signed certificate errors on a dev environment | `allowSelfSignedCerts` is false in the credentials file | Fix the certificate chain where you can; setting it true is a dev-only shortcut |
+| Windows build fails with `@maximo/maxdev-cli` not found | The offline mirror is missing | Part 5 offline mirror section; issue #16, open |
+
+---
+
+## 🔗 Where This Connects
+
+- **[MAS-MANAGE Part 2: From Work Centers to Role-Based Applications](/blog/mas-manage-work-centers-to-rba)**: why the apps you are asking an agent to change exist at all.
+- **[MAS-BOB Part 4: Bob and Maximo](/blog/mas-bob-04-bob-and-maximo)**: the four doors from Bob to Maximo, the MAS 9.2 MCP server and the agent-neutral TMG tools.
+- **[MAS-9-2 Part 6: The 9.2 Upgrade Watchlist](/blog/mas-92-upgrade-watchlist)**: the deprecations (`chat-log`, deprecated in 9.2 and now defined in the application XML) an agent must not reintroduce.
+- **[MAS-JAVA-EXTENSIONS Index](/blog/mas-java-extensions-series-index)**: the server-side counterpart; an agent that crosses from MAF into Java is on a different, stricter path.
+- **[Part 3: Controllers and AppCustomizations.js](/blog/mas-maf-dev-03-controllers-appcustomizations)**: the support tiers the mode enforces.
+- **[Part 5: MAF Local Configuration](/blog/mas-maf-dev-05-local-configuration-handson)**: install, authentication and the preview server.
+- **[Part 8: Ship It](/blog/mas-maf-dev-08-promotion-upgrades)**: the Git release flow your AI-authored branch must pass through.
+
+---
+
+## 📜 The Commandments of AI-Assisted MAF
+
+1. **Thou shalt look it up, not guess it.** Components, properties, object structures and fields all have tools.
+2. **Thou shalt not let an agent edit an out-of-the-box file.** Not once, not "just to test".
+3. **Thou shalt keep file protection on.** It is the only machine check in the chain.
+4. **Thou shalt not let an agent rewrite a component id.**
+5. **Thou shalt keep `.bob/graphite-mcp.json` out of Git.** A token in a file is a login in a repository.
+6. **Thou shalt connect agents to development, with the least privilege that works.**
+7. **Thou shalt review the XML diff and the `app.delta.xml`**, not the assistant's summary of them.
+8. **Thou shalt let only a human publish.**
+9. **Thou shalt device-test what no agent can see.**
+10. **Thou shalt remember that Local Configuration is early-access, AS IS and proprietary,** and keep Application Configuration warm as the supported fallback.
+
+---
+
+## 🗓️ Your Agent Pilot Checklist
+
+**Day 1:** Add `.bob/graphite-mcp.json` to `.gitignore`, create a scoped development identity, install the extension, run Configure Bob Features, and read the files it wrote.
+
+**Day 2:** Run five `simple-*` tasks in MAF Config mode. Record time, Bobcoins, diff size and defects.
+
+**Day 3:** Run three `advanced-*` tasks, one of them offline-relevant, and test it on a device.
+
+**Day 4:** Ask for a change that tempts an out-of-the-box edit. Record whether the mode, file protection or you caught it.
+
+**Day 5:** Decide: continue, restrict to simple tasks, or stop. Add the PR template to the repository either way.
+
+**Next release:** Add the "AI assistance used" line to your change record and keep the metrics.
+
+---
+
+## 📚 References
+
+**IBM (vendor sources, IBM-reported)**
+
+1. IBM, *MAF Local Configuration* project site (early access, offered AS IS; Bob IDE and VS Code as supported editors; fetched 2026-10-20): https://ibm-mas.github.io/maf-local-dev-mode/
+2. IBM, `ibm-mas/maf-local-dev-mode` on GitHub: releases v0.0.1-beta.1 (Configure Bob Features, 2026-07-15), beta.2 (MAF Config Bob mode, 2026-07-28), beta.6 (2026-09-22), read through the GitHub API on 2026-10-20: https://github.com/ibm-mas/maf-local-dev-mode/releases
+3. IBM, `ibm-mas/maf-local-dev-mode` issues #5, #6, #7 and #8 (state and maintainer comments as of 2026-10-20): https://github.com/ibm-mas/maf-local-dev-mode/issues
+4. IBM, *Maximo Application Framework Configuration Practices* (14 simple and 20 advanced practices, concepts, troubleshooting and FAQ; the source the skills mirror): https://ibm-maximo-dev.github.io/configuration-practices-documentation/
+5. IBM Bob documentation, *MCP in Bob* (`.bob/mcp.json` and `~/.bob/settings/mcp.json`, stdio and Streamable HTTP fields, `alwaysAllow`, security warnings): https://bob.ibm.com/docs/ide/configuration/mcp/mcp-in-bob
+6. IBM Docs, *Deprecated Maximo Application Framework components* (chat-log deprecated in 9.2; page-header, container; fetched 2026-10-20): https://www.ibm.com/docs/api/v1/content/SSRHPA_cd/appsuite/appconfig/deprecated_maximo_application_framework_components.html
+7. IBM Support, *Configuring and customizing IBM Maximo Mobile* (Application Configuration naming from 9.1; presentation XML customization): https://www.ibm.com/support/pages/configuring-and-customizing-ibm%C2%AE-maximo%C2%AE-mobile
+8. IBM, *maximo-developer-configuration-tools-0.0.1-beta.6.vsix* release asset, inspected as untrusted data (not executed): skill count, mode rule files, MCP tool names, configure command behavior. Source: the release page in reference 2.
+
+**TheMaximoGuys (companion assets)**
+
+9. TheMaximoGuys, *Max_Interfaces* (MIT license): https://github.com/themaximoguys/Max_Interfaces
+10. TheMaximoGuys, *Max_mcp* (proprietary, not open source): https://github.com/themaximoguys/Max_mcp
+
+**Series and knowledge base**
+
+11. TheMaximoGuys knowledge base, DOC17 (MAF field guide, sections 7 and 15) and DOC16 (IBM Bob field guide, sections 13 and 14).
+12. Related posts: [MAS-MAF-DEV Part 3](/blog/mas-maf-dev-03-controllers-appcustomizations) · [Part 5](/blog/mas-maf-dev-05-local-configuration-handson) · [Part 7](/blog/mas-maf-dev-07-offline-data) · [Part 8](/blog/mas-maf-dev-08-promotion-upgrades) · [MAS-BOB Part 4](/blog/mas-bob-04-bob-and-maximo) · [MAS-MANAGE Part 2](/blog/mas-manage-work-centers-to-rba) · [MAS-9-2 Part 6](/blog/mas-92-upgrade-watchlist) · [MAS-JAVA-EXTENSIONS Index](/blog/mas-java-extensions-series-index)
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams modernize their skills for the MAS era, with practitioner-to-practitioner guidance grounded in IBM documentation and field experience.
+
+<!--
+REVIEW NOTES FOR HUMAN (night-shift, 2026-10-20, item maf-09-ai-assisted-maf):
+
+1. DISCREPANCY (knowledge base vs live): DOC17 section 7.12 lists issues #6 and #7 as open "as of 2026-10-16". The GitHub API on 2026-10-20 shows both CLOSED as completed on 2026-07-16 (one day after opening). #8 and #5 are open. The post states the live state and explains we cannot tell what closed #6. DOC17 should be updated.
+2. DISCREPANCY: DOC17 says "45-skill catalog". The beta.6 package has 45 entries in bob/skills but one is README.md, so 44 skills (20 advanced, 14 simple, 4 concept, 2 guide, 3 issues, 1 graphite-configuration-advisor). IBM's own READMEs say 45. Post says 44 plus README.
+3. DISCREPANCY: DOC17/beta.1 notes say Configure Bob Features registers the server in ~/.bob/config.json. The beta.6 out/commands/configureBobFeatures.js writes workspace .bob/graphite-mcp.json and patches the project .bob/mcp.json, and copies skills to .bob/skills. Post describes beta.6 code. Behavior may have changed between beta.1 and beta.6; not verified for beta.1.
+4. The MCP tool count (11 names) comes from string search in the bundled dist/index.cjs, not from running the server. "graphite-mcp" is the server name, and the guide/overview resources (controller guide, overview guide, figma overview, rag) were seen only as string hits. The table row for resources is approximate.
+5. The extension's site and README do not mention MCP, modes, skills or "early access" in the pages WebFetch returned; the early-access / not-for-production wording comes from DOC17 (IBM site per DOC17) and the AS IS wording was confirmed on the site. LICENSE.txt in the package was not read; "IBM proprietary" is from DOC17 (and the README says "IBM").
+6. Not tested: other agents with the MCP server (DOC17 gap 12, kept hedged); whether the mode still allows OOB edits in long sessions; whether file protection catches an agent edit.
+7. The claim of no .gitignore handling is from reading configureBobFeatures.js only (grep for "gitignore" in that file returned nothing); other extension code was not exhaustively searched.
+8. IBM Docs: not re-opened. The only IBM Docs page fetched was the deprecated-components page (reachable via the content API on 2026-10-20), which confirms chat-log deprecated in 9.2.
+9. Web searches for Maximo Secrets / Interloc / IBM Community on AI-assisted MAF returned nothing relevant; practitioner evidence is limited to the GitHub tracker and (via MAS-BOB) the Bordelanne evaluation. Max_mcp and Max_Interfaces facts come from DOC16 section 14 and TMG's memory notes (gh-verified 2026-10-04), not re-verified this run.
+10. The Bob mcp.json interaction between config-file alwaysAllow and UI auto-approve settings is not explained on IBM's page; post says "provided auto-approval is switched on".
+-->
