@@ -1,0 +1,628 @@
+---
+title: "Debugging MAF Apps: Log Levels, Stream Logs and Device Inspection"
+description: "A practitioner's debugging guide for Maximo Application Framework apps: the _graphite_logLevel URL switch, app.log tagging, the 9.2 default-log-level attribute, mapping DOM ids to app.xml, server logs, build.json, device inspection, preview on device and a known-defect table."
+date: "2026-10-20"
+slug: "mas-maf-dev-06-debugging"
+tags: ["Maximo", "MAS", "MAF", "Graphite", "Debugging", "Logging", "Maximo Mobile", "Role-Based Applications", "Developer", "Troubleshooting"]
+draft: true
+tier: "developer"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-maf-dev-06-debugging.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "How do I turn on trace logging for a MAF Role-Based Application?"
+    answer: "Append the query parameter _graphite_logLevel to the URL of the app, with one of trace, debug, info, warn or error, for example http://localhost:3000/?_graphite_logLevel=trace#/createwo when you are using the local preview. IBM's MAF Configuration Practices material documents this switch for deployed Role-Based Applications and the local preview (IBM-reported). Note that the parameter sits before the hash fragment, because everything after the # belongs to the in-app router. Then open the browser's DevTools console and filter by your own TAG. Remember that the parameter is client-side and per page load: reloading without it returns you to the default level, and a log statement you wrote with app.log.t only appears at trace."
+  - question: "What does the default-log-level attribute in MAS 9.2 do, and is it safe to leave at trace?"
+    answer: "MAS 9.2's what's-new material lists a default-log-level attribute on the maximo-application element, and our research base records that it sets a default level for preview (IBM-reported). We could not re-open the IBM Docs page that defines it, because IBM Docs returned HTTP 403 to the research tooling on 16 October 2026, so we do not state its accepted values or its scope beyond what the release notes say. Treat it as a convenience for the preview, and keep it out of anything you publish: IBM's logging guidance says the production default is ERROR only, and leaving verbose levels on in a published app creates noise and can expose data that you did not intend to log. Check the 9.2 Application Configuration page in your own environment before you rely on it."
+  - question: "Why does the browser inspector show strange ids like yzqaa, and how do I find the matching element in app.xml?"
+    answer: "The ids that the Graphite runtime puts on DOM elements are generated from the component ids you declare in app.xml, which is why they look cryptic but are stable. IBM's Debugging UI page describes the workflow: open the Role-Based Application, right-click the element and choose Inspect, copy the id attribute of the highlighted wrapper element, then open the app in the configuration editor and search for that id with Ctrl+F or Command+F, and the editor jumps to the matching component. The reverse also works: search app.xml for the id you assigned. Keep component ids unchanged across upgrades, because the mapping, your customizations and your delta file all depend on them."
+  - question: "How do I debug a Maximo Mobile app on a real Android device?"
+    answer: "There are three layers. First, the in-app log: on the login screen or in the navigator, open Help and Support, then Log data, enable debug logging, reproduce the problem and use Share logs; IBM Support's mobile troubleshooting guidance asks for this first. Second, remote DevTools: with USB debugging enabled and a debuggable build, open chrome://inspect/#devices on your workstation to attach to the app's WebView, which gives you the console, network and storage panels. Store builds are generally not debuggable, so community threads recommend a debug build for this. Third, for the older Docker maf-tools generation, IBM's Preview on Device blog describes a DEBUG build, GRAPHITE_PREVIEW=1, and a console command, with the caveat that it is provided as-is and not through regular support channels. Do not assume a browser preview behaves like the offline app: always finish with a device test."
+  - question: "What should I attach to an IBM support case about a MAF customization?"
+    answer: "Attach the generated app.delta.xml, because it records exactly what you changed relative to the IBM base application and lets support separate your changes from the product (IBM-reported). Add the MAS and Manage versions, the app id and the MAFAPPDATA revision you published, the build.json version from the deployed app, the browser console output captured with _graphite_logLevel=trace, the preview, publish or build log downloaded from Application Configuration in 9.2, and for server-side symptoms the OSLC and SQL logger output at INFO with matching SystemOut and SystemErr timestamps from the Manage pod. Support will ask for DEBUG-level loggers only if INFO is not enough, because DEBUG can affect server performance. If you used MAF Local Configuration, say so, because it is an AS IS, early-access IBM tool."
+keyTakeaways:
+  - "Debugging MAF is four separate layers (browser client, your own code, server, device), and most lost hours come from looking at the wrong one"
+  - "Append _graphite_logLevel=trace|debug|info|warn|error to the app or preview URL before the # fragment; write your own output with app.log.d/e/w/t(TAG, ...) and never console.log"
+  - "MAS 9.2 adds a default-log-level attribute on maximo-application for preview (IBM-reported); we could not re-verify its scope against IBM Docs, so keep it out of published builds"
+  - "The id in the browser inspector maps to a component id in app.xml: copy it, search the editor, and you land on the element; changing component ids breaks that map and your delta"
+  - "Always confirm what is deployed with build.json and the MAFAPPDATA revision before debugging code, and finish with a real-device test, because browser preview is not the offline app"
+series:
+  name: "MAS MAF-DEV"
+  part: 6
+  total: 9
+tldr: "MAF debugging works in four layers. In the browser, add ?_graphite_logLevel=trace to the app or preview URL and read the console; in your code, log through app.log.d/e/w/t with a TAG constant; on the server, use the Logging application's OSLC and SQL loggers and the streamLog endpoint; on a device, use Help and Support log data and chrome://inspect. Map DOM ids to app.xml component ids, check build.json to see what is really deployed, and use the known-defect table to rule out platform bugs before you blame your own code. MAS 9.2 adds default-log-level and downloadable preview, publish and build logs. MAF Local Configuration is AS IS, IBM proprietary, early-access tooling."
+seoTitle: "Debugging MAF Apps: Log Levels, Streams, Devices"
+seoDescription: "Debug Maximo MAF apps: _graphite_logLevel, app.log, DOM-to-app.xml ids, streamLog, build.json, chrome://inspect, device preview and known defects."
+targetQuestions:
+  - "How do I debug a Maximo Application Framework app?"
+  - "What is _graphite_logLevel in Maximo?"
+  - "How do I enable trace logging in a Maximo Role-Based Application?"
+  - "How do I find the app.xml element for something in the browser?"
+  - "How do I debug Maximo Mobile on an Android device?"
+  - "How do I check which MAF app version is deployed?"
+  - "Why did my MAF publish hang or not show up?"
+semanticKeywords:
+  - "_graphite_logLevel"
+  - "default-log-level"
+  - "app.log.d TAG"
+  - "streamLog wsmethod"
+  - "build.json techmobile"
+  - "chrome://inspect Maximo Mobile"
+  - "preview.preview live true"
+  - "GRAPHITE_PREVIEW"
+  - "app.delta.xml support case"
+  - "MAFAPPDATA revision"
+  - "DT503372"
+  - "Maximo Mobile Enable debug logging"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Parts 2 and 3 of this series: app.xml anatomy and AppCustomizations.js"
+  - "Part 5 of this series if you want to use the local preview on localhost:3000"
+  - "A non-production MAS environment with Application Configuration, or MAF Local Configuration"
+  - "Chrome or Edge DevTools; for devices, an Android phone with USB debugging"
+speakableSections:
+  - "The Four Layers of MAF Debugging"
+  - "Layer 1: The Browser Client and _graphite_logLevel"
+  - "Reading the Failure: The Triage Table"
+clusterSlugs:
+  - "mas-maf-dev-00-series-index"
+  - "mas-maf-dev-03-controllers-appcustomizations"
+  - "mas-maf-dev-04-tooling-generations"
+  - "mas-maf-dev-05-local-configuration-handson"
+relatedSlugs:
+  - "mas-manage-work-centers-to-rba"
+  - "mas-bob-04-bob-and-maximo"
+  - "mas-92-upgrade-watchlist"
+  - "mas-java-extensions-series-index"
+---
+
+# Debugging MAF Apps: Log Levels, Stream Logs and Device Inspection
+
+<aside>
+
+🎯 **Who this is for:** Maximo developers and configurators who customize Maximo Mobile apps or Role-Based Applications (RBAs) and are tired of guessing why a page is blank, a publish did not show up, or a button does nothing; support leads who need to write a case IBM can actually act on; MAS admins who get the "it works in preview" calls.
+
+</aside>
+
+**Series:** MAS MAF-DEV | **Part 6 of 9** | Previous: [Part 5 - Hands-On: MAF Local Configuration in VS Code and IBM Bob](/blog/mas-maf-dev-05-local-configuration-handson) | Next: Part 7 - Offline by Design
+
+---
+
+## 🔥 The Blank Screen at 4:45 on a Friday
+
+You published a one-line change to a Technician page. The preview looked fine. On the test phone the work order list is blank, there is no error, and the only message in the chat is *"did you change something?"*
+
+Where do you look first? In the XML? In the controller? In the Manage logs? On the phone? If you answered "all of them, in some order", you have already found the problem. MAF has several places where things can go wrong, each with a different tool, and most debugging time is lost looking in the wrong one.
+
+This part is the map. We cover the **client log switch** (`_graphite_logLevel`), logging from your own code, the **9.2 default log level** attribute, how to go from a DOM element to the line in `app.xml`, the **server side** (Logging application and the `streamLog` method), how to prove what is actually deployed with `build.json`, **device inspection**, and a **triage table** of known defects with their IBM `DT` numbers so you can rule out the platform before you blame your code.
+
+<aside>
+
+⚠️ **Status and sourcing, stated once.** Where we mention **MAF Local Configuration**, it is IBM's **AS IS**, **IBM proprietary** extension, and our research base records IBM's wording as **early access, not for production use**. When we re-fetched IBM's public pages on 19 October 2026 they showed the AS IS disclaimer but not the early-access sentence, so we keep the hedge. On sourcing: **IBM-reported** means IBM documentation, support pages, IBM-authored practices site or repository. **Practitioner** means partner or community sources. This week IBM Docs returned HTTP 403 to our research tooling on the main pages (it did on 16 October as well), so a few 9.1 and 9.2 claims rest on the cached copies of IBM material in our research base; we flag each one. Anything our base marks **UNVERIFIED** we do not state as fact.
+
+</aside>
+
+By the end you will be able to:
+
+1. Name the four layers of MAF debugging and pick the right tool for each symptom.
+2. Switch client log levels with `_graphite_logLevel` and write log statements that respect them.
+3. Map any element in the browser inspector to a component id in `app.xml`.
+4. Prove which build and which `MAFAPPDATA` revision is running before you touch code.
+5. Debug on an Android device and write a support case that includes the right evidence.
+
+---
+
+## 🧭 The Four Layers of MAF Debugging
+
+A MAF app is XML and JavaScript that a runtime turns into a React UI, served from a Manage endpoint, optionally downloaded to a device and run offline. Failures can happen at any hop, so we debug in layers.
+
+```
+╔════════════════════════════════════════════════════════════════════╗
+║  LAYER 4  DEVICE      offline DB, WebView, sync, DEBUG builds      ║
+║           chrome://inspect · Help & Support > Log data             ║
+╠════════════════════════════════════════════════════════════════════╣
+║  LAYER 3  SERVER      OSLC calls, SQL, Manage pod, publish/build   ║
+║           Logging app (OSLC, SQL) · streamLog · 9.2 build logs     ║
+╠════════════════════════════════════════════════════════════════════╣
+║  LAYER 2  YOUR CODE   AppCustomizations.js, controllers            ║
+║           app.log.d / e / w / t (TAG, ...)                         ║
+╠════════════════════════════════════════════════════════════════════╣
+║  LAYER 1  BROWSER     runtime, XML parse, render, datasources      ║
+║           ?_graphite_logLevel=trace · DevTools · DOM id -> app.xml ║
+╚════════════════════════════════════════════════════════════════════╝
+        Start at the layer closest to the symptom. Work outward.
+```
+
+| Symptom | First layer | First tool |
+|---|---|---|
+| Component missing, wrong layout, wrong label | 1 Browser | DOM id search in `app.xml` |
+| Button does nothing, hook never runs | 2 Your code | `app.log.d` with a TAG at trace |
+| List is empty but no UI error | 3 Server | OSLC and SQL loggers, network tab |
+| Works in browser, fails on phone | 4 Device | `chrome://inspect`, in-app debug log |
+| Publish succeeded but nobody sees it | Deployment | `build.json`, `MAFAPPDATA` revision |
+| Publish or preview hangs | Platform | 9.2 build logs, defect table below |
+
+The last two rows are not layers of the running app; they are about whether the code you think is running is the code that is running. We start there in a later section, because it is the cheapest check and the one most often skipped.
+
+---
+
+## 🖥️ Layer 1: The Browser Client and `_graphite_logLevel`
+
+Every RBA and the local preview run in a browser, so the browser is your first debugger. The Graphite runtime has its own logger, and IBM's MAF Configuration Practices material documents a URL switch that controls its verbosity (IBM-reported):
+
+```
+?_graphite_logLevel=trace|debug|info|warn|error
+```
+
+On the local preview from Part 5 that looks like this:
+
+```
+http://localhost:3000/?_graphite_logLevel=trace#/createwo
+```
+
+Three rules save you pain.
+
+1. **The query parameter goes before the `#`.** Everything after the hash is the in-app route (`#/createwo`). Putting the parameter after it means the router, not the logger, sees it.
+2. **It is per page load.** Reload without the parameter and you are back to the default level. Bookmark the debug URL.
+3. **It is client-side only.** It changes what the browser console shows. It does not change anything on the server, and it does not change what a published device build logs.
+
+### What each level shows
+
+| Level | Use it for | Noise |
+|---|---|---|
+| `error` | Failures where an operation cannot continue | Very low |
+| `warn` | Recoverable, degraded paths | Low |
+| `info` | Lifecycle milestones, one line per event | Medium |
+| `debug` | Query parameters, timings, record counts | High |
+| `trace` | Loop bodies, event callbacks, every datasource transition | Very high |
+
+IBM's logging guidance puts it bluntly: the **production default is ERROR only**, and a statement must be `error`, `warn` or `info` level to appear in a default support log (IBM-reported). So `trace` is a development tool. Use it while reproducing, then turn it off.
+
+### The first five minutes at `trace`
+
+1. Open the preview URL with `?_graphite_logLevel=trace`.
+2. Open DevTools, **Console**, and clear it.
+3. Reproduce the problem **once**. Do not click around.
+4. Filter the console by the page id or datasource id you suspect.
+5. Scroll to the **first** red or amber line. The first error is the cause; everything after it is usually fallout.
+
+Then check the **Network** tab. A failed `oslc` call (a 4xx or 5xx) with an empty list in the UI points you to Layer 3, not Layer 2. Save a HAR file if you are going to open a case.
+
+<aside>
+
+💡 **Key insight:** the console tells you what the *client* believes happened. A datasource that "loaded zero records" may have received zero records or an error it handled quietly. The Network tab and the server logs are what settle it.
+
+</aside>
+
+---
+
+## ✍️ Layer 2: Logging From Your Own Code
+
+If you customize through `AppCustomizations.js` (Part 3), you also own the log statements. IBM's logging guidance documents the Graphite `log` object with five levels, and the app-level equivalent you use in controllers is `app.log` (the same call shape appears in IBM's practices examples; our Part 3 uses it throughout) (IBM-reported).
+
+| Method | Level | Visible by default? | What to log |
+|---|---|---|---|
+| `log.e` / `app.log.e` | ERROR | Yes | Failures; pass the error object last |
+| `log.w` / `app.log.w` | WARN | Yes | Degraded paths the app recovers from |
+| `log.i` | INFO | Yes | Key milestones, one line per event |
+| `log.d` / `app.log.d` | DEBUG | No, opt-in | Query parameters, timings, record counts |
+| `log.t` / `app.log.t` | TRACE | No, opt-in | Loop bodies, event callbacks |
+
+IBM also documents one-shot variants (`eOnce`, `wOnce`, `iOnce`) that suppress duplicate messages within a session and prefix the TAG with `ONCE-`. They are the right tool for a warning inside a loop that would otherwise print thousands of lines.
+
+### The TAG convention
+
+IBM's rule is to declare `TAG` once as a module-level constant and never inline a string in a log call. Framework code uses `framework + '-' + ClassName`; app code uses `appId + '-' + ClassName`. A good TAG is what lets you filter the console to your own output.
+
+### A worked example
+
+This is an illustrative controller (the structure follows Part 3; the ids are examples, not from a real app). It logs the lifecycle so you can see the order of events at `trace`, and it never uses `console.log`:
+
+```js
+const TAG = 'MYTECHMOBILE-AppCustomizations';
+
+class AppCustomizations {
+  applicationInitialized(app) {
+    this.app = app;
+    app.log.i(TAG, 'applicationInitialized');
+  }
+
+  pageInitialized(page, app) {
+    this.app = app;
+    this.page = page;
+    app.log.d(TAG, 'pageInitialized', page.name);
+  }
+
+  async pageResumed(page, app) {
+    app.log.d(TAG, 'pageResumed, loading woDS');
+    const t0 = Date.now();
+    try {
+      const ds = app.findDatasource('woDS');
+      await ds.load();
+      app.log.d(TAG, 'woDS loaded ' + ds.items.length + ' records in ' + (Date.now() - t0) + ' ms');
+    } catch (e) {
+      app.log.e(TAG, 'woDS load failed', e);
+    }
+  }
+}
+
+export default AppCustomizations;
+```
+
+Notice what a reader of that log can now answer: did the hook run, how many records came back, how long did it take, and what was the error. Compare that with `console.log('here')`.
+
+### Rules of thumb for log messages
+
+| Do | Don't |
+|---|---|
+| Start with a verb, include the key identifier, add timing where relevant | Log "here" or "done" |
+| Pass the error object as the last argument | Concatenate `e.message` and lose the stack |
+| Use `log.d` / `log.t` for chatty output | Use `console.log` (IBM's guidance says not to) |
+| Log login type, token-refresh outcome, load start and finish | Log raw credentials, tokens, cookie values or personal data |
+| Keep INFO to one line per milestone | Call `JSON.stringify` on large objects at INFO or above |
+
+The last row of that table is a security rule as much as a style rule. A trace log that includes a bearer token and gets pasted into a support case is a credential leak.
+
+---
+
+## 🎚️ The MAS 9.2 `default-log-level` Attribute
+
+MAS 9.2 (GA 25 June 2026) added an attribute on the root element of the app:
+
+```xml
+<maximo-application id="mytechmobile" default-log-level="debug" ... >
+```
+
+Our research base records this from the MAS 9.2 what's-new material as `default-log-level` on `<maximo-application>`, used to set a default log level for the **preview** (IBM-reported). That is all we can responsibly say. The IBM Docs page that defines the accepted values and the exact scope returned HTTP 403 to our tooling, and our general web searches found no independent write-up. So we do **not** state the value list, whether it applies to published builds, or whether the `_graphite_logLevel` URL parameter overrides it.
+
+Here is how we would use it, with those unknowns respected:
+
+| Question | Our guidance |
+|---|---|
+| Can I set it during development? | Yes, as a convenience for preview, and verify the effect in your own environment |
+| Does the URL parameter still work? | Assume yes and test: load the preview with the parameter and with the attribute removed |
+| Should it go to production? | No. IBM's guidance is ERROR-only by default; remove it in the reviewed commit before you publish |
+| Where do I check the real behaviour? | The 9.2 Application Configuration help and your own test |
+
+Put one line in your pull request checklist: *"no `default-log-level` below `error` in the published `app.xml`."* It is cheap and it prevents a very quiet class of incident.
+
+---
+
+## 🔎 From DOM to XML: Finding the Element That Is Wrong
+
+You see a wrong label or a missing field in the browser. Which line of `app.xml` produced it? IBM's **Debugging UI** page in the MAF Configuration Practices site gives a five-step workflow (IBM-reported):
+
+1. Launch the Role-Based Application you want to debug (IBM's example is TECHMOBILE).
+2. Open an existing record that exercises the feature, such as a work order that has an asset.
+3. Right-click the element and choose **Inspect**. Hover over the HTML to highlight the matching part of the UI.
+4. Record the `id` attribute of the element that wraps what you care about. IBM's example value is `yzqaa`.
+5. In the configuration tool, open the app, click in the code editor, press Ctrl+F or Command+F, paste the id, and "the code editor should automatically jump to that element with the correct id."
+
+The page describes the mapping key as the DOM `id` and does not go further into how the runtime derives the value, so we do not either. The practical meaning is this: **component ids in `app.xml` are the contract between the XML, the DOM and your delta file.**
+
+### The same trick in your local workspace
+
+With MAF Local Configuration (Part 5) the XML is on disk, so use your editor's project-wide search instead of the browser tool:
+
+```bash
+# Illustrative: find a component id across the workspace XML
+grep -rn 'id="assetdesc"' src/ --include=*.xml
+```
+
+### What the lookup can and cannot tell you
+
+| You learn | You do not learn |
+|---|---|
+| Which component produced the element | Whether the data inside it was right |
+| Which XML file owns it (main file or an included file) | Whether a controller changed it at runtime |
+| That an id you expected is missing (not rendered) | Why a `visible` or `enabled` expression evaluated false |
+
+For that last row, go back to Layer 2: log the expression's inputs at `debug`.
+
+<aside>
+
+💡 **Key insight:** if you rename a component id to "tidy up", you break the DOM-to-XML map, any controller that finds the component by id, and the delta that tracks your change. Part 2's rule stands: **keep IBM component ids unchanged**, and choose your own ids for new components deliberately.
+
+</aside>
+
+---
+
+## 🛰️ Layer 3: The Server Side
+
+When the UI is empty and the client log says "loaded 0 records", ask whether the server ever answered.
+
+### The Logging application: OSLC and SQL
+
+IBM Support's mobile troubleshooting guidance is consistent (IBM-reported): open the **Logging** application, search for the **OSLC** and **SQL** loggers, set them to **INFO**, reproduce the error, and collect `SystemOut` and `SystemErr` with matching timestamps. In MAS Manage, use the same loggers but collect the logs from the **Manage pod**. If INFO is not enough, support may ask for **DEBUG**, which IBM warns "can impact the server performance". Start at INFO and change it back afterwards.
+
+```bash
+# Illustrative: tail a Manage pod's log while you reproduce (names are examples)
+oc get pods -n mas-<instance>-manage | grep -i maxinst
+oc logs -f -n mas-<instance>-manage <manage-pod-name> | grep -i -E "oslc|MAFAPPDATA|graphite"
+```
+
+Which pod and which workload names apply depends on how Manage is deployed (server bundles such as UI, MIF or cron), so check yours before you copy the command.
+
+### The `streamLog` endpoint
+
+Our research base lists a server log stream method on the Logging service (IBM-reported, via the MAF Configuration Practices site):
+
+```
+/maximo/oslc/service/logging?action=wsmethod:streamLog
+```
+
+It exists so you can watch the server log from a browser or a REST client without shell access to the pod. Be careful with what you claim about it: we did not re-verify its parameters, authentication or output format this run, and the IBM Docs page was unreachable. Treat it as follows.
+
+| Question | Guidance |
+|---|---|
+| Does the path exist? | IBM-reported in our research base; confirm on your version with a safe `GET` as an authorised user |
+| Does it need the Logging application's loggers set first? | Almost certainly it only streams what the configured loggers write; set OSLC and SQL to INFO first |
+| Who may call it? | Treat it as an administrative endpoint; use the same API key or SSO rules as the rest of `/maximo/oslc` |
+| Is it production-safe? | A streaming log can contain business data. Use it in non-production, or under change control |
+
+If your platform team cannot give you pod access, `streamLog` is the question to ask them about. If it is not available on your version, the downloadable logs in 9.2 (next section) cover the build and publish side.
+
+### Publish, preview and build logs in 9.2
+
+MAS 9.2 added real-time progress for preview, publish and save-and-preview jobs, a queue for them, and **downloadable preview, publish and build logs** in Application Configuration (IBM-reported, from the 9.2 what's-new material in our research base). The failure toast also links the build log. An IBM Ideas request raised before 9.2 complained that teams depended on an SRE opening a case to see the `graphite-configuration` pod logs when a build failed, which is exactly the gap these downloads close.
+
+| When this happens | Download this |
+|---|---|
+| Preview never finishes | The preview log |
+| Publish ends in an error toast | The build log from the toast, then the publish log |
+| The app builds but misbehaves | Not a build log problem; go to Layers 1 and 2 |
+| You are opening an IBM case | All three, plus `app.delta.xml` |
+
+---
+
+## ✅ Is the Code You Are Debugging the Code That Is Running?
+
+Before you touch code, prove what is deployed. Our research base records a practitioner technique for reading the version of a deployed app (practitioner-reported):
+
+```
+https://<host>/maximo/oslc/graphite/techmobile/build.json
+```
+
+`build.json` holds the build version. Each publish also creates a new revision row in `MAFAPPDATA`, with a `VERSION` taken from `build.json`, a `REVISION` that increments, a `STATUS` of ACTIVE or DISABLE, and `DEPLOYBY` and `DEPLOYDATETIME` columns (Part 4 and the DOC17 storage notes). Together they answer "what is live, who published it and when".
+
+```sql
+-- Illustrative read-only query against the Manage database
+SELECT appid, version, revision, status, deployby, deploydatetime, ismobile
+FROM   mafappdata
+WHERE  appid = 'MYTECHMOBILE'
+ORDER  BY revision DESC;
+```
+
+### The "published but not showing" checklist
+
+| Check | Why |
+|---|---|
+| `build.json` version equals what you published | Confirms the browser is served your build |
+| Latest `MAFAPPDATA` row is ACTIVE and has the revision you recorded | Confirms the publish landed |
+| `ISMOBILE` is on for the app | A duplicated app's "Mobile?" flag is off by default, so devices will not receive it |
+| Hard-reload the browser (clear cache) | The RBA can hold a stale bundle |
+| Device has synced or re-logged-in | A device only learns about a new version through its own flow (we could not confirm the exact trigger; see Part 7) |
+
+If the browser RBA does not reflect a publish, two practitioner and IBM-support remedies are recorded in our research base. A practitioner thread says to delete the `maf` directory under the path set by `mxe.int.globaldir` so the app is re-extracted, and IBM technote ibm16988871 says to delete the app's `build/src` folder (their example is `TECHMOBILE/build/src`) to force a rebuild. Both are blunt instruments; use them in non-production first and with the platform team in the room.
+
+---
+
+## 📱 Layer 4: The Device
+
+A browser preview is not the offline app. The device has a local database, a WebView, its own sync and its own log. That is why "works in preview, blank on phone" is such a common call. Part 7 explains the offline data model; here is how to see what the phone sees.
+
+### Step 1: the in-app debug log
+
+IBM Support's mobile guidance (IBM-reported): in the app, go to **Help and Support**, then **Log data**, and mark **Enable debug logging**. Reproduce the problem, then use **Share logs** to save or email them. This is the first thing IBM Support will ask for, and it needs no tooling. IBM's guidance also says the server logs are not required as first-set evidence when the problem is purely in a mobile feature such as the camera or an unresponsive button, though support may ask later.
+
+### Step 2: remote DevTools with `chrome://inspect`
+
+For a debuggable Android build, enable developer options and USB debugging on the phone, connect it, and on your workstation open:
+
+```
+chrome://inspect/#devices
+```
+
+You can then inspect the app's WebView, with the Console, Network and Application (storage) panels. IBM Community threads on debugging the mobile app describe this approach, and one 2020 thread (on the older Anywhere product) reports that the Play Store build was not debuggable, so the answer was to build a debuggable APK. Do not assume a store build will appear in the inspect list.
+
+| Problem | Likely cause | What to try |
+|---|---|---|
+| Device not listed | USB debugging off, no authorisation prompt accepted | Re-plug, accept the key on the phone |
+| App listed but no WebView | Release build is not debuggable | Use a debug build; ask IBM or your mobile team |
+| Console is empty | Log level is default | Enable in-app debug logging first |
+| Cannot reach a local server from the phone | Port not reachable | Use port forwarding in the inspect window (see below) |
+
+### Step 3 (Gen 1 only): preview on device with the Docker image
+
+If you are still on MAS 8.x or 9.0 with the Docker `maf-tools` image, IBM's *Preview on device in Configuration app* blog (30 November 2022) describes the device-side workflow (IBM-reported):
+
+1. The preview feature works **only in DEBUG builds** of the Android app, which the article says you obtain through an IBM contact.
+2. Enable remote debugging on the device.
+3. Start the container with the environment variable `GRAPHITE_PREVIEW=1`; preview is off by default.
+4. Make sure the device can reach the Configuration application (test it in the device browser).
+5. In Chrome DevTools connected to the device, run in the Console: `preview.preview(<preview server URL>, <app id>, {live:true})`, where the preview server uses port 3006 and the app id is the `id` attribute of the `application` element in `app.xml`.
+6. Edit and **Save**. The device prompts you to reload.
+
+The article lists limits: live mode polls for changes, `preview.reset()` stops the running tasks, repeated reloads can cause out-of-memory crashes (the suggested fix is to update Android System WebView), and the feature is "not supported through regular support channels" and provided as-is.
+
+A January 2025 IBM Community thread from a developer running the 8.9 image under WSL on Windows shows what goes wrong in practice: `Failed to connect to localhost/127.0.0.1:3006`, a mixed-up 3001 versus 3006 port, and port forwarding in the inspect window as a workaround. The thread had no accepted answer when we read it. The lesson: **ports 3001 (configuration app) and 3006 (preview server) are different services**, and Docker under WSL needs the ports reachable from the phone, not just from the host.
+
+For Gen 2 and Gen 3 (Application Configuration and Local Configuration), the device-preview path is different and not documented in the sources we have; a Local Configuration preview runs on `localhost:3000` in a browser (Part 5). Our research base does not record a supported "live device preview" for Gen 3, so we do not claim one.
+
+---
+
+## 🚦 Reading the Failure: The Triage Table
+
+When you do not know where to start, start here.
+
+| Observation | Most likely layer | Next action |
+|---|---|---|
+| Console shows a red error as the first line | 1 or 2 | Read it, find the TAG or component id, fix |
+| Console is clean, UI is wrong | 1 | Inspect element, map id to `app.xml`, check expressions |
+| Console shows "0 records", Network shows 200 and an empty body | 3 | Check security, saved query, object structure |
+| Network shows 401 or 403 | 3 | Security groups, API key, session |
+| Network shows 413 | Platform | See `DT449679` / `DT450721` below |
+| Works on the preview, not on a published RBA | Deployment | `build.json`, revision, cache |
+| Works in RBA, not on the phone | 4 | In-app debug log, `chrome://inspect`, offline data |
+| Publish stuck on "running" | Platform | Check for an invalid `app.xml` (`DT503372`), get the build log |
+| Preview shows `ModuleNotFoundError` after a save | Platform | `DT458704` (Docker 9.0.16-9.0.19) |
+
+### Five tests that remove most guesses
+
+1. **Does it fail with your customization removed?** Comment out your `AppCustomizations.js` registration and retry. If the base app also fails, it is the platform or the data, not your code.
+2. **Does it fail for another user?** Security groups and site access change what datasources return.
+3. **Does it fail in a second browser profile?** Cache and extensions cause "ghost" bugs.
+4. **Does it fail on the local preview and on the published app?** Only-preview or only-published narrows the layer.
+5. **Does it fail on the device with a fresh sync?** A stale offline database looks like a code bug.
+
+---
+
+## 🐞 The Known-Defect Table
+
+Before you spend a day on a bug, check whether IBM or the community has already named it. This table comes from our DOC17 research base. Status text is as reported; "IBM-reported" means an IBM source, "practitioner" means community.
+
+| Ref | Problem | Status | Source |
+|---|---|---|---|
+| `DT450848` | TECHMOBILE preview times out in Application Configuration (9.1.2, 9.1.7); "no workaround" quoted | Fix quoted as 9.1.7 or 9.1.8; IBM gave conflicting answers | Practitioner |
+| `DT449679` / `DT450721` | PayloadTooLarge / HTTP 413 on save and publish | Fixed in 9.2 FC (Nov 2025) | IBM-reported |
+| `DT451534` | "Migrate prior configurations" disabled | Fixed in 9.2 FC (Nov 2025) | IBM-reported |
+| `DT446092` / `DT458164` / `DT422782` | App will not open after publish; preview stuck; publish updates devices but not the browser RBA | Fixed in 9.2.0 | IBM-reported |
+| `DT424062` | Saving `AppCustomizations.js` flips the editor back to `app.xml` | Known issue in 9.2.0 per DOC17 (see discrepancy note) | IBM-reported |
+| `DT503372` | An invalid `app.xml` saves with no error, then publish hangs | Open per our base | IBM-reported |
+| `DT458704` | maf-tools 9.0.16-9.0.19: preview breaks with `ModuleNotFoundError` after a save | Docker line only | IBM-reported |
+| `DT447607` | 9.1 apps fail with `Unexpected token '<'` | Workaround: grant the app, restart the Manage pod; users say fixed by 9.1.4 | Practitioner |
+| none | Zip uploads capped at 500 KB | Zip only changed files, or copy into the pod workspace then publish | Practitioner |
+| none | After a 9.1.x patch the `graphite-configuration` image is stale: "'on-drill-in' ... not defined in the registry" | Align the deployment image to the operator's `spec.relatedImages` | Practitioner |
+| none | Windows zip MIME type rejected on upload | Technote | Practitioner |
+| issue #16 | Local Configuration: Windows build fails without the offline mirror | Open | Practitioner / repo |
+
+### How to use the table honestly
+
+- A `DT` number is a **lead, not a diagnosis**. Match the symptom, your exact MAS version and the fix version before you conclude anything.
+- **`DT450848` has an unresolved fix version.** IBM gave both 9.1.7 and 9.1.8. If you are on one of those, test rather than assume.
+- **`DT424062` has a status discrepancy.** Our base lists it as a known issue in 9.2.0, while our Part 3 research found a 9.2.0 readme entry reading as fixed. Check your own build.
+- The 500 KB zip cap and the stale-image problem are **practitioner reports**, not IBM statements. Treat the workarounds as field experience.
+- `DT503372` is the one to remember for Local Configuration users too: **validate your XML before you publish**. A malformed `app.xml` that saves silently and then hangs the publish is a misleading symptom, because the log will look like an infrastructure problem.
+
+<aside>
+
+💡 **Key insight:** the publish-to-test loop in 9.1 was the core pain that produced most of these entries, and it is what Local Configuration targets (Part 4). Fewer publishes means fewer chances to hit the platform's rough edges. Debug locally, publish rarely.
+
+</aside>
+
+---
+
+## 🧰 Field Pitfalls That Look Like Bugs
+
+These are practitioner-reported and worth a mention because each one costs a day.
+
+| Pitfall | What you see | Fix or check |
+|---|---|---|
+| WSL Docker cannot reach `localhost:3006` | Device or host connection refused | Make ports reachable from the device; port forwarding in `chrome://inspect` |
+| Content Security Policy blocks external tiles | On 9.1.4, preview could not load OpenStreetMap tiles | Test maps on a deployed build; do not trust preview for third-party content |
+| Component ids changed | Controller cannot find a component; delta shows odd changes | Restore original ids |
+| Attribute names not lowercase | Silent misbehaviour | Keep attribute names lowercase (Part 2) |
+| Publishing while the preview server is starting | Hung or odd publish | Wait for the preview to be ready (IBM guidance for Local Configuration) |
+| Object structure duplicated | Offline data merges wrongly | Mobile merges object structures with the same root object; do not duplicate (Part 7) |
+| Testing only in a browser | Passes preview, fails offline | Always smoke-test on a device for mobile apps |
+
+---
+
+## 🤖 Debugging With an AI Assistant (Carefully)
+
+If you use IBM Bob or another assistant with MAF Local Configuration (Part 5; Part 9 covers the MCP side), debugging is a good job to give it, with guardrails. Our MAS-BOB series covers the tool itself; see [Bob Meets Maximo](/blog/mas-bob-04-bob-and-maximo).
+
+| Good use | Guardrail |
+|---|---|
+| "Add `app.log.d` statements with a TAG to every hook in this controller" | Review that no secret or personal data is logged |
+| "Explain this console trace" | Paste only sanitised logs |
+| "Find the component with this DOM id in the workspace" | Fine, it is a read-only search |
+| "Fix the bug" | Require a diff; keep changes to `app.xml` and `AppCustomizations.js`; never let it rewrite IBM component ids or edit out-of-the-box JS files |
+
+Our research base records that the Graphite MCP server in Local Configuration has an open report of editing out-of-the-box JS files, which IBM's own support policy forbids. Keep file protection on and read every diff.
+
+---
+
+## 🔗 Where This Connects
+
+MAF debugging sits between two other worlds you may already know.
+
+- **The UI shift.** Role-Based Applications replaced Work Centers on the same framework, so everything here applies to RBAs in Manage as well as to Maximo Mobile. See [From Work Centers to Role-Based Applications](/blog/mas-manage-work-centers-to-rba).
+- **The upgrade lens.** Deprecated components and 9.2 changes (such as `chat-log`) show up first as console warnings and broken pages after an upgrade. See [The MAS 9.2 Upgrade Watch-List](/blog/mas-92-upgrade-watchlist).
+- **The server-side counterpart.** When the failing call is a Manage-side extension rather than a MAF page, you are in Java land; start with the [MAS Java Extensions series](/blog/mas-java-extensions-series-index).
+
+---
+
+## 📜 The Commandments of Debugging MAF
+
+1. **Locate the layer before you touch anything.** Browser, code, server or device.
+2. **Prove what is deployed.** `build.json` and the `MAFAPPDATA` revision first.
+3. **Put the log parameter before the hash.** `?_graphite_logLevel=trace#/page`.
+4. **Read the first error, not the last.** The rest is fallout.
+5. **Log through `app.log` with a TAG.** Never `console.log`, never a secret.
+6. **Keep component ids.** They are the contract between DOM, XML and delta.
+7. **Turn verbose logging off before you publish.** ERROR is the production default.
+8. **Check the defect table before you rewrite code.** A `DT` number can save a day.
+9. **Test on a device.** Browser preview is not the offline app.
+10. **Attach `app.delta.xml` to every case.** It is the first thing support needs.
+
+---
+
+## 🗓️ Your Debugging Checklist This Week
+
+| Day | Action |
+|---|---|
+| 1 | Bookmark a preview URL with `_graphite_logLevel=trace` for each app you own |
+| 2 | Add a `TAG` and `app.log` statements to every hook in `AppCustomizations.js`; remove any `console.log` |
+| 3 | Practise the DOM-id-to-`app.xml` lookup on one page you did not write |
+| 4 | Ask your platform team how you can see Manage pod logs and whether `streamLog` is available |
+| 5 | Run the "published but not showing" checklist against your DEV app and write the answers in the team wiki |
+| 6 | Connect a device with `chrome://inspect` and capture one console session |
+| 7 | Add "no verbose `default-log-level` in published XML" and "attach `app.delta.xml`" to your PR template |
+
+---
+
+## 📚 References
+
+**IBM (vendor sources, IBM-reported)**
+
+1. IBM, *MAF Configuration Practices: Debugging UI* (DOM id to `app.xml` workflow; retrieved 2026-10-20): https://ibm-maximo-dev.github.io/configuration-practices-documentation/debug-ui
+2. IBM, *MAF Configuration Practices: Logging Good Practices* (log levels, TAG convention, one-shot variants, production default ERROR; retrieved 2026-10-20): https://ibm-maximo-dev.github.io/configuration-practices-documentation/logging-guide
+3. IBM, *MAF Configuration Practices* overview (the `_graphite_logLevel` switch is documented in this material; retrieved via search 2026-10-20): https://ibm-maximo-dev.github.io/configuration-practices-documentation/overview/
+4. IBM Support, Maximo Mobile troubleshooting page, node 6999335 (Enable debug logging, Share logs, OSLC and SQL loggers, Manage pod; retrieved 2026-10-20): https://www.ibm.com/support/pages/node/6999335
+5. IBM Community, Rui Shen, *Preview on device in Configuration app* (30 November 2022; DEBUG build, `GRAPHITE_PREVIEW=1`, `preview.preview`, as-is support statement; retrieved 2026-10-20): https://community.ibm.com/community/user/blogs/rui-shen/2022/11/30/preview-on-device-in-configuration-app
+6. IBM Support, *Maximo Mobile (MAF Configuration tool) changes are not reflecting after publishing* (ibm16988871): https://www.ibm.com/support/pages/maximo-mobile-maf-configuration-tool-changes-are-not-reflecting-maximo-mobile-after-publishing-changes
+7. IBM, *Deprecated Maximo Application Framework components* (content API returned HTTP 200 on 2026-10-20): https://www.ibm.com/docs/api/v1/content/SSRHPA_cd/appsuite/appconfig/deprecated_maximo_application_framework_components.html
+8. IBM, *What's in Maximo Application Suite 9.2* (source of the `default-log-level` and downloadable-logs entries, via cached copy): https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-whats-in-maximo-application-suite-92
+9. IBM, *MAS 9.2.0 readme*: https://www.ibm.com/support/pages/node/7277376
+
+**Practitioner and community**
+
+10. IBM Community, Sourabh Jain, *Debugging Maximo Mobile app* (15 January 2025; WSL ports 3001 and 3006; no accepted answer): https://community.ibm.com/community/user/discussion/debugging-maximo-mobile-app
+11. IBM Community, B. Marchewka, *Preview not working for TECHMOBILE in 9.1* (DT450848): https://community.ibm.com/community/user/discussion/maximo-application-framework-configuration-tool-preview-mode-not-working-correctly-for-techmobile-in-mas-v91x
+12. IBM Community, *graphite-configuration not upgraded after 9.1 patch*: https://community.ibm.com/community/user/discussion/maximo-application-framework-configuration-graphite-configuration-not-upgraded-after-mas-91x-patch-version-installation
+13. MoreMaximo, *Changes not reflecting in the role-based apps in Maximo web*: https://moremaximo.com/question/maximo-mobile-changes-not-reflecting-in-the-role-based-apps-in-maximo-web
+
+**TheMaximoGuys companion content**
+
+- [MAS-MAF-DEV Part 5](/blog/mas-maf-dev-05-local-configuration-handson) · [MAS-MANAGE Part 2](/blog/mas-manage-work-centers-to-rba) · [MAS-BOB Part 4](/blog/mas-bob-04-bob-and-maximo) · [MAS-9-2 Part 6](/blog/mas-92-upgrade-watchlist) · [MAS-JAVA-EXTENSIONS Index](/blog/mas-java-extensions-series-index)
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams modernize their skills for the MAS era, with practitioner-to-practitioner guidance grounded in IBM documentation and field experience.
+
+<!--
+REVIEW NOTES FOR HUMAN (night-shift, 2026-10-20, item maf-06-debugging):
+
+1. Re-verified live this run: IBM Debugging UI page (5-step DOM id workflow, example id yzqaa), IBM Logging Good Practices page (log.e/w/i/d/t, ONCE variants, TAG rule, production default ERROR), IBM Support node/6999335 (Enable debug logging, OSLC+SQL loggers at INFO, Manage pod), Rui Shen preview-on-device blog, IBM Community debugging thread (Jan 2025, no accepted answer). IBM content API (deprecated-MAF page) returned 200, but was not used to find a page defining default-log-level.
+2. NOT re-verified: `default-log-level` accepted values/scope (kept hedged, cached 9.2 what's-new only); `/maximo/oslc/service/logging?action=wsmethod:streamLog` parameters/auth/format (DOC17 only; kept hedged); `build.json` path (DOC17 [IND]); DT numbers and statuses (DOC17 only; IBM Docs/Support defect pages not re-opened). DOC17 gaps #1, #9 remain open.
+3. `_graphite_logLevel` is cited to the practices overview via a search summary, which attributed it to the MAF configuration guide; the Logging Good Practices page fetched this run does NOT mention the URL parameter and says verbose output is controlled through Navigator General Settings. Please confirm where IBM documents the parameter and whether Navigator General Settings is the mobile-app equivalent; the post does not claim the two are the same.
+4. app.log (app-level) vs log (framework object): the Logging Good Practices page documents `log.*`; `app.log.*` comes from DOC17 and the practices controller pages used in Part 3. Both are shown.
+5. `app.findDatasource('woDS')` and the SQL/oc/grep snippets are illustrative; ids and namespaces are examples.
+6. Part 5 "Next" link updated to this part. Parts 7-9 slugs not final, so "Next" is plain text here.
+7. Older IBM support note on mobile.properties (maximo.mobile.debug=true) appears to relate to legacy Anywhere; deliberately not used.
+8. SearchMaximo local corpus (baseline/knowledge-base) is not present in this checkout; the knowledge_base/MAS92-SOURCES text had no log-level material.
+-->
