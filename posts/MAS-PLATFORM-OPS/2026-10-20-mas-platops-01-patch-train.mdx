@@ -1,0 +1,632 @@
+---
+title: "The MAS Patch Train Explained: Catalogs, Interim Builds and Version Skew"
+description: "How IBM ships MAS fixes: the monthly v9-YYMMDD operator catalog, interim builds, 'reserved' version numbers and why Core 9.2.8 can sit beside Manage 9.2.4. Read IBM's releases page like an operator, with DT501598, DT500106 and CVE-2026-105052 as worked examples."
+date: "2026-10-20"
+slug: "mas-platops-01-patch-train"
+tags: ["Maximo", "MAS", "OpenShift", "Patching", "Operator Catalog", "MAS CLI", "Platform Operations", "Release Management", "Manage", "Administrator"]
+draft: true
+tier: "admin"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-platops-01-patch-train.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What is the MAS monthly catalog and why does it matter more than the version number?"
+    answer: "The catalog is the IBM Maximo Operator Catalog, a container image that tells OpenShift's Operator Lifecycle Manager which operator versions exist. It is tagged v9-YYMMDD, so v9-261007 is the catalog built on 7 October 2026. When you move a cluster to a newer catalog, OLM updates every IBM operator installed from it to the newest version on its subscription channel, which is how Core, Manage and the dependencies actually get patched. The version number you read on IBM's releases page (Core 9.2.8, say) is the name of the result; the catalog is the delivery mechanism. IBM's `mas update` guide describes this as a cluster-level move, so you cannot hold one MAS instance at an older patch level while another on the same cluster takes the new catalog."
+  - question: "What does 'Reserved for Internal Use Only' mean on IBM's MAS releases page?"
+    answer: "It means the version number was consumed by IBM and never offered to customers. On the page, Core 9.2.6 carries the note '9.2.4, 9.2.5 Reserved for Internal Use Only', which is why Core goes from 9.2.3 to 9.2.6 with nothing in between for you to install. You do not need to look for the missing numbers, request them or worry that you skipped a fix: whatever they contained is rolled into the next number IBM did publish. Treat a gap as a gap in IBM's internal build sequence, not a gap in your patch history. The practical rule is to compare your installed version with the latest published row, never to count versions."
+  - question: "Can Core and Manage be on different 9.2 numbers, and is that a problem?"
+    answer: "Yes, and it is normal. Since 9.2 the components carry independent version numbers, so on 7 October 2026 IBM listed Core 9.2.8 while the newest Manage was 9.2.4 (29 September) and AI Service was 9.2.3. IBM's own readmes show the pairing: Core 9.2.6 added Manage 9.2.3, and Core 9.2.7 added Manage 9.2.4. The skew only becomes a problem if you assume a Core number implies a Manage number when you read a change log. To find out what a fix touches, open the readme for the specific component and the specific release, and check which operators it lists as added."
+  - question: "Do I have to install every interim build?"
+    answer: "No, but you have to decide on purpose. An interim build is an unscheduled release that exists to fix a specific problem, and its readme names the defects. Core 9.2.6 (18 September 2026) fixed DT501598, DT500106 and DT499855, and Core 9.2.8 (7 October 2026) shipped the CVE-2026-105052 fix. The test is simple: read the fixed-defect list and ask whether any item applies to your estate, then ask whether the security bulletin affects your version. A path-traversal fix on the login service is urgent for everyone on an affected version. A defect about a 9.1-to-9.2 upgrade is only urgent for the people about to do that upgrade. Because IBM carries earlier fixes forward into later builds, taking the next scheduled build also covers the interim fixes."
+  - question: "How do I patch MAS safely each month without surprises?"
+    answer: "Run it as a repeatable change, not an event. Read the releases page and the readmes for every component you run, check the catalog page for OpenShift, CPD and MongoDB support, and take a Db2 and MongoDB backup. Update a non-production cluster first with `mas update` and a pinned catalog (for example `-c v9-261007-amd64`), let the pre-update check and post-update verify tasks run, and then smoke-test login, a Manage work order and one integration. Promote to production on a fixed cadence, and break that cadence only for a security bulletin that names your version. Part 4 of this series covers backup and restore, which is the safety net behind that whole routine."
+keyTakeaways:
+  - "The unit of change in MAS is the monthly operator catalog (v9-YYMMDD). `mas update` moves a whole cluster to a newer catalog and OLM then updates every IBM operator installed from it, so patch level is a cluster decision, not a per-instance one"
+  - "Core, Manage and AI Service version independently since 9.2. On 7 October 2026 Core was 9.2.8, Manage 9.2.4 and AI Service 9.2.3; map components by date and readme, never by matching numbers"
+  - "'Reserved for Internal Use Only' marks numbers IBM consumed internally (Core 9.2.2, 9.2.4, 9.2.5 and many 9.1 numbers). Gaps are not missing fixes; compare against the latest published row instead of counting"
+  - "Interim builds exist to fix specific problems. Core 9.2.6 fixed DT501598 (MAXUSER fields overwritten in 9.1 to 9.2 upgrades when MASISSUER is NULL), and Core 9.2.8, 9.1.27 and 9.0.33 shipped the CVE-2026-105052 fix. Read the defect list, then decide whether it applies to you"
+  - "A catalog can itself be defective. IBM's own 9.1.22 readme describes an issue in v9-260827 that broke online Manage upgrades from 9.0.29 to 9.1.21, fixed by interim catalog v9-260902. Pin the catalog in your pipeline and test in non-production first"
+series:
+  name: "MAS PLATFORM-OPS"
+  part: 1
+  total: 8
+tldr: "IBM patches MAS through a monthly operator catalog (v9-YYMMDD), plus unscheduled interim builds when something urgent needs fixing. Since 9.2, Core, Manage and AI Service carry independent version numbers and some numbers are 'reserved for internal use', so Core 9.2.8 and Manage 9.2.4 legitimately coexist. This post teaches you to read IBM's releases page, map components by readme instead of by number, use `mas update` with a pinned catalog, and judge interim builds using real examples: DT501598, DT500106, the v9-260827 catalog problem and the CVE-2026-105052 fix."
+seoTitle: "MAS Patch Train: Catalogs, Interim Builds, Skew"
+seoDescription: "How MAS ships fixes: monthly v9 catalogs, interim builds, reserved version numbers and Core vs Manage skew, with DT501598 and CVE-2026-105052."
+targetQuestions:
+  - "How does IBM release patches for Maximo Application Suite?"
+  - "What does the MAS operator catalog version v9-261007 mean?"
+  - "What does 'reserved for internal use only' mean on the MAS releases page?"
+  - "Why are MAS Core and Manage on different version numbers?"
+  - "Do I need to install interim MAS releases like Core 9.2.6 or 9.2.8?"
+  - "How do I update MAS to a newer catalog with the MAS CLI?"
+semanticKeywords:
+  - "MAS patch train"
+  - "MAS operator catalog v9-261007"
+  - "mas update catalog"
+  - "Core 9.2.8 Manage 9.2.4"
+  - "MAS interim release"
+  - "reserved for internal use only MAS"
+  - "DT501598 MAXUSER MASISSUER"
+  - "DT500106 Application Configuration"
+  - "CVE-2026-105052 MAS"
+  - "MAS version skew"
+  - "MAS releases information page"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Working knowledge of OpenShift operators (subscriptions, channels, catalog sources)"
+  - "Access to the MAS CLI container image and to the cluster with cluster-admin rights for any hands-on step"
+  - "Helpful: Part 0 of this series (MAS-PLATFORM-OPS index)"
+speakableSections:
+  - "The Patch Train in One Picture"
+  - "Reading IBM's Releases Page Like an Operator"
+  - "What 'Reserved for Internal Use Only' Means"
+clusterSlugs:
+  - "mas-platops-00-series-index"
+  - "mas-platops-02-db2-12-upgrade"
+  - "mas-platops-03-db2-tuning"
+  - "mas-platops-04-backup-restore-dr"
+  - "mas-platops-05-observability"
+  - "mas-platops-06-manage-performance"
+  - "mas-platops-07-support-window"
+  - "mas-platops-08-gitops-cli-ansible"
+relatedSlugs:
+  - "mas-platops-00-series-index"
+  - "mas-92-upgrade-watchlist"
+  - "mas-secops-cve-patching-2026"
+  - "mas-lifecycle-series-index"
+---
+
+# The MAS Patch Train Explained: Catalogs, Interim Builds and Version Skew
+
+<aside>
+
+🎯 **Who this is for:** MAS administrators and OpenShift platform engineers who have to answer one question every month: *what should we install, when, and how do we know we are current?* If you have ever stared at IBM's releases page and wondered where Core 9.2.4 went, this post is for you.
+
+</aside>
+
+**Series:** MAS Platform Operations | **Part 1 of 8** | **Read time:** ~25 minutes
+
+**Previous:** [Part 0: Series Guide](/blog/mas-platops-00-series-index) | **Next:** Part 2: Db2 12 on OpenShift (coming)
+
+---
+
+## 🔥 The Release Page That Looks Broken
+
+You open IBM's *Maximo Application Suite releases information* page to confirm what you are running. Core 9.2 lists 9.2.8, then 9.2.7, then 9.2.6, then 9.2.3. Manage 9.2 lists 9.2.4. AI Service lists 9.2.3. Three components, three different numbers, and the Core row for 9.2.6 carries a note that says *"9.2.4, 9.2.5 Reserved for Internal Use Only."*
+
+If you came from Maximo 7.6, where a fix pack was a fix pack, this feels wrong. Somebody must have lost a release. Somebody must have shipped a Core that does not match its Manage.
+
+Nobody lost anything. The page is accurate, and it is describing a different delivery model from the one you learned. In 7.6 you scheduled an outage, ran an installer and bumped one number. In MAS, IBM publishes a **catalog** every month, publishes **patch readmes** against it, and occasionally publishes **interim builds** in between when a defect or a vulnerability cannot wait. Each component keeps its own counter. The numbers on the page are the *names of outcomes*; the catalog is the *mechanism*.
+
+> *"We're on 9.2.something, I think."*
+
+That sentence is how patch audits fail. This post replaces it with something you can say in a change meeting: **"We run catalog v9-260924, which gives us Core 9.2.7 and Manage 9.2.4, and we are evaluating v9-261007 for the CVE-2026-105052 fix."**
+
+Everything below was re-checked against IBM's pages on **20 October 2026**. Where IBM's text and our local knowledge base disagree, I say so at the end.
+
+---
+
+## 🚂 The Patch Train in One Picture
+
+```
+ IBM builds                         Your cluster
+ ──────────                         ────────────
+ Operator catalog image             CatalogSource (ibm-operator-catalog)
+ v9-YYMMDD-amd64   ───────────────►        │
+ (monthly, plus interim)                   ▼
+                                    OLM re-reads the catalog
+        ▲                                  │
+        │                                  ▼
+ Readmes on ibm.com/support         Each Subscription moves to the newest
+ name what is *in* it:              version on its channel:
+   Core     9.2.x                     ibm-mas (Core), ibm-mas-manage,
+   Manage   9.2.x                     ibm-mas-iot, ibm-sls, ibm-db2u ...
+   AI Svc   9.2.x                           │
+   fixes: DT / APAR / CVE                   ▼
+                                    Operators reconcile your CRs
+                                    (Suite, ManageApp, ManageWorkspace)
+```
+
+Three ideas carry the whole post.
+
+1. **The catalog is the unit of change.** IBM's `mas update` guide says it plainly: the command "applies security updates and bug fixes by moving the IBM Maximo Operator Catalog to a newer version," which "triggers an automatic update to all IBM operators installed from this catalog." Operator Lifecycle Manager then moves each operator to the newest version on its subscription channel.
+2. **The readme is the contents list.** The catalog tag tells you *when* IBM built it. The readme for each component tells you *what* it delivers: fixed defects, security updates, and which applications it adds.
+3. **Components version independently.** Core, Manage, AI Service and the industry solutions each have a counter. That is what you read on the releases page.
+
+| Layer | Who controls it | What you read to know where you are |
+|---|---|---|
+| Catalog source | You (via `mas update` or a GitOps pin) | Catalog image tag, e.g. `v9-261007-amd64` |
+| Operator versions | OLM, driven by the catalog and each subscription's channel | Installed ClusterServiceVersions |
+| Component version | IBM, per component | Releases page and readme per component |
+| Fix content | IBM | Readme: DT, APAR and CVE identifiers |
+
+<aside>
+
+💡 **Key insight:** When someone asks "what version are we on?", the honest answer has four parts: the catalog, the Core version, the Manage version, and the date you last verified them against IBM's page.
+
+</aside>
+
+---
+
+## 🏷️ Decoding the Catalog Name
+
+IBM's CLI documentation shows catalogs named `v9-YYMMDD-amd64`, and its example is `v9-261007-amd64`, the catalog released on 7 October 2026. The architecture suffix changes (IBM's readmes list amd64, s390x and ppc64le builds of each catalog), but the `YYMMDD` segment is the build date.
+
+Here are the 2026 catalogs on the MAS CLI catalogs page as of 20 October, with the platform support IBM attaches to each:
+
+| Catalog | Date | OCP | CPD | MongoDB | Note |
+|---|---|---|---|---|---|
+| v9-261224 | 24 Dec 2026 | TBD | TBD | TBD | Scheduled; contents not published |
+| v9-261126 | 26 Nov 2026 | TBD | TBD | TBD | Scheduled |
+| v9-261029 | 29 Oct 2026 | TBD | TBD | TBD | Scheduled |
+| **v9-261007** | **7 Oct 2026** | 4.18 – 4.22 | 5.3.1 | 7.0 – 8.0 | Latest published |
+| v9-260924 | 24 Sep 2026 | 4.18 – 4.22 | 5.3.1 | 7.0 – 8.0 | |
+| v9-260827 | 27 Aug 2026 | 4.16 – 4.22 | 5.3.1 | 7.0 – 8.0 | Last catalog listing OCP 4.16 |
+| v9-260730 | 30 Jul 2026 | 4.16 – 4.21 | 5.2.0 | 7.0 – 8.0 | |
+| v9-260625 | 25 Jun 2026 | 4.16 – 4.21 | 5.2.0 | 7.0 – 8.0 | 9.2.0 Feature Channel |
+| v9-260527 | 27 May 2026 | 4.16 – 4.21 | 5.2.0 | 7.0 – 8.0 | |
+| v9-260430 | 30 Apr 2026 | 4.16 – 4.20 | 5.2.0 | 7.0 – 8.0 | |
+
+Dates for the three scheduled catalogs are inferred from the tag pattern; the page fills every compatibility field with TBD and marks 261007 as the latest.
+
+Three things in that table deserve a closer look.
+
+**The catalog date is not the release date.** Core 9.2.7 went out on **29 September** and its readme lists *IBM Maximo Operator Catalog v9 (260924)*. The catalog was built on the 24th; the patch was published five days later. Core 9.2.6 is the same story: released 18 September, catalog tagged 260918. So "what day did the patch ship" and "which catalog is it in" are two separate columns in your own change log.
+
+**Not every catalog appears on the CLI catalogs page.** IBM published at least two catalogs that are absent from the 2026 table above: **v9-260902**, delivered with Core and Manage 9.1.22, and **v9-260918**, listed in the Core 9.2.6 readme. These are the interim catalogs. The CLI page tracks the monthly line; the readme tracks everything. If you pin catalogs in a pipeline, take the tag from the readme of the patch you want, not only from the monthly list.
+
+**Platform support moves with the catalog.** From v9-260924, IBM lists OCP 4.18 to 4.22 and CPD 5.3.1. A cluster still on OCP 4.16 cannot take a catalog newer than v9-260827 without moving OpenShift first. That sequencing question is the subject of Part 7, but you start seeing it here: the patch train and the OpenShift upgrade train are coupled.
+
+### Catalog tags in a CLI call
+
+```bash
+# Interactive: the CLI asks which catalog to move to
+docker run -ti --rm --pull always quay.io/ibmmas/cli mas update
+
+# Non-interactive: pin the catalog and skip the confirmation prompt
+docker run -ti --rm --pull always quay.io/ibmmas/cli \
+  mas update -c v9-261007-amd64 --no-confirm
+```
+
+Both forms come from IBM's update guide. The guide states a hard prerequisite: "You must select a newer catalog than what is already in use," and it notes the command applies to environments using **static catalogs**; with a dynamic catalog, updates arrive automatically. Decide which of the two you run, because the rest of your change management follows from it. A static, pinned catalog gives you a patch date you chose. A dynamic catalog gives you less control and fewer steps.
+
+---
+
+## 📖 Reading IBM's Releases Page Like an Operator
+
+The page lives at `ibm.com/support/pages/maximo-application-suite-releases-information-0`. It is long (the rendered text runs to more than 100,000 characters), organised by MAS version line, and each line has a table per product. Here is the 9.2 line for Core as it stood on 20 October 2026:
+
+| Core version | Date | IBM ref # | Note on the page |
+|---|---|---|---|
+| 9.2.8 | 7 Oct 2026 | 7292664 | Interim release |
+| 9.2.7 | 29 Sep 2026 | 7289768 | |
+| 9.2.6 | 18 Sep 2026 | 7288414 | Interim Release; 9.2.4, 9.2.5 reserved |
+| 9.2.3 | 27 Aug 2026 | 7285205 | 9.2.2 reserved |
+| 9.2.1 | 30 Jul 2026 | 7281594 | |
+| 9.2.0 / June FC | 25 Jun 2026 | 7277376 | |
+
+and Manage 9.2:
+
+| Manage version | Date | IBM ref # | Note on the page |
+|---|---|---|---|
+| 9.2.4 | 29 Sep 2026 | 7289350 | |
+| 9.2.3 | 18 Sep 2026 | 7288426 | Interim Release |
+| 9.2.2 | 27 Aug 2026 | 7284557 | |
+| 9.2.1 | 30 Jul 2026 | 7276395 | |
+| 9.2.0 / June FC | 25 Jun 2026 | 7276377 | |
+
+And AI Service 9.2: 9.2.3 (29 Sep 2026, ref 7287755), 9.2.2 (27 Aug), 9.2.1 (30 Jul), 9.2.0 (25 Jun).
+
+Above the 9.2.0 row the page switches to the monthly *Feature Channel* labels (April FC, March FC and so on), which is how 9.2 was delivered before general availability.
+
+### Five habits for reading this page
+
+**1. Treat the "Ref #" as the address of the truth.** The ref number is the IBM Support node. `https://www.ibm.com/support/pages/node/7288414` is the Core 9.2.6 readme. The table is an index; the readme is the document. Always open the readme before you tell anyone what a release contains.
+
+**2. Read the date column as your audit trail.** The dates tell you which releases belong to the same monthly cycle. 27 Aug 2026: Core 9.2.3, Manage 9.2.2, AI Service 9.2.2. 29 Sep 2026: Core 9.2.7, Manage 9.2.4, AI Service 9.2.3. Different numbers, same cycle.
+
+**3. Read the Note column before the number.** "Interim release" and "Reserved for Internal Use Only" are information. The next two sections explain them.
+
+**4. Read each readme's "Added applications" list.** This is where the cross-component mapping lives. The Core 9.2.7 readme lists, as added applications, Manage 9.2.4, IoT 9.2.4, Monitor 9.2.4, Optimizer 9.2.3, AI Service 9.2.3, Real Estate and Facilities 9.2.3 and Visual Inspection 9.2.3. One Core number, five or six different application numbers.
+
+**5. Know what the page does not tell you.** It does not list OCP, CPD or MongoDB support (that is the CLI catalogs page), and it carries no operator catalog column of its own; you take the catalog from each readme. IBM's own page also contains typos: the Manage 9.1.15 note says "9.1.113", and one AI Service link prints a truncated ref number. When a number looks wrong, open the readme.
+
+---
+
+## 🔒 What "Reserved for Internal Use Only" Means
+
+This phrase is the one that spooks people, so let me be exact about what IBM wrote and what we can and cannot conclude.
+
+The page text, quoted verbatim from the rows above:
+
+| Product row | IBM's note |
+|---|---|
+| Core 9.2.3 | "(9.2.2- Reserved for Internal Use Only)" |
+| Core 9.2.6 | "(9.2.4, 9.2.5 Reserved for Internal Use Only)" |
+| Core 9.1.25 | "(9.1.23, 9.1.24 Reserved for Internal Use Only)" |
+| Core 9.1.18 | "(9.1.17- Reserved for Internal Use Only)" |
+| Core 9.1.14 | "(9.1.11/9.1.12/9.1.13 - Reserved for Internal Use Only)" |
+| Manage 9.1.15 | "(9.1.12/9.1.113/9.1.14 - Reserved for Internal Use Only)" |
+| Core 9.0.31 | "(Interim Release) (9.0.30 Reserved for Internal Use Only)" |
+
+**What it means:** the number was assigned inside IBM, used for internal builds or test levels, and never published to customers. There is no readme to find, no catalog to pull and no download to request.
+
+**What it does not mean:**
+
+- It does not mean you skipped a fix. IBM's published releases are cumulative within a version line in practice: the next published number carries the content forward. (This is our reading of how the page behaves; IBM does not state a cumulative guarantee in one sentence on the page, so confirm against the readme if a specific defect matters.)
+- It does not mean something went wrong. Reserved numbers appear every month in 2026 on both 9.1 and 9.2, and they appeared on 8.x and 9.0 lines before that: Core 8.11.32 notes 8.11.31, Core 8.10.35 notes 8.10.34, Manage 8.7.30 notes 8.7.29.
+- It does not tell you *why* IBM reserved them. Anyone who gives you a reason is guessing.
+
+The operational rule is short: **compare installed against the latest published row, and never count versions to decide whether you are current.**
+
+### Interim builds are different
+
+An **interim release** *was* published, and you can install it. IBM labels these on the page. In the 9.2 line: Core 9.2.6, Core 9.2.8 and Manage 9.2.3. In 9.1: Core 9.1.22, 9.1.25, 9.1.27; Manage 9.1.22 and 9.1.24. In 9.0: Core 9.0.31 and 9.0.33.
+
+| Type | Published? | Installable? | Where it shows up | Your action |
+|---|---|---|---|---|
+| Scheduled monthly release | Yes | Yes | Readme plus catalog | Plan into your normal cadence |
+| Interim release | Yes | Yes | Readme plus catalog (often an extra catalog tag) | Read the defect list; take it if it applies or if it is security |
+| Reserved number | No | No | A note on a neighbouring row | Ignore it |
+| Feature Channel release | Yes (pre-GA) | Non-production only | Feature Channel page | Never in production |
+
+---
+
+## ↔️ Version Skew: Core Is Not Manage
+
+Before 9.2, a MAS release line moved Core and Manage in step more often than not. From 9.2 the page makes the independence obvious, and IBM's readmes make the *relationship* explicit through the "Added applications" list.
+
+Here is how the 9.2 cycle played out between late July and early October 2026, reconstructed from the readmes:
+
+| Cycle | Core | Manage | AI Service | Catalog (from readme) |
+|---|---|---|---|---|
+| 30 Jul | 9.2.1 | 9.2.1 | 9.2.1 | v9-260730 |
+| 27 Aug | 9.2.3 | 9.2.2 | 9.2.2 | v9-260827 |
+| 18 Sep (interim) | 9.2.6 | 9.2.3 | — | v9-260918 |
+| 29 Sep | 9.2.7 | 9.2.4 | 9.2.3 | v9-260924 |
+| 7 Oct (interim) | 9.2.8 | no new Manage 9.2 release | no new release | v9-261007 |
+
+Two details are worth pausing on. First, Core 9.2.6's readme lists **Manage 9.2.3** as an added application, matching Manage 9.2.3's own 18 September date. Second, the 7 October cycle moved *only Core* on the 9.2 line: Manage stayed at 9.2.4. That is the skew in its purest form. A security fix to the login service lives in Core; Manage did not need a new build.
+
+Version skew shows up in four places, and each needs a different reflex.
+
+| Where skew bites | Symptom | Reflex |
+|---|---|---|
+| Reading a change log | "Core 9.2.8 fixes X" gets applied to Manage | Open the Manage readme separately |
+| Support calls | You quote one number; IBM asks for Core, Manage and the catalog | Keep a three-line version stamp (below) |
+| Documentation | A runbook says "upgrade to 9.2.4" without saying which product | Always write "Manage 9.2.4" or "Core 9.2.7" |
+| Add-ons and industry solutions | Industry solutions carry their own numbers again (for example, IBM's 29 September Manage 9.2.4 page links Aviation 9.2.18 and Oil & Gas 9.2.43) | Look them up in the Manage readme's linked pages |
+
+### Make a version stamp
+
+Put this in your change ticket, your runbook header and your support case template:
+
+```text
+MAS version stamp - 2026-10-20 (verified against IBM releases page)
+Catalog:  v9-260924-amd64
+Core:     9.2.7
+Manage:   9.2.4   (Graphite 3.2.889)
+AI Svc:   9.2.3
+Next:     v9-261007 (Core 9.2.8, CVE-2026-105052) - scheduled for non-prod on 2026-10-22
+```
+
+To fill it in from the cluster, these are the commands we reach for. Object and field names below are the ones we use on typical MAS 9 installs; **confirm them on your cluster** (`oc explain`, `oc get crd | grep ibm`) because instance IDs and namespaces differ.
+
+```bash
+# Which catalog image is the cluster pointed at?
+oc get catalogsource -n openshift-marketplace ibm-operator-catalog \
+  -o jsonpath='{.spec.image}{"\n"}'
+
+# What did OLM actually install? (Core namespace for instance "inst1")
+oc get csv -n mas-inst1-core | grep -i ibm-mas
+
+# What does the Suite CR report as its reconciled version?
+oc get suite inst1 -n mas-inst1-core \
+  -o jsonpath='{.status.versions.reconciled}{"\n"}'
+
+# Manage: the operator CSV and workspace status
+oc get csv -n mas-inst1-manage | grep -i manage
+oc get manageworkspace -n mas-inst1-manage
+```
+
+If the catalog image says one date and the CSVs say another, the update is still reconciling (or has stalled). That mismatch is worth an alert, and Part 5 returns to it when we build monitoring.
+
+---
+
+## 🧪 Case Study 1: Core 9.2.6 and the Defects It Carried
+
+Core 9.2.6 (18 September 2026, interim) is the best teaching release on the page because its fix list is short and each item maps to a different kind of decision. IBM's readme lists three defects, and Core 9.2.7 repeats the same three in its fix list, which tells you the fixes were carried forward into the scheduled release eleven days later.
+
+| Defect | IBM's description (verbatim title) | Who it hits |
+|---|---|---|
+| DT501598 | "MAXUSER fields incorrectly overwritten during 9.1 to 9.2 upgrade for users where MASISSUER is NULL" | Teams in the middle of a 9.1 to 9.2 upgrade |
+| DT500106 | "Unable to open Application Configuration after upgrade to 9.1.20" | Teams on or moving to 9.1.20 |
+| DT499855 | "Users repeatedly deactivated from Inactivity Timeout" | Anyone with an inactivity timeout configured and affected users |
+
+### DT501598: the one that touches your data
+
+Read the title slowly. A 9.1 to 9.2 upgrade **overwrites MAXUSER fields** for users whose **MASISSUER is NULL**. IBM's wording stops there: the readme gives a title and the fix, not a root cause, and I will not invent one. What the title does let us say, carefully, is this:
+
+- The affected population is defined by a single condition: users with a null MASISSUER. That is a query you can run before the upgrade.
+- The damage is to MAXUSER fields, which is data in your production database. A fix in a later patch does not undo an overwrite that already happened.
+- The exposure window is the upgrade itself. If you are not upgrading from 9.1 to 9.2, this defect is not your problem.
+
+That changes your plan. If your 9.1 to 9.2 upgrade is next month, you want the catalog that contains the fix **before** you start, plus a backup, plus a pre-check of how many users have a null MASISSUER. A query like the one below is a reasonable starting point on Db2. It is illustrative: MASISSUER is a column on MAXUSER in the Manage schema we have inspected, but verify the column on your version before relying on it.
+
+```sql
+-- Illustrative pre-upgrade check (verify column names on your schema)
+SELECT COUNT(*)                              AS users_without_issuer
+FROM   maximo.maxuser
+WHERE  masissuer IS NULL;
+
+-- Snapshot what you might lose, before touching anything
+CREATE TABLE maximo.maxuser_pre92_bak AS
+  (SELECT * FROM maximo.maxuser) WITH DATA;
+```
+
+If the count is zero, the defect cannot touch you. If it is not zero, take the snapshot, apply the patched catalog first and tell the change board what the exposure was. (Note that the `MASISSUER` value is part of the identity picture covered in the MAS-SECURITY-OPS series; Part 4 of that series discusses the 9.2 user-management changes.)
+
+> *"We'll just upgrade and fix anything that breaks."*
+
+For this defect, that is exactly the wrong order. The thing that breaks is user data, and you find out after the fact.
+
+### DT500106: a defect in one version of the 9.1 line
+
+"Unable to open Application Configuration after upgrade to 9.1.20." This one is scoped by a specific build number. If you are on 9.1.20 you have probably noticed. If you went from 9.1.19 to 9.1.21 you skipped the build. It is listed in the *9.2* Core readmes, so check the readme of the 9.1 build you plan to run (for example 9.1.25 or 9.1.27) to see how IBM handled it on that branch; I did not confirm that cross-listing in this run and I would not assume it.
+
+### DT499855: a fix that pays back in help-desk tickets
+
+"Users repeatedly deactivated from Inactivity Timeout." No upgrade ceremony, no data risk, and still valuable: it is the sort of defect that creates a flood of "my account is locked" tickets. Decide on the cost of those tickets, not on severity labels.
+
+### The decision matrix you actually use
+
+| Interim contents | Security? | Data risk? | Applies to us today? | Decision |
+|---|---|---|---|---|
+| DT501598 | No | Yes (during 9.1 to 9.2 upgrade) | Only if upgrading | Take the fix **before** the upgrade |
+| DT500106 | No | No | Only on 9.1.20 | Take with next scheduled release |
+| DT499855 | No | No | If the timeout is configured | Take with next scheduled release, sooner if ticket volume is high |
+| CVE-2026-105052 (Core 9.2.8) | **Yes** | Yes (read of arbitrary files) | Yes, on affected versions | Take on the security timeline |
+
+---
+
+## 🛡️ Case Study 2: The October Security Interim
+
+Core **9.2.8**, **9.1.27** and **9.0.33** are the October interim releases, dated **7 October 2026** and published together. All three carry the fix for **CVE-2026-105052**. IBM's 9.2.8 readme describes it as a "Path Traversal" fix with a CVSS score of 7.5 and links the security bulletin (node 7290791). It also lists security updates to the base image and Python modules.
+
+The bulletin itself, titled *"IBM Maximo Application Suite is vulnerable to a sensitive information disclosure"*, was first published **3 October 2026**, four days *before* the release, and last modified 14 October. It states:
+
+| Field | What the IBM bulletin says |
+|---|---|
+| CVE / CWE | CVE-2026-105052, CWE-22 (path traversal) |
+| CVSS 3.1 | 7.5, vector `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N` |
+| Description | A remote, unauthenticated attacker can traverse directories with crafted "dot dot" URL sequences to read arbitrary files on the system |
+| Affected | 8.10, 8.11, 9.0, 9.1, 9.2 |
+| Fixed in | 9.0.33 or later, 9.1.27 or later, 9.2.8 or later |
+| Workaround for 8.10 / 8.11 | Set the CoreIdp-Login image to 3.2.201 (8.10) or 4.0.179 (8.11) |
+
+Read the vector aloud: **network** attack, **low** complexity, **no privileges**, **no user interaction**, high confidentiality impact. That profile is why this one does not wait for your normal cadence.
+
+### The 8.10/8.11 workaround, and the trap in it
+
+For the two lines that did not get a new Core build, IBM gives an override. According to the bulletin, you set the version under `spec.settings.imageTags.coreidplogin` in the Coreidp custom resource. The shape of it looks like this (a sketch; take the exact CR name and namespace from your cluster and the bulletin):
+
+```yaml
+# Sketch only: confirm the CR kind, name and namespace on your cluster
+apiVersion: core.mas.ibm.com/v1
+kind: Coreidp
+metadata:
+  name: inst1
+  namespace: mas-inst1-core
+spec:
+  settings:
+    imageTags:
+      coreidplogin: "3.2.201"   # MAS 8.10. For MAS 8.11 use 4.0.179
+```
+
+The bulletin adds the part people miss: **do not remove this override until you have updated to the October 2026 monthly update or later**, because earlier versions do not include the fix. That is the sort of sentence you want in your runbook, in bold, next to the person who owns the override. Pinned image tags tend to outlive the memory of why they were set.
+
+### What this teaches about the patch train
+
+1. **Security releases arrive on all supported branches at once.** One CVE, three Core builds (9.0.33, 9.1.27, 9.2.8), plus a workaround for older lines. If you track only the newest branch you will miss that your branch has a different number.
+2. **The bulletin can precede the build.** Subscribe to IBM's security bulletin feed, not only the releases page.
+3. **Interim builds are how fixes arrive off-cycle.** The next scheduled catalog (v9-261029 per IBM's catalog list) was still three weeks away on 7 October.
+4. **"Patched" is a catalog statement.** A cluster is patched when the operators from the fixed catalog have reconciled, not when someone merged a ticket.
+
+Part 5 of the MAS-SECURITY-OPS series ([Patching as a Security Program](/blog/mas-secops-cve-patching-2026)) covers the vulnerability-management side of the 2026 CVEs. This post covers the mechanism by which the fix reaches your cluster.
+
+---
+
+## 🧯 Case Study 3: When the Catalog Itself Is the Problem
+
+The most useful sentence on IBM's release pages this autumn is in the **9.1.22** readme (2 September 2026). It says a known issue in the **v9 (260827)** catalog "impacted online upgrades during the offline phase of MAS Manage," specifically on the path from **Manage 9.0.29 to 9.1.21**. IBM published a technote with a workaround, then shipped interim catalog **v9 (260902)**, described as resolving the issue and enabling successful online upgrades to Manage 9.1.22. Core 9.1.22 and Manage 9.1.22 are both listed as the added applications.
+
+Think about what that sequence means for you:
+
+- A **monthly catalog can contain a defect** that breaks an upgrade path. IBM said so in a readme.
+- The fix was a **new catalog tag**, not a new operator hand-patched onto the old one.
+- If your pipeline pinned `v9-260827` on 28 August and tried a 9.0 to 9.1 Manage upgrade, you hit it. If you pinned `v9-260902`, you did not.
+- The two catalogs are five days apart. The CLI catalogs page does not list v9-260902 in its monthly table, so only a pipeline that read the readme would have seen the better tag.
+
+The practical consequences are about process rather than luck.
+
+| Control | What it prevents |
+|---|---|
+| Pin the catalog tag explicitly (`-c v9-261007-amd64`) rather than "latest" | Surprise moves, and a record of what you ran |
+| Always test the **upgrade path you will use** (for example 9.1 to 9.2) in non-production | Path-specific catalog defects |
+| Read the readme of the catalog you plan to use, including "known issues" | Problems IBM has already documented |
+| Wait one to two weeks after a scheduled catalog unless it is a security release | Letting interim fixes land first (a judgement call, not an IBM recommendation) |
+| Keep the previous catalog's mirror available in disconnected sites | A rollback or re-pin path |
+
+Note the last row. IBM's update guide says disconnected environments must mirror the new catalog's images first, and that "you must run the mirror command multiple times" if several MAS releases are in use. A mirror takes time; start it when the catalog is announced, not when the change window opens.
+
+---
+
+## ⚙️ Operating the Train: A Runbook
+
+Everything above becomes a monthly routine. This is the one we use, written so that a new team member can follow it.
+
+### The cadence
+
+| When | Activity |
+|---|---|
+| Release day +0 to +2 | Read the releases page and every readme for the components you run. Check the CLI catalogs page for OCP, CPD and MongoDB support. Log the finding in your tracker |
+| +2 to +5 | Mirror the catalog (if disconnected). Take backups of Db2, MongoDB and the MAS configuration (Part 4) |
+| +5 to +10 | `mas update` against non-production with a pinned catalog. Smoke-test |
+| +10 to +20 | Production window |
+| Any day | Security bulletin naming your version: skip the queue, go straight to a pinned interim and a short production window |
+
+IBM's catalog list gives you the dates to plan around: 29 Oct, 26 Nov and 24 Dec 2026 are the scheduled slots after v9-261007. Put them in the team calendar now.
+
+### What "update" does and does not do
+
+From IBM's update guide, and worth repeating because it surprises people:
+
+- **It is cluster-wide.** "Everything in the cluster moves to the latest version in the installed catalog, so you can't mix patch levels across MAS instances." If your dev and test MAS instances share a cluster, they patch together. Separate clusters are how you get a canary.
+- **It only touches the IBM catalog.** Red Hat operator catalogs are untouched.
+- **It is not an upgrade.** Moving from 9.1 to 9.2 is the separate *upgrade* process (channel subscription, with the n-1 rule that you can upgrade directly from the version just before the current one, so 9.1 to 9.2 is direct and 9.0 to 9.2 is not).
+- **It handles dependencies.** `mas update` detects MongoDB, Kafka and Db2, shows a summary, and prompts for approval on major version changes. For MongoDB, IBM says you are prompted to approve the major update and recommended to take a database backup. Db2 11 to 12 needs `--db2-v12-upgrade` plus `--db2-license-file`. That is Part 2.
+
+### Flags worth knowing
+
+| Flag | Use |
+|---|---|
+| `-c`, `--catalog` | Pin the target catalog |
+| `--no-confirm` | Non-interactive, for pipelines |
+| `--skip-pre-check` | Skips the `pre-update-check` and `post-update-verify` tasks. We would not use it in production; the checks are the point |
+| `--db2-namespace`, `--mongodb-namespace`, `--kafka-namespace` | Tell the update where dependencies live |
+| `--kafka-provider` | `redhat` or `strimzi` |
+| `--slack-token`, `--slack-channel` | Pipeline status notifications |
+
+### Keep the CLI in step with the catalog
+
+IBM's CLI releases track catalog support. CLI **23.13.0** (29 September) added "Support September Catalog Update," **23.14.0** (8 October) added "Support October Interim Catalog Update" and fixed 9.0 to 9.1 upgrades with non-standard storage classes, and **23.15.0** (16 October) added a v9-261007 catalog entry to its docs. The `--pull always` in IBM's example matters for the same reason: you want the CLI image that knows your target catalog. The CLI catalogs page even has a CLI column for each catalog. (The page's year-less release dates are why the day and month are all we quote here.)
+
+### A change-ticket template
+
+```text
+CHANGE: MAS catalog update  v9-260924-amd64  ->  v9-261007-amd64
+CLUSTER: prod-ocp-01 (OCP 4.19)   INSTANCES: inst1 (prod)
+WHY: Core 9.2.8 contains the CVE-2026-105052 fix (IBM bulletin node 7290791)
+EXPECTED RESULT: Core 9.2.7 -> 9.2.8; Manage unchanged at 9.2.4
+PRE-CHECKS:
+  [ ] OCP version inside catalog's range (4.18-4.22)
+  [ ] Db2 and MongoDB backups taken and restorable (Part 4)
+  [ ] Non-prod run completed on <date>; smoke test passed
+  [ ] Mirror complete (disconnected sites only)
+VERIFY AFTER:
+  [ ] CSVs reconciled; Suite CR healthy
+  [ ] Login, one Manage work order, one integration flow
+  [ ] Version stamp updated
+ROLLBACK: restore from backup; re-pin previous catalog (see note: operators
+          may not downgrade, so rollback is restore, not re-pin)
+```
+
+On that last line, a caution from experience: operators generally move forward on their channels, so "re-pin the old catalog" is not a reliable rollback. Your real rollback is restore from backup, which is why backup is Part 4 and why we insist on it before the first update, not after the first incident.
+
+---
+
+## 🧪 Feature Channel: The Branch You Do Not Run in Production
+
+You will see "Feature Channel" labels on the releases page (April FC, March FC, and 9.2.0 / June FC for the 9.2 line). IBM's Feature Channel page describes it as a continuous-delivery stream for **non-production** MAS components, delivered through regular catalog updates and running in parallel with the maintained releases. The support rules are narrow:
+
+| Rule | IBM's position |
+|---|---|
+| Where | Non-production only |
+| Which release gets support | Only the latest Feature Channel |
+| Case severity | Severity 3 or 4; cannot be escalated |
+| Where fixes land | A later Feature Channel, not a patch to the current one |
+| Older Feature Channel | Move to the latest and reproduce before IBM supports it |
+
+For the patch train, the point is to keep the two streams apart. A catalog that delivers a Feature Channel build is not a production patch, and a cluster that mixes them gets the weaker of the two support positions. If a lab cluster tracks Feature Channel, keep it on a different OpenShift cluster from anything that matters.
+
+---
+
+## 🔍 Troubleshooting the Train
+
+| Symptom | Likely cause | What to check |
+|---|---|---|
+| `mas update` refuses the catalog | Target is not newer than the one in use (IBM: "You must select a newer catalog") | Compare the tags; the YYMMDD segment orders them |
+| Update stalls in pre-update-check | OCP, CPD or MongoDB outside the catalog's supported range | CLI catalogs page row for the target catalog; Part 7 |
+| Catalog is new but CSVs are old | OLM has not reconciled; subscription on manual approval | InstallPlans awaiting approval in the operator namespaces |
+| Disconnected cluster cannot pull | Catalog or operand images not mirrored for every MAS release in use | Re-run the mirror once per release, with `-C` matching the installed release |
+| Your version stamp disagrees with IBM's page | Ref number or interim catalog missed | Open the readme for the exact row; check for an interim catalog tag |
+| An IBM page shows a number you cannot find | Reserved number | Look for the "Reserved" note on the neighbouring row |
+| Upgrade (not update) fails after a catalog move | A defect in that catalog or path (see v9-260827) | The target version's readme "known issues"; IBM technotes |
+| Core number "ahead" of Manage | Normal skew | The Core readme's "Added applications" list |
+
+---
+
+## 🧭 What to Do Before Your Next Change Window
+
+1. **Create the version stamp** for every environment today. Catalog, Core, Manage, AI Service, date verified.
+2. **Decide static or dynamic catalogs** and write the decision down. If static, pin tags in the pipeline.
+3. **Subscribe to IBM's security bulletins** and add the 29 Oct, 26 Nov and 24 Dec catalog dates to your calendar.
+4. **Read the readme, not the table.** Follow the ref number every time.
+5. **Test the real path.** If production will go 9.1 to 9.2, the non-production run must be 9.1 to 9.2 on the target catalog, with the DT501598 pre-check query.
+6. **Back up before the first update, not after the first incident.** Restore is your rollback.
+7. **Find every pinned override.** The Coreidp `coreidplogin` image tag is the example; every pin needs an owner and a removal condition.
+
+### The Seven Commandments of the Patch Train
+
+1. **Thou shalt patch by catalog, not by feeling.**
+2. **Thou shalt read the readme before the table.**
+3. **Thou shalt never count versions to learn whether thou art current.**
+4. **Thou shalt write Core, Manage and the catalog together, always.**
+5. **Thou shalt treat security bulletins as an interrupt, not a queue item.**
+6. **Thou shalt test the upgrade path thou intendest to walk.**
+7. **Thou shalt give every pinned override an owner and an exit.**
+
+---
+
+## 🔮 Where This Series Goes Next
+
+Part 2 takes the first change that `mas update` *refuses* to make for you: the Db2 11 to 12 upgrade, which needs two explicit flags and a licence file. Part 4 builds the backup you depend on whenever a catalog move goes badly, and Part 7 covers the OpenShift, CPD and MongoDB support window that every catalog row in this post quietly depends on.
+
+If this post did its job, IBM's releases page no longer looks broken. It looks like what it is: a log of three or four trains leaving the same station on the same days.
+
+---
+
+## 📚 References
+
+- [IBM Support: Maximo Application Suite releases information](https://www.ibm.com/support/pages/maximo-application-suite-releases-information-0) (Core, Manage and AI Service tables, interim and reserved notes; read 20 Oct 2026)
+- [IBM Support: MAS Core 9.2.6 readme, 18 Sep 2026 (DT501598, DT500106, DT499855)](https://www.ibm.com/support/pages/node/7288414)
+- [IBM Support: MAS Core 9.2.7 readme, 29 Sep 2026](https://www.ibm.com/support/pages/node/7289768)
+- [IBM Support: MAS Core 9.2.8 readme, 7 Oct 2026 (CVE-2026-105052 fix)](https://www.ibm.com/support/pages/node/7292664)
+- [IBM Support: Security Bulletin for CVE-2026-105052](https://www.ibm.com/support/pages/node/7290791)
+- [IBM Support: MAS Manage 9.2.4 patch readme, 29 Sep 2026](https://www.ibm.com/support/pages/node/7289350)
+- [IBM Support: MAS 9.1.22 readme (v9-260827 known issue, v9-260902 interim catalog)](https://www.ibm.com/support/pages/node/7286040)
+- [IBM Support: Maximo Application Suite Feature Channel](https://www.ibm.com/support/pages/maximo-application-suite-feature-channel)
+- [MAS CLI: Operator catalogs and platform compatibility](https://ibm-mas.github.io/cli/catalogs/)
+- [MAS CLI: Update guide (`mas update`)](https://ibm-mas.github.io/cli/guides/update/)
+- [GitHub: ibm-mas/cli releases](https://github.com/ibm-mas/cli/releases)
+
+---
+
+**About TheMaximoGuys:** We help Maximo administrators, developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | October 2026*
+
+<!--
+REVIEWER NOTES (night-shift, 2026-10-20, platops-01):
+- All release dates, ref numbers, reserved/interim notes: read from IBM's releases page on 2026-10-20 via fetch. The fetch tool returned only the first 100,000 of ~110,900 characters; the 8.x/9.0 rows beyond that were not read. The 8.x and Manage 8 reserved notes quoted come from the page's visible reserved-note list.
+- Catalog table: CLI catalogs page (fetched 2026-10-20). The page's PNG/CLI column was inconsistent and is not reproduced. Scheduled catalog dates (261029/261126/261224) are inferred from the tag pattern; IBM marks all compatibility fields TBD. The page lists v9-260527 and the year-less CLI dates were ignored.
+- Catalog-vs-release-date: Core 9.2.6 readme lists catalog 260918 (released 18 Sep); Core 9.2.7 readme lists 260924 (released 29 Sep); 9.1.22 readme lists 260902. DOC00 CHG-005 lists monthly catalogs only (260625, 260730, 260827, 260924, 261007) and omits the interim 260902 and 260918 tags and 260527. The post follows the IBM readmes.
+- DISCREPANCY: DOC00 CHG-007 says Manage 9.2.4 "about 90 APARs"; the IBM page lists 86 entries in its APAR/known-issue table (the page also links a spreadsheet). The post does not state a count. DOC00 says Manage 9.2.4 "build 9.2.232" - the page says version 9.2.232 and Graphite 3.2.889 and gives no separate build number.
+- DISCREPANCY: DOC00 CHG-007 lists Core 9.2.7, AI Service 9.2.3 and REF 9.2.3 and these match the 9.2.7 readme's added-applications list (which also lists IoT/Monitor 9.2.4, Optimizer 9.2.3, MVI 9.2.3). The Core 9.2.7 "Manage 9.2.4" pairing is from that readme.
+- DOC00 CHG-008 says the 8.10/8.11 fix is CoreIdp-Login 3.2.201 / 4.0.179; confirmed in the bulletin (node 7290791, first published 3 Oct 2026, modified 14 Oct). The Core 9.2.8 readme page (modified 15 Oct) did NOT itself state affected/fixed versions or CoreIdp numbers; those come from the bulletin. The bulletin gives the override path spec.settings.imageTags.coreidplogin; the YAML apiVersion/kind/name is our sketch and is labelled as such.
+- DT501598 root cause not stated by IBM; post does not assert one. The SQL pre-check (MAXUSER.MASISSUER) is illustrative: the MASISSUER column name/location was not verified against a schema. [IND]-style hedge applied.
+- DT500106/DT499855: titles read from the 9.2.6 and 9.2.7 readmes. Whether DT500106 was also fixed on the 9.1 branch was NOT checked.
+- "Fixes carried forward / cumulative" is our reading of the page; IBM does not state a cumulative guarantee in the pages read.
+- oc commands (CatalogSource name ibm-operator-catalog, Suite CR status.versions.reconciled, namespaces) are typical-install conventions, not taken from an IBM page this run; flagged in the post for verification. Rollback caveat ("operators may not downgrade") is practitioner judgement, not an IBM statement.
+- The update-guide claims (cluster-wide, static catalogs only, flags, example commands) come from https://ibm-mas.github.io/cli/guides/update/ fetched 2026-10-20.
+- The "wait one to two weeks" row is labelled in the post as a judgement call, not IBM guidance.
+- Practitioner-source gap: searches for Maximo Secrets / Interloc / IBM Community coverage of DT501598, the patch train or interim builds returned no relevant results; only IBM's own readmes and older unrelated IBM Community threads (2023-2024). References are IBM and ibm-mas GitHub pages only.
+- Upgrade n-1 rule, channel subscription (auto/manual approval): DOC15 UPG-14/UPG-16 (knowledge base), not re-fetched from IBM Docs this run (IBM Docs 403s).
+- Industry-solution examples (Aviation 9.2.18, Oil & Gas 9.2.43) are from the fetched Manage 9.2.4 page's linked list.
+- SearchMaximo sweep: the local 611-file knowledge-base path (baseline/knowledge-base/ibm_userguides_markdown) was not usable in this environment (path with a space broke the grep); the DOC15 factbase and DOC00 were used as the knowledge-base source instead.
+- Index (Part 0) table of latest 8.x/9.0 Core/Manage numbers was NOT re-verified here and was not reused.
+-->
