@@ -2,6 +2,10 @@
 title: "Configuration & Deployment: Standing Up the Maximo AI Service, Training the Models, and Closing the Feedback Loop"
 description: "The Maximo Assistant is not a checkbox — it's a deployment project. The real path: the Maximo AI Service operator on OpenShift, the watsonx.ai connection, training recommendation models on your own data, and the feedback loop that keeps them improving. Mapped to IBM's ten team-exploration tasks and the realistic 68–128 hour pilot estimate."
 date: "2026-07-16"
+updatedAt: "2026-10-20"
+updateHistory:
+  - date: "2026-10-20"
+    reason: "Added MAS 9.2 / 2026 deployer changes: AI broker retirement, gpt-oss-120b models, enabling additional assistant objects, MCP server, Mobile online-only, AI Service 9.2.3 patch level and security bulletins; supply-chain note linking Part 7; series now 8 parts"
 slug: "mas-assist-configuration-deployment"
 tags: ["Maximo", "MAS 9", "Maximo AI Service", "watsonx.ai", "Deployment", "OpenShift", "Model Training", "EAM"]
 draft: false
@@ -27,10 +31,11 @@ keyTakeaways:
   - "IBM estimates a 68–128 hour (2–3 week) pilot for a focused two-to-three-person team"
   - "2+ years of clean, failure-coded work order history is the true prerequisite — data prep is usually the long pole"
   - "The feedback loop is not a launch step but an ongoing process that turns a day-one model into a good one"
+  - "2026 changes for deployers: AI Service replaced the AI broker, gpt-oss-120b replaced Granite 3.2 8b, any Manage object can be enabled for the assistant, and 9.2 adds the MCP server — patch AI Service to 9.1.19 / 9.2.3 or later"
 series:
   name: "MAS ASSIST"
   part: 5
-  total: 6
+  total: 8
 tldr: "Turning on the Assistant means standing up the Maximo AI Service on OpenShift: deploy the operator, connect it to a watsonx.ai instance (SaaS or on-premises), prepare 2+ years of failure-coded historical data, train the recommendation models on that data, and train your users. IBM's ten team-exploration tasks estimate a 68–128 hour (2–3 week) pilot for a small team. Data preparation is usually the long pole, not software install. And the feedback loop is not a one-time launch step — it is the ongoing process that turns a mediocre day-one model into a genuinely useful one."
 seoTitle: "Deploying the Maximo AI Service | MAS 9 Assist"
 seoDescription: "The deployment path for the Maximo Assistant: AI Service operator, watsonx.ai connection, model training, feedback loop, and the pilot effort estimate."
@@ -39,6 +44,8 @@ targetQuestions:
   - "How long does a Maximo AI Assist pilot take?"
   - "What is the Maximo AI Service made of?"
   - "Why is historical data the prerequisite for AI Assist?"
+  - "How do I enable additional objects for the Maximo AI assistant?"
+  - "What AI Service patch level should I be on?"
 semanticKeywords:
   - "Maximo AI Service deployment"
   - "AI Service operator OpenShift"
@@ -62,6 +69,7 @@ clusterSlugs:
   - "mas-assist-series-index"
   - "mas-assist-intro-watsonx"
   - "mas-assist-governance-privacy-apppoints"
+  - "mas-assist-supply-chain-items-prs-similarity"
 relatedSlugs:
   - "mas-assist-series-index"
   - "mas-assist-intro-watsonx"
@@ -72,7 +80,7 @@ relatedSlugs:
 
 > 🎯 **Who this is for:** Platform engineers, MAS administrators, and implementation leads who have to actually *stand up* the Assistant — and want a realistic map of the components, the sequence, and the effort before they commit a date to a steering committee.
 
-**Series:** Part 5 of 6 — *Maximo Assistant on MAS 9* | **Read time:** 18 minutes
+**Series:** Part 5 of 8 — *Maximo Assistant on MAS 9* | **Read time:** 18 minutes
 
 ---
 
@@ -230,6 +238,50 @@ Part 6 picks up the feedback loop again from the governance angle — because "c
 
 ---
 
+## 🆕 What Changed for Deployers in 2025–2026
+
+This post was first written against MAS 9.0/9.1. Several facts have moved since, and each one changes a line in your deployment plan:
+
+| Change | When | What it means for your plan | Source tier |
+|---|---|---|---|
+| **AI Service replaced the AI broker** | 1 August 2025 | If a 9.0-era environment still runs the AI broker, uninstall it and deploy AI Service 9.1 or later | IBM-documented |
+| **gpt-oss-120b replaces Granite 3.2 8b Instruct** | Granite deprecated 25 Nov 2025; SaaS on gpt-oss-120b Jan 2026; customer-managed with 9.2 | The mcc, pcc, fmea, and nl2oslc model templates (nl2oslc drives the assistant) use gpt-oss-120b; similarity stays on an embedding model (`embedding_transformer_en_slate.125m` on-premises) | IBM-documented |
+| **Assistant supports all objects** | April 2026 Feature Channel; customer-managed with 9.2 | Beyond the defaults (assets, SRs, WOs, meters, PMs), enable additional Manage objects — including custom objects and child objects — in the AI configuration app | IBM-documented |
+| **Agentic Assistant + Maximo MCP server** | MAS 9.2 GA, 25 June 2026 | A new `<instance>-mcp` deployment on OpenShift publishes tools built from automation scripts, object structures, workflows, and API routes; external agents connect through an exposed MCP route with a Maximo API key or x-access-token. ansible-devops 37.x adds the MCP route to Manage DNS entries | IBM-documented |
+| **Redesigned AI configuration app** | MAS 9.2 | Model status, one-click enablement, AppPoint usage dashboards, and **Actions > Check AppPoints** (Part 6) | IBM-documented |
+| **Assistant in Maximo Mobile** | MAS 9.2 | Available when configured in Manage and the user has permission — **online only**, so do not plan offline use | IBM-documented |
+| **AI Service 9.2.3** | Shipped with Manage 9.2.4, 29 Sep 2026 | Current patch level as of this update | IBM-documented |
+
+### Enabling objects beyond the defaults
+
+The April 2026 change is the one most deployers miss, because nothing breaks if you skip it — the assistant simply says it cannot find what users ask about. Treat object enablement as a scoped configuration task in the pilot:
+
+1. **Start with the defaults** (assets, SRs, WOs, meters, PMs) and prove search quality there.
+2. **Add objects by persona.** For storeroom and procurement users, that typically means ITEM, INVENTORY, and PR (and PO if buyers will ask about orders).
+3. **Test against Manage security.** The assistant returns what the user is already allowed to see; confirm a storeroom clerk at one site cannot read another site's balances.
+4. **Check descriptions.** Custom objects with cryptic attribute names make poor natural-language targets; fix the descriptions before you enable them.
+
+### Supply chain: configuration vs build
+
+| Supply-chain need | Evidence tier | Deployment work |
+|---|---|---|
+| Query items, inventory balances, PRs | **IBM-documented** (April 2026 FC) | Enable the objects in AI configuration; security test |
+| Create an item from a description | **Not native — build on 9.2 MCP** | Object structure + automation script exposed as an MCP tool; new items land in PENDING |
+| Draft a PR | **Not native — build on 9.2 MCP** | Tool that assembles PR lines and stops in WAPPR; your existing PR approval workflow does the rest |
+| Duplicate-item similarity | **Not documented — TMG design** | Your own similarity store or attribute matching behind an MCP tool |
+
+The build rows are a separate project with their own governance; **[Part 7](/blog/mas-assist-supply-chain-items-prs-similarity)** walks them end to end.
+
+### Patch the AI Service before the pilot
+
+<aside>
+
+💡 **Security note:** IBM published a security bulletin for **CVE-2026-15687** (AI Service, CVSS 2.4), fixed in **AI Service 9.1.19 and 9.2.3**. A second IBM bulletin (5 October 2026, [7290833](https://www.ibm.com/support/pages/node/7290833)) covers the critical **CVE-2026-90920** (AI Service 9.1.0/9.2.0, code injection, CVSS 9.8) plus bundled Tomcat, Netty and glibc CVEs, with the same fixed versions and no workaround. The action: **run AI Service 9.1.19 / 9.2.3 or later** before you connect it to production data, and check IBM's security bulletins for anything newer.
+
+</aside>
+
+---
+
 ## 🩺 Deployment Troubleshooting
 
 When a deployment stalls or a pilot underwhelms, the cause is usually in a predictable place. Read the symptom, find the layer:
@@ -241,6 +293,8 @@ When a deployment stalls or a pilot underwhelms, the cause is usually in a predi
 | Recommendations good in demo, poor in production | Pilot trained on clean slice, rolled out to messy scope | Widen only as data quality widens; do not generalize from the best site |
 | Accuracy plateaus after go-live | Feedback loop not running or unowned (AI-10) | Name a retraining owner; confirm accept/reject is captured and used |
 | Pilot stalls mid-task list | Single-discipline staffing | Add the missing discipline (data or domain) per the staffing table |
+| Assistant says it cannot find items, PRs, or custom records | Those objects are not enabled for the assistant | Enable them in AI configuration (April 2026 FC / 9.2) and re-test |
+| Mobile users report the assistant is missing in the field | The 9.2 Mobile assistant is online only, or the user lacks permission | Confirm connectivity and the user's permission; do not plan offline AI |
 
 ---
 
@@ -252,6 +306,7 @@ When a deployment stalls or a pilot underwhelms, the cause is usually in a predi
 - **Staff the pilot with two to three people who span platform, data, and maintenance.** The task list needs OpenShift skills (AI-2/3), data skills (AI-4/5), and maintenance domain knowledge (AI-6/9). One discipline alone cannot do it.
 - **Name the retraining owner before go-live.** The feedback loop is ongoing; someone has to own it, or it will not run.
 - **Give every step an exit criterion.** Especially step 4 — a dataset that exists is not a dataset that is ready.
+- **Patch first.** Run AI Service 9.1.19 / 9.2.3 or later, and retire any leftover AI broker.
 
 ---
 
@@ -261,6 +316,7 @@ When a deployment stalls or a pilot underwhelms, the cause is usually in a predi
 - The path is **six steps** with concrete exit criteria: watsonx.ai → AI Service operator → connection → training data → model training → user training, with the feedback loop running ongoing.
 - IBM's ten team-exploration tasks estimate a **68–128 hour (2–3 week) pilot** for a focused two-to-three-person team spanning platform, data, and domain, with **data prep (AI-4) the single largest task**.
 - **2+ years of clean, failure-coded history** is the true prerequisite; run the readiness scorecard, and if a dimension is red, fix it on the pilot scope first.
+- **2026 changes matter:** AI Service replaced the AI broker, gpt-oss-120b replaced Granite 3.2 8b, any Manage object can be enabled for the assistant (supply-chain objects included), 9.2 adds the MCP server, and the Mobile assistant is online only. Patch to AI Service 9.1.19 / 9.2.3 or later.
 - The **feedback loop is ongoing, not a launch step** — a modest launch model with disciplined retraining beats a strong launch model that never improves. Name its owner before go-live.
 
 ---
@@ -271,6 +327,9 @@ When a deployment stalls or a pilot underwhelms, the cause is usually in a predi
 - [Maximo AI Service — deployment (IBM Documentation)](https://www.ibm.com/docs/en/mas-cd/continuous-delivery)
 - [IBM watsonx.ai Documentation](https://www.ibm.com/docs/en/watsonx)
 - [Maximo Manage — AI setup (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
+- [Maximo AI Service — AI features in Maximo Manage (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/cd?topic=ao-maximo-ai-service-ai-features-in-maximo-manage)
+- [What's new in Maximo Application Suite — Feature Channel (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-in-maximo-application-suite-feature-channel)
+- [Introducing Maximo Application Suite 9.2 (IBM announcement)](https://www.ibm.com/new/announcements/introducing-maximo-application-suite-9-2)
 
 ---
 
@@ -285,4 +344,4 @@ When a deployment stalls or a pilot underwhelms, the cause is usually in a predi
 
 **About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
 
-*Published by TheMaximoGuys | July 2026*
+*Published by TheMaximoGuys | July 2026 | Updated October 2026*

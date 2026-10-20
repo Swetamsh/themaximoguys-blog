@@ -2,6 +2,10 @@
 title: "Natural-Language Work Guidance: Drafting Work Orders, Searching Assets, and Confidence-Scored Field Recommendations"
 description: "The feature people mean when they say 'AI in Maximo.' How the Maximo Assistant drafts a work order from a plain-English description, replaces filter queries with natural-language asset search, and recommends field values — priority, work type, failure codes, craft — each with a confidence score you can accept, modify, or reject."
 date: "2026-07-16"
+updatedAt: "2026-10-20"
+updateHistory:
+  - date: "2026-10-20"
+    reason: "Added April 2026 all-objects search and default object list, MAS 9.2 MCP write actions, supply-chain note linking Part 7; series now 8 parts"
 slug: "mas-assist-natural-language-work-guidance"
 tags: ["Maximo", "MAS 9", "Maximo Assistant", "Work Order", "AI Assist", "Field Recommendations", "watsonx.ai", "EAM"]
 draft: false
@@ -18,7 +22,7 @@ faqs:
   - question: "What fields does AI Assist recommend on a work order in Manage 9.1?"
     answer: "In Manage 9.1, the AI recommends priority, work type, failure class, problem code, cause code, remedy code, classification, owner group, and craft. Each recommendation is based on factors like asset criticality, description text, asset type, and historical patterns for similar assets, and each carries a confidence score. Users can accept, modify, or reject any recommendation."
   - question: "How does natural-language asset search work?"
-    answer: "Instead of building a filter query, you type a plain-English request such as 'Find all critical pumps that have had more than 3 breakdowns this year' or 'Which motors were last maintained more than 6 months ago?' The Assistant translates the natural language into a Maximo query and returns the results in standard list views, and you can refine the query conversationally."
+    answer: "Instead of building a filter query, you type a plain-English request such as 'Find all critical pumps that have had more than 3 breakdowns this year' or 'Which motors were last maintained more than 6 months ago?' The Assistant translates the natural language into a Maximo query (the nl2oslc model template) and returns results you can refine conversationally. Since the April 2026 Feature Channel, the assistant can find data in any Maximo Manage object and its child objects, including custom objects — by default it covers assets, service requests, work orders, asset meters and other meters, and preventive maintenance records, and an administrator enables additional objects such as items, inventory, or purchase requisitions."
   - question: "What is a confidence score and why does it matter?"
     answer: "A confidence score is the AI's own estimate of how likely its recommendation is correct, attached to each suggested field value. It matters because it tells the user how much to trust a given suggestion — a high-confidence problem code can be accepted quickly, while a low-confidence one signals 'check this.' The accept/modify/reject choice the user then makes feeds back into retraining to improve future accuracy."
 keyTakeaways:
@@ -30,7 +34,7 @@ keyTakeaways:
 series:
   name: "MAS ASSIST"
   part: 2
-  total: 6
+  total: 8
 tldr: "This is the headline AI feature. The Maximo Assistant drafts a work order from a natural-language problem description — identifying asset, work type, priority, failure class, problem code, and location — and asks before submitting. It replaces filter queries with plain-English asset search that translates to Maximo queries. And in Manage 9.1 it recommends nine work order fields, each with a confidence score you accept, modify, or reject. Recommendation quality tracks the depth of your historical data, and every accept/reject feeds the feedback loop."
 seoTitle: "Natural-Language Work Guidance in MAS 9 | AI Assist"
 seoDescription: "How the Maximo Assistant drafts work orders from plain English, searches assets naturally, and recommends nine fields with confidence scores in Manage 9.1."
@@ -39,6 +43,7 @@ targetQuestions:
   - "What fields does AI Assist recommend in Manage 9.1?"
   - "How does natural-language asset search work in Maximo?"
   - "What is a confidence score in Maximo AI Assist?"
+  - "Can the Maximo Assistant search items, inventory, and purchase requisitions?"
 semanticKeywords:
   - "natural language work order creation"
   - "AI field value recommendations"
@@ -62,6 +67,7 @@ clusterSlugs:
   - "mas-assist-series-index"
   - "mas-assist-intro-watsonx"
   - "mas-assist-sme-collaboration-knowledge"
+  - "mas-assist-supply-chain-items-prs-similarity"
 relatedSlugs:
   - "mas-assist-series-index"
   - "mas-assist-guided-troubleshooting"
@@ -72,7 +78,7 @@ relatedSlugs:
 
 > 🎯 **Who this is for:** Planners, service-desk coordinators, and maintenance supervisors who create and triage work orders all day — and want to know exactly how the AI proposes to speed that up, and where it hands the wheel back to them.
 
-**Series:** Part 2 of 6 — *Maximo Assistant on MAS 9* | **Read time:** 17 minutes
+**Series:** Part 2 of 8 — *Maximo Assistant on MAS 9* | **Read time:** 17 minutes
 
 ---
 
@@ -109,6 +115,8 @@ The Assistant parses that and drafts a work order:
 | **Location** | B3-MECH (Building B, 3rd Floor, Mechanical) | Mapped from the location description |
 
 Then it stops and asks: *"I've drafted this work order. Would you like me to submit it?"*
+
+**What changed in MAS 9.2.** The write side now runs through the **Maximo MCP server**: IBM's documented examples of AI-assisted actions are changing a work order status, creating a follow-up work order, and creating a service request — each a tool the agentic Assistant can call, each confirmed by a person. Anything beyond those examples is a tool your team builds and exposes (Part 7 shows the pattern for supply chain).
 
 That final question is the entire design in one line. The Assistant did the tedious part — mapping a location phrase to an asset, translating "today" into a priority, picking a plausible problem code — but it hands the decision back to a person. Nobody's HVAC gets a work order without a human saying yes.
 
@@ -157,7 +165,27 @@ The Assistant translates the natural language into a Maximo query and returns re
 
 It helps to see that "AI search" is not a parallel search engine — it is a translator that produces a normal Maximo query and then gets out of the way. Take *"Find all critical pumps that have had more than 3 breakdowns this year."* The Assistant resolves that into structured conditions against the `ASSET` object and its work history: asset classification = pump, a criticality/priority attribute in the "critical" band, and a count of corrective work orders in the current year greater than three. It runs through the same data layer and the same security you already have — a user only ever sees records they were already permitted to see. The result is a standard list you can sort, save as a query, or export exactly as if you had built the filter by hand.
 
-That is the reassuring part for a security reviewer: natural-language search does not create a new access path to data. It creates a new *authoring* path to the same query engine. The multi-language angle matters here too: MAS 9.1 extends AI recommendations and search across supported languages, so a plant with a mixed-language workforce is not locked to English-only queries.
+That is the reassuring part for a security reviewer: natural-language search does not create a new access path to data. It creates a new *authoring* path to the same query engine. One correction to an earlier version of this paragraph: IBM's AI Service documentation currently states that training and output data are **English**, so do not promise a mixed-language workforce native-language queries without confirming it on your build.
+
+### Which objects it can search — the April 2026 change
+
+When the assistant shipped in 9.1, it answered questions over a fixed set of Manage objects. The **April 2026 Feature Channel** release ("AI assistant supports all objects") changed that: the assistant can now find data in **any Maximo Manage object and all of its child objects, including custom objects**. Out of the box it still starts with a default list — assets, service requests, work orders, asset meters and other meters, and preventive maintenance — and an administrator enables additional objects in the AI configuration app (Part 5). Customer-managed environments pick this up with MAS 9.2.
+
+| Object group | Searchable by default? | What to do |
+|---|---|---|
+| Assets, SRs, WOs, meters, PMs | Yes | Nothing — pilot here first |
+| Items, inventory balances, PRs, POs | No | Enable them in AI configuration, then test against Manage security |
+| Your custom objects | No | Enable them; check that their descriptions make sense to a language model |
+
+### A note for storerooms and buyers
+
+| Supply-chain ask | Evidence tier | Where to read more |
+|---|---|---|
+| "How many of item 10023 are in the central storeroom?" / "Show open PRs for site BEDFORD" | **IBM-documented** — once ITEM, INVENTORY, and PR are enabled as assistant objects (April 2026 FC) | Part 5 (enablement), Part 7 |
+| "Create a new item for a 2-inch ball valve" / "Draft a PR for 4 of these" | **Not native — build on the 9.2 MCP server** with object structures, automation scripts, and workflows; land items in PENDING and PRs in WAPPR | [Part 7](/blog/mas-assist-supply-chain-items-prs-similarity) |
+| "Does this part already exist in the item master?" | **Not native — TMG design.** IBM documents similar work orders, records, and tickets, not item-master similarity | [Part 7](/blog/mas-assist-supply-chain-items-prs-similarity) |
+
+The read side is a configuration step. The write side is a design and governance project, which is why it gets its own part.
 
 ---
 
@@ -242,7 +270,7 @@ Notice what happened: the operator's one messy sentence became a correctly-coded
 
 ## 🔧 Practical Notes Before You Roll This Out
 
-- **Turn on read-only search first.** Natural-language asset search changes no data. Let your team build trust on the zero-risk feature before enabling write-capable drafting and recommendations.
+- **Turn on read-only search first.** Natural-language search changes no data. Let your team build trust on the zero-risk feature before enabling write-capable drafting and recommendations.
 - **Audit your failure taxonomy.** Field recommendations lean on failure class, problem, cause, and remedy codes. If those have been entered inconsistently for years, the AI will learn the inconsistency. A cleanup pass before go-live pays off directly in recommendation quality.
 - **Set a confidence-score norm.** Decide, as a team, what confidence level is "accept quickly" versus "always verify." Consistency here keeps the feedback loop clean.
 - **Coach against blind acceptance.** Make it culturally clear that correcting a recommendation is the desired behavior, not a nuisance. Your model gets better because people bother.
@@ -254,7 +282,8 @@ Notice what happened: the operator's one messy sentence became a correctly-coded
 ## Key Takeaways
 
 - **Natural-language work order creation** drafts a full WO — asset, work type, priority, description, failure class, problem code, location — from one plain-English sentence, then asks before submitting.
-- **AI-powered asset search** replaces filter queries with plain-English requests and returns standard Maximo list views; Manage 9.1 adds conversational refinement in the search bar.
+- **AI-powered search** replaces filter queries with plain-English requests; since the April 2026 Feature Channel it can reach **any enabled Manage object**, including supply-chain objects like items, inventory, and PRs once an administrator turns them on (Part 7).
+- In **MAS 9.2**, write actions go through the Maximo MCP server — IBM's examples are WO status changes, follow-up WOs, and SRs — always with a human confirming.
 - **Manage 9.1 recommends nine fields**, each driven by asset criticality, description text, and historical patterns for similar assets, and each carrying a **confidence score** you should band into accept/verify behavior.
 - **Accept, modify, reject** keeps the human in control *and* provides the training signal for the feedback loop — correcting the AI is the point, not a failure.
 - Recommendation quality tracks **data depth**, so a failure-taxonomy cleanup before go-live is the highest-leverage prep you can do.
@@ -267,6 +296,9 @@ Notice what happened: the operator's one messy sentence became a correctly-coded
 - [Maximo Manage — AI field recommendations (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
 - [Maximo Manage — natural language search (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/continuous-delivery)
 - [IBM watsonx.ai Documentation](https://www.ibm.com/docs/en/watsonx)
+- [What's new in Maximo Application Suite — Feature Channel (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-in-maximo-application-suite-feature-channel)
+- [Maximo AI Service — AI features in Maximo Manage (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/cd?topic=ao-maximo-ai-service-ai-features-in-maximo-manage)
+- [Working smarter with agentic workflows in Maximo Assistant (IBM Think)](https://www.ibm.com/think/perspectives/working-smarter-agentic-workflows-maximo-assistant)
 
 ---
 
@@ -281,4 +313,4 @@ Notice what happened: the operator's one messy sentence became a correctly-coded
 
 **About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
 
-*Published by TheMaximoGuys | July 2026*
+*Published by TheMaximoGuys | July 2026 | Updated October 2026*
