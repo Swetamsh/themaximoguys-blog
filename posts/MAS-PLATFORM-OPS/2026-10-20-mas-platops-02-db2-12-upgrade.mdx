@@ -1,0 +1,763 @@
+---
+title: "Db2 12 on OpenShift: The Upgrade Every MAS 9.2 Shop Must Do"
+description: "Db2 11 to 12 is the one upgrade MAS will not do silently. Learn the opt-in flag, the activation licence that prevents a 30-day trial outage, the Db2uCluster to Db2uInstance migration and the DT502701 trap, with a runbook, verification queries and rollback truth."
+date: "2026-10-20"
+slug: "mas-platops-02-db2-12-upgrade"
+tags: ["Maximo", "MAS", "Db2", "Db2 12", "OpenShift", "Db2u", "MAS CLI", "Platform Operations", "Manage", "Administrator"]
+draft: true
+tier: "admin"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-platops-02-db2-12-upgrade.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Do I have to upgrade Db2 11 to Db2 12 to run MAS 9.2?"
+    answer: "IBM's What's New for MAS 9.2 states that Db2 12 is supported, and that moving a Db2 11 instance to 12 requires an explicit opt-in. It does not say Db2 11 stops working on 9.2 day one, and IBM deliberately does not publish inline version floors; it points you to a per-version Software Product Compatibility Report instead. So 'must' here is a planning statement rather than a hard gate today: Db2 12 is the direction of travel for every new feature, the ansible-devops role and CLI are being built around it, and the Db2uCluster to Db2uInstance migration only works from a v12 engine. Generate the SPCR for your exact MAS and Manage versions, check what it lists for Db2, and schedule the upgrade inside your normal patch train instead of waiting for a forced date."
+  - question: "What actually happens if I upgrade to Db2 12 without a licence file?"
+    answer: "Db2 12 runs under a 30-day trial licence and, when the trial expires, the database becomes unavailable, which takes Manage and everything that depends on it down with it. That is the reason IBM built the guard rails: the MAS CLI requires `--db2-v12-upgrade` to confirm the major version change, and the licence file path is required for 11 to 12 upgrades; the ansible-devops db2 role fails immediately with a clear error if the file is missing, to prevent a silent move from a full licence to a trial. New Db2 12 installations do not enforce this, which means a fresh test cluster can look healthy for 30 days and then stop. If you ever find a Db2 12 instance that was built without a licence, treat the expiry date as a production deadline and apply the licence before it arrives."
+  - question: "What is the difference between Db2uCluster and Db2uInstance, and do I need to migrate?"
+    answer: "Both are custom resources owned by the Db2u operator. Db2uCluster is the older resource that MAS installs used for years; IBM's ansible-devops documentation now marks it deprecated and recommends Db2uInstance for all new deployments, while saying the collection keeps supporting Db2uCluster until its eventual end of life. Existing instances keep working and the role refuses to change the type of an existing instance during an upgrade, so there is no forced conversion. You migrate deliberately with the role's `db2u-migration` action, which wraps the `db2u_migrate` tool and requires the instance to already be on Db2 12. Plan migration as a second change after the version upgrade is stable, not as part of the same window."
+  - question: "What is DT502701 and how do I avoid it?"
+    answer: "DT502701 is an IBM known issue titled 'MAS update - Db2 v11 to v12 upgrade fails for existing Db2uInstance deployments'. IBM's record describes the Db2 task not passing a parameter it claims to support, so the Db2 upgrade defaults to the Db2uCluster kind even when the environment contains a Db2uInstance, and the role's validation then refuses to change deployment type. A matching public report on the MAS CLI repository shows the error 'DB2U_KIND MISMATCH DETECTED' and an `mas update` that rejects a `--db2u-kind` argument. To avoid it, identify your resource kind first with `oc get db2ucluster,db2uinstance -A`, check the DT502701 record for the fixed-in release before you start, and if you have Db2uInstance resources and no fix, run the ansible-devops upgrade directly with `DB2U_KIND=db2uinstance` set explicitly. The fixed-in version was not verifiable when this post was written."
+  - question: "Can I roll back from Db2 12 to Db2 11?"
+    answer: "Treat it as a one-way door. The ansible-devops role calls the 11 to 12 upgrade a significant, irreversible operation and its restore behaviour requires the target Db2 version to match the backup version, so a backup taken on Db2 11 can only be restored onto a Db2 11 target. Your real rollback is a restore of that Db2 11 backup into a separate Db2 11 instance (or a rebuilt one) and a repointed Manage JDBC configuration, which means rollback time is restore time plus outage. That is why the runbook below insists on a restored-and-tested backup in a non-production cluster first, and a decision point before the operator channel moves."
+keyTakeaways:
+  - "Db2 12 is supported in MAS 9.2, but 11 to 12 is the one dependency upgrade MAS will not do silently: it needs the explicit flag (`--db2-v12-upgrade` on `mas update`, `db2_v12_upgrade=true` in Ansible) and a valid Db2 v12 activation licence file"
+  - "Skip the licence and Db2 12 runs on a 30-day trial that takes the database offline on expiry. The tooling fails the upgrade on purpose when the licence file is missing; new Db2 12 installs do not enforce it, so an unlicensed fresh build is a delayed outage"
+  - "`mas update` and the ansible-devops db2 role upgrade every Db2 instance in the namespace to the target version and channel (for example `v12.0.0-cn1`). Namespace is your blast radius, so check what else lives next to Manage's database"
+  - "Db2uCluster is deprecated in favour of Db2uInstance. Migration is a separate `db2u-migration` action that requires an engine already on 12.x, and DT502701 documents a trap where an upgrade defaults to the wrong kind for existing Db2uInstance deployments"
+  - "There is no downgrade. Backups restore only onto the same Db2 version, so the rollback path is a restored Db2 11 copy plus a repointed JdbcCfg. Rehearse the restore before the change window, not during it"
+series:
+  name: "MAS PLATFORM-OPS"
+  part: 2
+  total: 8
+tldr: "MAS 9.2 supports Db2 12, and moving from Db2 11 requires an explicit opt-in and an activation licence file. Without the licence, Db2 12 falls back to a 30-day trial that takes the database down on expiry, so the CLI and the ansible-devops role fail the upgrade on purpose. This post walks through the decision, the flags (`--db2-v12-upgrade`, `--db2-license-file`, `db2_channel`), the Db2uCluster to Db2uInstance migration, the DT502701 known issue, a pre-flight and verification runbook, and the rollback reality that a Db2 12 upgrade is one-way."
+seoTitle: "Db2 12 Upgrade for MAS 9.2: Licence, Flags, DT502701"
+seoDescription: "Upgrade Db2 11 to 12 for MAS 9.2: --db2-v12-upgrade, the licence file, Db2uCluster to Db2uInstance, DT502701 and a runbook."
+targetQuestions:
+  - "How do I upgrade Db2 11 to Db2 12 for Maximo Application Suite 9.2?"
+  - "What does mas update --db2-v12-upgrade do?"
+  - "Why does MAS need a Db2 licence file to upgrade to Db2 12?"
+  - "What happens when the Db2 12 30-day trial licence expires?"
+  - "How do I migrate Db2uCluster to Db2uInstance?"
+  - "What is DT502701 in Maximo Application Suite?"
+  - "Can I roll back a Db2 12 upgrade in MAS?"
+semanticKeywords:
+  - "Db2 12 MAS 9.2"
+  - "mas update db2-v12-upgrade"
+  - "db2-license-file"
+  - "Db2 Warehouse activation licence"
+  - "Db2uCluster to Db2uInstance migration"
+  - "db2u_migrate"
+  - "DT502701"
+  - "db2_v12_upgrade ansible-devops"
+  - "v12.0.0-cn1 channel"
+  - "Db2 30-day trial licence"
+  - "Maximo Manage Db2 upgrade"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Cluster-admin access to the OpenShift cluster that hosts the Db2u operator and the Manage database"
+  - "Access to the MAS CLI container image (quay.io/ibmmas/cli) or the ibm.mas_devops Ansible collection"
+  - "A valid Db2 v12 activation licence file obtained from IBM"
+  - "Helpful: Part 1 of this series (the patch train) and Part 4 (backup and restore)"
+speakableSections:
+  - "The Upgrade That Refuses to Be Silent"
+  - "The Licence File: Why the 30-Day Trial Is a Trap"
+  - "DT502701: The Kind Mismatch"
+clusterSlugs:
+  - "mas-platops-00-series-index"
+  - "mas-platops-01-patch-train"
+  - "mas-platops-03-db2-tuning"
+  - "mas-platops-04-backup-restore-dr"
+  - "mas-platops-05-observability"
+  - "mas-platops-06-manage-performance"
+  - "mas-platops-07-support-window"
+  - "mas-platops-08-gitops-cli-ansible"
+relatedSlugs:
+  - "mas-platops-00-series-index"
+  - "mas-platops-01-patch-train"
+  - "mas-platops-03-db2-tuning"
+  - "mas-92-upgrade-watchlist"
+---
+
+# Db2 12 on OpenShift: The Upgrade Every MAS 9.2 Shop Must Do
+
+<aside>
+
+🎯 **Who this is for:** MAS administrators and OpenShift platform engineers who run Manage on Db2 inside the cluster (the Db2u operator) and need to move from Db2 11 to Db2 12 without an outage, a licence surprise or a stuck pipeline. If your Manage database is Db2 and your `mas update` has always "just worked", read this before the next one.
+
+</aside>
+
+**Series:** MAS Platform Operations | **Part 2 of 8** | **Read time:** ~28 minutes
+
+**Previous:** [Part 1: The MAS Patch Train Explained](/blog/mas-platops-01-patch-train) | **Next:** Part 3: Db2 Tuning for Maximo Manage (coming)
+
+---
+
+## 🔥 The Upgrade That Refuses to Be Silent
+
+You run `mas update` every month. It moves the operator catalog, OLM reconciles, the Core and Manage operators roll, and a smoke test passes. After a year of this, the command has earned your trust. It tells you which dependencies it found, shows a summary, and mostly gets out of the way.
+
+Then it meets Db2 11 on a cluster that is about to become a 9.2 estate, and it stops.
+
+Not with a crash. With a deliberate refusal. The update will not move Db2 across a major version unless you say so on the command line, and it will not complete the move unless you hand it a licence file. IBM's CLI documentation spells out both: `--db2-v12-upgrade` is "required to confirm a major version update for Db2 to version 12", and `--db2-license-file` is the "path to a valid Db2 v12 activation license file required for Db2 v11 to v12 upgrades."
+
+> *"It's just a database version. Let the operator do it."*
+
+That is the sentence that costs a production database. The operator *can* do it. What it cannot do is decide, on your behalf, that you accept three things at once: the change is one-way, the engine will be licensed differently, and every Db2 instance in that namespace is coming along.
+
+IBM's own words on the cost of skipping the licence are blunt. In the MAS 9.2 What's New page, an 11 to 12 upgrade "requires explicit opt-in and an activation license", and without it Db2 12 "runs under a 30-day trial licence that causes production system outages on expiration." The ansible-devops Db2 role goes further and says the 11 to 12 upgrade is "a significant, irreversible operation that requires explicit user consent."
+
+So this post does four jobs:
+
+1. Explains *why* the upgrade is gated and what the gate protects you from.
+2. Walks the exact flags and variables for the CLI path and the Ansible path.
+3. Covers the second change hiding behind this one: Db2uCluster to Db2uInstance, including the DT502701 known issue.
+4. Gives you a runbook with pre-flight checks, verification, and an honest rollback section.
+
+Everything about IBM behaviour below was re-checked against IBM and `ibm-mas` GitHub pages on **20 October 2026**. Where I could not verify something, I say so in the text and again in a reviewer note at the bottom.
+
+---
+
+## 🧭 What Changed, in One Table
+
+| Question | Answer | Source |
+|---|---|---|
+| Is Db2 12 supported in MAS 9.2? | Yes. IBM lists "Db2 12 support" in What's New for 9.2 (9.2 GA was 25 June 2026) | IBM What's New in MAS 9.2; AI Service 9.2.0 release page also lists "DB2 v12 Support" |
+| How does a Db2 11 instance get to 12? | Only with explicit opt-in plus an activation licence file | IBM What's New, CLI update guide, ansible-devops role docs |
+| What if I skip the licence? | Upgrade fails on purpose (CLI/Ansible); a manually built Db2 12 runs a 30-day trial then goes unavailable | ansible-devops role docs |
+| Do new Db2 12 installs need the licence file? | No. Only 11 to 12 upgrades enforce it | IBM docs and role docs |
+| What is the new custom resource? | Db2uInstance replaces the deprecated Db2uCluster | ansible-devops role docs |
+| When did the automation arrive? | Ansible `db2_v12_upgrade` support in ansible-devops 36.11.0 (8 May 2026); Db2uCluster migration action in 37.10.0 (14 July 2026) | ibm-mas/ansible-devops releases |
+
+Two things in that table deserve more attention than they usually get.
+
+**"New installs do not need the licence" is a trap for test environments.** A new Db2 12 installation starts without enforcing a licence file. The role says a new install will "use trial license if not provided." A sandbox you built in September for a proof of concept is therefore a clock, not a database. If anyone has kept that sandbox for "temporary" user acceptance testing, check it.
+
+**"Supported" is not "required today."** IBM does not say Db2 11 stops working with 9.2. IBM also deliberately avoids inline floors for database versions; the 9.2 documentation points you to a Software Product Compatibility Report generated per MAS version and per set of applications. That report is the authority for your estate. The rest of this post assumes you decided to move; if you have not, generate the SPCR first and write down what it says.
+
+<aside>
+
+💡 **Key insight:** The Db2 12 gate is not IBM being difficult. It is IBM refusing to let an automated pipeline convert a fully licensed production engine into a 30-day trial without a human saying "yes, I know."
+
+</aside>
+
+---
+
+## 🗺️ The Moving Parts
+
+Before the flags, get the picture of what you are actually changing. On OpenShift, MAS Manage's Db2 is not a VM. It is a set of pods run by the Db2u operator, and several independent versions are in play.
+
+```
+ ┌───────────────────────── OpenShift cluster ─────────────────────────┐
+ │                                                                       │
+ │  OperatorHub / IBM catalog                                            │
+ │   └─ Db2 Universal Operator (db2u)  ── channel: v12.0.0-cn1 (target)  │
+ │        │                                                              │
+ │        ▼ reconciles                                                   │
+ │  Namespace  db2u   (db2_namespace)                                    │
+ │   ├─ Db2uCluster   (deprecated)   ┐  one or the other per instance    │
+ │   ├─ Db2uInstance  (current)      ┘                                   │
+ │   ├─ Db2uEngine    (engine status)                                    │
+ │   ├─ c-<instance>-db2u-0   (engine pod, db2inst1)                     │
+ │   └─ secrets: instancepassword, db2u-ca, db2u-certificate             │
+ │                                                                       │
+ │  Namespace  mas-<inst>-manage                                         │
+ │   └─ ManageWorkspace ── JdbcCfg ──►  Db2 service (TLS, port from CR)  │
+ └───────────────────────────────────────────────────────────────────────┘
+```
+
+Four layers, four versions:
+
+| Layer | What it is | How you read its version |
+|---|---|---|
+| Operator catalog | Monthly MAS catalog (Part 1) | Catalog image tag, e.g. `v9-261007-amd64` |
+| Db2u operator | The controller that manages Db2 | Subscription channel and installed CSV |
+| Db2 engine | The database itself (11.5.x or 12.x) | `db2level` in the engine pod, or the CR status |
+| Custom resource kind | Db2uCluster or Db2uInstance | `oc get db2ucluster,db2uinstance -A` |
+
+The ansible-devops role makes one point about versions explicit: the target `db2_version` "must match the channel of db2 being used for the upgrade." The supported versions list lives in the `db2u-release` ConfigMap in the `ibm-common-services` namespace. You do not guess a version; you read it from the cluster.
+
+```bash
+# Which Db2 versions does the installed operator offer?
+oc get configmap db2u-release -n ibm-common-services -o yaml | head -60
+
+# What kind of Db2 resources exist, anywhere?
+oc get db2ucluster -A
+oc get db2uinstance -A
+```
+
+Run both. People who inherited a cluster are regularly surprised by what is in it: a leftover Db2 for Predict, a second Manage database for a "temporary" test instance, a Facilities database. That surprise has a name in the next section.
+
+---
+
+## 💥 Blast Radius: The Namespace Is the Unit
+
+The Db2 role is unambiguous about scope: "When using `upgrade`, ALL Db2 instances in the specified namespace will be upgraded." And: "All the instances under that namespace will be upgraded to the db2 version specified." The `mas update` command takes a `--db2-namespace` argument, described by IBM as the "namespace where Db2u operator and instances will be updated."
+
+Read that as an architecture rule, not a footnote.
+
+| Layout | What the upgrade touches | Risk |
+|---|---|---|
+| One Manage database in `db2u` | One instance | Simple; the change board knows what it moves |
+| Manage plus a second MAS instance's database in the same namespace | Both move to 12 together | A dev or test database upgrades with production's window |
+| Manage plus Facilities, or other add-on databases in the namespace | All of them | Each app owner must accept Db2 12 first |
+| Separate namespaces per database | Only the namespace you name | You choose the order and can canary |
+| Db2 outside the cluster (RDS, VM, Db2 Warehouse on Cloud Pak for Data) | Not this procedure | Different upgrade path entirely |
+
+The last row matters for scope. This post covers the **Db2u operator** path that the MAS CLI and ansible-devops manage. If your Manage database is an external Db2, an Amazon RDS for Db2, or a Db2 Warehouse service on Cloud Pak for Data, the `--db2-v12-upgrade` flag does not apply to you; follow the owner of that database's upgrade procedure and the SPCR for what MAS supports.
+
+### Count your instances before you pick a window
+
+```bash
+# Every Db2u custom resource, with kind, namespace, state
+oc get db2ucluster,db2uinstance -A \
+  -o custom-columns=KIND:.kind,NS:.metadata.namespace,NAME:.metadata.name,STATE:.status.state
+
+# What else lives in the Db2 namespace?
+oc get pods,pvc,svc -n db2u
+```
+
+If the output shows more than the database you came to upgrade, stop. Either move the passengers into their own namespace in a prior change, or get explicit sign-off from each owner. The Db2 role is not going to ask "did you mean the other ones too?"
+
+<aside>
+
+💡 **Key insight:** Namespace is blast radius. Design your Db2 namespaces the way you design your outage windows: one owner, one schedule, one rollback.
+
+</aside>
+
+---
+
+## 🔑 The Licence File: Why the 30-Day Trial Is a Trap
+
+Here is the part that gets people. Db2 12 under Db2u can start up and run without an activation key. It does not complain; it works for 30 days. IBM's role documentation describes the failure plainly: "Without a valid license, Db2 v12 operates under a 30-day trial license. When the trial expires, the database becomes unavailable — this is especially critical for production systems."
+
+So the dangerous scenario is not an error on day one. It is silence on day one, success on day twenty-nine, and an unavailable Manage database on day thirty-one.
+
+| Day | What you see | What is true |
+|---|---|---|
+| 0 | Upgrade finishes, Manage works | Instance is running with a trial licence |
+| 1 to 29 | Everything normal, monitoring green | Countdown continues, nothing alerts |
+| 30 | Database unavailable | Manage, Monitor integrations, MIF and cron tasks all fail |
+
+That is why IBM built two gates in the tooling and not one:
+
+1. **`--db2-v12-upgrade`** (Ansible: `db2_v12_upgrade: true`). The role documentation calls it "a safety gate to prevent accidental major version upgrades." It defaults to `false`.
+2. **`--db2-license-file`** (Ansible: `db2_license_file`). Required for 11 to 12. If it is missing, the role "will fail immediately with a clear error message", which is intentional "to prevent a silent downgrade from a full production license to a 30-day trial license."
+
+A third condition rides with them in Ansible: `db2_channel` must target a v12 channel, with IBM's documented example `v12.0.0-cn1`.
+
+### What the licence file is
+
+IBM calls the file different things, which is its own source of confusion. The role documentation says it may arrive as `db2wh.lic`, `db2ese.lic`, `db2aese.lic`, or simply "an activation key" or "entitlement file." It is a plain-text file whose first line is `[LicenseCertificate]` and which should include `ProductName=IBM Db2 Warehouse` or similar. IBM's sample (not a real licence) looks like this:
+
+```text
+[LicenseCertificate]
+CheckSum=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+TimeStamp=YYYY-MM-DD HH:MM:SS
+PasswordVersion=5
+VendorName=IBM Corporation
+VendorPassword=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+ProductName=IBM Db2 Warehouse
+ProductID=5765-F41
+ProductVersion=12.0
+ProductAnnotation=
+LicenseType=Permanent
+...
+```
+
+If your file does not look like that, you may hold the wrong entitlement. Do not discover that during the window.
+
+**Where do you get it?** IBM says "a valid IBM Db2 Warehouse license file obtained from IBM." Practically, that means your IBM account team or the entitlement portal, and the owner of your MAS entitlement. Ask for it at the same time as you schedule the change, because procurement is the slowest step in the whole upgrade.
+
+### A pre-flight for the licence
+
+```bash
+# Is it a licence file?
+head -1 /secure/db2wh.lic            # expect: [LicenseCertificate]
+grep -E '^(ProductName|ProductVersion|LicenseType)=' /secure/db2wh.lic
+
+# Keep the file out of Git and out of CI logs; reference it by path
+ls -l /secure/db2wh.lic
+```
+
+And after the upgrade, confirm the engine accepted it (see the verification section for the exact commands). A licence file that the operator accepted silently but did not apply is the other way to get a day-30 outage.
+
+> *"We'll apply the licence after the upgrade, when things have settled."*
+
+That sentence is the 30-day trial, with a calendar reminder nobody will set. The tooling fails the upgrade without the file precisely so you cannot say it.
+
+---
+
+## ⌨️ Path A: `mas update` With the Db2 Flags
+
+The CLI route is the one most teams will use, because `mas update` is already how you move the catalog (Part 1). IBM's update guide lists three Db2-related flags in the **Update Dependencies** section:
+
+| Flag | IBM's description | Notes |
+|---|---|---|
+| `--db2-namespace` | Namespace where the Db2u operator and instances will be updated | Defines the blast radius |
+| `--db2-v12-upgrade` | Required to confirm a major version update for Db2 to version 12 | Switch, no value |
+| `--db2-license-file` | Path to a valid Db2 v12 activation license file required for Db2 v11 to v12 upgrades | Needs to be readable inside the CLI container |
+
+There is also `--mirror-db2` in the disconnected-preparation example of `mas mirror-images`, which is your reminder that an air-gapped site must mirror Db2 images before the window (more on this under troubleshooting).
+
+IBM's guide does not carry a worked Db2 example. Here is the shape we use, built from the documented flags and the CLI container pattern IBM shows for `mas update` generally. The mount path and file name are ours; adjust them.
+
+```bash
+# 1) Interactive: let the CLI discover dependencies and prompt
+docker run -ti --rm --pull always \
+  -v /secure/db2:/licence:ro \
+  quay.io/ibmmas/cli \
+  mas update
+
+# 2) Non-interactive, pinned catalog, explicit Db2 opt-in and licence
+docker run -ti --rm --pull always \
+  -v /secure/db2:/licence:ro \
+  quay.io/ibmmas/cli \
+  mas update -c v9-261007-amd64 \
+    --db2-namespace db2u \
+    --db2-v12-upgrade \
+    --db2-license-file /licence/db2wh.lic \
+    --no-confirm
+```
+
+Three things to notice.
+
+**The licence path is a path inside the container.** The CLI runs in a container, so a path on your laptop means nothing unless you mount it. A bind mount, read-only, is the least bad option. Do not bake the file into an image, and do not put it in a pipeline variable that prints.
+
+**The catalog and the Db2 move are separate decisions that travel together.** The update guide says `mas update` handles dependencies: it "detects MongoDB, Kafka and Db2", shows a summary, and prompts for major version changes. Pin the catalog (Part 1) so the thing you rehearsed is the thing you run.
+
+**Do not skip the checks.** `--skip-pre-check` skips the `pre-update-check` and `post-update-verify` tasks. For a Db2 major version change these tasks are the point.
+
+### What you should expect to see
+
+On a healthy run the sequence is: operator catalog moves, the Db2u operator updates through its channel, the Db2 engine upgrades in place (instances go "Not Ready" and return to "Ready"; IBM's Db2 Software Hub guidance describes the same CR states, including `UpgradeCheckFailed` when the pre-upgrade `db2ckupgrade` check fails), and the post-update verify runs. The ansible-devops changelog shows IBM raised the Db2 instance upgrade timeout to **60 minutes** in 37.2.0 (15 June 2026), which tells you how long IBM expects a slow upgrade to take. Plan for the window to cover at least an hour of Db2 downtime per instance, plus margin.
+
+---
+
+## 🧩 Path B: ansible-devops When You Need Control
+
+The CLI wraps the Ansible collection, so you can run the same logic directly from the `ibm.mas_devops` collection. Teams choose this path when they need finer control, are building a GitOps pipeline, or hit DT502701 (next sections).
+
+The role's own example for the upgrade:
+
+```yaml
+- hosts: localhost
+  any_errors_fatal: true
+  vars:
+    db2_action: upgrade
+    db2_namespace: db2u
+    db2_channel: v12.0.0-cn1
+    db2_v12_upgrade: true
+    db2_license_file: /path/to/db2wh.lic
+  roles:
+    - ibm.mas_devops.db2
+```
+
+And the environment-variable form with the one-click playbook IBM documents:
+
+```bash
+export DB2_ACTION=upgrade
+export DB2_NAMESPACE=db2u
+export DB2_CHANNEL=v12.0.0-cn1
+export DB2_V12_UPGRADE=true
+export DB2_LICENSE_FILE=/path/to/db2wh.lic
+ansible-playbook ibm.mas_devops.oneclick_upgrade_db2
+```
+
+The variables you actually need to understand:
+
+| Variable | Env var | Meaning | Gotcha |
+|---|---|---|---|
+| `db2_action` | `DB2_ACTION` | `install`, `upgrade`, `backup`, `restore`, `restore-database`, `db2u-migration` | `upgrade` affects every instance in the namespace |
+| `db2_namespace` | `DB2_NAMESPACE` | Where operator and instances live | The existing namespace |
+| `db2_channel` | `DB2_CHANNEL` | Operator subscription channel | Must target a v12 channel, e.g. `v12.0.0-cn1` |
+| `db2_version` | `DB2_VERSION` | Target engine version | Must match the channel; the role's own troubleshooting example uses `12.0.0.0` |
+| `db2_v12_upgrade` | `DB2_V12_UPGRADE` | Explicit 11 to 12 opt-in | Defaults to false |
+| `db2_license_file` | `DB2_LICENSE_FILE` | Path to licence | Required for 11 to 12 |
+| `db2u_kind` | `DB2U_KIND` | `db2ucluster` (default) or `db2uinstance` | Must match what exists (DT502701) |
+
+The `db2_version` documentation says "Required when upgrading to specify the target version", with supported values listed in the `db2u-release` ConfigMap. In the role's headline 11 to 12 example `db2_version` does not appear, while its migration-troubleshooting example sets both `DB2_VERSION=12.0.0.0` and `DB2_CHANNEL=v12.0.0-cn1`. Our recommendation: set both and read the ConfigMap first. The role says a mismatch between version and channel fails the upgrade.
+
+### Release history worth knowing
+
+The ansible-devops release notes give you a dated trail for when each capability landed, which is useful when deciding which collection version to pin:
+
+| Version | Date | Db2-relevant change |
+|---|---|---|
+| 36.11.0 | 8 May 2026 | "Support db2 v12 upgrade" |
+| 37.2.0 | 15 Jun 2026 | Db2 instance upgrade timeout raised to 60 minutes; `db2_kind` fix in install; timezone setup limited to Db2uCluster |
+| 37.9.0 | 9 Jul 2026 | Removes LOGARCHMETH1 and LOGARCHMETH2 handling for Db2uInstance |
+| 37.10.0 | 14 Jul 2026 | "db2ucluster migration db2uinstance" |
+| 37.21.2 | 12 Oct 2026 | More retries and delay for the "Check DB2 Properties" step |
+| 37.21.3 | 16 Oct 2026 | "Start investigative work on db2 helm installer mode" (not a production path) |
+
+If you automate, pin a collection version at or above 37.10.0 for the migration action and read the release notes for each bump; the Db2 role has moved quickly this year.
+
+---
+
+## 🪤 DT502701: The Kind Mismatch
+
+Now the known issue. IBM's record is titled **"Maximo Application Suite: DT502701 - MAS update - Db2 v11 to v12 upgrade fails for existing Db2uInstance deployments."**
+
+What I could verify, and how:
+
+- The title above, from IBM's defect listing.
+- The defect record's description, as it appeared in search results: the Db2 task does not pass a parameter that it claims to support, so the Db2 upgrade role defaults to `DB2U_KIND=db2ucluster` even where the environment contains Db2uInstance resources.
+- A **matching public symptom** on the MAS CLI repository, issue #2579, "MAS update - Cannot enter the DB2U-KIND parameter" (opened 3 September 2026, CLI 23.10.0, target catalog v9-260827). The reporter ran `mas update -c v9-260827-amd64 --db2u-kind db2uinstance --no-confirm` and got `mas update: error: unrecognized arguments: --db2u-kind db2uinstance`. Re-running without the flag failed in the Ansible Db2 role with "DB2U_KIND MISMATCH DETECTED!": requested `db2ucluster`, existing `db2uinstance` in namespace `db2u`, and "Cannot change deployment type during upgrade." As of 20 October the issue was still open; no merged fix or fixed CLI version was linked.
+
+What I could **not** verify: IBM's defect page rendered only an interface shell when fetched, so I could not read the affected-versions, fixed-in or workaround fields. Do not take any fixed-in claim from this post. Open the IBM record, read those fields, and record the answer in your change ticket.
+
+### Why it happens
+
+The role has a deliberate guard. In its own words: "Cannot change deployment type for existing instances - strict validation enforces this." That is correct behaviour. Converting a Db2uCluster to a Db2uInstance is a migration with its own tool, not something an upgrade should do implicitly. The role's default for `db2u_kind` is `db2ucluster`, kept "for backward compatibility with existing automation and scripts." The bug is the pipeline not telling the role the truth about what is already there.
+
+| Existing resource | `DB2U_KIND` passed | Result |
+|---|---|---|
+| Db2uCluster | not set (defaults to `db2ucluster`) | Works |
+| Db2uInstance | not set (defaults to `db2ucluster`) | Fails: kind mismatch (the DT502701 path) |
+| Db2uInstance | `db2uinstance` | Works, if the variable reaches the role |
+| Db2uCluster | `db2uinstance` | Fails by design; use the migration action after v12 |
+
+### What to do about it
+
+1. **Know your kind before you plan.** `oc get db2ucluster -A` and `oc get db2uinstance -A`. Greenfield 9.2 builds that used recent automation are the likely Db2uInstance population; older estates are Db2uCluster.
+2. **If you have Db2uCluster only,** DT502701 as described does not apply to you. Proceed with Path A or B.
+3. **If you have Db2uInstance,** read the DT502701 record for the fixed-in release and workaround. If no fix shipped in the catalog and CLI you are using, a pragmatic route (our practitioner suggestion, not an IBM-documented workaround) is Path B with `DB2U_KIND=db2uinstance` set explicitly, because the role honours that variable and the failure mode is a clear validation message rather than a half-applied change.
+4. **Watch the CLI.** As of CLI 23.15.0 (16 October) the release notes we read carry no entry that closes issue #2579. Check the newest CLI release notes before your window.
+5. **Rehearse on the same kind.** A non-production Db2uCluster rehearsal says nothing about a Db2uInstance production database. Rehearse the real combination.
+
+<aside>
+
+💡 **Key insight:** A validation error that says "mismatch" is the system protecting your data. The defect is not the guard; it is the missing parameter. Never "fix" it by forcing the kind to whatever makes the message go away.
+
+</aside>
+
+---
+
+## 🔁 Db2uCluster to Db2uInstance: The Second Change
+
+Db2uCluster is deprecated. The role documentation says the collection "will retain support for Db2uCluster until it's eventual EOL" and recommends Db2uInstance for all new deployments. Existing deployments "will continue to work but cannot be automatically converted." So there is no deadline pressing on you today, but there is a direction, and the Db2 12 upgrade is the doorway because the migration requires 12.
+
+### Requirements for migration
+
+| Requirement | Detail |
+|---|---|
+| Engine version | The Db2uCluster must be running v12.x; migration "will fail for v11 or earlier" |
+| Tooling | The `db2u_migrate` command-line tool must be available on the machine running the Ansible role |
+| Scope | Namespace-scoped; you name the instance |
+| Conflicts | No Db2uInstance with the same name may already exist in the namespace |
+
+### What the action does
+
+The role validates that the namespace exists, that the Db2uCluster exists and is on 12.x, and that no Db2uInstance of that name exists. Then it runs `db2u_migrate --namespace <namespace> --name <name>`, waits for the Db2uInstance and Db2uEngine to reach Ready, optionally updates the MAS JdbcCfg when `mas_instance_id` and `mas_config_dir` are provided, and prints guidance about cleaning up the original resource.
+
+```bash
+# Basic migration
+export DB2_ACTION=db2u-migration
+export DB2_NAMESPACE=db2u
+export DB2_INSTANCE_NAME=db2u-db01
+ansible-playbook ibm.mas_devops.run_role
+
+# With a JdbcCfg update for MAS
+export MAS_INSTANCE_ID=inst1
+export MAS_CONFIG_DIR=/tmp/masconfig
+```
+
+### A documentation conflict to resolve before you run it
+
+The role's README contradicts itself on what happens to the old resource. The **Migration Behavior** section says the migration is "non-destructive" and "the original Db2uCluster CR remains after migration and is not automatically deleted." The **`db2_action`** note says "the original Db2uCluster CR will be deleted after migration." These cannot both be true.
+
+We have not run the migration to see which one is right, and we are not going to pretend. In your rehearsal, run `oc get db2ucluster,db2uinstance -n db2u -o name` before and after and record the answer. Then design your rollback on what you observed, not on what the README promised.
+
+### Verify, then (maybe) clean up
+
+```bash
+# Check the new resources
+oc get db2uinstance -n db2u
+oc get db2uengine  -n db2u
+
+# Connect from inside the engine pod (names follow your instance)
+oc exec -n db2u c-db2u-db01-db2u-0 -- su - db2inst1 -c "db2 connect to BLUDB"
+```
+
+The role's guidance is that you delete the Db2uCluster only after "thoroughly verifying the migrated Db2uInstance is working correctly." If you also moved the JDBC configuration, check that Manage actually connects through the migrated service by restarting a Manage server bundle in non-production and watching it start; do not treat a green Db2uInstance as proof that Manage is using it.
+
+### Sequence it as two changes
+
+| Change | Content | Gate to proceed |
+|---|---|---|
+| 1 | Db2 11 to 12 on the existing kind | Licence applied and verified; Manage smoke test and a full business-hours week |
+| 2 | Db2uCluster to Db2uInstance | Rehearsal result on CR deletion behaviour; JdbcCfg plan; fresh backup on 12 |
+
+Merging them is tempting because both need an outage. Resist it. If the upgrade fails you want one variable, not two.
+
+---
+
+## 🧪 Pre-Flight: What to Prove Before the Window
+
+Everything in this section is cheap compared with a failed database upgrade.
+
+### 1. Inventory
+
+```bash
+oc get db2ucluster,db2uinstance -A
+oc get csv -n db2u | grep -i db2u
+oc get sub -n db2u
+oc get configmap db2u-release -n ibm-common-services -o yaml | grep -i version
+```
+
+Write down: kind, namespace, instance names, current engine version, current operator channel, number of instances in the namespace.
+
+### 2. Engine health and version
+
+```bash
+oc exec -n db2u c-<instance>-db2u-0 -- su - db2inst1 -c "db2level"
+oc exec -n db2u c-<instance>-db2u-0 -- su - db2inst1 -c \
+  "db2 connect to BLUDB && db2 \"select * from sysibmadm.env_inst_info\""
+```
+
+The pod name pattern `c-<db2_instance_name>-db2u-0` comes from the role docs. If the pod is not running, stop here; an upgrade is not how you fix an unhealthy instance. IBM's role troubleshooting notes point to `/var/log/db2u.log` inside that pod for engine problems, and to PVC and init-container state for pods stuck at startup.
+
+### 3. Backup and restore rehearsal
+
+This is the only real rollback you will have, so it gets its own rule: **a backup you have not restored is a hope.** The role supports `backup` and `restore` actions with online or offline backups; online backup requires archive logging, and offline is required when circular logging is enabled. The role also states that restore requires the target Db2 version to match the backup version.
+
+That last sentence changes how you plan:
+
+| Scenario | Restore target | Works? |
+|---|---|---|
+| Backup taken on Db2 11, restore onto a Db2 11 instance | Same version | Yes |
+| Backup taken on Db2 11, restore onto an upgraded Db2 12 instance | Version mismatch | No (per the role's rule) |
+| Backup taken on Db2 12 after upgrade, restore onto Db2 12 | Same version | Yes |
+
+So your pre-upgrade backup is only useful if you can stand up a Db2 11 target to restore into. Part 4 of this series covers backup and restore properly; for this change, the minimum is: take the backup, restore it into a throwaway Db2 11 instance in non-production, count rows in a few Manage tables (`WORKORDER`, `ASSET`, `MAXUSER`) and confirm they match.
+
+### 4. Application inventory
+
+Ask each owner whether anything else connects to this database or to this namespace: reports, integrations, BI tools, scheduled extracts, Predict or Health data, Facilities. A client driver that talks to Db2 11 may need testing against 12. IBM's AI Service 9.2.0 release page explicitly lists "DB2 v12 Support"; for every other component you run, check its own 9.2 release page and the SPCR rather than assuming.
+
+### 5. Capacity and window
+
+| Item | What to check |
+|---|---|
+| Storage | Free space on the Db2 PVCs; the role's May 2026 release (37.0.0) updated Db2 storage requirements and access-mode handling |
+| Time | IBM's own timeout is 60 minutes per instance upgrade; add backup and smoke-test time |
+| Pods | Nothing pinned to an older Db2 operator; no pending InstallPlans waiting for approval |
+| People | DBA, platform engineer, Manage owner and an IBM support case number ready |
+
+### 6. Disconnected clusters
+
+If the cluster is air-gapped, mirror the Db2 images first. IBM's update guide includes a `--mirror-db2` option for `mas mirror-images`, and notes that mirroring must be repeated per MAS release in use. A mirror that finishes during the change window is a failed change window.
+
+### 7. The licence
+
+Check it exists, is the right product, is the right version and is mounted where the tool can read it (see the licence section). Do not forget who will renew it: a "Permanent" licence type in IBM's sample is not a promise about your own entitlement.
+
+---
+
+## ⚙️ The Runbook
+
+This is the sequence we use. Times are relative to the change start (T0).
+
+| Step | When | Action | Stop if |
+|---|---|---|---|
+| 1 | T-2 weeks | Generate SPCR for your MAS and Manage versions; confirm Db2 12 appears; obtain licence | Db2 12 missing from SPCR |
+| 2 | T-2 weeks | Inventory (kinds, namespaces, instance count); read DT502701 record | Unknown instances in the namespace |
+| 3 | T-10 days | Rehearsal on a non-production cluster of the same kind, full flags and licence | Rehearsal fails or exceeds 60 minutes |
+| 4 | T-3 days | Restore rehearsal of a Db2 11 backup into a throwaway Db2 11 instance | Row counts differ |
+| 5 | T-1 day | Freeze Manage cron tasks and integrations; announce the outage | Business objects to the plan |
+| 6 | T0 | Final Db2 11 backup; record `db2level`, CR kind and state | Backup fails |
+| 7 | T0 + 10 min | Run `mas update` (Path A) or the playbook (Path B) with flags and licence | Preflight errors |
+| 8 | T0 + 60 to 90 min | Wait for the Db2uInstance or Db2uCluster to return to Ready; check `db2level` | Not Ready after 60 minutes |
+| 9 | T0 + 90 min | Verification queries (next section); Manage start and smoke test | Any check fails |
+| 10 | T0 + 2 hours | Unfreeze cron and integrations; fresh Db2 12 backup | |
+| 11 | T0 + 1 week | Review error rates; schedule migration (Change 2) if relevant | |
+
+### The decision point before step 7
+
+This is the last moment a rollback is cheap. Write it into the ticket as a go/no-go with named owners:
+
+- Licence file validated and mounted.
+- Db2 11 backup completed **and** restored in rehearsal.
+- Kind confirmed and DT502701 status read.
+- Namespace instance list reviewed by every owner.
+- Pinned catalog and CLI/collection version recorded.
+
+If any line is a "no", the answer is "no."
+
+---
+
+## ✅ Verification: Prove It, Do Not Assume It
+
+After the upgrade finishes, "pods are running" is not a result. Use this checklist.
+
+### Engine level and instance state
+
+```bash
+oc get db2uinstance,db2ucluster -n db2u
+oc exec -n db2u c-<instance>-db2u-0 -- su - db2inst1 -c "db2level"
+```
+
+Expect the engine to report a 12.x level. Your CR should be Ready.
+
+### Licence is applied
+
+```bash
+oc exec -n db2u c-<instance>-db2u-0 -- su - db2inst1 -c "db2licm -l"
+```
+
+`db2licm -l` lists installed licences; you are looking for a permanent or term licence for the Db2 product rather than a trial with an expiry date. If you see an expiry date 30 days out, you have the trial. Fix it now. We did not find IBM text on the exact output format for the Db2u image, so compare against your non-production rehearsal.
+
+### Data and application
+
+```sql
+-- Row counts that you captured before the change
+SELECT COUNT(*) FROM maximo.workorder;
+SELECT COUNT(*) FROM maximo.asset;
+SELECT COUNT(*) FROM maximo.maxuser;
+
+-- Anything failing integrity or stuck in the queue after restart?
+SELECT COUNT(*) FROM maximo.maxsequence;
+```
+
+Schema name `maximo` is the usual default; confirm yours. Then log in to Manage, open a work order, save a record, run a report, trigger one integration flow and watch the cron task instances for errors. After a Db2 engine change, the first full business day is the real test; watch for slow queries (Part 3 covers tuning) and connection-pool errors.
+
+### Verification table
+
+| Check | Pass | Fail action |
+|---|---|---|
+| CR state | Ready | Check pods, PVCs, `db2u.log` |
+| `db2level` | 12.x | Operator channel or version mismatch |
+| `db2licm -l` | Licensed, no 30-day expiry | Apply licence immediately |
+| Row counts | Match pre-change | Stop; restore decision |
+| Manage login and save | Works | Check JdbcCfg and TLS secrets |
+| Cron and MIF | No new errors | Inspect `ManageWorkspace` logs |
+| Backup on Db2 12 | Completed | Fix before unfreezing |
+
+---
+
+## 🔍 Troubleshooting
+
+| Symptom | Likely cause | What to check |
+|---|---|---|
+| Upgrade stops immediately with a licence error | `db2_license_file` missing or unreadable (by design) | Path in container, mount, permissions |
+| `DB2U_KIND MISMATCH DETECTED` | Existing Db2uInstance, role defaulted to `db2ucluster` (DT502701 pattern) | `oc get db2ucluster,db2uinstance -A`; set `DB2U_KIND`; check DT502701 record |
+| `mas update: error: unrecognized arguments: --db2u-kind` | CLI does not accept that flag (reported in issue #2579, CLI 23.10.0) | Use Path B, or a CLI version that documents the flag |
+| Db2 version does not match channel | `db2_version` and `db2_channel` disagree | `db2u-release` ConfigMap in `ibm-common-services` |
+| Instance stuck in Not Ready | PVC not bound, init containers stuck, or `UpgradeCheckFailed` | PVCs and pods in the namespace; `db2ckupgrade` guidance |
+| "Check DB2 Properties" step times out | Slow reconcile; IBM raised retries in 37.21.2 | Collection version; engine pod logs |
+| Migration fails: "requires Db2uCluster to be v12.x" | Instance still on 11 | Run the upgrade first |
+| Migration fails: Db2uInstance already exists | Name collision | Different `DB2_INSTANCE_NAME` or remove the empty instance |
+| `db2u_migrate: command not found` | Tool missing on the runner | Install per IBM/Db2u operator docs |
+| Disconnected cluster cannot pull Db2 images | Not mirrored | `mas mirror-images` with `--mirror-db2`, per release |
+| Manage cannot connect after migration | JdbcCfg still points to old service | Compare `JdbcCfg` with the service of the new instance |
+
+---
+
+## 🧯 Rollback: The Honest Version
+
+Let me say the unpopular thing: **there is no downgrade button.** The ansible-devops documentation calls the 11 to 12 move "irreversible", and the restore rule means a Db2 11 backup restores only onto a Db2 11 target. So rollback is a rebuild, and you plan it like one.
+
+| Rollback path | What it takes | Time driver |
+|---|---|---|
+| Restore the Db2 11 backup into a new Db2 11 instance and repoint Manage | A Db2 11 operator channel still available, storage, the backup, a JdbcCfg change | Restore size plus Manage restart |
+| Fail forward on Db2 12 | Apply licence, fix the specific error with IBM support | Depends on the error |
+| Restore from a Db2 12 backup taken post-upgrade | Only useful after the upgrade succeeded | Restore size |
+
+Two points from experience.
+
+**A Db2 11 target must be available.** If your catalog has moved on and the Db2 11 operator channel is gone from your mirror, "restore to Db2 11" has no landing zone. Keep the previous Db2 11 images mirrored and documented until the Db2 12 upgrade has aged a full business cycle.
+
+**Failing forward is usually faster.** Most upgrade problems (a licence not applied, a mismatched kind, a stuck pod) are fixable on 12 with support. Decide the "restore versus fix forward" threshold in advance, with a clock: for example, if the engine is not Ready 90 minutes into the window and support has no fix, restore.
+
+---
+
+## 🧠 What This Means for the Rest of Your Platform Plan
+
+A Db2 12 upgrade is a platform change that interacts with the rest of this series.
+
+| Topic | Connection |
+|---|---|
+| Patch train (Part 1) | `mas update` is the mechanism; pin the catalog and rehearse the real path |
+| Db2 tuning (Part 3) | Re-baseline performance on 12; the role's default workload is `ANALYTICS`, and Part 3 covers Manage's own recommendations and the `db2_workload` setting |
+| Backup and DR (Part 4) | Backup versions must match restore targets; cross-cluster DR plans need a Db2 12 target |
+| Observability (Part 5) | Add alerts for CR state and the licence expiry date |
+| Support window (Part 7) | Catalogs from v9-260924 support OCP 4.18 to 4.22; sequence OCP moves and Db2 moves, not both in one window |
+| GitOps (Part 8) | ibm-mas/gitops has Db2 functions (for example `db2_audit_retention_days` added in CLI 23.15.0); a Db2 major upgrade is not something to let ArgoCD do by drift |
+
+On GitOps specifically: a declarative pipeline that reconciles Db2 to a newer version without the opt-in and licence conversation is the same silent-upgrade failure in a different suit. Whatever tool owns Db2 must treat 11 to 12 as a human-approved change.
+
+---
+
+## 🧭 What to Do This Quarter
+
+1. **Run the inventory today.** `oc get db2ucluster,db2uinstance -A` and the namespace contents. Write down kind, version, instance count.
+2. **Generate the SPCR** for your MAS and Manage versions and record what it says about Db2.
+3. **Request the Db2 v12 activation licence** now, from your IBM account team. Do not wait for the window.
+4. **Check every Db2 12 sandbox** you have built for an expired or expiring trial licence.
+5. **Read DT502701** on IBM's site, note the fixed-in release and workaround in the ticket.
+6. **Rehearse both paths:** version upgrade first, migration second, on the real kind.
+7. **Prove the restore** into a Db2 11 target, in non-production.
+8. **Pin the collection and CLI versions** you rehearsed with.
+9. **Add the day-30 alert** (licence expiry) to monitoring for any Db2 12 instance.
+10. **Decide the roll-forward threshold** with the business, in writing.
+
+### The Seven Commandments of the Db2 12 Upgrade
+
+1. **Thou shalt not upgrade Db2 without the licence file in hand.**
+2. **Thou shalt know the namespace, for the namespace is the blast radius.**
+3. **Thou shalt learn thy kind, Db2uCluster or Db2uInstance, before the pipeline guesses.**
+4. **Thou shalt restore thy backup before thou needest it.**
+5. **Thou shalt change the version first and the kind second.**
+6. **Thou shalt treat a trial licence as a deadline.**
+7. **Thou shalt never call a one-way door a rollback plan.**
+
+---
+
+## 🔮 Where This Series Goes Next
+
+Part 3 takes the freshly upgraded Db2 and tunes it for Manage: workload settings, row-organised tables, sequence caching, runstats and reorg. Part 4 builds the backup and restore capability that this post leaned on at every step, and Part 7 covers sequencing OpenShift, CP4D and MongoDB moves so the Db2 change does not collide with them.
+
+The Db2 12 upgrade is the rare MAS change that is designed to make you stop and think. Use the pause. It is the cheapest outage prevention you will do this year.
+
+---
+
+## 📚 References
+
+- [IBM Docs: What's new in Maximo Application Suite 9.2 (Db2 12 support, explicit opt-in and activation licence)](https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-whats-in-maximo-application-suite-92)
+- [MAS CLI: Update guide (`--db2-namespace`, `--db2-v12-upgrade`, `--db2-license-file`)](https://ibm-mas.github.io/cli/guides/update/)
+- [MAS DevOps Ansible Collection: db2 role (upgrade, db2_v12_upgrade, db2_license_file, Db2uCluster migration)](https://ibm-mas.github.io/ansible-devops/roles/db2/)
+- [GitHub: ibm-mas/ansible-devops releases (36.11.0 Db2 v12 upgrade, 37.10.0 Db2uInstance migration)](https://github.com/ibm-mas/ansible-devops/releases)
+- [GitHub: ibm-mas/cli issue #2579, "MAS update - Cannot enter the DB2U-KIND parameter"](https://github.com/ibm-mas/cli/issues/2579)
+- [IBM Support: DT502701 known issue, Db2 v11 to v12 upgrade fails for existing Db2uInstance deployments](https://www.ibm.com/mysupport/s/defect/aCIgJ000000KA3FWAW/dt502701?language=en_US)
+- [IBM Support: MAS AI Service component release 9.2.0 (lists "DB2 v12 Support")](https://www.ibm.com/support/pages/node/7276603)
+- [IBM Docs: Upgrading Db2 from Version 5.1 to Version 5.3 on IBM Software Hub (Db2uInstance upgrade states, db2ckupgrade)](https://www.ibm.com/docs/en/SSNFH6_latest/svc-db2/db2-cli-upgrade-v51.html)
+- [GitHub: ibm-mas/cli releases](https://github.com/ibm-mas/cli/releases)
+
+---
+
+**About TheMaximoGuys:** We help Maximo administrators, developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | October 2026*
+
+<!--
+REVIEWER NOTES (night-shift, 2026-10-20, platops-02):
+- SOURCES: knowledge_base/DOC15 (PLAT-01, UPG-03, UPG-04, cached from IBM What's New 9.2 and t_ctr_upgrad_db2_v11_to_v12), DOC00 §5.3. Live: ibm-mas.github.io/cli/guides/update (fetched 2026-10-20; documents the three Db2 flags only, no Db2 example, no Db2 backup guidance, no Db2uCluster/Instance text); ibm-mas.github.io/ansible-devops/roles/db2 and the raw README on GitHub master (all role variables, 11-to-12 section, licence file format, migration section); GitHub releases API for ibm-mas/cli and ibm-mas/ansible-devops; github.com/ibm-mas/cli/issues/2579; IBM Support node 7276603 (AI Service 9.2.0, Db2 v12 support).
+- DT502701: only the TITLE and a summary of the description were obtainable (via search snippet). The IBM defect page (mysupport/s/defect/...) renders only a shell for fetch tools, so affected versions, fixed-in release, workaround and dates were NOT verified. The post says so and does not claim a fix. The Path B workaround (explicit DB2U_KIND) is labelled practitioner suggestion.
+- DISCREPANCY (role README): "Migration Behavior" says original Db2uCluster CR is NOT deleted; the db2_action note says it WILL be deleted. Post flags this and tells readers to observe in rehearsal. Not run by us.
+- DISCREPANCY (CLI docs vs issue): the update guide lists --db2-v12-upgrade and --db2-license-file; issue #2579 (CLI 23.10.0) shows `mas update` rejecting --db2u-kind. DOC00 CHG-038 lists CLI 23.15.0 but no entry closes #2579. Issue still open as of 2026-10-20 per fetch.
+- The role docs list example channels ("v2.2, v3.0, v3.1") in the generic db2_channel section and "v12.0.0-cn1" in the v12 sections; post uses v12.0.0-cn1 only. The v12 example in the migration troubleshooting uses DB2_VERSION=12.0.0.0; this is the role's own sample, not verified against the db2u-release ConfigMap.
+- "Roughly 60 minutes" claim: ansible-devops 37.2.0 release note "increase db2 instance upgrade timeout to 60 minutes". Treated as IBM's timeout, not a measured duration.
+- Db2uInstance states (Not Ready / Ready / UpgradeCheckFailed): from IBM Software Hub Db2 upgrade doc (v5.1 to 5.3), which applies to the CPD service; assumed analogous for MAS Db2u operator. Flagged in text.
+- `db2licm -l`, `sysibmadm.env_inst_info`, `db2level`: standard Db2 commands, not taken from an IBM MAS page; post states output format was not verified for the Db2u image. Table/schema `maximo.*` names are typical defaults.
+- Restore-version-match claim: role docs ("The restore operation requires the target Db2 version to match the backup version"). Implication that an 11 backup cannot be restored on 12 is our reading.
+- "Irreversible": role README wording; IBM MAS docs not re-read for a rollback statement. IBM Docs 403s; the What's New page was used via DOC15's cached copy.
+- `oc` command shapes (custom-columns for kind/state, configmap name db2u-release in ibm-common-services) taken from role docs or typical installs; confirm on your cluster.
+- The MAS-PLATFORM-OPS index says the Part 2 filename; slug here is mas-platops-02-db2-12-upgrade to match the clusterSlugs already in Parts 0 and 1.
+- Practitioner-source gap: web searches for Maximo Secrets / Interloc / IBM Community coverage of the Db2 12 upgrade returned nothing relevant (LinkedIn profile pages and generic IBM readmes only). References are IBM and ibm-mas GitHub pages.
+- SearchMaximo sweep: the 611-file knowledge base lives at "/root/Amtrak proposal/ibm_userguides_markdown" (path with a space). It contains only older MAS 8.x-era Db2U/Db2 Warehouse install steps (Db2U operator catalog, OperandRequest, Db2uCluster deletion on CPD); it has no Db2 12 content, so nothing from it was used as a source for version-specific claims. Knowledge base DOC15/DOC00 prevailed on discrepancies.
+- Not covered by any source: whether Db2 12 is mandatory for MAS 9.2 (post says supported, not required); what the Db2 12 downgrade story is beyond the role docs; the exact Db2 minor version (12.1.x) shipped on channel v12.0.0-cn1.
+-->
