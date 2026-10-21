@@ -1,0 +1,881 @@
+---
+title: "Maximo Manage Performance Tuning on MAS: Bundles, JVMs, Pods, Cron and Integration Load"
+description: "A practitioner's guide to tuning Maximo Manage on OpenShift using IBM's MAS Performance Wiki: split UI, cron, MEA and report bundles, size pods and JVMs from measured load, tune MIF queues, fix the load balancer and LTPA surprises, and diagnose slowness with evidence."
+date: "2026-10-21"
+slug: "mas-platops-06-manage-performance"
+tags: ["Maximo", "MAS", "Manage", "Performance", "JVM", "OpenShift", "Server Bundles", "MIF", "Cron Tasks", "Platform Operations", "Administrator"]
+draft: true
+tier: "admin"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-platops-06-manage-performance.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Should I run Manage as one all-in-one bundle or split it into UI, cron, MEA and report bundles?"
+    answer: "Split it for anything beyond a small or test environment. IBM's Performance Wiki states that isolating UI, cron, MIF and report workloads on different server bundle types reduces contention for resources inside the same JVM and pod, and IBM's server bundle documentation says each bundle scales independently and does not share CPU or memory with the others, so a heavy UI workload cannot starve a cron task. The rules to remember are that a single bundle must be type `all`, the default bundle must be `all` or `ui`, a `cron` bundle cannot serve UI requests, and if your default is a `ui` bundle you also need an `mea` bundle for user synchronization. An all-in-one bundle is still a legitimate choice for development, for a proof of concept, or for a very small production estate, but the first time a 20-minute cron task and a work order screen fight over the same heap you will wish you had split."
+  - question: "How many users can one Manage UI pod carry?"
+    answer: "IBM's sizing guidance from lab benchmarks is 50 to 75 users per Manage UI server bundle pod, which it equates to a JVM with 2 cores on Maximo 7.6.x. IBM then lowers that to roughly 30 to 40 users per JVM for heavier workloads such as complex Work Order applications or the Scheduler application, and explicitly says to treat both numbers as guidance rather than strict rules. Count concurrent active users, not named users, and then validate with your own load test, because customized applications, automation scripts, big Start Centers and slow saved queries all move the number. The practical method is to size from the guidance, run a representative test, watch heap and CPU per pod using the metrics from Part 5, and then adjust replica count rather than guessing at a bigger heap."
+  - question: "What heap size should I give a Manage server bundle JVM?"
+    answer: "Start by not setting `-Xmx` at all and letting the container drive it. The Performance Wiki says that without `-Xmx`, and with `-XX:+UseContainerSupport` set, the OpenJ9 JVM uses 75% of the container memory limit as maximum heap, and that setting `-Xmx` makes `-XX:MaxRAMPercentage` ignored. The wiki's own sample gives server bundles a 10Gi memory limit, and it points out that the 10Gi is not the heap: it also covers Liberty caches, JIT compilation and the Maximo MMI container. Keep the nursery (`-Xmn`) at 25 to 33% of the heap with the default `gencon` policy. If you see out-of-memory restarts or garbage collection eating CPU, take a heap dump before you raise limits, because a leak or a runaway MboSet will outgrow any heap you pick."
+  - question: "Is the 2 second transaction target an IBM service level for my Manage environment?"
+    answer: "It is an IBM Performance Wiki expectation with a tight definition, not a contractual service level. IBM says an out-of-the-box transaction, meaning the creation, update or deletion of one MBO with no more than one child object and no attachments or blobs, is expected to complete in 2 seconds or less measured from when the server receives the request to when it sends the response. The wiki then lists exclusions: static UI resource downloads, customized applications and out-of-the-box applications with automation scripts, pages with more than two XHR requests such as the Start Center, customized saved queries, bulk loads and reports. So a 2 second target is a fair yardstick for a plain work order save, and an unfair one for a customized work order screen with ten automation scripts. Use it to decide where to look, not as a pass or fail mark for the whole system."
+  - question: "Why do my Manage users get kicked out after about two hours, and is that a performance problem?"
+    answer: "It is a session-token default rather than a performance fault, but it generates performance tickets. IBM's wiki says that after 2 hours Manage users see an error telling them to reload, even while actively working, because the LTPA token in Manage expires and redirects the user to the MAS login page. IBM has a support article, document 6841623, on increasing the LTPA token timeout in Manage. Its visible abstract says the procedure modifies `server.xml` and applies to MAS 8.10, 8.11 and 9.0; the full steps are behind an IBM login, so read the article itself before you change anything. Raise the timeout deliberately and tell your security team, because a longer token is a longer window for a stolen session."
+keyTakeaways:
+  - "Isolate workloads by server bundle type. UI, cron, MEA (integration and API) and report bundles scale independently, share no CPU or memory, and connect to the same database. One bundle must be the default, and the default must be type `all` or `ui`"
+  - "Size from IBM's benchmarks and then prove it with your own test: 50 to 75 users per UI pod (30 to 40 for heavy Work Order or Scheduler use), and keep CPU and memory limit overcommit below 300% on worker nodes. Add replicas before adding heap"
+  - "Let the container size the JVM: without `-Xmx`, OpenJ9 takes 75% of the memory limit, the nursery should be 25 to 33% of the heap, and a 10Gi pod is not a 10Gi heap. Never copy a 7.x JVM argument list into MAS without checking it applies"
+  - "Integration throughput is bounded by database disk IO, not just by pods. IBM's MIF lab results link transactions per second to database disk IO, recommend roughly 2 cores and 4 to 7 GB per MEA pod, a `maxMessageDepth` of 500,000, and warn that error messages and slow queue posting hurt throughput"
+  - "Most 'Manage is slow' tickets resolve in the layers around Manage: database latency (under 10 ms for production), disk (above 250 MB/s), the HAProxy balance algorithm, a 2 hour LTPA token, and slow SQL. Run the diagnosis checklist before touching a JVM flag"
+series:
+  name: "MAS PLATFORM-OPS"
+  part: 6
+  total: 8
+tldr: "Manage performance on MAS is rarely one setting. It is a stack: the database and its disk, the network between pod and database, the OpenShift router, the server bundle layout, the pod and JVM sizing, and the cron and integration load you put on top. IBM's MAS Performance Wiki gives measured guidance for each layer: separate bundles for UI, cron, MEA and report work, 50 to 75 users per UI pod, a container-driven heap, roundrobin load balancing, MIF queue and consumer settings, and a diagnosis checklist. This post turns that guidance into a layout you can apply, a sizing worked example, a cron and integration playbook, a slow-system triage order, and a list of where IBM's own pages disagree."
+seoTitle: "Maximo Manage Performance Tuning on MAS"
+seoDescription: "Tune Manage on MAS: server bundles, pod and JVM sizing, cron and MIF load, router and database checks, from IBM's Performance Wiki."
+targetQuestions:
+  - "How do I tune Maximo Manage performance on MAS?"
+  - "How many users can a Maximo Manage UI pod handle?"
+  - "How do I separate UI, cron and integration workloads in MAS Manage?"
+  - "What JVM settings should I use for Manage on Liberty and OpenJ9?"
+  - "How do I size MEA pods and tune MIF queues in MAS?"
+  - "Why is my Maximo Manage slow on OpenShift?"
+  - "How do I take a heap dump from a Manage pod?"
+semanticKeywords:
+  - "Maximo Manage performance tuning"
+  - "MAS Performance Wiki"
+  - "ManageWorkspace serverBundles"
+  - "bundleType ui cron mea report"
+  - "OpenJ9 MaxRAMPercentage Manage"
+  - "Liberty coreThreads maxThreads"
+  - "MIF JMS maxMessageDepth"
+  - "haproxy.router.openshift.io/balance roundrobin"
+  - "LTPA timeout Manage"
+  - "BMXAA6720W slow SQL"
+  - "DBTest utility Manage"
+proficiencyLevel: "advanced"
+dependencies:
+  - "cluster-admin or Manage workspace admin access on the MAS cluster"
+  - "Metrics from Part 5 (Prometheus and the Manage monitoring agent) or an equivalent monitoring stack"
+  - "A non-production environment that mirrors production data volume for load tests"
+  - "Db2 tuning from Part 3 already applied, because no pod setting fixes a mis-tuned database"
+speakableSections:
+  - "The Performance Stack: Where Slowness Actually Lives"
+  - "Server Bundles: Separate the Workloads"
+  - "Slow System Triage: The Order That Saves Time"
+clusterSlugs:
+  - "mas-platops-00-series-index"
+  - "mas-platops-03-db2-tuning"
+  - "mas-platops-04-backup-restore-dr"
+  - "mas-platops-05-observability"
+  - "mas-platops-07-support-window"
+  - "mas-platops-08-gitops-cli-ansible"
+relatedSlugs:
+  - "mas-platops-00-series-index"
+  - "mas-platops-03-db2-tuning"
+  - "mas-platops-05-observability"
+  - "mas-platops-07-support-window"
+---
+
+# Maximo Manage Performance Tuning on MAS: Bundles, JVMs, Pods, Cron and Integration Load
+
+<aside>
+
+🎯 **Who this is for:** MAS administrators and platform engineers who own a Manage workspace on OpenShift and have been handed the sentence "it's slow" with nothing else. You will leave with a bundle layout, a sizing method with a worked example, JVM guidance that matches how Manage actually runs, a playbook for cron and integration load, and a triage order that finds the real cause before you change a setting.
+
+</aside>
+
+> **"Manage is slow" is a symptom with at least nine possible causes, and only two of them are inside the JVM.**
+
+You have been here. The ticket says the work order screen takes eight seconds. Someone proposes doubling the heap. Someone else proposes another pod. A third person points at the database. Every theory is plausible, nobody has a number, and the change that gets made first is whichever one the loudest person suggested.
+
+I have watched that meeting play out on 7.6 and on MAS. The platform changed, the meeting did not. What did change is that IBM now publishes measured guidance, in the open, for exactly this problem. The [MAS Performance Wiki](https://ibm-mas.github.io/mas-performance/) is maintained by IBM's Maximo performance team on GitHub, and it carries lab results for Manage, the integration framework, mobile, sizing and diagnosis. The repository's most recent commit when I read it for this post was dated 2 September 2026.
+
+This is Part 6 of the series. Parts 3 and 5 gave you a tuned database and the metrics to see what is happening. This part uses both: it is the Manage layer, from the router down to the cron task.
+
+One scoping note. Everything attributed to IBM below comes from the pages I read directly: the Performance Wiki source files, IBM Docs pages on server bundles, JVM options and pod scaling, an IBM Support abstract, and an IBM Community thread. Where I add my own practitioner view, I say so. Where IBM's pages disagree with each other or look dated, I flag it rather than smoothing it over.
+
+---
+
+## 🔥 The Performance Stack: Where Slowness Actually Lives
+
+Before any setting, a map. A Manage request crosses every layer in this diagram, and slowness in any one of them looks identical to the user.
+
+```
+ BROWSER / MOBILE / INTEGRATION CLIENT
+        │   (client network, HAR traces, XHR count per page)
+        ▼
+ ┌──────────────────────────────────────────────┐
+ │ OPENSHIFT ROUTER (HAProxy)                   │  balance algorithm, timeouts,
+ │                                              │  ingress replicas
+ └──────────────────────┬───────────────────────┘
+                        ▼
+ ┌──────────────────────────────────────────────┐
+ │ MAS CORE  → LTPA token / session (2h default)│
+ └──────────────────────┬───────────────────────┘
+                        ▼
+ ┌──────────────────────────────────────────────┐
+ │ MANAGE SERVER BUNDLES  (Liberty + OpenJ9)    │
+ │   ui │ cron │ mea │ report │ standalonejms   │  replicas, CPU/memory limits,
+ │                                              │  heap, thread pool
+ └──────────────────────┬───────────────────────┘
+                        │  JDBC  (latency, pool)
+                        ▼
+ ┌──────────────────────────────────────────────┐
+ │ DATABASE (Db2u / Oracle / SQL Server)        │  indexes, runstats, sequences,
+ │   disk throughput + IOPS                     │  disk, lock holds
+ └──────────────────────────────────────────────┘
+```
+
+IBM's own diagnosis page says the same thing in a list. Its "factors in system performance" section names system architecture (OpenShift, instance type, storage), app and DB server configuration, network, bandwidth, load balancing, database tuning, SQL tuning, scheduled tasks (cron tasks), reporting, integration with other systems through the integration framework, and troubleshooting. Notice that "JVM tuning" is one item among eleven.
+
+| Layer | What goes wrong | First evidence to look at | Where it is covered |
+|---|---|---|---|
+| Client and network | Pages with many XHR calls, large Start Centers, slow WAN | Browser HAR, XHR count per page | This post, Start Center section |
+| Router | Wrong balance algorithm, low timeouts, one ingress pod | Route annotation, ingress controller spec | This post |
+| Core and session | 2 hour LTPA expiry reads as "app broke" | Error text, timing of complaints | This post |
+| Bundle layout | Cron and UI contending in one JVM | Which pods run which workload | This post |
+| Pod and JVM | Heap pressure, GC CPU, OOM restarts | Heap used versus max, restarts | This post and Part 5 |
+| Integration | Queue backlog, error loops, slow posting | Queue depth, error counts, MEA CPU | This post |
+| Database | Missing stats, slow disk, latency, locks | Slow SQL, DBTest, disk test | Part 3 |
+
+> <aside>
+>
+> 💡 **Key insight:** If you only tune the layer you own, you will tune the wrong one about half the time. Triage top to bottom, tune bottom to top.
+>
+> </aside>
+
+---
+
+## 📏 Define "Slow" First: IBM's Two-Second Transaction
+
+You cannot tune against a feeling. The Performance Wiki gives you an actual definition, and it is stricter than the one I had seen quoted in blog posts, including in this series' own index, which called a two-second target a community starting point. Having read the source, that framing needs correcting: the two-second expectation is IBM's, and it is narrow.
+
+**IBM's definition of a transaction.** An out-of-the-box Maximo transaction is expected to complete with a latency of 2 seconds or less, where a transaction is the creation, update or deletion of a single MBO, with no more than one child object and with no attachments or blobs. Latency is the time from when the Maximo server receives the request to when it has sent the response. For UI users it also covers the time from clicking Save to control returning to the user. IBM's examples:
+
+1. Creating one work order, including the generation of its `WORKORDERSTATUS` and `WOANCESTOR` records.
+2. Updating one work order, for example moving it from Approved to Closed.
+3. Deleting one work order.
+
+**What is excluded.** The wiki lists the cases that fall outside the 2 second characterisation:
+
+| Exclusion | Why it matters in practice |
+|---|---|
+| Downloading UI resources (js, css, png, jpg) | A slow first page load is a network or caching problem, not a transaction problem |
+| Customized applications, and out-of-the-box applications with automation scripts | Your own logic is not covered by IBM's expectation; measure it separately |
+| UI transactions with many XHR requests, such as the Start Center (more than 2 per page) | Manage supports HTTP/1.1, so the XHR requests from one page are sequential, not concurrent |
+| Customized saved queries | A bad saved query is a database problem you own |
+| Bulk load requests | Use MIF or data loading and size it as integration load |
+| Report transactions | Reports have their own bundle type for this reason |
+
+The HTTP/1.1 point deserves a second look. IBM's wording is that Maximo currently supports HTTP/1.1, so XHR requests initiated from a single user page are sequential. A Start Center with eight portlets is therefore eight round trips in a row, each paying the full latency to the pod and from the pod to the database. That is why the Start Center is the classic "it's slow when I log in" complaint and why the fix is fewer portlets rather than more CPU.
+
+**How to use the definition.** Take a plain work order save on a clean record and time it. If that is over two seconds, you have a platform problem (database, network, pod). If that is fast and the customized screen is slow, you have an application problem. If both are fast and the Start Center is slow, you have a portlet and query problem. Three different owners, found with one stopwatch.
+
+| Test | Result | Likely layer |
+|---|---|---|
+| Plain WO save, 1 child record | Over 2 s | Database, network, pod resources |
+| Plain WO save | Under 2 s, customized screen slow | Automation scripts, custom Java, custom queries |
+| Both fast, login slow | Start Center | Portlets, saved queries, `LAYOUTID` indexes |
+| Fast for one user, slow at 10 a.m. | Concurrency | Pod count, heap, connection pool, DB locks |
+| Slow only during the night | Batch collisions | Cron and integration load |
+
+---
+
+## 🧩 Server Bundles: Separate the Workloads
+
+Of everything in this post, the bundle layout has the highest return for the least effort.
+
+### What a bundle is
+
+A Manage server bundle is a deployable set of Manage components running in one or more Liberty pods. IBM's server bundle overview lists six types:
+
+| Bundle type | What it runs | Notes from IBM Docs |
+|---|---|---|
+| `all` | ui, cron, mea and report components together | If you deploy only one bundle, it must be type `all` |
+| `ui` | The user interface, reached through a browser | Can be the default bundle |
+| `cron` | Background cron tasks | "A cron bundle cannot serve UI requests" |
+| `mea` | Enterprise web services API | Required for user synchronization |
+| `report` | Reports | Keeps heavy reports out of the UI JVM |
+| `standalonejms` | A JMS server bundle | Configured per IBM's separate JMS guide |
+
+The rules IBM states around them are worth memorising, because breaking them produces a deployment that activates and then misbehaves:
+
+- The **default bundle must be type `all` or `ui`**. Other defaults can deploy without errors but leave the application malfunctioning.
+- If the default is a `ui` bundle, you **also need an `mea` bundle** for user synchronization.
+- With multiple bundles and no default set, the system randomly picks an `all`-type bundle as the default.
+- You can deploy **multiple bundles of the same type** to group workloads with different configurations.
+- **All bundles connect to the same database.**
+- The default bundle determines the default URL and route to Manage in the workspace.
+
+### Why isolation matters
+
+IBM's statement in the Performance Wiki is direct: it is a best practice to isolate UI, cron, MIF and report workloads on different server bundle types to reduce contention for resources within the same JVM and pod, and to adjust CPU, memory and replica count to match each workload. The server bundle documentation adds the mechanism: each bundle is scaled and managed independently, bundles do not share CPU or memory, and each bundle can carry its own additional server configuration, JVM options and bundle-level properties.
+
+Think about what that means for a working day. A UI JVM wants low latency and a steady heap. A cron JVM runs escalations, PM generation, inventory reorders and integration polling that can allocate a lot of memory in bursts. An MEA JVM is processing messages as fast as the database will let it. A report JVM spikes on memory. In one shared JVM these workloads fight over heap, garbage collection pauses and threads. Isolated, a runaway cron task makes cron slow, and users do not notice.
+
+### The ManageWorkspace configuration
+
+The bundle layout lives in the `ManageWorkspace` custom resource in the Manage namespace. IBM's wiki shows this fragment for adding MEA and cron bundles:
+
+```yaml
+apiVersion: apps.mas.ibm.com/v1
+kind: ManageWorkspace
+...
+spec:
+  settings:
+    deployment:
+      serverBundles:
+        - bundleType: mea
+          isDefault: false
+          isMobileTarget: false
+          isUserSyncTarget: true
+          name: mea
+          replica: 1
+          routeSubDomain: all
+        - bundleType: cron
+          isDefault: false
+          isMobileTarget: false
+          isUserSyncTarget: false
+          name: cron
+          replica: 1
+```
+
+Two fields in that block matter beyond sizing. `isUserSyncTarget: true` on the MEA bundle is how user synchronization finds its target, which ties back to IBM's rule that a `ui` default needs an `mea` bundle. `isMobileTarget` marks the bundle that serves mobile traffic, which I come back to in the mobile section.
+
+Here is the layout I would start a mid-size production estate from. It is **my illustrative layout, not an IBM-published reference architecture**, and the replica counts are placeholders for the sizing method later in this post:
+
+```yaml
+spec:
+  settings:
+    deployment:
+      serverBundles:
+        - name: ui
+          bundleType: ui
+          isDefault: true
+          isMobileTarget: false
+          isUserSyncTarget: false
+          replica: 5            # sized from concurrent users, see worked example
+        - name: mea
+          bundleType: mea
+          isDefault: false
+          isMobileTarget: false
+          isUserSyncTarget: true
+          replica: 2            # integration load, scale after a dry run
+          routeSubDomain: mea
+        - name: cron
+          bundleType: cron
+          isDefault: false
+          isMobileTarget: false
+          isUserSyncTarget: false
+          replica: 1            # see cron section on running tasks once
+        - name: report
+          bundleType: report
+          isDefault: false
+          isMobileTarget: false
+          isUserSyncTarget: false
+          replica: 1
+```
+
+> <aside>
+>
+> ⚠️ **Verify against your version.** The wiki sample shows `routeSubDomain: all` on the MEA bundle. I show `mea` because a distinct subdomain is how you direct integration traffic at the integration pods; check IBM's server bundle documentation for the behaviour in your Manage version before you apply either.
+>
+> </aside>
+
+### Which pods can you scale, and how
+
+IBM's "Supported pods for Maximo Manage" page lists what accepts a `replicas` field. All default to 1. For the Manage workspace, the scalable pods include the `monitoragent`, `manage-maxinst`, the server bundle pods (named at activation, for example `mea`), the server bundle monitor agent, and several add-on pods. The page notes that for the `ManageApp` and `ManageWorkspace` deployments **more than one replica is not advised**, which applies to the supporting pods rather than to your server bundles: bundle replicas are how you scale Manage. It also says:
+
+- To spread replicas across zones, use `topologySpreadConstraints` on the server bundle pods.
+- Starting in MAS 9.0, `podTemplates` takes precedence over `passThroughDeployment` for server bundle settings such as affinity, node selection and topology spread.
+- `build-config` pods accept only `resources` and `nodeSelector`; the Manage operator and truststore manager pods cannot be modified.
+
+That second point is a common trap in upgraded environments: if you set affinity through the older pass-through mechanism on 8.x and the setting seems to be ignored on 9.x, `podTemplates` is what wins.
+
+### Changing the layout safely
+
+A bundle change restarts pods, so treat it as a maintenance activity.
+
+1. Capture the current CR: `oc get manageworkspace -n mas-<instance>-manage -o yaml > manageworkspace-before.yaml`.
+2. Apply the new `serverBundles` list in non-production first, and watch the pods come up with `oc get pods -n mas-<instance>-manage -w`.
+3. Confirm the default route lands on a `ui` or `all` bundle and that user synchronization still targets the MEA bundle.
+4. Log in, save one work order, and run one integration message end to end.
+5. Only then schedule the production change, and keep the "before" YAML for rollback.
+
+---
+
+## 📐 Pod and JVM Sizing: Start From IBM's Numbers, Finish With Yours
+
+### The resource blocks
+
+IBM's wiki shows two resource blocks in the `ManageWorkspace` spec. The first sets the Manage admin pod, the second sets the server bundle pods:
+
+```yaml
+spec:
+  settings:
+    resources:
+      manageAdmin:
+        limits:
+          cpu: '2'
+          memory: 4Gi
+        requests:
+          cpu: '0.2'
+          memory: 500Mi
+      serverBundles:
+        limits:
+          cpu: '6'
+          memory: 10Gi
+        requests:
+          cpu: '0.2'
+          memory: 1Gi
+```
+
+Read the shape of that sample. The **requests** are tiny (0.2 cores, 1Gi) and the **limits** are big (6 cores, 10Gi). That is a deliberately burstable profile: the scheduler places pods thinking they need almost nothing, and the pods are allowed to use a lot. It packs well, and it is exactly how a node ends up under pressure when several pods burst together. I will come back to the overcommit rule below. (The sample as published has indentation that does not parse as written, so check your own CR's structure rather than pasting this block.)
+
+### Users per pod
+
+IBM's sizing guidance, from its benchmark results:
+
+| Guidance | Number | Notes |
+|---|---|---|
+| General load per UI server bundle pod | **50 to 75 users** | Equivalent to a JVM with 2 cores on Maximo 7.6.x |
+| Heavy workloads (complex Work Order, Scheduler) | **30 to 40 users per JVM** | IBM: "guidance rather than strict rules" |
+| Network bandwidth | Comparable to Maximo EAM | App server to DB, and client to app server |
+| Worker node storage | 300 GB minimum per node | For the MAS app build process |
+
+Bandwidth deserves a footnote. IBM says client traffic may be heavier at first login because of additional user profile data in MAS, but overall bandwidth requirements are comparable to Maximo EAM. In MAS the client talks to the OpenShift ingress rather than to IBM HTTP Server.
+
+### A worked sizing example
+
+This is **my arithmetic on IBM's guidance**, with invented but realistic inputs. Replace every input with your own measurements.
+
+**Inputs:** 1,500 named users, of which about 400 are concurrent at the daily peak. Of those, 340 do general work (work requests, inventory, approvals) and 60 are planners and schedulers working in the Scheduler and complex Work Order screens.
+
+| Step | Calculation | Result |
+|---|---|---|
+| General UI pods | 340 users ÷ 60 users per pod (middle of 50 to 75) | 5.7, round to **6 pods** |
+| Heavy UI pods | 60 users ÷ 35 users per pod (middle of 30 to 40) | 1.7, round to **2 pods** |
+| UI total | 6 + 2, plus 1 for N+1 headroom | **9 UI pods** |
+| MEA pods | Start at 2, adjust after the integration dry run | **2 pods** |
+| Cron pod | One, until you measure a need | **1 pod** |
+| Report pod | One | **1 pod** |
+| Total server bundle pods | 9 + 2 + 1 + 1 | **13 pods** |
+
+Now the cluster impact, using the wiki's sample limits (6 cores and 10Gi per bundle pod) as an upper bound:
+
+| Resource | Per pod limit | × 13 pods | Compared to requests (0.2 core, 1Gi) |
+|---|---|---|---|
+| CPU limit | 6 cores | 78 cores | Requests total only 2.6 cores |
+| Memory limit | 10Gi | 130Gi | Requests total only 13Gi |
+
+IBM's overcommit rule is that CPU limit and memory limit overcommit should stay **below 300%** of node capacity to prevent node pressure. If the Manage pods are the only workload, 78 cores of limits at 300% means you want at least 26 allocatable cores for them, and 130Gi at 300% means about 43Gi of allocatable memory. Add the database, MongoDB, Core and every other application, and the real arithmetic gets tighter. The IBM sizing page's resource statistics table puts a Manage deployment with one all-in-one bundle at 2.9 cores request, 11.1 cores limit, 4.04 GB memory request and 17 GB limit, and says each **additional Manage pod costs about 1 core request, 6 cores limit, 2 GB request and 10 GB limit**. That last row is the one to multiply by your pod count.
+
+IBM is clear that these statistics are reference values for a standard workload based on an IoT small T-shirt size and a single all-in-one bundle, so use them for scale rather than for commitment.
+
+### Node shape
+
+The wiki's OpenShift page gives node guidance that matters once you have 13 bundle pods to place:
+
+| Recommendation | IBM's reasoning |
+|---|---|
+| 16 cores and 64 GB for a normal worker node | About 1 core per node is reserved for internal services; 8-core nodes may lack capacity while 32-core nodes lose a lot of capacity in an outage |
+| Balanced CPU to memory around 1:4 | Fits typical workload |
+| Database nodes with a higher ratio such as 8:1 | Memory-hungry database engines |
+| At least 3 worker nodes | High availability with smaller redundant capacity |
+| 8 cores and 32 GB for production master nodes | Avoids bottlenecks in internal services |
+| 10 GbE for production | Network headroom |
+| 300 GB storage per worker node | MAS app build requirements |
+
+The first row interacts with the pod sizing in a way the wiki leaves implicit. A 6-core limit pod fits on a 16-core node, but only two or three of them can burst at once. Spread your UI pods across at least three nodes with `topologySpreadConstraints`, and remember IBM's Mobile page note: the default topology key in the ManageWorkspace CR is `topology.kubernetes.io/zone`, and in a single-zone cluster, if pods are not spreading across worker nodes, consider `topology.kubernetes.io/hostname` instead.
+
+### When to add an instance
+
+IBM answers a question most teams never ask: when do you stop adding pods and add a MAS instance? Its answer is that a new MAS instance is needed when the **database server can no longer be scaled up**. At that point plan a new MAS instance with a new database server and move sites to it. In other words, pods scale out; the database is the ceiling. This is why Part 3 came before this part.
+
+---
+
+## ☕ The JVM: What Actually Applies to Manage on Liberty
+
+If you came from 7.6 on WebSphere Application Server, your JVM argument list is probably a page long. Most of it does not carry over, and IBM says so plainly: Manage on MAS runs on WebSphere Liberty with OpenJ9 inside OpenShift, and the JVM arguments in the 7.x best practice documents may not be relevant or applicable to 8.x and later. The wiki quotes Liberty Base 21.0.0.5 with OpenJ9 for MAS Manage. That version string looks old next to a 9.2 platform, so I would treat it as the wiki's stated baseline and check the Liberty version your own pods report rather than quote it as current.
+
+### The arguments, and what to do with each
+
+| Argument | IBM's guidance | My take |
+|---|---|---|
+| `-Xgcpolicy:gencon` | Default policy in OpenJ9; works in 7.x and 8.x | Leave it |
+| `-Xmx` or `-XX:MaxRAMPercentage` | With no `-Xmx` and `-XX:+UseContainerSupport`, the JVM uses 75% of container memory as max heap; `-Xmx` overrides `MaxRAMPercentage` | Prefer the percentage, so heap follows the pod limit when you resize |
+| `-XX:+UseContainerSupport` | Enables `InitialRAMPercentage` and `MaxRAMPercentage`; `-Xms`/`-Xmx` can override | Keep on |
+| `-Xmn` (nursery) | 25 to 33% of total heap recommended | Set only when GC logs show nursery pressure |
+| `-Xgcthreads` | Defaults to n-1 where n is the CPU count the node reports; restricting can reduce overhead | Cap it on large nodes with small pod limits |
+| `-XcompilationThreads` | Same logic for JIT threads | Cap alongside GC threads |
+| `-Xshareclasses` | Shares class data between VMs, faster startup after the cache exists | Leave default |
+| `-Xdisableexplicitgc` | Recommended: stops `System.gc()` calls triggering collections | Apply |
+| `-Djava.net.preferIPv4Stack=true` | Recommended for performance; cannot be used on IPv6-only hosts | Apply unless IPv6-only |
+| `-Xverbosegclog` | Enables verbose GC logging | Enable when diagnosing, with log rotation |
+| `-Xcodecache` and `-Xcodecachetotal` | IBM notes a 32 MB maximum for `-Xcodecache` and a 256 MB default for `-Xcodecachetotal` | Leave unless you see code cache warnings |
+| `-XX:PermSize` / `-XX:MaxPermSize` | 7.x best practice said 320m | Legacy HotSpot flags; verify they mean anything on OpenJ9 before keeping them |
+| `-Xtune:virtualized` | Marked "under review" by IBM | Do not adopt without testing |
+
+On the `PermSize` row: IBM's page repeats the 7.x suggestion and adds that if you see an out-of-memory error for PermSize you could raise it to 512 MB or higher. Permanent generation flags belong to older HotSpot JVMs, so I would not carry that line into a MAS environment without confirming that it has an effect on your JVM. This is my view, not IBM's.
+
+### The 10Gi is not the heap
+
+IBM makes a point worth underlining: the Manage pod memory limit of 10G is not the total heap size. The heap is set by `-Xmx` or `MaxRAMPercentage`, and the 10G also covers memory used by WebSphere for cache and compilation, and by the Maximo MMI container. With the default 75% setting, a 10Gi limit gives a maximum heap of about 7.5Gi, a nursery (at 25 to 33%) of roughly 1.9 to 2.5Gi, and about 2.5Gi left for everything else in the pod. If you set `-Xmx` to 9G in a 10Gi pod you have left the pod about 1Gi for native memory, JIT, thread stacks and the sidecar, and the kernel will kill it with an out-of-memory error that looks like a Java crash but is not.
+
+### Where to set them
+
+IBM Docs describes the UI path for JVM options, and its page does not mention a custom resource:
+
+1. Log in to MAS as a system administrator.
+2. Suite administration, then Workspace, then the Manage tile.
+3. Actions menu, then **Update configuration**.
+4. In the **Server bundles** row, click the Edit icon.
+5. Turn **System managed** off.
+6. In **Additional properties** for the bundle, click **View**. This only appears when server bundles have been added.
+7. Enter your options in **Java virtual machine options**.
+8. Save, then **Activate** (new deployment) or **Apply changes** (existing deployment).
+
+IBM's page does not give option syntax, example values, or restart behaviour, so test in non-production and watch the pod roll. Because JVM options are per bundle, you can give the cron bundle a larger nursery and the UI bundle a more conservative setup without compromise, which is another reason to split bundles.
+
+### Threads: leave them alone first
+
+The wiki notes that since Liberty 18.0.0.1 the thread growth algorithm grows capacity more aggressively to react to peak load, and for many environments the autonomic tuning needs no operator tuning. If necessary you can adjust `coreThreads` and `maxThreads`.
+
+An IBM Community thread from April and May 2025 shows how that plays out. An architect from a systems integrator asked whether anyone had tuned the thread parameters for Manage. IBM's performance architect for Maximo replied that a lab test handled more than 2,354 requests per minute (about 40 per second) with no extra `DefaultExecutor` settings, that the default pool size in their environment was around 10 to 11, and that once you account for pod resource requests and limits the default is sufficient for most cases. A Cohesive support lead then suggested the thread pool was unlikely to be the cause and listed what to check instead:
+
+- Slow SQL log entries (`BMXAA6720W`), with the SQL logger set to WARN
+- Repeated errors in the logs
+- Memory used by each MboSet
+- Database connection counts by MboSet
+
+That list is a better first hour of troubleshooting than any thread pool experiment, and I will fold it into the triage section. I would add one caution about the source: that thread is two practitioners and one IBM engineer in a community forum, not an IBM service-level statement.
+
+---
+
+## 🧪 Cron Tasks: The Quiet Load
+
+Cron tasks are where nights and weekends go to disappear. They are scheduled background jobs that run inside the Manage JVMs, and on MAS they land on whichever bundle is allowed to run them. The sources I read give you the architecture; they do not give a cron tuning guide, so this section mixes IBM's bundle facts with practitioner experience, and I label which is which.
+
+### What IBM tells you
+
+- A `cron` bundle exists to run cron task components, and it cannot serve UI requests.
+- An `all` bundle runs cron components too. If your only bundle is `all`, your cron tasks run in the same JVM as your users.
+- Each bundle has its own CPU, memory, JVM options and properties, so a cron bundle can be sized for batch work.
+- All bundles share the same database, so cron load still lands on your database. Isolating the JVM does not isolate the disk.
+
+### Your own cron inventory
+
+The knowledge base I use for this series lists the kinds of tasks that tend to dominate real estates. These come from the purchasing, work order and integration guides, not from the Performance Wiki:
+
+| Cron task | What it does | Load pattern |
+|---|---|---|
+| `PMWoGenCronTask` | Generates work orders from preventive maintenance records | Burst at schedule time, scales with PM count |
+| `EscalationCronTask` | Drives the escalation engine | Frequent, scales with escalation and record counts |
+| `InvoiceMatchCronTask` | Sweeps WAPPR invoices and re-runs matching | Periodic sweep |
+| `ConsignmentInvoiceCronTask` | Auto-generates invoices from consignment consumption | Event-driven, periodic |
+| `FLATFILECONSUMER` | Processes flat file integration; IBM support recommends it for importing huge flat files through MIF | Burst, IO heavy |
+| Custom tasks (for example `SC_GenInvCronTask`) | Customer logic, often legacy from 7.6 | Unknown until measured |
+
+### A cron review you can do this week
+
+1. **List every active cron task instance** with its schedule and run-as user, from the Cron Task Setup application. Export the list.
+2. **Find the instances that run more often than their data changes.** An escalation firing every minute against records that change daily is wasted load.
+3. **Find the overlaps.** Several heavy tasks scheduled at the same minute (the top of the hour is a classic) hit the database together. Stagger them.
+4. **Look for the slow ones.** Review the cron task history for instances whose run times are growing, because growth usually tracks table growth and missing statistics (Part 3).
+5. **Retire the zombies.** Every 7.6 estate carries cron tasks nobody can explain. Legacy custom tasks such as reorder generators should be checked after upgrade, as the purchasing guides in my knowledge base recommend, and some can be replaced with automation scripts.
+6. **Decide where each task should run.** On a split layout the cron bundle runs them. If you need a heavy task on its own JVM, IBM's rule that you can deploy multiple bundles of the same type is the mechanism: a second `cron` bundle with its own limits.
+
+One more practitioner note, which I have not verified against a current IBM page and you should confirm before relying on it: classic Maximo has a system property, `mxe.crontask.donotrun`, which lists cron task names a given JVM must not run. On a layout where UI and cron are already separate bundles you should not need it, but in an `all`-bundle estate it is the traditional lever to keep a task off the user-facing JVM. Check the property's availability and behaviour in your Manage version first.
+
+### Cron and the database
+
+The Db2 advice from Part 3 matters most here: cron tasks are the workload that suffers when `runstats` has not run, because they scan big tables on a schedule. IBM's wiki recommends increasing the `maxsequence` cache to 50 and running `runstats` or `reorg` periodically, and also that you consider archiving records over one year old. The wiki says Manage does not support MPP or table partitioning in the current version, so archiving is the lever, with Optim named as one tool.
+
+---
+
+## 🔌 Integration Load: MIF, MEA Pods and the Queue
+
+IBM's performance team ran lab tests for the Maximo Integration Framework on both JMS and Kafka. The conclusions are specific enough to design against, and they overturn a common instinct: you cannot fix a slow integration by adding pods if the database disk is already the limit.
+
+### The headline finding
+
+On both the JMS and Kafka pages, the lab results show a significant correlation between transactions per second and database disk IO utilisation. The IO workload acts as a limit on how many transactions the system can handle. IBM's second observation follows from it: when IO is *not* the limiting factor, increasing the number of MEA pods improves processing performance, and MEA pods are able to scale linearly.
+
+So the first question for a slow integration is not "how many MEA pods" but "what is database disk IO utilisation doing?" If it is saturated, MEA pods will just queue at the database.
+
+### The factors, from IBM's table
+
+IBM's "major performance related factors for MIF" table is worth reading whole. The rows I would act on:
+
+| Component | Setting or factor | IBM's observation and best practice |
+|---|---|---|
+| JMS and MIF | `maxMessageDepth` | Make it large enough; if it is too small and the queue fills, the process fails and can be hard to recover. Recommend 500,000, the same as SIBus |
+| JMS and MIF | `maxEndpoints` | Limit `maxConcurrency` |
+| JMS and MIF | MDB (`maxConcurrency`) | Together with batch size, drives speed and MEA pod resource use |
+| JMS and MIF | Batch size (`maxBatchSize`) | Together with MDB count, drives speed and MEA pod resource use |
+| Maximo | Number of JMS pods | One JMS server works well in the benchmark and does not consume significant resources |
+| Maximo | Number of MEA pods | Scales linearly when IO is not limiting |
+| Maximo | MEA CPU and memory | Tune MDB and batch size to keep MEA pods in a reasonable range, for example 2 to 3 cores and 4 to 7 GB |
+| Maximo | Maximo sequence cache | A reasonable number, for example 20 or 50, reduces database CPU and processing time |
+| Maximo | `mxe.int.splitdataonpost` | In some circumstances it showed no positive impact; validate with a dry run in your environment |
+| Message | Records per message | Tunable; interacts with batch size |
+| Message | Record quality | A large number of internal error messages slows overall processing |
+| Misc | Method and speed of posting messages into the queue | Post to the queue as fast as possible; a slow pace lowers the environment's processing capacity |
+| Misc | Worker node capacity | May limit MEA pod capacity; consider pod distribution |
+
+### The test method IBM recommends
+
+The wiki's test methodology is a good template for any integration load test:
+
+1. **Monitor first.** Set up monitoring of the essential metrics before the test (Part 5).
+2. **Dry run with a single MEA pod** to establish a baseline.
+3. **Tune MDB count and batch size** until the MEA pod sits in a sensible range, aiming for about 2 cores and 4 to 7 GB.
+4. **Scale MEA pods** to meet the requirement.
+5. **Keep watching the database** for the bottleneck that appears next.
+
+### JMS versus Kafka
+
+IBM's two pages differ in one detail that should influence your choice of transport:
+
+| Observation | JMS | Kafka |
+|---|---|---|
+| Single MEA JVM throughput | Baseline | Same TPS as JMS |
+| Multiple processing JVMs | JMS pulls ahead; its workload distribution is more even | Distribution difference grew from 2% to 10% when CRON JVMs and partitions doubled |
+| Scaling effect | More MEA pods help when IO allows | Doubling CRON JVMs and topic partitions doubled maximum TPS, but the overall rate then dropped from 72 to 66 TPS in the final phase |
+| Cause of the Kafka drop | n/a | Kafka's rule of a maximum of one consumer per partition |
+| Message size | n/a | More partitions may help small messages (for example 10 assets per message) more than large ones |
+| Recommended topology | One JMS server | One topic with 6 partitions, and multiple topics for parallel processing |
+
+The "72 to 66" figures are IBM's own lab numbers from one test, so do not extrapolate them to your hardware. The lesson is structural: with Kafka, parallelism is capped by partitions, and an uneven spread across consumers can eat the gain from adding workers.
+
+### When the queue is slow for a boring reason
+
+The JMS page contains a diagnosis I have not seen elsewhere and which will save you a long night. JMS commit delays caused by high fsync latency, or by too little IOPS on the message store volume, can be a major cause of poor performance. IBM says the persistent volume used by the JMS pod must support **sub-millisecond average disk write latency**, and gives a way to see it in thread dumps:
+
+- In the cron pods, look for `psdi/iface/jms/JMSClient.commitTx` in thread stacks. That points to a delay in the JMS commit.
+- In the JMS pod, look for `LogBuffer.waitForFlush`. That points to a delay flushing the commit to disk.
+
+IBM's flow: the producer thread blocks in `waitToComplete()` while the messaging engine dispatcher thread sits in `rcvXACommit()`, then in `LogBuffer.waitForFlush()`, which waits on a flush helper thread doing `fsync()` on the log file, and only then does the commit acknowledgement go back. If your threads are parked in `waitForFlush`, no number of MEA pods helps. You need faster storage under the JMS pod. IBM provides a Python IOPS-and-latency checker script (linked from the wiki's disk IOPS page) for measuring write latency of the storage from inside a pod that has Python.
+
+### Integration checklist
+
+| Check | Pass condition |
+|---|---|
+| Queue depth setting | `maxMessageDepth` at least 500,000 (JMS) |
+| Queue never starved | Messages waiting while consumers work; an empty queue means the producer is the bottleneck |
+| Error rate | Low and watched; review the message reprocessing application for patterns |
+| MEA pod size | About 2 to 3 cores and 4 to 7 GB under load |
+| Database IO | Not saturated; if it is, stop adding pods |
+| JMS storage | Sub-millisecond write latency on the message store volume |
+| Worker capacity | Enough nodes for the MEA pods you plan |
+| Sequence cache | Raised from default (20 or 50) |
+
+---
+
+## 🌐 The Router: Balance Algorithm, Timeouts and Ingress
+
+Three router settings cause real, repeatable problems.
+
+### Load balancing algorithm
+
+IBM's Manage page says lab testing showed **roundrobin** gave more stable and better performance than **leastconn**, "which is the default". IBM points to the OpenShift page for how to change it, which says the algorithm is set per route with an annotation:
+
+```bash
+oc annotate route <manage-route> -n mas-<instance>-manage \
+  haproxy.router.openshift.io/balance=roundrobin --overwrite
+```
+
+Here IBM's two pages disagree. The OpenShift page says that from OCP 4.10 there are four algorithms (source, roundrobin, random, leastconn) and the **default is random**; before 4.10 it was leastconn. So on a current cluster the default is not leastconn. The practical reading: set `roundrobin` explicitly on the Manage routes rather than relying on whatever default your OCP version carries, and check the annotation with `oc get route -o yaml`. I list this one in the reviewer notes.
+
+### Ingress capacity
+
+IBM says OpenShift's HAProxy supports up to 20k connections per pod and suggests scaling up the ingress controller for applications with high connection volume, giving this command:
+
+```bash
+oc patch -n openshift-ingress-operator ingresscontroller/default \
+  --patch '{"spec":{"replicas": 3}}' --type=merge
+```
+
+A Manage estate rarely hits 20k connections, but IoT in the same cluster can. Note IBM's warning that OpenShift no longer supports changing ingress deployments through environment variables such as `ROUTER_THREADS` or `ROUTER_DEFAULT_CLIENT_TIMEOUT`, and that edits to the deployment are overwritten while the Ingress Operator is enabled. Use the `IngressController` spec.
+
+### Timeouts for long requests and mobile downloads
+
+The Mobile page tells you that the default server and client timeouts are too low for large downloads, and gives:
+
+```bash
+oc -n openshift-ingress-operator patch ingresscontroller/default \
+  --type=merge -p '{"spec":{"tuningOptions": {"clientTimeout": "300s"}}}'
+oc -n openshift-ingress-operator patch ingresscontroller/default \
+  --type=merge -p '{"spec":{"tuningOptions": {"serverTimeout": "300s"}}}'
+```
+
+This changes the default ingress controller for every route on the cluster, so decide deliberately.
+
+### The Ping servlet: is it the cluster or the gateway?
+
+When a request times out and you suspect something between the user and the cluster, a gateway or load balancer with a short idle timeout, IBM's diagnosis section has a small servlet for it. You load it as a customization archive through the `ManageWorkspace` CR, which **restarts the server bundles**, then call it:
+
+```bash
+curl https://<manage-host>/maximo/ping?timeout=300
+```
+
+If a 1 second wait returns `{"thread wait time":"1 seconds","status":"ok"}` but the 300 second one hangs outside the cluster, an external device is cutting the connection. Repeat from the `maxinst` pod against the internal service address with `curl --insecure`; if it works inside, you have found the culprit outside. Because the install restarts bundles, do it in a maintenance window, and note IBM's statement that the servlet is not in the base server bundle code.
+
+---
+
+## 🔑 The Two-Hour Surprise: LTPA Timeout
+
+A Manage user working actively gets an error asking them to reload after two hours. IBM's wiki explains it: the default two-hour period is when the LTPA token in Manage expires, which redirects the user to the MAS login page.
+
+It is not a performance problem, but it arrives as one: "the system froze, I lost my work." The user was mid-edit on a long work order when the token lapsed.
+
+IBM has a Support article (document 6841623) on increasing the LTPA token timeout in Manage. What I could verify from its public abstract: it modifies `server.xml`, and it applies to MAS 8.10, 8.11 and 9.0 and to Maximo Application Suite as a Service (Manage). The steps themselves sit behind an IBM login, so I am not going to guess at the property names. Read the article, apply it in non-production, and discuss the new value with your security team before production. A longer token means a longer window for a captured session.
+
+---
+
+## 🗄️ Database Basics You Must Verify From the Manage Side
+
+Part 3 covers Db2 tuning in depth. From the Manage side, IBM's wiki puts three checks in front of any pod tuning, and each is cheap to run.
+
+### Disk
+
+IBM calls disk performance critical to database performance and recommends storage with **throughput above 250 MB/s** and **10 to 100 IOPS per GB** depending on volume size. IBM's `dd` example on a Db2u pod shows 378 MB/s for a 1 GiB write:
+
+```bash
+dd if=/dev/zero of=<db2_data_directory>/ddtest bs=128K count=8192
+```
+
+> <aside>
+>
+> ⚠️ **IBM's warning, repeated because it matters:** make sure `ddtest` is appended to the end of the data path, or the `dd` command will wipe the Db2 data directory. Never run it on a path you have not looked at, and never point it at a production data directory without a backup (see Part 4).
+>
+> </aside>
+
+### Network latency between application and database
+
+IBM: confirm latency is **below 50 ms** with a ping test; for production, **strongly recommend below 10 ms**, with the application and database in the same network segment. In cloud deployments, put the database and OpenShift cluster in the same region and possibly the same availability zone.
+
+Latency multiplies. A Manage save that issues 40 SQL statements on a 12 ms link spends nearly half a second on wire time before the database does anything.
+
+### The DBTest utility
+
+IBM ships a `DBTest` Java utility (Java 11 or higher) that measures database connection time, query execution time and fetch time for every 100 records. IBM's guidance is that with healthy latency and database the expected fetch time is **under 10 milliseconds**. It runs from the `maxinst` pod or a UI pod:
+
+```bash
+cd /tmp
+curl -L -v -o run-dbtest-in-maxinst-pod.sh \
+  https://ibm-mas.github.io/mas-performance/pd/download/DBTest/run-dbtest-in-maxinst-pod.sh
+bash run-dbtest-in-maxinst-pod.sh
+```
+
+Read the script before you run it, as with anything you download and execute inside a production pod. In query mode (`-q`) it also prints the query result alongside the three timings, which is how you separate "the database is slow" from "the pod is slow" in a single command.
+
+### Containerised Db2 and text search
+
+IBM flags something that explains many list-page complaints: containerized Db2u and Db2 Warehouse deployments **do not support text search**, whereas regular Db2, Oracle and SQL Server do. Searching by Description on a list page is the typical case. IBM's workaround advice is that a non-unique index on `DESCRIPTION` helps when the search is exact (search type EXACT, or the user types `=` before the string) or a prefix (the user types `%` at the end), and that adding other indexed attributes to the query helps too. If your users search descriptions with a leading wildcard, no pod setting will fix it.
+
+### The rest of the Db2 list
+
+IBM's highlights, which Part 3 explains: raise the maxsequence cache to 50; run `runstats` or `reorg` periodically; separate system, user, backup, log and temporary tablespace storage where possible; Manage requires row-organised tables (`db2 update db cfg using DFT_TABLE_ORG ROW`); set `db2_workload=maximo` so `WLM_ADMISSION_CTRL` is `NO`; do not change `DB2_OVERRIDE_NUM_CPUS` or `DB2_OVERRIDE_THREADING_DEGREE`; do not set Db2 instance memory, as the operator calculates it from the container limit; and keep monitor switches off at the database manager level because enabling them for all sessions costs 5 to 10%.
+
+---
+
+## 🖥️ The Start Center and Other UI Load
+
+The Start Center is the most common source of "slow login" tickets, and it is mostly a configuration problem. IBM's Support article on improving Start Center performance gives specific limits:
+
+| Recommendation | Detail |
+|---|---|
+| Keep templates lean | Many portlets slow the Start Center; use tabs so each shows only a few |
+| Light first tab | Create security groups with tabbed Start Centers and keep the first tab light |
+| Result set portlets | No more than 1 to 2 in any template |
+| Independent groups | Limit "Independent of Other Groups" per user to two or fewer |
+| Query hygiene | Avoid queries that could return hundreds of thousands of records; include `SITEID` for site-level tables such as `WORKORDER`; remove unnecessary `ORDER BY` |
+| KPIs | For Live KPIs, consider reading from a table refreshed by a cron task instead of running the query on every open |
+| Indexes | Index `LAYOUTID` on all Start Center portlet configuration tables |
+| Clean-up | Delete Start Center records for inactive users |
+| System property | Set `mxe.db.UseSiteListInQuery` to 1 (IBM says it defaults to 0 in new environments) |
+
+Remember the Performance Wiki's own point: Manage uses HTTP/1.1, so portlet XHR calls from one page are sequential. Eight portlets that each take 400 ms make a 3.2 second page.
+
+### Mobile
+
+For mobile users, IBM's tips are: create a mobile database to support data downloads (online downloads can significantly affect the mobile pods, the database and the network); raise ingress timeouts as above; scale up the `coreapi` pod to improve downloads; consider scaling up mobile pods when a pod's CPU use exceeds 4; make sure database disk throughput is good; and spread pods evenly across nodes. Pair this with the `isMobileTarget` field in the bundle layout so mobile traffic has its own pod set, not the UI bundle's.
+
+---
+
+## 🩺 Slow System Triage: The Order That Saves Time
+
+This is the sequence I follow. It merges IBM's performance check list, its memory diagnosis steps and the Community thread's advice. The ordering is mine.
+
+### Step 1: Platform health (5 minutes)
+
+IBM's check list, in practical form:
+
+- Any worker node not Ready? Any node with memory, disk or PID pressure?
+- Any pod or node with CPU or memory approaching its limit?
+- Any pod that has restarted many times recently?
+- Any node or pod with high system or IO wait (IBM uses 20% as a warning level)?
+
+```bash
+oc get nodes
+oc adm top nodes
+oc adm top pods -n mas-<instance>-manage
+oc get pods -n mas-<instance>-manage --sort-by='.status.containerStatuses[0].restartCount'
+```
+
+### Step 2: Is the response time actually high?
+
+Take the 2 second transaction from earlier. Is a plain save over 2 seconds? Are there queries over 2 seconds or with high CPU cost? Check the network for bottlenecks such as the load balancer.
+
+### Step 3: Slow SQL
+
+Turn on Maximo's slow SQL logging and read `BMXAA6720W` entries, as the Community thread suggests. IBM's Support page "System properties to monitor and troubleshoot performance" lists the relevant properties: `mxe.db.LogSQLTimeLimit` (slow SQL threshold), `mxe.db.FetchResultLogLimit`, `MBOCount`, `mxe.db.logSQLPlan` and `mxe.db.sqlTableScanExclude`. Only the abstract is public, so I could not confirm defaults or recommended values; read the full article before changing production values.
+
+### Step 4: Application server or database server?
+
+IBM's decision list:
+
+| If the app server is busy | If the database server is busy |
+|---|---|
+| Check CPU and memory request and limit values | Check CPU, memory, disk use and limit values |
+| Consider more replicas | Check background utilities such as backups |
+| | Check database locks |
+| | Check for high-cost queries |
+| | Check disk performance |
+
+Note "backups" on the right-hand side: a Db2 backup running at 10 a.m. can look exactly like an application slowdown. That is why Part 4 and Part 5 belong together.
+
+### Step 5: JVM diagnostics when pods restart or burn CPU
+
+IBM names the symptoms of memory pressure: pods restarting due to JVM out-of-memory exceptions, and pods with unusually high CPU from excessive garbage collection. IBM's heap dump procedure:
+
+```bash
+oc exec -it -n mas-<instance>-manage <pod> -- bash
+server dump defaultServer --archive=/tmp/package_file_name.dump.zip --include=heap
+exit
+oc cp --retries=10 -n mas-<instance>-manage \
+  <pod>:/tmp/package_file_name.dump.zip ./package_file_name.dump.zip
+```
+
+Extract the zip and open the `.phd` file in Eclipse Memory Analyzer (MAT); IBM says to install the IBM DTFJ plugins first. For non-Liberty JVMs IBM says `jcmd` can produce a heap dump. A heap dump contains live data, including record contents and possibly credentials, so treat the file as sensitive: restrict access and delete it when finished.
+
+For thread-level evidence, the same technique used for JMS (reading thread dumps for `commitTx`) works for any "stuck" symptom.
+
+### Step 6: Use the right tool for the question
+
+IBM's diagnostic utility table, trimmed to what matters for Manage:
+
+| Scope | Tool | Use |
+|---|---|---|
+| OpenShift and MAS | OpenShift monitoring (Part 5) | Cluster and pod health |
+| Db2 | IBM Data Server Manager, `db2top` | Historical and real-time troubleshooting |
+| Network and DB | DBTest | Latency and fetch time |
+| JVM | IBM Support Assistant, MAT | Heap dumps and GC log analysis |
+| Maximo | PerfMon | UI activity tracing, **dev/test with a single user only**; IBM warns it can significantly degrade server performance |
+| Browser | HAR viewer | Client-side performance |
+| Nodes | `top`, `sar`, `oc debug node/<name>` | Process, resource and node debugging |
+| Storage | IBM IOPS-and-latency Python checker (wiki disk IOPS page) | Disk performance checker |
+
+That PerfMon warning is worth stressing. Never switch on the Maximo activity dashboard on a shared production system to see what one slow user is doing.
+
+---
+
+## 🔬 Where IBM's Sources Disagree or Look Dated
+
+I have noted these because you will notice them, and I would rather you hear it from me.
+
+| Topic | What the sources say | How I handled it |
+|---|---|---|
+| Default balance algorithm | Manage page says leastconn is the default; OpenShift page says random from OCP 4.10 | Set `roundrobin` explicitly and verify the route annotation |
+| Liberty version | Wiki says Liberty Base 21.0.0.5 with OpenJ9 | Quoted as the wiki's baseline; check your own pods |
+| 7.x JVM flags | JVM page repeats `PermSize` advice from 7.x | Flagged as HotSpot-era; verify before keeping |
+| Two-second target | IBM wiki defines it; community posts and this series' index call it informal | Treated as IBM's expectation with explicit exclusions |
+| Resource YAML | Wiki sample's indentation does not parse as written | Told you to check your CR |
+| Replica guidance | Pod page says more than one replica is not advised for `ManageApp`/`ManageWorkspace` deployments | Read as the supporting pods, not server bundles |
+
+---
+
+## 🧰 A Tuning Runbook You Can Defend
+
+| Order | Change | Evidence needed first | How to check it worked | Rollback |
+|---:|---|---|---|---|
+| 1 | Verify database latency, fetch time and disk | DBTest, ping, `dd` or IOPS script | Fetch under 10 ms, disk above 250 MB/s | n/a (read only) |
+| 2 | Set route balance to `roundrobin` | Current route annotation | Even pod load in the metrics | Remove the annotation |
+| 3 | Split bundles (ui, mea, cron, report) | Current CR, pod list | UI latency stable during cron windows | Restore the saved CR |
+| 4 | Size UI replicas from concurrent users | Peak concurrency, load test | Heap used and CPU per pod below limits | Reduce replicas |
+| 5 | Let the container size the heap | GC logs, restart history | No OOM restarts, GC time low | Revert JVM options |
+| 6 | Tune cron schedule and overlaps | Cron inventory and history | Shorter, non-overlapping runs | Restore schedules |
+| 7 | Tune MIF: MDB, batch, depth, partitions | Dry run with one MEA pod | MEA pod 2 to 3 cores, queue never starved or full | Previous values |
+| 8 | Extend LTPA timeout | IBM article 6841623, security sign-off | No two-hour reload complaints | Restore `server.xml` value |
+
+Change one row at a time, and re-measure after each. If two changes land in the same window you will never know which one helped.
+
+---
+
+## 🛠️ The Seven Commandments of Manage Performance
+
+1. **Thou shalt define slow with a number.** A single-MBO save in under 2 seconds is IBM's yardstick; measure it before you argue.
+2. **Thou shalt triage the database first.** Latency, fetch time, disk. Pods cannot outrun a slow disk.
+3. **Thou shalt separate the workloads.** UI, cron, MEA and report each get their own bundle and their own limits.
+4. **Thou shalt size from guidance and then prove it with a test.** 50 to 75 users per UI pod is a start, not an answer.
+5. **Thou shalt let the container size the heap.** And remember the pod limit is not the heap.
+6. **Thou shalt stop adding MEA pods when the disk is saturated.** Integration throughput follows database IO.
+7. **Thou shalt change one thing at a time and keep the rollback.** Evidence before change, evidence after.
+
+---
+
+## 🎯 What to Do This Week
+
+| Day | Action |
+|---|---|
+| Monday | Record the current bundle layout (`oc get manageworkspace -o yaml`) and pod resource limits. Note whether UI, cron and MEA share a bundle |
+| Tuesday | Run DBTest and a ping test from a UI pod. Run the disk test on the Db2 volume (carefully, per IBM's warning). Compare against 10 ms and 250 MB/s |
+| Wednesday | Check the route balance annotation and ingress replicas. Set `roundrobin` in non-production and compare pod load |
+| Thursday | Export the cron task list. Find overlaps and growing run times. Plan staggering |
+| Friday | Write the 2 second test: one plain work order save, timed, with the pod metrics from Part 5 on screen. Book a load test for the bundle split |
+
+Next in the series: **Part 7, Staying Inside the Support Window**, on OCP 4.18 to 4.22, CPD 5.3.1 and MongoDB 8, because the best-tuned Manage is still in trouble if the platform under it falls out of support.
+
+---
+
+## 📚 References
+
+- [MAS Performance Wiki: MAS Manage (latency definition, bundles, resource sample, load balancer, LTPA, Liberty, database)](https://ibm-mas.github.io/mas-performance/mas/manage/bestpractice/)
+- [MAS Performance Wiki: JVM performance insight (OpenJ9 and Liberty arguments)](https://ibm-mas.github.io/mas-performance/pd/jvm-performance-insight/)
+- [MAS Performance Wiki: Sizing guidance (users per pod, overcommit, resource statistics)](https://ibm-mas.github.io/mas-performance/mas/sizing/guidance/)
+- [MAS Performance Wiki: MAS Manage MIF/JMS (lab results, factors table, commit delay diagnosis)](https://ibm-mas.github.io/mas-performance/mas/mif-jms/bestpractice/)
+- [MAS Performance Wiki: MAS Manage MIF/Kafka (partition and consumer findings)](https://ibm-mas.github.io/mas-performance/mas/mif-kafka/bestpractice/)
+- [MAS Performance Wiki: OpenShift (balance algorithm, ingress, node sizing)](https://ibm-mas.github.io/mas-performance/mas/ocp/bestpractice/)
+- [MAS Performance Wiki: Performance diagnosis (check list, heap dump procedure, diagnostic tools)](https://ibm-mas.github.io/mas-performance/pd/checklist/)
+- [GitHub: ibm-mas/mas-performance (source of the Performance Wiki; last commit read 2 September 2026)](https://github.com/ibm-mas/mas-performance)
+- [IBM Docs: Server bundle overview (bundle types, defaults, constraints)](https://www.ibm.com/docs/en/SSRHPA_cd/appsuite/manage_deploy/c_mas_man_overview.html)
+- [IBM Docs: Configuring JVM options (UI procedure for Manage server bundles)](https://www.ibm.com/docs/SSLPL8_cd/com.ibm.mam.doc/manage_deploy/t_mas_man_config_jvm.html)
+- [IBM Docs: Supported pods for Maximo Manage (replicas, podTemplates, topology spread)](https://www.ibm.com/docs/SSRHPA_cd/appsuite/admin/c_supported_pods_manage.html)
+- [IBM Support: Improving Start Center performance in Maximo](https://www.ibm.com/support/pages/improving-start-center-performance-maximo)
+- [IBM Support: System properties to monitor and troubleshoot performance (abstract only is public)](https://www.ibm.com/support/pages/system-properties-monitor-and-troubleshoot-performance)
+- [IBM Support: Increasing the LTPA token timeout in Manage, document 6841623 (abstract only is public)](https://www.ibm.com/support/pages/node/6841623)
+- [IBM Community: Thread pool tuning in MAS Manage (April to May 2025)](https://community.ibm.com/community/user/discussion/thread-pool-tuning-in-mas-manage)
+- [Part 3 of this series: Db2 Tuning for Maximo Manage](/blog/mas-platops-03-db2-tuning)
+- [Part 5 of this series: Observability for MAS](/blog/mas-platops-05-observability)
+
+---
+
+**About TheMaximoGuys:** We help Maximo administrators, developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | October 2026*
+
+<!--
+REVIEWER NOTES (night-shift, 2026-10-21, platops-06):
+- SOURCES READ LIVE 2026-10-21: MAS Performance Wiki source files cloned from github.com/ibm-mas/mas-performance (last commit 2 Sep 2026): docs/mas/manage/bestpractice.md, pd/jvm-performance-insight.md, mas/sizing/guidance.md, mas/mif-jms/bestpractice.md, mas/mif-kafka/bestpractice.md, mas/ocp/bestpractice.md, mas/mobile/bestpractice.md, pd/checklist.md, pd/dbtest.md, pd/pingtest.md, pd/disk-iops-and-latency.md, maximo-7/bestpractice.md. IBM Docs fetched: server bundle overview (SSRHPA_cd path), Configuring JVM options, Supported pods for Maximo Manage. IBM Support: Improving Start Center performance (full), System properties to monitor performance (abstract only), LTPA timeout 6841623 (abstract only). IBM Community thread-pool tuning (Apr-May 2025).
+- NOT READ: IBM MAS pod details page (the mas-pods-explained CLI guide redirects there; fetch returned only a redirect notice), the Maximo 7.6.x Best Practices PDF the wiki says still applies to Db2/Oracle/SQL Server, the 6841623 and system-properties article bodies (IBM login), IBM's Manage monitoring metrics. The first IBM Docs server-bundle URL (SSLPL8_cd) returned 404; the SSRHPA_cd path worked.
+- KB: DOC00 5.3 carries only a one-line brief for Part 6 (no CHG id applies); DOC10/DOC9/DOC7 supplied the cron task names; DOC11 supplied the FLATFILECONSUMER reference. The SearchMaximo skill's knowledge-base path does not exist on this machine (same as Parts 4 and 5), so facts come from web and GitHub primaries. No CHG ids' URLs were cited because none is about Manage performance; CHG-007 (Manage 9.2.4) is the current train and is not cited in the body.
+- DISCREPANCIES FOR REVIEW: (1) Manage page says leastconn is the default balance algorithm; OCP page says random since 4.10. (2) The series index (Part 0) calls the two-second target a community starting point; the wiki states it as IBM's expectation with exclusions. Index not edited per job rules; consider a correction. (3) Wiki says Liberty Base 21.0.0.5 + OpenJ9; likely stale for 9.2. (4) Wiki resource YAML indentation does not parse as published. (5) PermSize/MaxPermSize advice is a 7.x holdover. (6) Sizing statistics page is a standard-workload reference (IoT small T-shirt size, one all-in-one bundle).
+- OUR ADDITIONS (not IBM): the worked sizing example and its inputs, the illustrative bundle layout and replica counts, the `routeSubDomain: mea` suggestion, the cron review steps, the mention of `mxe.crontask.donotrun` (from general Maximo knowledge, not read on any IBM page this run), the 40-SQL latency illustration, the triage ordering, the runbook table, the oc commands for node/pod checks, the oc annotate command form (IBM gives only the annotation key and value), and all "my take" column entries.
+- [IND]-only claims: none used. No pricing, dates or version numbers beyond those read on IBM/GitHub pages.
+- Word count was benchmarked against siblings (parts 8,078 to 10,186 including frontmatter); see the final check.
+-->
