@@ -1,0 +1,911 @@
+---
+title: "Observability for MAS: Prometheus, Grafana and Instana, and What to Alert On"
+description: "How to monitor Maximo Manage on OpenShift: enable user workload monitoring, set Prometheus retention that actually reaches Manage metrics, use IBM's monitoring agent and default PodMonitors, wire up Grafana v5, write alerts that matter, and decide where Instana fits."
+date: "2026-10-21"
+slug: "mas-platops-05-observability"
+tags: ["Maximo", "MAS", "Prometheus", "Grafana", "Instana", "Observability", "Monitoring", "OpenShift", "Platform Operations", "Administrator"]
+draft: true
+tier: "admin"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-platops-05-observability.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Do I have to create PodMonitors to get Maximo Manage metrics into Prometheus?"
+    answer: "Not on current documentation. IBM's PodMonitor page states 'You do not have to create PodMonitors anymore' and tells you to look in the Manage project for two defaults, `maximo-instancelevel-monitoragent` and `maximo-serverlevel-monitoragent`. What you do have to do is make sure monitoring for user-defined projects is switched on, because without it OpenShift ignores PodMonitor and ServiceMonitor resources in application namespaces. If you want one server bundle type only (UI, MEA, Report or Cron), you edit the server-level PodMonitor and add a `mas.ibm.com/appTypeName` selector label. The older 8.3-era IBM Support how-to still tells you to hand-write a PodMonitor, so if you find two conflicting procedures, trust the current IBM Docs page and verify with `oc get podmonitor -n <manage namespace>`."
+  - question: "Does a 90-day Prometheus retention setting give me 90 days of Manage metrics?"
+    answer: "Only if you set it on the right Prometheus. IBM's Performance Wiki sample ConfigMap sets `retention: 90d` under `prometheusK8s` in `cluster-monitoring-config`, which is the platform Prometheus. Metrics from user-defined projects, which is where Manage's agent metrics land once user workload monitoring is enabled, are held by a separate Prometheus configured through the `user-workload-monitoring-config` ConfigMap in `openshift-user-workload-monitoring`, under the `prometheus` key. The IBM ansible-devops `ocp_cluster_monitoring` role writes both ConfigMaps, which is the pattern to copy. Also size the volume: the role's own notes estimate roughly 1 to 2 GB per day for a typical MAS deployment, so 90 days is on the order of 90 to 180 GB before replication or headroom, and a Prometheus that fills its volume stops being useful exactly when you need history."
+  - question: "Should enableUserWorkload be true or false for MAS?"
+    answer: "The Performance Wiki contradicts itself here. Its best-practice bullet says `enableUserWorkload: false`, while its own sample ConfigMap two lines later sets `enableUserWorkload: true`. IBM's Manage monitoring page says you need monitoring enabled for user-defined projects for the Manage agent's PodMonitors to be scraped, and the ansible-devops role sets it to true in both of its templates. The consistent reading is that you need it true if you want Manage's application metrics in OpenShift's Prometheus, and the bullet is a typo or a leftover. If you deliberately run an external Prometheus or Instana and do not scrape through OpenShift, false is defensible, but then none of the IBM Grafana dashboard procedure applies to you. Check the live value with `oc -n openshift-monitoring get cm cluster-monitoring-config -o yaml`."
+  - question: "Is Instana required, or can Prometheus and Grafana carry MAS monitoring on their own?"
+    answer: "Prometheus and Grafana can carry it, and that is the path IBM documents step by step for Manage. The Performance Wiki lists Instana, New Relic and Datadog as paid alternatives that also support OpenShift, not as requirements. Instana's strengths are what Prometheus does not give you out of the box: automatic discovery, distributed tracing, a Db2 sensor, and health signatures on the OpenShift sensor's pod and deployment data. I did not find an IBM page that documents an Instana configuration specific to MAS, so treat any MAS-on-Instana design as something you assemble from the generic OpenShift, Db2 and Liberty sensor documentation and test yourself. Many shops run both: Prometheus for platform alerts and the Manage agent metrics, Instana for traces and database depth."
+  - question: "What are the first five alerts I should create for Maximo Manage?"
+    answer: "Start with signals that mean users are about to feel pain or that something is silently broken. One: database availability, using `mas_manage_pingdb_availability`, plus a slow-query signal from `mas_manage_pingdb_totaltime_seconds`. Two: database connection pool exhaustion, using `mas_manage_db_connectionfree_total` trending to zero. Three: JVM heap pressure, comparing `mas_manage_heapmemory_used_total` with `mas_manage_heapmemory_max_total`. Four: thread deadlocks, `mas_manage_thread_deadlock_total` greater than zero, and thread pool saturation, `mas_manage_threadpool_active_total` against `mas_manage_threadpool_size_total`. Five: platform basics from OpenShift's own alerts, pods crash-looping or a persistent volume filling, for the Db2, MongoDB and Manage namespaces. These thresholds are my starting points, not IBM-published values, so tune them against two weeks of your own baseline before paging anyone at night."
+keyTakeaways:
+  - "Manage ships its own monitoring agent (HTTPS 9444, HTTP 9081) and IBM documents two default PodMonitors, `maximo-instancelevel-monitoragent` and `maximo-serverlevel-monitoragent`. You turn on monitoring for user-defined projects and the metrics flow; you no longer hand-write PodMonitors"
+  - "Retention is set per Prometheus. The Performance Wiki's 90d sample is on the platform Prometheus (`cluster-monitoring-config`); Manage's metrics live in the user workload Prometheus (`user-workload-monitoring-config`). Set both, put each on a persistent volume, and size roughly 1 to 2 GB per day as a starting estimate"
+  - "IBM's own sources disagree in places: the wiki says enableUserWorkload false in a bullet and true in its sample, the ansible-devops 4.18 template feeds the user workload retention variable into the platform setting, and IBM's metrics tables mix MB, bytes and seconds. Verify against your live cluster rather than copying"
+  - "Alert on symptoms that precede user pain (database ping availability, connection pool free count, heap used versus max, deadlocks, thread pool saturation) plus the platform basics. Thresholds here are starting points, tuned against your baseline, not IBM-published numbers"
+  - "Instana is a paid, optional layer (OpenShift sensor, Db2 sensor, tracing). IBM documents Prometheus and Grafana for Manage; no MAS-specific Instana procedure was found, so design it from the generic sensor docs and test it. Whatever you pick, monitor your backups too, because Part 4's failure mode is silence"
+series:
+  name: "MAS PLATFORM-OPS"
+  part: 5
+  total: 8
+tldr: "OpenShift gives you Prometheus and Grafana, Manage gives you a monitoring agent and default PodMonitors, and IBM documents the wiring. What it does not give you is a retention setting that reaches Manage's metrics, an alert list, or a single consistent set of instructions. This post sets out the four layers of MAS observability, shows the two-ConfigMap retention pattern behind the Performance Wiki's 90-day advice, catalogues the Manage metrics, walks through Grafana v5 and the datasource token, proposes an alert set with starting thresholds, closes the loop on Part 4 by alerting when backups stop, and places Instana honestly as an optional paid layer."
+seoTitle: "MAS Observability: Prometheus, Grafana, Instana"
+seoDescription: "Monitor Maximo Manage on OpenShift: user workload monitoring, 90-day retention, Grafana v5, alerts, and where Instana fits."
+targetQuestions:
+  - "How do I monitor Maximo Manage with Prometheus and Grafana?"
+  - "How do I enable user workload monitoring for MAS on OpenShift?"
+  - "How do I set Prometheus retention to 90 days for MAS?"
+  - "What metrics does the Maximo Manage monitoring agent expose?"
+  - "What should I alert on for Maximo Application Suite?"
+  - "Can I use Instana to monitor MAS and Db2 on OpenShift?"
+  - "How do I monitor MAS backups and detect silent failures?"
+semanticKeywords:
+  - "MAS Prometheus Grafana monitoring"
+  - "Maximo Manage monitoring agent"
+  - "user workload monitoring OpenShift"
+  - "maximo-serverlevel-monitoragent PodMonitor"
+  - "cluster-monitoring-config retention 90d"
+  - "mas_manage_pingdb_availability"
+  - "Grafana operator v5 Thanos Querier"
+  - "Instana OpenShift sensor Db2 sensor"
+  - "PrometheusRule Maximo alerts"
+  - "ocp_cluster_monitoring ansible role"
+  - "Maximo Cluster Performance Insights"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "cluster-admin access to the OpenShift cluster hosting MAS"
+  - "A Manage workspace deployed (the monitoring agent ships with Manage)"
+  - "A RWO-capable storage class for Prometheus and a plan for Alertmanager storage"
+  - "Understanding of your Manage server bundle layout (UI, MEA, Report, Cron)"
+speakableSections:
+  - "The Four Layers of MAS Observability"
+  - "Retention: Where 90 Days Actually Comes From"
+  - "What to Alert On"
+clusterSlugs:
+  - "mas-platops-00-series-index"
+  - "mas-platops-01-patch-train"
+  - "mas-platops-03-db2-tuning"
+  - "mas-platops-04-backup-restore-dr"
+  - "mas-platops-06-manage-performance"
+  - "mas-platops-07-support-window"
+  - "mas-platops-08-gitops-cli-ansible"
+relatedSlugs:
+  - "mas-platops-00-series-index"
+  - "mas-platops-03-db2-tuning"
+  - "mas-platops-04-backup-restore-dr"
+  - "mas-platops-06-manage-performance"
+---
+
+# Observability for MAS: Prometheus, Grafana and Instana, and What to Alert On
+
+<aside>
+
+🎯 **Who this is for:** MAS administrators and platform engineers who run Manage on OpenShift and have been told to "set up monitoring" without being told what good looks like. You will leave with a retention configuration that reaches Manage's metrics, a metric catalogue, a Grafana wiring you can repeat, a starter alert set, and a clear view of where Instana fits.
+
+</aside>
+
+**Series:** MAS Platform Operations | **Part 5 of 8** | **Read time:** ~35 minutes
+
+**Previous:** [Part 4: Backup, Restore and Disaster Recovery for MAS](/blog/mas-platops-04-backup-restore-dr) | **Next:** Part 6: Manage Performance Tuning (coming)
+
+---
+
+## 🔥 The Pod That Was Fine Until It Wasn't
+
+Picture a Thursday afternoon. A planner calls the service desk: work order screens are taking 40 seconds to open. By the time the ticket reaches you, three more calls have arrived. You open the OpenShift console. Every pod is Running. Every pod is Ready. The routes answer. By every check you have, MAS is healthy.
+
+It is not healthy. The UI bundle has been at its thread pool ceiling for an hour. The database connection pool is down to zero free connections. Somebody kicked off a heavy report from a cron task and nobody noticed. All of this was visible in metrics Manage has been emitting since the day it was deployed. Nobody was collecting them.
+
+> *"Why didn't we get an alert?"*
+
+Because nobody wrote one. And nobody wrote one because the instructions for monitoring MAS are scattered across IBM Docs, an IBM Support page written for Manage 8.3, the MAS Performance Wiki, an ansible-devops role, and a 2023 community thread. They mostly agree. In a few places they do not, and those places are where people lose days.
+
+This post gathers them. Where IBM's own sources disagree, I will say so and show you how to check your own cluster. Four things shape what follows:
+
+1. **"Monitoring MAS" is four different jobs.** Platform health, Manage application health, database health and the health of your safety nets (backups, certificates) are different layers with different tools. Mixing them is how alert lists become noise.
+2. **Retention is per Prometheus, and the 90-day advice is easy to apply to the wrong one.** This is the single most common silent mistake.
+3. **IBM documents Prometheus and Grafana for Manage. Instana is optional and paid.** There is no shame in either path, but be honest about which one has a procedure behind it.
+4. **An alert you have not tuned is a pager you will mute.** I give starting thresholds. They are mine, not IBM's, and I label them as such.
+
+A note on sourcing. The Manage monitoring pages (overview, metrics, PodMonitor, Grafana installation) are from IBM Docs, read on 21 October 2026. The 90-day retention sample and the Instana mention come from the MAS Performance Wiki on GitHub Pages, read the same day. The ConfigMap templates and role defaults come from the `ibm-mas/ansible-devops` repository, master branch, also read on 21 October 2026. I did not run these procedures against a live cluster while writing, so YAML marked as a sketch is exactly that. The reviewer notes at the bottom list everything unverified. Red Hat's own monitoring documentation pages returned errors when fetched, so statements about OpenShift defaults are hedged where I could not read the primary page.
+
+---
+
+## 🗺️ The Four Layers of MAS Observability
+
+Before any YAML, draw the map. Every question you will be asked about MAS health belongs to one of four layers, and each has a different data source.
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  LAYER 4 — SAFETY NETS                                               │
+│  Did the backup run? Is a certificate about to expire? Is the        │
+│  PV for Db2 archive logs filling?                                    │
+│  Sources: Tekton PipelineRuns, platform alerts, Maximo CPI           │
+├──────────────────────────────────────────────────────────────────────┤
+│  LAYER 3 — DATABASE                                                  │
+│  Connection pool, slow queries, lock waits, tablespace growth        │
+│  Sources: Manage pingdb metrics, Db2 sensor (Instana), Db2 tooling   │
+├──────────────────────────────────────────────────────────────────────┤
+│  LAYER 2 — MANAGE APPLICATION                                        │
+│  Threads, heap, sessions, servlet response, cron, integration        │
+│  Sources: Manage monitoring agent → PodMonitor → Prometheus          │
+├──────────────────────────────────────────────────────────────────────┤
+│  LAYER 1 — PLATFORM                                                  │
+│  Nodes, pods, PVCs, operators, etcd, network                         │
+│  Sources: OpenShift's built-in Prometheus, Alertmanager              │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+IBM's own framing in the Performance Wiki is two-tier: OpenShift includes "a pre-installed monitoring stack that is based on the Prometheus/Grafana", and "MAS also provides app-level promethus metrics and a set of Grafana dashboards for application health." That covers Layers 1 and 2. Layers 3 and 4 are where you do your own work.
+
+| Layer | What breaks | Primary tool | Who is paged |
+|---|---|---|---|
+| 1. Platform | Node pressure, pod crash loops, PVC full, operator degraded | OpenShift Prometheus and built-in alert rules | Platform team |
+| 2. Manage application | Thread pool saturated, heap near max, deadlocks, session pile-up | Manage monitoring agent via PodMonitor | MAS administrator |
+| 3. Database | Connection pool exhausted, ping slow or failing, runaway table growth | Manage `pingdb` and `tablesize` metrics, Db2 sensor if you run Instana | DBA and MAS administrator |
+| 4. Safety nets | Backup stopped, certificate expiring, archive log volume filling | Platform alerts, pipeline status, Maximo CPI | Platform team and MAS administrator |
+
+<aside>
+
+💡 **Key insight:** Most MAS monitoring projects deliver Layer 1 for free, spend all their effort on Layer 2 dashboards, and never build Layers 3 and 4. The outages that cost the most live in Layers 3 and 4.
+
+</aside>
+
+---
+
+## 🔌 Layer 1 and 2 Foundation: Turn On User Workload Monitoring
+
+OpenShift runs two Prometheus instances, and understanding the split saves you hours later.
+
+- The **platform** Prometheus (in `openshift-monitoring`) scrapes OpenShift's own components and cluster-level objects.
+- The **user workload** Prometheus (in `openshift-user-workload-monitoring`) scrapes application namespaces, via PodMonitor and ServiceMonitor resources you or an operator create. It only exists once you enable it.
+
+IBM's Manage monitoring overview is explicit about the prerequisite: a Red Hat OpenShift instance must exist, and you must "enable monitoring for user-defined projects in Prometheus" either before or after Manage is deployed. After Manage is deployed, a PodMonitor or ServiceMonitor must be configured, and the agent uses port 9444 for HTTPS and 9081 for HTTP.
+
+Enablement is a single key in a ConfigMap. This is the shape, taken from the `ocp_cluster_monitoring` role in IBM's ansible-devops repository (the 4.18 template, with variables substituted):
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-monitoring-config
+  namespace: openshift-monitoring
+data:
+  config.yaml: |
+    enableUserWorkload: true
+```
+
+Once applied, OpenShift starts a Prometheus and a Thanos Ruler in `openshift-user-workload-monitoring`. Verify:
+
+```bash
+oc -n openshift-user-workload-monitoring get pods
+# Expect prometheus-operator, prometheus-user-workload-0/1 and thanos-ruler-user-workload-0/1
+```
+
+### The contradiction in the Performance Wiki
+
+Here is the first place IBM's sources disagree, and it is worth being precise. The Performance Wiki's monitoring page has a "Best practice for OpenShift Monitoring Service" list with this bullet:
+
+> enable User Workload: `enableUserWorkload: false`
+
+Two lines further down, the sample ConfigMap on the same page contains:
+
+```yaml
+    enableUserWorkload: true
+```
+
+Both cannot be right. Weigh the evidence:
+
+| Source | Says | Reading |
+|---|---|---|
+| IBM Docs, Manage monitoring overview | Enable monitoring for user-defined projects; configure PodMonitor/ServiceMonitor | Needs the user workload stack on |
+| IBM Docs, Grafana installation | Grafana operator goes in `openshift-user-workload-monitoring` | That namespace only exists when user workload monitoring is on |
+| ansible-devops `ocp_cluster_monitoring` (both templates) | `enableUserWorkload: true` | Role used by IBM's own automation |
+| Performance Wiki best-practice bullet | `false` | Outlier |
+| Performance Wiki sample ConfigMap | `true` | Matches the other sources |
+
+My reading is that the bullet is wrong or a leftover, and that `true` is what you want if you use the IBM-documented Prometheus and Grafana path. If you deliberately scrape Manage from an external Prometheus or from Instana, `false` can be a sensible choice. That is a different architecture and none of IBM's Grafana procedure applies to it. Whichever you choose, write the decision down. The failure mode is someone copying the bullet, setting `false`, and then spending a day wondering why the default PodMonitors produce nothing.
+
+<aside>
+
+⚠️ **Check before you change:** run `oc -n openshift-monitoring get cm cluster-monitoring-config -o yaml` first. Applying a fresh ConfigMap over an existing one replaces everything in `config.yaml`, including settings someone else put there (Alertmanager receivers, node selectors, resource limits). Merge, do not overwrite.
+
+</aside>
+
+---
+
+## 🗄️ Retention: Where 90 Days Actually Comes From
+
+The Performance Wiki gives the advice that matters most in this post, in one short bullet: "consider to increase the promethus retention policy whose default value is 24h and add persistent volumes." Its sample sets `retention: 90d`. That is the number in the brief for this part, and it is a good target. But the sample needs reading carefully, because it is easy to apply to the wrong Prometheus.
+
+### What the wiki sample actually configures
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-monitoring-config
+  namespace: openshift-monitoring
+data:
+  config.yaml: |
+    enableUserWorkload: true
+    prometheusK8s:
+      retention: 90d
+      volumeClaimTemplate:
+        spec:
+          storageClassName: nfs-client
+          resources:
+            requests:
+              cpu: 200m
+              storage: 300Gi
+              memory: 2Gi
+            limits:
+              cpu: 2
+              memory: 4Gi
+    alertmanagerMain:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: nfs-client
+          resources:
+            requests:
+              storage: 20Gi
+```
+
+Three observations, in order of importance:
+
+1. **`prometheusK8s` is the platform Prometheus.** The 90 days applies to cluster metrics. Metrics from user-defined projects, including Manage's agent metrics scraped through PodMonitors, are held by the user workload Prometheus, which is configured in a different ConfigMap (see below). Applying only the wiki sample leaves Manage metrics on whatever the user workload Prometheus defaults to.
+2. **The `volumeClaimTemplate` block mixes concerns.** The sample puts `cpu` and `memory` requests and limits under a PersistentVolumeClaim's `resources`. A PVC only understands `storage`. As far as I know, container CPU and memory for Prometheus are set with a separate `resources` key under `prometheusK8s`, not inside the claim template. I did not test the sample, so I cannot say how OpenShift reacts to the extra keys. Treat the CPU and memory lines as intent (Prometheus with 2 to 4 Gi) and set them in the proper place.
+3. **`nfs-client` is an example storage class.** Prometheus is write-heavy and latency-sensitive. Use block storage (RWO) if you have it. The ansible-devops role's own documentation says block storage is preferred for Prometheus.
+
+### The two-ConfigMap pattern
+
+The ansible-devops `ocp_cluster_monitoring` role writes both ConfigMaps. This is the 4.18+ template from the repository, with Jinja variables shown as placeholders:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-monitoring-config
+  namespace: openshift-monitoring
+data:
+  config.yaml: |
+    prometheusK8s:
+      retention: "<retention>"
+      volumeClaimTemplate:
+        spec:
+          storageClassName: "<prometheus_storage_class>"
+          resources:
+            requests:
+              storage: "<prometheus_storage_size>"
+    alertmanagerMain:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: "<prometheus_alertmgr_storage_class>"
+          resources:
+            requests:
+              storage: "<prometheus_alertmgr_storage_size>"
+    enableUserWorkload: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: user-workload-monitoring-config
+  namespace: openshift-user-workload-monitoring
+data:
+  config.yaml: |
+    prometheus:
+      retention: "<retention>"
+      volumeClaimTemplate:
+        spec:
+          storageClassName: "<prometheus_userworkload_storage_class>"
+          resources:
+            requests:
+              storage: "<prometheus_userworkload_storage_size>"
+```
+
+This is the pattern to follow: **retention and a volume on both Prometheus instances.** Note the second ConfigMap lives in a different namespace and uses `prometheus:` rather than `prometheusK8s:` as the key.
+
+### A quirk worth knowing about
+
+When I read the 4.18 template on 21 October 2026, the platform `prometheusK8s.retention` line was fed by the variable `prometheus_userworkload_retention_period`, not `prometheus_retention_period`. The older template (pre-4.18) uses `prometheus_retention_period` for the platform. In practice, on OpenShift 4.18 and later with this role, setting `PROMETHEUS_RETENTION_PERIOD` alone would not change the platform retention; setting `PROMETHEUS_USERWORKLOAD_RETENTION_PERIOD` changes both. This could well be intentional or could be a bug. Either way, do not assume. After running the role, read back what was written:
+
+```bash
+oc -n openshift-monitoring get cm cluster-monitoring-config -o jsonpath='{.data.config\.yaml}'
+oc -n openshift-user-workload-monitoring get cm user-workload-monitoring-config -o jsonpath='{.data.config\.yaml}'
+```
+
+### Defaults, sizes and the numbers you can rely on
+
+| Setting | Value | Source |
+|---|---|---|
+| Prometheus retention default (per Performance Wiki) | 24h | Performance Wiki, monitoring page |
+| Prometheus retention default (ansible-devops role variable) | 15d | `ocp_cluster_monitoring` defaults |
+| Retention in the wiki sample | 90d, platform Prometheus, 300Gi | Performance Wiki |
+| Role default volume size (platform and user workload) | 20Gi each | `ocp_cluster_monitoring` defaults |
+| Role sizing note, platform | about 1 to 2 GB per day for a typical MAS deployment | Role README |
+| Role sizing note, user workload | 20Gi for 1 to 2 MAS apps, 50Gi for 3 to 5, 100Gi for full suite with extended retention | Role README |
+| Alertmanager volume default | 20Gi | Role defaults |
+
+The wiki's 24h and the role's 15d do not conflict as much as they look. The role's value is what the role writes when you run it; the wiki's value describes what a cluster does before anyone configures anything. I could not read Red Hat's primary page on the stock default, so I cannot give you a verified Red Hat number. The practical rule is the same: never rely on the default, set it explicitly.
+
+### Doing the sizing arithmetic
+
+The role README gives a rough guide of 1 to 2 GB per day for typical MAS platform metrics. If we take that at face value:
+
+| Retention | Estimate at 1 GB/day | Estimate at 2 GB/day |
+|---|---|---|
+| 15 days | 15 GB | 30 GB |
+| 30 days | 30 GB | 60 GB |
+| 90 days | 90 GB | 180 GB |
+
+Add headroom (Prometheus compaction needs temporary space, and a volume that is 100% full is an outage). A 300Gi volume as in the wiki sample leaves comfortable margin for 90 days at the upper estimate. The role's default 20Gi can only hold on the order of 10 to 20 days at those rates, which tells you the default 15d and 20Gi pairing is already tight.
+
+<aside>
+
+💡 **Key insight:** Prometheus can also cap retention by size. If your volume is smaller than your time-based estimate, a size-based limit stops it from filling the volume, at the cost of dropping the oldest data earlier than you intended. Confirm the exact key and behaviour in Red Hat's monitoring documentation for your OpenShift version before relying on it. I could not read that page while writing.
+
+</aside>
+
+### Why 90 days and not 15
+
+Fifteen days is enough to debug last week's incident. It is not enough to answer "is this slower than it was before the upgrade?" or "what did month-end look like last quarter?" A 90-day window spans a full quarter-close cycle for most finance-driven maintenance shops, covers a Db2 or Manage upgrade plus its aftermath, and gives you a before-and-after baseline for the changes in [Part 3 (Db2 tuning)](/blog/mas-platops-03-db2-tuning) and [Part 6 (Manage performance)](/blog/mas-platops-06-manage-performance). If you keep one Prometheus year-round, 90 days on the user workload instance, where Manage lives, is where I would spend the storage first.
+
+---
+
+## 📡 What Manage Exposes: The Monitoring Agent and Its Metrics
+
+Manage runs a monitoring agent that "gathers statistics on application usage and performance" and exposes REST APIs, "which HTTP-based clients can use to read the current state of a deployment." Prometheus reads this through the PodMonitors. IBM's metrics page lists endpoints under `/maximo/oslc/members/` and the metric names Prometheus will see.
+
+IBM organises the catalogue by Manage version. I have merged the tables below, keeping IBM's metric names exactly and noting which versions IBM's page associates them with.
+
+### Database and connection pool
+
+| Metric | Endpoint | Meaning | What to watch |
+|---|---|---|---|
+| `mas_manage_db_connectionused_total` | `dbinfo` | Connections in use | Trend against pool maximum |
+| `mas_manage_db_connectionfree_total` | `dbinfo` | Free connections in the pool | Falling to zero means requests queue |
+| `mas_manage_pingdb_availability` | `pingdb` | Database reachable (Oracle and Db2) | Any drop to failing |
+| `mas_manage_pingdb_totaltime_seconds` | `pingdb` | Average response time for 10 recent system-table queries | Rising baseline |
+| `mas_manage_db_top5tablesize_bytes` | `tablesize` | Five largest tables per day | Growth rate of MAXATTRIBUTE-style bloat, logs, integration tables |
+
+### JVM, threads and sessions
+
+| Metric | Endpoint | Meaning |
+|---|---|---|
+| `mas_manage_heapmemory_used_total`, `mas_manage_heapmemory_max_total` | `memory` | Heap used and ceiling |
+| `mas_manage_thread_total`, `mas_manage_thread_peak_total` | `threads` | Concurrent and peak JVM threads |
+| `mas_manage_thread_deadlock_total` | `threads` | Deadlocked threads |
+| `mas_manage_threadpool_size_total`, `mas_manage_threadpool_active_total` | `threadpoolinfo` | Pool capacity and active count |
+| `mas_manage_sessionstats_active_total`, `mas_manage_sessionstats_live_total`, `mas_manage_sessionstats_create_total` | `sessionstatsinfo` | Active, live and created sessions |
+| `mas_manage_mbo_total`, `mas_manage_mboset_total` | `mbocount` | MBO and MboSet counts, "useful for OOM or performance issues" |
+
+### Application traffic, integration and errors
+
+| Metric | Endpoint | Meaning |
+|---|---|---|
+| `mas_manage_uiservlet_total`, `mas_manage_oslcservlet_total`, `mas_manage_restservlet_total` | `servletstats` | Servlet traffic (UI, OSLC, REST) |
+| `mas_manage_uiservlet_responsetime_seconds`, `mas_manage_oslcservlet_responsetime_seconds`, `mas_manage_restservlet_responsetime_seconds` | `servletstats` | Request response time per servlet |
+| `mas_manage_concurrentuser_total` | `thisserver` | Concurrent users on a server |
+| `mas_manage_cron_thread_total`, `mas_manage_cronthread_peak_total` | `cronthread` | Cron task thread count and per-minute peak |
+| `mas_manage_integration_mbo_total`, `mas_manage_ui_mbo_total` | `objexchanged` | Integration and UI objects exchanged per server per minute |
+| `mas_manage_systemexception_total`, `mas_manage_applicationexception_total` | `errcountmetrics` | Count of MXSystemException and MXApplicationException objects created |
+| `mas_manage_report_total` | `report` | Reports run in the previous hour |
+
+### Connectivity probes
+
+| Metric | Meaning |
+|---|---|
+| `mas_manage_pingcos_availability`, `mas_manage_pingcos_totaltime_seconds` | Cloud Object Storage reachability and response time |
+| `mas_manage_pingkafka_availability`, `mas_manage_pingkafka_totaltime_seconds` | Kafka reachability and response time |
+
+### Read IBM's metrics page with a sceptical eye
+
+IBM's page is invaluable and it is also imperfect. Things I noticed on 21 October 2026:
+
+| Issue | What the page says | What to do |
+|---|---|---|
+| Units inconsistent | `mas_manage_db_top5tablesize_bytes` is described as "MB per day"; the servlet response-time metrics are named `_seconds` but described in milliseconds | Query the raw value in Grafana, compare with a known quantity, and set your dashboard unit accordingly |
+| Naming vs type | Many gauges carry a `_total` suffix (for example heap used) | Check the metric type in Prometheus (`type` in the targets and metadata API) before applying `rate()` |
+| Version scoping | Tables are headed "Manage 8.4.0 and earlier", "8.5 and earlier", "8.5.0 and later" | The page is the current `cd` documentation but its tables carry 8.x headings. After deployment, list what your 9.x pods actually emit and treat that as authoritative |
+| Duplicated and cross-listed names | Some metrics appear in several tables | Deduplicate when building dashboards |
+
+Verify what you actually have by querying Prometheus directly. Find the metric names in the console under Observe, Metrics, and search for the `mas_manage_` prefix, or use the Thanos Querier from the Grafana datasource you set up below:
+
+```promql
+count by (__name__) ({__name__=~"mas_manage_.*"})
+```
+
+This returns one series per metric name actually being scraped. Anything on IBM's page but missing here is either not emitted by your version, not enabled for your bundle type, or not being scraped. Anything here and not on IBM's page is a pleasant surprise worth documenting for your team.
+
+---
+
+## 🔎 PodMonitors You Don't Have to Write
+
+Older how-to material, including IBM Support's Manage 8.3 note, has you create a PodMonitor by hand. Current IBM Docs says otherwise. The PodMonitor page states "You do not have to create PodMonitors anymore," and describes what to look for instead.
+
+### Find the defaults
+
+In the Manage project (the namespace named `mas-<instance>-manage`, typically), search for PodMonitor resources. IBM's page names two:
+
+| PodMonitor | Scope |
+|---|---|
+| `maximo-instancelevel-monitoragent` | Instance-level metrics: database ping, table size, COS and Kafka probes, reports |
+| `maximo-serverlevel-monitoragent` | Server-level metrics: threads, heap, sessions, servlets, cron, errors |
+
+```bash
+oc -n mas-<instance>-manage get podmonitor
+oc -n mas-<instance>-manage get podmonitor maximo-serverlevel-monitoragent -o yaml
+```
+
+Replace `<instance>` with your MAS instance ID. If the commands return nothing, either Manage is not deployed in that namespace, the workspace is not Ready, or you are on an older Manage that still needs the manual procedure. Check your Manage version against the IBM Docs page for it.
+
+### Narrow the scope to one bundle type
+
+If you split Manage into server bundles (UI, MEA, Report, Cron), as IBM's Performance Wiki recommends for isolating workloads, you may want metrics for one bundle type only. IBM's procedure: edit `maximo-serverlevel-monitoragent`, and under `selector` add a label:
+
+```yaml
+selector:
+  matchLabels:
+    mas.ibm.com/appTypeName: report
+```
+
+IBM's page gives `report` as its example and names the application types UI, MEA, Report and Cron. I have shown `matchLabels` as the standard Prometheus Operator PodMonitor shape; IBM's page only describes adding the label "under selector", so check how your PodMonitor's existing selector is structured before editing.
+
+Why would you narrow? Two reasons. Cardinality is the first: every pod emitting these metrics multiplies the series count, and a large multi-bundle deployment makes the user workload Prometheus work harder. Signal clarity is the second: a deadlock count aggregated across UI and cron pods tells you less than the same metric per bundle.
+
+### TLS and the port
+
+The agent serves HTTPS on 9444 and HTTP on 9081. IBM's PodMonitor page says port 9444 (named `https`) is available, and notes you can connect to Prometheus without certificates "by setting the `insecureSkipVerify` flag, which disables target certificate validation." That is acceptable on a lab cluster. In production, ask whether you want Prometheus scraping with certificate validation off. The scrape stays inside the cluster, but disabling validation is a security trade-off your security team should know about. Part of [Part 1's](/blog/mas-platops-01-patch-train) patch discipline applies here too: after a Manage upgrade, re-check that the PodMonitors, ports and labels still match.
+
+### Verify the scrape end to end
+
+```bash
+# 1. Are targets up? (OpenShift console: Observe > Targets, filter by namespace)
+# 2. Is the metric present?
+#    Observe > Metrics, query:  mas_manage_thread_total
+# 3. From the command line, via the Thanos Querier route (needs a token):
+TOKEN=$(oc whoami -t)
+HOST=$(oc -n openshift-monitoring get route thanos-querier -o jsonpath='{.spec.host}')
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "https://$HOST/api/v1/query?query=count(mas_manage_thread_total)"
+```
+
+An empty result almost always means one of: user workload monitoring not enabled, PodMonitor selector not matching the pods, the pods not exposing the agent port, or the user workload Prometheus not running.
+
+---
+
+## 📊 Grafana v5 on OpenShift: The Wiring
+
+IBM Docs' Grafana installation page gives a procedure built on the Grafana operator in the `openshift-user-workload-monitoring` namespace. It has some formatting problems in the published YAML (duplicate `env` keys, indentation) which I have corrected below. The structure is IBM's.
+
+### The sequence
+
+1. Install the Grafana operator from OperatorHub, into `openshift-user-workload-monitoring`.
+2. Create a Grafana instance (update channel **v5**) from YAML. This also creates a route.
+3. Configure the operator subscription to watch all namespaces for dashboards.
+4. Grant the Grafana service account the `cluster-monitoring-view` role.
+5. Get a bearer token for that service account.
+6. Create a `GrafanaDatasource` pointing at the Thanos Querier, using the token in an Authorization header.
+7. Load the Manage dashboard into Grafana.
+
+IBM also says you can use the `cluster_monitoring` role in the ansible-devops repository to automate these steps. Be aware of the naming: in the repository today, the role that configures OpenShift monitoring is named `ocp_cluster_monitoring`, and there is a separate `grafana` role. A 2023 community thread refers to `cluster_monitoring`. If a playbook fails to find the role, check the collection version you have installed.
+
+### The Grafana instance
+
+```yaml
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  name: mas-grafana
+  namespace: openshift-user-workload-monitoring
+  labels:
+    dashboards: "grafanav5"
+spec:
+  config:
+    auth:
+      disable_login_form: "false"
+      disable_signout_menu: "true"
+  log:
+    level: warn
+    mode: console
+  dataStorage:
+    accessModes:
+      - ReadWriteOnce
+    storageClassName: ocs-storagecluster-cephfs
+    size: 10Gi
+  deployment:
+    strategy:
+      type: Recreate
+  route:
+    spec: {}
+```
+
+Change `storageClassName` to a class you actually have. The `grafana` role in ansible-devops auto-detects `ibmc-file-gold-gid`, `ocs-storagecluster-cephfs` and `azurefiles-premium` and its documentation says RWO access is enough for Grafana.
+
+### Subscription, permission and token
+
+```yaml
+# In the operator Subscription spec:
+config:
+  env:
+    - name: "WATCH_NAMESPACE"
+      value: ""
+    - name: "DASHBOARD_NAMESPACES_ALL"
+      value: "true"
+```
+
+```bash
+oc adm policy add-cluster-role-to-user cluster-monitoring-view -z grafana-serviceaccount
+oc serviceaccounts get-token grafana-serviceaccount -n openshift-user-workload-monitoring
+```
+
+Two cautions about that last command. First, `oc serviceaccounts get-token` is the command IBM's page shows; newer `oc` clients have moved to `oc create token`, which issues a time-limited token by default. This is standard OpenShift behaviour rather than something I read on an IBM page, and I did not test it here. If your Grafana datasource stops returning data about an hour after you created it, an expired token is the first suspect. Second, a bearer token pasted into a datasource is a credential: do not commit it to Git, and keep it in a Secret where you can.
+
+### The datasource
+
+```yaml
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: mas-prom-grafanadatasource
+  namespace: openshift-user-workload-monitoring
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafanav5"
+  datasource:
+    name: prometheus
+    type: prometheus
+    access: proxy
+    url: https://thanos-querier.openshift-monitoring.svc.cluster.local:9091
+    isDefault: true
+    editable: true
+    jsonData:
+      httpHeaderName1: Authorization
+      timeInterval: 5s
+      tlsSkipVerify: true
+    secureJsonData:
+      httpHeaderValue1: "Bearer <BEARER_TOKEN>"
+```
+
+Note that this reads from the **Thanos Querier**, which federates the platform and user workload Prometheus instances. That means one Grafana datasource sees both Layer 1 and Layer 2 data, and also means your retention is whichever instance holds the series you are querying. This ties back to the retention section: if the user workload Prometheus is still on its default, your Manage graphs will stop long before your platform graphs do.
+
+IBM's page also says, on its troubleshooting steps, to enable Prometheus debug mode, and that if the Grafana data source connection fails you should reset the authentication header value. Those are the two first moves when "Grafana says no data."
+
+### Dashboards
+
+The Manage dashboard is loaded into Grafana as the last step. A 2023 IBM Community reply adds two useful details: if Grafana is installed **before** Manage is activated, a pre-configured MAS dashboard should be available, and otherwise you can import the dashboard JSON manually, copied from the Manage entitymgr pod using `oc rsync`. The thread is from 2023, the pod name in the example is specific to that deployment, and I did not verify the path against a 9.2 cluster, so use it as a pointer rather than a procedure.
+
+### Grafana version trap
+
+The `grafana` role documents that upgrading from Grafana operator v4 to v5 is not in place. The new instance has a different URL, does not inherit the user database, the admin password is reset and user accounts must be recreated; the v4 instance stays until you remove it. The role installs v5 into the `grafana5` namespace by default (v4 used `grafana`). If your organisation bookmarked the old Grafana URL, communicate the change before you run `grafana_action=update`.
+
+### Many MAS instances, many clusters
+
+The same 2023 thread asked the question many consultancies have: 16 Maximo instances across four clusters, one dashboard. The accepted answer had two options. Red Hat Advanced Cluster Management is Red Hat's preferred way to manage and monitor multiple clusters together. The lightweight alternative is a single Grafana with several data sources, one Prometheus per cluster. The second is much cheaper to start with and does not give you central cluster management. Both are from a single reply in 2023, so check them against current Red Hat guidance for your OpenShift version.
+
+---
+
+## 🚨 What to Alert On
+
+IBM does not publish a recommended alert list for Manage. The Performance Wiki says monitoring is "critical for the environment health, the quality of services," and gives you the stack, but no thresholds. What follows is my starting set, built from IBM's metric names and from the performance targets IBM does publish on its Manage best-practice page. Treat every threshold as a first guess, to be tuned against your own baseline.
+
+### The performance targets IBM does publish
+
+IBM's Performance Wiki Manage best-practice page contains a few numbers that make good anchors for thresholds:
+
+| Target | IBM's number | Use as |
+|---|---|---|
+| Single out-of-the-box MBO transaction | 2 seconds or less (excludes customised apps, scripted apps, bulk loads, reports, pages with more than 2 XHR requests) | Baseline for UI response SLO |
+| Network latency, application to database | Below 50 ms; production "strongly recommend[ed]" below 10 ms | Threshold for `pingdb` response trend |
+| Disk throughput | Above 250 MB/s | Check for Db2 and PV storage |
+| Disk IOPS | 10 to 100 IOPS per GB depending on volume size | Db2 storage check |
+| LTPA token timeout | 2 hours default | Explains users bounced to login |
+| Db2 monitor switches enabled globally | Roughly 5% to 10% overhead | Do not leave them on for monitoring |
+
+### The starter alert set
+
+| # | Alert | Layer | Signal | Starting condition | Severity | Why it matters |
+|---|---|---|---|---|---|---|
+| 1 | Manage database unreachable | 3 | `mas_manage_pingdb_availability` | Not available for 2 minutes | Page | Every transaction fails |
+| 2 | Manage database slow | 3 | `mas_manage_pingdb_totaltime_seconds` | Above your baseline by a multiple for 10 minutes | Ticket | Early warning of Db2 pressure; also network latency |
+| 3 | Connection pool nearly exhausted | 3 | `mas_manage_db_connectionfree_total` | Zero or near zero for 5 minutes | Page | Requests queue and time out |
+| 4 | Heap pressure | 2 | `mas_manage_heapmemory_used_total` over `mas_manage_heapmemory_max_total` | Above about 90% for 15 minutes | Ticket, page if sustained | Precedes OutOfMemory and GC thrash |
+| 5 | Deadlocked threads | 2 | `mas_manage_thread_deadlock_total` | Greater than zero for 5 minutes | Page | Deadlocks do not clear themselves |
+| 6 | Thread pool saturated | 2 | `mas_manage_threadpool_active_total` over `mas_manage_threadpool_size_total` | Above about 90% for 10 minutes | Ticket | UI slowness before errors appear |
+| 7 | Exception spike | 2 | `mas_manage_systemexception_total` | Sudden step change against baseline | Ticket | Integration or customisation failure |
+| 8 | Kafka or COS probe failing | 3 | `mas_manage_pingkafka_availability`, `mas_manage_pingcos_availability` | Failing for 5 minutes (only if you use them) | Ticket | Integration or attachment path down |
+| 9 | Crash-looping or pending pods in MAS namespaces | 1 | OpenShift built-in pod alerts | As shipped | Page | Capacity or config problem |
+| 10 | Persistent volume filling | 1 | OpenShift built-in PV alerts | As shipped | Page | Db2 archive logs, Mongo, Prometheus itself |
+
+Two design notes. First, on the "page versus ticket" column: page only for signals where a human can do something within minutes and where waiting costs money. A thread pool at 90% is a conversation for morning stand-up; a deadlock or a missing database is not. Second, **alert on duration, not on instants.** Every rule above should use a `for:` clause. A heap that touches 90% for ten seconds during a large report is normal; fifteen minutes is a problem.
+
+### A sketch of the rules
+
+User-defined alerting rules for application namespaces are created as PrometheusRule resources. The structure is standard Prometheus Operator; the expressions below use IBM's metric names but are a sketch of mine, not an IBM-published set. Check your labels first (run the `count by (__name__)` query above, then inspect a series' labels) because the label names on your `mas_manage_*` series may differ from what I assume.
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: mas-manage-alerts
+  namespace: mas-<instance>-manage
+spec:
+  groups:
+    - name: mas-manage.rules
+      rules:
+        - alert: MasManageDatabaseUnavailable
+          expr: min(mas_manage_pingdb_availability) < 1
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Manage cannot reach its database"
+            description: "mas_manage_pingdb_availability has been below 1 for 2 minutes."
+
+        - alert: MasManageConnectionPoolExhausted
+          expr: min(mas_manage_db_connectionfree_total) <= 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Manage database connection pool nearly exhausted"
+
+        - alert: MasManageHeapPressure
+          expr: mas_manage_heapmemory_used_total / mas_manage_heapmemory_max_total > 0.90
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Manage JVM heap above 90% for 15 minutes"
+
+        - alert: MasManageThreadDeadlock
+          expr: max(mas_manage_thread_deadlock_total) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Manage has deadlocked threads"
+
+        - alert: MasManageThreadPoolSaturated
+          expr: mas_manage_threadpool_active_total / mas_manage_threadpool_size_total > 0.90
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Manage thread pool above 90% active for 10 minutes"
+```
+
+Check how the rules behave before you trust them. Two traps: if heap used and heap max carry different label sets, the division returns nothing, silently, and the alert can never fire; and if a metric is emitted per pod, a bare comparison creates one alert per pod (often what you want for deadlocks, rarely what you want for the pool). Use the Observe, Metrics page to run each expression, confirm it returns data, and then deliberately push a test condition in a non-production environment to see it fire.
+
+<aside>
+
+⚠️ **Alert routing:** where user-defined alerts go depends on how your cluster's alert routing is configured (the platform Alertmanager, or a separate one for user workload monitoring). I did not verify the routing defaults for your OpenShift version. Send a test alert end to end before you rely on it, including through your paging tool.
+
+</aside>
+
+### Alert fatigue, controlled
+
+| Practice | Why |
+|---|---|
+| Every alert has a `for:` duration | Filters transient spikes from large reports and cron bursts |
+| Separate severity labels route to different receivers | Pages for outages, tickets for trends |
+| One owner per alert | An alert nobody owns gets muted |
+| Review fired alerts monthly | Delete or retune the ones that never led to action |
+| Keep a runbook link in each annotation | The 3 a.m. responder should not search for what to do |
+| Silence during planned maintenance, with an expiry | Patching windows (Part 1) otherwise page everyone |
+
+---
+
+## 💾 Closing the Loop: Alert When Backups Stop
+
+[Part 4](/blog/mas-platops-04-backup-restore-dr) ended on a promise: the signals that tell you a backup has silently stopped working before you need it. This is Layer 4, and it is the most neglected layer, because a failing backup produces no user complaints.
+
+The `mas backup` command runs as Tekton pipelines in the cluster, and Part 4 covered the failure mode where archives stay on a PVC that dies with the cluster. You need to watch for four things:
+
+| What to watch | Signal | How to implement |
+|---|---|---|
+| The last backup succeeded | PipelineRun status | OpenShift Pipelines exposes controller metrics to Prometheus. I did not verify the exact metric names for your Pipelines version, so find them under Observe, Metrics (search for `tekton_`) and build an alert on failed or missing runs |
+| A backup ran recently (absence detection) | Age of the newest archive | A small scheduled job that lists the S3 bucket and publishes the newest object's age; alert when it exceeds your RPO. Absence alerts catch the case where the schedule itself stopped |
+| Db2 archive log volume is not filling | PV usage | OpenShift's built-in persistent volume alerts on the Db2 namespace, and Part 3's LOGARCHMETH settings |
+| Backup storage has space | Bucket quota or PVC usage | Provider-side alerts, plus the PVC alert for in-cluster archives |
+
+The absence-of-success alert is the one most teams skip, and it is the only one that catches a schedule that has been disabled, a service account whose credentials expired, or an S3 endpoint that quietly changed. The principle: **alert on the age of the last good result, not only on failures.**
+
+```promql
+# Sketch: alert if no successful backup archive in 26 hours.
+# 'mas_backup_last_success_timestamp_seconds' is a metric YOU publish from your own
+# job after verifying the archive exists in the bucket; it is not an IBM metric.
+time() - mas_backup_last_success_timestamp_seconds > 26 * 3600
+```
+
+That metric name is invented by me for the sketch. IBM's CLI does not publish one. If you build it, use the Prometheus Pushgateway pattern or a small exporter, and document it as yours.
+
+Also watch certificates. The Maximo Cluster Performance Insights utility (below) reports certificates that have expired or are about to expire, and Part 4 noted that the Certificate Manager configuration is backed up but the certificates are regenerated on restore. An expiring certificate is the kind of silent failure that surfaces as a mysterious outage on a Monday morning.
+
+---
+
+## 🧭 Instana: Where It Fits, Honestly
+
+The Performance Wiki's monitoring page has one note on alternatives: "Except OpenShift Monitoring Service (Promethus/Grafana), there are other paid solutions like IBM Instana, New Relic, Data Dog that also support OCP. If the cluster is cloud based, consider to use cloud provider's monitoring tool for additional info like network, disk, managed services. e.g. AWS CloudWatch, IBM Log Analysis."
+
+That is the entirety of IBM's MAS-specific guidance on Instana in the sources I found. Everything else is generic Instana documentation. Here is what that documentation does say, and where the gaps are.
+
+### What I could verify
+
+| Topic | What IBM's Instana docs say | Source |
+|---|---|---|
+| Install method | The operator is the preferred install method for OpenShift; Helm charts and air-gapped options exist; the operator needs a project and service accounts first and reads a custom resource | IBM Docs, Instana on OpenShift (via search results; the page itself returned an error on direct fetch) |
+| OpenShift sensor | Deployed automatically after the agent is installed. Collects Kubernetes and DeploymentConfig data: conditions, labels, aggregated CPU and memory requests and limits, pod availability, pod status counts, pending-phase duration. Health signatures evaluate these continuously | IBM Docs, Monitoring OpenShift |
+| OpenShift version requirement | OpenShift must be in Full Support or Maintenance Support under Red Hat's policies | IBM Docs, Monitoring OpenShift |
+| Db2 sensor | Deployed automatically with the agent; supports Db2 10.5 and later; local or remote monitoring; does not support instances using the DATA_ENCRYPT security mechanism | IBM Docs, Monitoring IBM Db2 (via search results) |
+| Db2 on OpenShift | A community blog edits the agent ConfigMap with a `com.instana.plugin.db2` block per instance, with the host in the form `<service>.<namespace>.svc`, local mode when agent and database process share a worker node (remote otherwise), and a pod restart to apply | IBM Community, January 2024 |
+
+### What I could not verify
+
+- **A MAS-specific Instana procedure.** I found none. I could not confirm an IBM-published Instana dashboard, sensor configuration or alert set for Manage.
+- **Liberty sensor on Manage pods.** A community post mentions enabling the `monitor-1.0` feature in `server.xml` for WebSphere Liberty monitoring. Manage runs on Liberty (the Performance Wiki cites Liberty Base 21.0.0.5 with OpenJ9) but I did not confirm how Manage's pod configuration interacts with that setting. Test in a non-production workspace.
+- **Db2 sensor against the MAS Db2 deployment.** Part 4 and Part 2 distinguish a Db2uCluster from a Db2uInstance. The community example shows a Db2uCluster service name. Check which one you have.
+
+### The Db2 sensor caveats worth repeating
+
+The community blog's example stores credentials in plain text in the agent ConfigMap. Restrict access to that ConfigMap, or look for a better secrets approach in current Instana documentation. It also notes that local mode will not find a Db2 process on a different worker node, so remote mode is needed in that case, and that config changes require a restart of the agent pods.
+
+### A decision table
+
+| If this is you | Consider |
+|---|---|
+| You want the documented path, a small team, and no new licence | Prometheus and Grafana with the Manage agent, per IBM Docs |
+| You need traces across Manage, integration and databases | Add Instana, scoped to the namespaces that matter, and test the Liberty and Db2 sensors |
+| Your organisation already standardises on Instana, Datadog or New Relic | Use the existing platform for Layers 1 and 3; keep Manage's agent metrics scraped by Prometheus unless you can ingest them there |
+| You run on a managed cloud OpenShift | Add the provider's tooling for network, disk and managed-service signals, as the wiki suggests |
+| You are in an air-gapped environment | Instana supports air-gapped installs per its docs; confirm image mirroring and the backend you will use |
+
+A fair summary of the trade: Prometheus and Grafana are what IBM documents for Manage and are free, but you build the alerts and the database depth yourself. Instana brings automatic discovery, tracing and database sensors, costs money, and has no published MAS-specific recipe. For a first deployment, start with the documented path. Add Instana when you have a question Prometheus cannot answer, such as "which downstream call made that request slow?", not before.
+
+---
+
+## 🛠️ Manage's Own Views and Maximo CPI
+
+Not everything has to come through Prometheus.
+
+### Manage Monitoring Information (MMIUI)
+
+Manage 9.0 introduced a **Manage Monitoring Information** application (`MMIUI`), a browser-based admin app that shows server and pod health and replaced the older MMI Work Center. It is a useful first look when you are already logged in to Manage and want to see which servers are up before you open Grafana. I have it from the DOC17 field guide with a "verified (ID likely)" confidence, so confirm the app ID in your own environment. It does not replace Prometheus: it has no history and no alerting.
+
+### IBM Maximo Cluster Performance Insights (Maximo CPI)
+
+The Performance Wiki lists a containerised utility, Maximo Cluster Performance Insights. Per the wiki page it "uses short- and long-term snapshots to check MAS deployments against best practices." It gathers only metrics data, "excludes sensitive information," and reports on:
+
+- Missing or incorrect settings that do not follow MAS best practice
+- An in-depth evaluation of the deployment's performance
+- Recommendations for reducing deployment size to cut infrastructure cost
+- Certificates that have expired or are about to
+- Suggestions for rebalancing node resource utilisation
+- Slack notifications
+- A platform for customised MAS Manage schedule scaling
+
+The page directs you to the Maximo CPI Playbook for setup. It also carries a support caveat you should not skip: the utility is offered "AS IS" and **IBM Product Support does not cover it**; help comes from the IBM TechXchange Maximo Community. That matters if you were hoping to make it part of an audited control. It is a good periodic health check and a source of ideas for your alerts, not a supported monitoring product.
+
+---
+
+## 🧪 Walkthrough: From Zero to a Firing Alert
+
+Here is the whole path on one page. Do it first on a non-production cluster. Each step names what you should see before you move on.
+
+| Step | Action | Check |
+|---|---|---|
+| 1 | Record the current monitoring config: `oc -n openshift-monitoring get cm cluster-monitoring-config -o yaml` | You know what you are about to merge into |
+| 2 | Decide storage classes and sizes (RWO block for Prometheus), using the sizing table | PVCs can be created |
+| 3 | Merge `enableUserWorkload: true`, platform retention and volume into `cluster-monitoring-config` | `oc -n openshift-monitoring get pods` shows Prometheus restarting, then Ready |
+| 4 | Create `user-workload-monitoring-config` with retention and a volume | `oc -n openshift-user-workload-monitoring get pvc` shows the claim Bound |
+| 5 | Confirm the two Manage PodMonitors exist | `oc -n mas-<instance>-manage get podmonitor` lists both |
+| 6 | Check targets in the console | Targets for the Manage pods show Up |
+| 7 | Query `count by (__name__) ({__name__=~"mas_manage_.*"})` | A list of metric names |
+| 8 | Install Grafana operator v5 and the instance, grant `cluster-monitoring-view`, create the datasource | Grafana Explore returns `mas_manage_thread_total` |
+| 9 | Load the Manage dashboard | Panels show data |
+| 10 | Apply the PrometheusRule | Rules appear under Observe, Alerting, Alerting rules |
+| 11 | Force a test: temporarily lower a threshold so one alert fires | Alert reaches the receiver you expect |
+| 12 | Record the baseline for two weeks, then tune thresholds | A short document of what normal looks like |
+
+The commands for step 6 and 7:
+
+```bash
+# Check that the user workload Prometheus is up and holds your data
+oc -n openshift-user-workload-monitoring get pods
+oc -n openshift-user-workload-monitoring get pvc
+
+# Spot-check scrape health for the Manage namespace (needs a token)
+TOKEN=$(oc whoami -t)
+HOST=$(oc -n openshift-monitoring get route thanos-querier -o jsonpath='{.spec.host}')
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "https://$HOST/api/v1/query?query=up%7Bnamespace%3D%22mas-<instance>-manage%22%7D"
+```
+
+---
+
+## 🩺 Troubleshooting
+
+| Symptom | Likely cause | What to check |
+|---|---|---|
+| No `mas_manage_*` metrics in Prometheus | User workload monitoring is off, or PodMonitors are missing | `enableUserWorkload` value; `oc get podmonitor` in the Manage namespace; Manage version versus the doc you followed |
+| Targets exist but are Down | Port or TLS mismatch | The agent serves 9444 (HTTPS) and 9081 (HTTP); IBM's `insecureSkipVerify` note |
+| Metrics appear, then vanish after a few days | Retention is still short on the user workload Prometheus | `user-workload-monitoring-config` retention; the wiki's 90d sample only covers the platform instance |
+| Grafana datasource worked, now "no data" | Service account token expired or authentication header wrong | Re-create the token; reset the header value per IBM's troubleshooting note |
+| Grafana datasource cannot connect at all | Missing `cluster-monitoring-view` role, or wrong Thanos Querier URL | Role binding; URL `https://thanos-querier.openshift-monitoring.svc.cluster.local:9091` |
+| Manage dashboard missing in Grafana | Grafana installed after Manage activation | Import the dashboard JSON manually (2023 community pointer) |
+| Dashboard unit looks wrong (response times in thousands) | IBM's metric units inconsistent | Query the raw value; set the unit by comparing against a known request |
+| Alert rule never fires | Expression returns no data (label mismatch) | Run the expression in Observe, Metrics; check labels on both sides of a division |
+| Prometheus volume full | Undersized for retention | `oc get pvc`; compare with the 1 to 2 GB per day estimate; expand the claim if the storage class allows |
+| Role did not change platform retention | The 4.18 template reads the user workload retention variable | Read back the ConfigMap; set `PROMETHEUS_USERWORKLOAD_RETENTION_PERIOD` |
+| Grafana URL changed after an upgrade | v4 to v5 creates a new instance in a new namespace | Tell users; recreate accounts; the v4 instance stays until removed |
+| Alert fires but nobody is notified | Alert routing not configured for user-defined alerts | Send a test alert end to end; check Alertmanager receivers |
+
+---
+
+## 🛠️ The Eight Commandments of MAS Observability
+
+1. **Thou shalt set retention explicitly, on both Prometheus instances.** Defaults are for demos.
+2. **Thou shalt put Prometheus on a persistent volume and size it from arithmetic, not hope.** 90 days is 90 times the daily figure.
+3. **Thou shalt read IBM's YAML before copying it.** The wiki's bullet and sample disagree, and its PVC block carries keys a PVC does not use.
+4. **Thou shalt verify the metric names your pods actually emit.** The `count by (__name__)` query is free.
+5. **Thou shalt alert on symptoms with a duration.** A `for:` clause is the cheapest noise filter there is.
+6. **Thou shalt watch the database as a first-class layer.** `pingdb` and the connection pool are the early warnings.
+7. **Thou shalt alert on the absence of a good backup.** Silence is the failure mode of Layer 4.
+8. **Thou shalt choose Instana for a question, not for fashion.** Start with the documented path and add paid tooling when you can name what it answers.
+
+---
+
+## 🎯 What to Do This Week
+
+| Day | Action |
+|---|---|
+| Monday | Read both monitoring ConfigMaps on every cluster. Record `enableUserWorkload`, retention and volume claims. Write down what is missing |
+| Tuesday | Confirm the two Manage PodMonitors exist and the targets are Up. Run the `count by (__name__)` query and save the list |
+| Wednesday | Size the volumes from the table. Apply retention and persistent volumes to the user workload Prometheus first |
+| Thursday | Stand up Grafana v5 on a non-production cluster and load the Manage dashboard. Record how the datasource token is issued and when it expires |
+| Friday | Apply the five-rule starter set to non-production, force one alert to fire, and book a two-week baseline before setting production thresholds |
+
+Next in the series: **Part 6, Manage Performance Tuning**, which uses the metrics you have just started collecting as the evidence base for JVM, pod sizing, cron and integration load decisions.
+
+---
+
+## 📚 References
+
+- [IBM Docs: Monitoring agent for Maximo Manage (agent, ports 9444 and 9081, prerequisites)](https://www.ibm.com/docs/SSRHPA_cd/monitor_agent/c_mas_man_monitoring_overview.html)
+- [IBM Docs: Monitoring metrics (metric names, endpoints, descriptions)](https://www.ibm.com/docs/SSRHPA_cd/appsuite/manage_deploy/r_mas_man_monitoring_metrics.html)
+- [IBM Docs: Configuring Grafana dashboards (overview of the procedure)](https://www.ibm.com/docs/SSRHPA_cd/appsuite/manage_deploy/c_ctr_configure_grafana_dashboards.html)
+- [IBM Docs: Configuring the PodMonitor (default PodMonitors, appTypeName label, insecureSkipVerify)](https://www.ibm.com/docs/SSRHPA_cd/appsuite/manage_deploy/t_configure_podmonitor_8.7.html)
+- [IBM Docs: Installing and configuring Grafana (operator, instance, datasource, Thanos Querier)](https://www.ibm.com/docs/SSRHPA_cd/appsuite/manage_deploy/t_install_configure_grafana.html)
+- [MAS Performance Wiki: Monitoring (retention advice, sample ConfigMap, paid alternatives)](https://ibm-mas.github.io/mas-performance/mas/monitoring/guidance/)
+- [MAS Performance Wiki: Manage best practice (latency, disk, bundle and pod sizing targets)](https://ibm-mas.github.io/mas-performance/mas/manage/bestpractice/)
+- [MAS Performance Wiki: IBM Maximo Cluster Performance Insights (what it checks, AS IS support)](https://ibm-mas.github.io/mas-performance/pd/mcpi/maximo-cpi/)
+- [GitHub: ibm-mas/ansible-devops, ocp_cluster_monitoring role (retention variables, templates, sizing notes)](https://github.com/ibm-mas/ansible-devops/tree/master/ibm/mas_devops/roles/ocp_cluster_monitoring)
+- [GitHub: ibm-mas/ansible-devops, grafana role (Grafana v5 install, v4 to v5 upgrade notes)](https://github.com/ibm-mas/ansible-devops/tree/master/ibm/mas_devops/roles/grafana)
+- [IBM Community: MAS 8 environments and infrastructure monitoring dashboard (June 2023, multi-instance Grafana, ACM)](https://community.ibm.com/community/user/asset-facilities/discussion/mas-8-environments-and-infrastructure-monitoring-dashboard)
+- [IBM Docs: Instana, Monitoring OpenShift (OpenShift sensor)](https://www.ibm.com/docs/SSE1JP5_current/src/pages/ecosystem/openshift/index.html)
+- [IBM Community: Monitoring Db2 on OCP using Instana (January 2024, agent ConfigMap example)](https://community.ibm.com/community/user/blogs/shibu-n/2024/01/04/monitoring-db2-on-ocp-using-instana)
+- [Red Hat Jira MON-4433: thanos-ruler retention does not follow user workload Prometheus retention (seen in search results)](https://issues.redhat.com/browse/MON-4433)
+- [Part 4 of this series: Backup, Restore and Disaster Recovery for MAS](/blog/mas-platops-04-backup-restore-dr)
+
+---
+
+**About TheMaximoGuys:** We help Maximo administrators, developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | October 2026*
+
+<!--
+REVIEWER NOTES (night-shift, 2026-10-21, platops-05):
+- SOURCES READ LIVE 2026-10-21: IBM Docs Manage monitoring overview, monitoring metrics, Configuring Grafana dashboards, Configuring the PodMonitor (8.7 topic), Installing and configuring Grafana; MAS Performance Wiki monitoring page, Manage best-practice page, JVM Performance Insight page, Maximo CPI page; ansible-devops ocp_cluster_monitoring README, defaults, both templates, grafana README (GitHub raw); IBM Community 2023 MAS 8 monitoring thread; IBM Community Db2-on-OCP Instana blog (Jan 2024); IBM Docs Instana Monitoring OpenShift page.
+- SEEN ONLY AS SEARCH-RESULT SNIPPETS (not read in full): IBM Docs Instana OpenShift agent install page (404 on fetch), Instana Db2 sensor page, Instana Liberty/monitor-1.0 mention, Red Hat MON-4433, Red Hat KB 7029042. Red Hat OpenShift monitoring documentation pages (docs.redhat.com, docs.openshift.com) returned 404/503, so the stock OpenShift default retention, retentionSize behaviour and alert routing defaults are NOT verified.
+- KB: knowledge_base/DOC00 5.3 carries only a one-line brief for Part 5; DOC17 supplied the MMIUI row (confidence "verified (ID likely)"); no DOC file has observability content. No CHG id applies directly (CHG-038 mentions a gitops-cluster logging-operator fix, not covered). SearchMaximo sweep: the KB path used by that skill does not exist on this machine (same as Part 4), so facts come from web primaries. Per the brief, no [IND]-only claims are stated as fact.
+- DISCREPANCIES FOR REVIEW: (1) Performance Wiki bullet says enableUserWorkload false, its own sample says true; post follows IBM Docs and the ansible role (true). (2) Wiki says default retention 24h; role default 15d; Red Hat primary not read. (3) The 4.18 ansible template assigns prometheus_userworkload_retention_period to the PLATFORM prometheusK8s.retention (older template uses prometheus_retention_period); could be intentional, flagged. (4) Wiki sample puts cpu/memory under volumeClaimTemplate resources; post says a PVC only takes storage and that pod resources are set elsewhere; that is my OpenShift knowledge, not read from a Red Hat page, and the sample was not tested. (5) IBM metrics page has unit inconsistencies (bytes vs MB; seconds vs ms) and 8.x version headings on the current "cd" page. (6) The IBM Grafana install page has invalid YAML as published (duplicate env keys); post uses the corrected form returned by the fetch tool and still needs a human diff against the live page. (7) IBM's page uses `oc serviceaccounts get-token`; the post's note that newer oc uses `oc create token` with a time-limited token is standard OpenShift behaviour, not from an IBM page, and untested. (8) The role is called ocp_cluster_monitoring in the repo today; IBM's Grafana page and a 2023 thread call it cluster_monitoring.
+- OUR ADDITIONS (not IBM): all alert thresholds and the PrometheusRule YAML (metric labels assumed, untested); the `matchLabels` shape for the appTypeName selector; the mas_backup_last_success_timestamp_seconds metric (invented for the sketch); the 26 h backup freshness; the sizing arithmetic (derived from the role README's 1 to 2 GB/day); the "Prometheus size-based retention" note (not verified); the decision table for Instana.
+- Part 4's closing line promised Prometheus, Grafana and Instana signals for silent backup failure; Layer 4 and the backup section fulfil it, but no IBM-published Tekton metric names were verified.
+- Word count was benchmarked against siblings (index 4,968; parts 8,078 to 8,886); see commit message or final check.
+-->
