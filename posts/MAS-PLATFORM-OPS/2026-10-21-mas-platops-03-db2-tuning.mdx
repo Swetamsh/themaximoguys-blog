@@ -1,0 +1,763 @@
+---
+title: "Db2 Tuning for Maximo Manage: Workload, Row Tables, Sequences and Statistics"
+description: "A containerised Db2 does not tune itself. Learn which Db2 settings IBM documents for Manage on MAS: DB2_WORKLOAD, row-organised tables, sequence cache, runstats and reorg, plus verification queries, a maintenance schedule and the traps in each source."
+date: "2026-10-21"
+slug: "mas-platops-03-db2-tuning"
+tags: ["Maximo", "MAS", "Db2", "Performance", "OpenShift", "Db2u", "Manage", "Platform Operations", "Administrator", "runstats"]
+draft: true
+tier: "admin"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-platops-03-db2-tuning.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Which Db2 workload setting should Maximo Manage use: ANALYTICS or MAXIMO?"
+    answer: "IBM's MAS Performance Wiki tells you to set `db2_workload=maximo` as a registry setting and says it makes the database configuration parameter WLM_ADMISSION_CTRL default to NO. The ansible-devops db2 role, however, documents only `ANALYTICS` (its default) and `PUREDATA_OLAP` for its `db2_workload` variable and writes `DB2_WORKLOAD: ANALYTICS` into the Db2uCluster registry unless you override it. Db2's own documentation says WLM_ADMISSION_CTRL defaults to YES only when DB2_WORKLOAD is ANALYTICS, and to NO for any other value. Do not assume your cluster matches either document: read the live value with `db2set -all` and `db2 get db cfg`, and treat a Manage database running with ANALYTICS and admission control enabled as a finding to rehearse a change for, not a crisis to fix at 2 a.m."
+  - question: "Does Maximo Manage work with column-organised Db2 tables?"
+    answer: "IBM's performance wiki states that Manage requires row-organised tables, and notes that the Db2 Warehouse default is column-based, giving `db2 update db cfg using DFT_TABLE_ORG ROW` as the fix. The ansible-devops role agrees: `db2_table_org` defaults to ROW and its documentation says ROW is required for MAS Manage. Column organisation suits read-heavy analytics, but Manage is a transactional application doing constant single-row inserts and updates, which is exactly what row-organised tables with index access handle well. The practical check is a catalog query for any table in the MAXIMO schema whose TABLEORG is not 'R', which should return nothing."
+  - question: "What sequence cache size should I use for Maximo on Db2?"
+    answer: "The MAS Performance Wiki says to increase the maxsequence cache to 50. IBM's older Maximo 7.6.x best-practice guide is more specific: cache 50 for all sequences, except the maxseq sequence that generates rowstamps, which gets 500, and it supplies a generator script that must have a list of Tivoli Asset Management for IT sequences removed before you run it. Both agree that an uncached default makes every insert wait on the sequence. If you run Db2 pureScale, IBM Support adds that ORDER cancels CACHE, so use NO ORDER. Check what you have today in SYSCAT.SEQUENCES before you change anything, because a fresh MAS install may already differ from both documents."
+  - question: "Should I turn on Db2 automatic runstats and reorg for Manage?"
+    answer: "IBM's 7.6.x best-practice guide says Maximo generally does not recommend turning on AUTO_MAINT, AUTO_TBL_MAINT, AUTO_RUNSTATS or AUTO_STMT_STATS, and prefers scheduled maintenance in regular windows so that statistics collection does not hit users mid-day. The MAS wiki says only to run runstats and reorg periodically and gives no commands, so the older guide is the best detailed source and it was written for 7.6, so test its advice on your Db2 version. The same guide says that for a stable production system weekly or monthly statistics are enough, and more often during the first 12 months or after large data loads. Reorganisation is deliberately rarer: it needs analysis first, because reorgchk flags tables that a reorg cannot actually fix."
+  - question: "Can I just change Db2 settings inside the Db2u pod with db2 update db cfg?"
+    answer: "You can run the commands, and IBM's own wiki gives `db2 update db cfg using DFT_TABLE_ORG ROW` as a Db2 command. What the sources do not tell you is whether the Db2u operator will preserve a manual change across a reconcile, a restart or the Db2 11 to 12 upgrade from Part 2. The supported, declarative route in the ansible-devops role is the three override variables `db2_database_db_config`, `db2_instance_dbm_config` and `db2_instance_registry`, which write into the custom resource. Put anything you want to keep in the custom resource or your pipeline variables, and use the in-pod commands for diagnosis and for one-off maintenance such as runstats. Verify persistence in a non-production cluster by restarting the pod before you trust a setting."
+keyTakeaways:
+  - "Containerised Db2 still needs a DBA's attention. The ansible-devops role ships a handful of defaults (`DB2_WORKLOAD: ANALYTICS`, ROW tables, APPLHEAPSZ, no log archiving) and the MAS Performance Wiki tells you to go further: `db2_workload=maximo`, row-organised tables, sequence cache, scheduled runstats and reorg"
+  - "The two IBM sources disagree on the workload value. The wiki says `db2_workload=maximo` so WLM_ADMISSION_CTRL defaults to NO; the role documents only ANALYTICS and PUREDATA_OLAP, and Db2 defaults admission control to YES under ANALYTICS. Read your live values with `db2set -all` and `db2 get db cfg` before touching anything"
+  - "Manage requires row-organised tables. Check with a catalog query that nothing in the MAXIMO schema has TABLEORG other than 'R', and set `DFT_TABLE_ORG ROW` if the database was created from a Db2 Warehouse default"
+  - "Sequence caching is the cheapest win: IBM's 7.6.x guide gives cache 50 for every sequence and 500 for maxseq, with an exclusion list of Tivoli sequences you must never alter. The MAS wiki says 50. Measure before and after in SYSCAT.SEQUENCES"
+  - "Run runstats on a schedule, run reorg only on evidence. IBM's guide prefers maintenance windows over AUTO_RUNSTATS, and warns that reorgchk can keep flagging a table that a reorg cannot fix (the 70% rule). Make every change through the Db2uCluster or Db2uInstance custom resource so it survives operator reconciles"
+series:
+  name: "MAS PLATFORM-OPS"
+  part: 3
+  total: 8
+tldr: "The MAS Performance Wiki and IBM's Maximo best-practice guide give Manage administrators a short, concrete Db2 tuning list: DB2_WORKLOAD set for Maximo, row-organised tables, a sequence cache of 50 (500 for maxseq), scheduled runstats and evidence-based reorg. This post turns that list into a verification-first runbook for Db2u on OpenShift: what to read from the live database, what the ansible-devops role actually sets, where the sources disagree, how to apply changes through the custom resource, and the maintenance schedule and diagnosis toolkit to keep Manage fast."
+seoTitle: "Db2 Tuning for Maximo Manage on MAS: Runbook"
+seoDescription: "Tune Db2 for Maximo Manage on MAS: DB2_WORKLOAD, row tables, sequence cache, runstats, reorg, with queries and a schedule."
+targetQuestions:
+  - "How do I tune Db2 for Maximo Manage in MAS 9?"
+  - "What does db2_workload=maximo do in Db2?"
+  - "Does Maximo Manage require row-organised tables in Db2?"
+  - "What sequence cache size should Maximo use in Db2?"
+  - "How often should I run runstats and reorg on the Maximo database?"
+  - "How do I change Db2 registry and database configuration for a Db2u instance in MAS?"
+  - "How do I find slow SQL and fragmented tables in the Manage Db2 database?"
+semanticKeywords:
+  - "Db2 tuning Maximo Manage"
+  - "DB2_WORKLOAD MAXIMO"
+  - "WLM_ADMISSION_CTRL"
+  - "DFT_TABLE_ORG ROW"
+  - "maxsequence cache"
+  - "maxseq rowstamp sequence"
+  - "RUNSTATS DETAILED INDEXES ALL"
+  - "reorgchk update statistics"
+  - "Db2u operator Db2uCluster registry"
+  - "db2_instance_registry ansible-devops"
+  - "MAS Performance Wiki Db2"
+  - "db2top MON_GET_TABLE"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Shell access to the Db2 engine pod (oc exec as the instance owner) and permission to read the Db2uCluster or Db2uInstance custom resource"
+  - "A non-production MAS instance with a restored copy of production data to rehearse changes"
+  - "A tested Db2 backup before any configuration or maintenance change"
+  - "Helpful: Part 2 of this series (Db2 12) and Part 4 (backup and restore)"
+speakableSections:
+  - "The Source Conflict Nobody Mentions: ANALYTICS vs MAXIMO"
+  - "Sequences: The Cheapest Win in the Database"
+  - "Reorg Only on Evidence"
+clusterSlugs:
+  - "mas-platops-00-series-index"
+  - "mas-platops-01-patch-train"
+  - "mas-platops-02-db2-12-upgrade"
+  - "mas-platops-04-backup-restore-dr"
+  - "mas-platops-05-observability"
+  - "mas-platops-06-manage-performance"
+  - "mas-platops-07-support-window"
+  - "mas-platops-08-gitops-cli-ansible"
+relatedSlugs:
+  - "mas-platops-00-series-index"
+  - "mas-platops-02-db2-12-upgrade"
+  - "mas-platops-06-manage-performance"
+  - "mas-92-upgrade-watchlist"
+---
+
+# Db2 Tuning for Maximo Manage: Workload, Row Tables, Sequences and Statistics
+
+<aside>
+
+🎯 **Who this is for:** MAS administrators and DBAs who run Manage on Db2 inside OpenShift (the Db2u operator) and have been told, or have assumed, that "the operator handles the database." It does not. This post gives you a verification-first tuning list built from IBM's own pages, with the gaps and disagreements between those pages called out.
+
+</aside>
+
+**Series:** MAS Platform Operations | **Part 3 of 8** | **Read time:** ~30 minutes
+
+**Previous:** [Part 2: Db2 12 on OpenShift](/blog/mas-platops-02-db2-12-upgrade) | **Next:** Part 4: Backup, Restore and DR for MAS (coming)
+
+---
+
+## 🔥 The Database Nobody Tunes
+
+Someone built your MAS cluster in a hurry. The install ran `ansible-devops`, a Db2u pod came up, the Manage activation finished, and the smoke test passed. Eighteen months later, work order saves take four seconds on a Monday morning and the Db2 pod sits at 70 percent CPU doing something nobody has looked at.
+
+> *"It's a containerised database managed by an operator. It tunes itself."*
+
+That sentence is half true, and the false half is expensive. Db2 does have self-tuning memory. The Db2u operator does normalise instance memory for the container. But the choices that decide whether Manage is fast are not made by an operator. They are a handful of decisions most teams never revisit: which workload profile the instance runs under, whether tables are row- or column-organised, how many sequence values are cached, and whether anybody ever collects statistics or checks fragmentation.
+
+IBM documents all four. The documentation is scattered across three places:
+
+1. The **MAS Performance Wiki** (`ibm-mas.github.io/mas-performance`), which is current for MAS and short and prescriptive on Db2.
+2. The **ansible-devops `db2` role**, which is what actually creates the database for most MAS-on-OpenShift installs and carries the defaults you inherit.
+3. IBM's **Maximo 7.6.x Best Practices for System Performance** guide, which the wiki itself says is still applicable for the database section and which carries the detailed numbers.
+
+They mostly agree. Where they do not, you need to know before you change production. This post reads them side by side, gives you the queries to find out what your database is doing today, and ends with a maintenance schedule you can put in a change calendar.
+
+One scoping note. Everything here is about the **Db2u operator path**: Db2 running as pods in your cluster, created by the MAS CLI or ansible-devops. If your Manage database is on Amazon RDS for Db2, a standalone Db2 server or Db2 Warehouse on Cloud Pak for Data, the principles carry over but the way you apply them does not.
+
+I did not run any of the commands below against a live MAS cluster while writing this. Every setting is traced to an IBM page or the role's source, and where a claim rests on a source I could not fully verify, the text says so and the reviewer notes at the bottom list it.
+
+---
+
+## 🧭 The Tuning Map: What Each Source Says
+
+Before any commands, here is the whole picture in one table. Read the "Source" column: it is the difference between a documented setting and a folk tradition.
+
+| Area | What IBM says | Source |
+|---|---|---|
+| Workload profile | Set `db2_workload=maximo`; this makes WLM_ADMISSION_CTRL default to NO | MAS Performance Wiki, Manage best practice |
+| Role default | `DB2_WORKLOAD: ANALYTICS` written to the registry; documented values ANALYTICS and PUREDATA_OLAP | ansible-devops `roles/db2` (defaults and README) |
+| Admission control | Verify WLM_ADMISSION_CTRL is NO | MAS Performance Wiki |
+| Admission control default | YES if DB2_WORKLOAD=ANALYTICS, otherwise NO | Db2 documentation, `wlm_admission_ctrl` |
+| Table organisation | Manage requires row-organised tables; Warehouse default is column; `db2 update db cfg using DFT_TABLE_ORG ROW` | MAS Performance Wiki; role says ROW is required for Manage |
+| Sequence cache | Increase maxsequence cache to 50 | MAS Performance Wiki |
+| Sequence cache (detail) | 50 for all sequences, 500 for `maxseq`; exclusion list of Tivoli sequences | Maximo 7.6.x Best Practices guide, section 5.4.3 |
+| Statistics | Run runstats and/or reorg periodically; refresh index statistics after migrating from Maximo 7 | MAS Performance Wiki |
+| Statistics (detail) | `RUNSTATS ... WITH DISTRIBUTION AND DETAILED INDEXES ALL ALLOW WRITE ACCESS`; weekly or monthly on stable systems | Maximo 7.6.x guide, section 5.5.1 |
+| Automatic maintenance | Do not turn on AUTO_MAINT, AUTO_TBL_MAINT, AUTO_RUNSTATS, AUTO_STMT_STATS; schedule windows instead | Maximo 7.6.x guide, section 5.1.2 |
+| Instance memory | Do not set `INSTANCE_MEMORY`; the operator normalises it | Wiki and role README |
+| Monitor switches | Everything off except TIMESTAMP; enable per session only | MAS Performance Wiki |
+| Text search | Not supported on containerised Db2U; add an index on Description for prefix searches | MAS Performance Wiki |
+| Partitioning | MMP and table partitioning not supported; archive records older than one year | MAS Performance Wiki and role README (no MPP with MAS) |
+
+Three things in that table are worth underlining.
+
+**First, the wiki's Db2 section is short.** It gives you the setting names but no commands for runstats and reorg and no buffer pool sizes. The detailed numbers live in the 7.6.x guide, which was written for Db2 10.1 and later, before MAS and before Db2u. Use its commands. Do not treat its numbers as sacred without testing on your engine version.
+
+**Second, the role and the wiki disagree on the workload value.** That is the next section, and it is the single most useful thing to check on your cluster.
+
+**Third, "periodically" is not a schedule.** IBM says to run statistics and reorg periodically and leaves it there. The schedule at the end of this post is ours, built from the 7.6.x guide's weekly-or-monthly statement, and it is labelled as ours.
+
+<aside>
+
+💡 **Key insight:** IBM's current wiki tells you *what* to change in four lines. The older best-practice guide tells you *how*. The ansible-devops role tells you what you *already have*. You need all three, and a way to read the live database, to tune safely.
+
+</aside>
+
+---
+
+## 🔎 Step Zero: Read What the Database Is Actually Doing
+
+Never tune from a document. Tune from the database in front of you. Everything below runs as the instance owner inside the Db2 engine pod.
+
+```bash
+# Find the Db2u engine pod (namespace is your db2_namespace, often db2u)
+oc get pods -n db2u | grep db2u-0
+
+# Open a shell as the instance owner
+oc exec -it c-<instance>-db2u-0 -n db2u -- su - db2inst1
+```
+
+Inside the pod:
+
+```bash
+# Registry: shows every variable, with [DB2_WORKLOAD] tags on aggregate-set values
+db2set -all
+
+# Version and fix pack
+db2level
+
+# Database and instance configuration
+db2 connect to BLUDB
+db2 get db cfg for BLUDB | grep -i -E "WLM_ADMISSION_CTRL|DFT_TABLE_ORG|LOGARCHMETH|APPLHEAPSZ|STMTHEAP|CUR_COMMIT|LOCKLIST|LOCKTIMEOUT|DATABASE_MEMORY"
+db2 get dbm cfg | grep -i -E "INSTANCE_MEMORY|MON_HEAP_SZ|HEALTH_MON"
+```
+
+The database name `BLUDB` is the role's default for `db2_dbname`; yours may differ. Write the output into your change ticket. It is your "before" picture.
+
+Then read the three catalog facts that matter most for Manage:
+
+```sql
+-- 1. Any table in the MAXIMO schema that is not row-organised? Expect zero rows.
+SELECT TABSCHEMA, TABNAME, TABLEORG
+  FROM SYSCAT.TABLES
+ WHERE TABSCHEMA = 'MAXIMO' AND TYPE = 'T' AND TABLEORG <> 'R';
+
+-- 2. Sequence cache settings, lowest cache first
+SELECT SEQNAME, CACHE, "ORDER"
+  FROM SYSCAT.SEQUENCES
+ WHERE SEQSCHEMA = 'MAXIMO'
+ ORDER BY CACHE, SEQNAME;
+
+-- 3. How stale are the statistics? Oldest first.
+SELECT TABNAME, CARD, STATS_TIME
+  FROM SYSCAT.TABLES
+ WHERE TABSCHEMA = 'MAXIMO' AND TYPE = 'T'
+ ORDER BY STATS_TIME NULLS FIRST
+ FETCH FIRST 20 ROWS ONLY;
+```
+
+Interpret them like this:
+
+| Query | Healthy | Finding |
+|---|---|---|
+| TABLEORG not 'R' | No rows | Any row means a column-organised table in a Manage schema. IBM says Manage requires row |
+| SEQUENCES with CACHE 20 or lower | Cache 50, with `MAXSEQ` at 500 | Default-sized caches mean every insert fights for the next value |
+| STATS_TIME | Recent, within your schedule | NULL or months old means the optimiser is guessing on those tables |
+
+The column names used above (TABLEORG in SYSCAT.TABLES, CACHE and ORDER in SYSCAT.SEQUENCES, STATS_TIME) are standard Db2 LUW catalog columns and not taken from an IBM MAS page. If your Db2 version names them differently the catalog documentation for your version is authoritative.
+
+Now you know what you have. Next, what you were *supposed* to have.
+
+---
+
+## ⚖️ The Source Conflict Nobody Mentions: ANALYTICS vs MAXIMO
+
+Here is the conflict. On the MAS Performance Wiki, under Db2 registry variables for Manage, IBM says to set `db2_workload=maximo`, and gives the reason: it makes the database configuration variable WLM_ADMISSION_CTRL default to NO, and you should verify that value.
+
+Now open the `db2` role in ansible-devops. Its defaults file says:
+
+```yaml
+db2_workload: "{{ lookup('env', 'DB2_WORKLOAD') | default('ANALYTICS', true) }}"
+# default workload is ANALYTICS, other option is PUREDATA_OLAP
+```
+
+and the default registry the role writes into the custom resource is:
+
+```yaml
+registry:
+  DB2AUTH: "OSAUTHDB,ALLOW_LOCAL_FALLBACK,PLUGIN_AUTO_RELOAD"
+  DB2_4K_DEVICE_SUPPORT: "{{ db2_4k_device_support }}"
+  DB2_FMP_RUN_AS_CONNECTED_USER: "NO"
+  DB2_WORKLOAD: "{{ db2_workload }}"
+```
+
+The role's README documents the valid values as `ANALYTICS` and `PUREDATA_OLAP` and describes ANALYTICS as "recommended for MAS." The word `maximo` does not appear in the role's documentation for this variable.
+
+Then the Db2 reference for WLM_ADMISSION_CTRL: the default is YES if DB2_WORKLOAD is ANALYTICS, and NO for any other value.
+
+Put the three together and you get a real question: **does a stock Db2u instance created by the MAS CLI run Manage with Db2's adaptive workload manager admission control enabled, when IBM's wiki says it should be off?**
+
+I cannot answer that from documents. The role writes ANALYTICS into the registry. Db2 documents the consequence. The wiki says to verify NO. Whether the Db2u image applies anything else on top, and whether your cluster was built with an override, only your cluster can tell you. That is why Step Zero came first. Run:
+
+```bash
+db2set -all | grep -i WORKLOAD
+db2 get db cfg for BLUDB | grep -i WLM_ADMISSION_CTRL
+```
+
+| What you see | What it means | Action |
+|---|---|---|
+| `DB2_WORKLOAD=ANALYTICS` and `WLM_ADMISSION_CTRL = YES` | Stock role default; contradicts the wiki's advice to verify NO | Plan a rehearsed change |
+| `DB2_WORKLOAD=MAXIMO` (or similar) and `WLM_ADMISSION_CTRL = NO` | Matches the wiki | Record as compliant |
+| `DB2_WORKLOAD=ANALYTICS` but `WLM_ADMISSION_CTRL = NO` | Someone set the parameter explicitly | Find out who and why before changing |
+| Anything else | Custom build | Compare against the role defaults and the wiki |
+
+### What the setting does, according to the oldest source
+
+The 7.6.x guide explains the aggregate. Setting `DB2_WORKLOAD=MAXIMO` accomplishes the same as setting five registry variables individually:
+
+| Registry variable | Value |
+|---|---|
+| `DB2_SKIPINSERTED` | ON |
+| `DB2_INLIST_TO_NLJN` | YES |
+| `DB2_MINIMIZE_LISTPREFETCH` | YES |
+| `DB2_EVALUNCOMMITTED` | YES |
+| `DB2_SKIPDELETED` | ON |
+
+The guide adds that after setting it you must stop and start the database, and that you should add `DB2_FMP_COMM_HEAPSZ=65536` separately.
+
+Be careful with that table. Two things I could not verify from IBM primary pages: that the five-variable breakdown is unchanged for Db2 11.5 or 12, and what Db2's own aggregate-registry documentation says about a `MAXIMO` value (my searches did not surface a Db2 reference page for it). A Db2 DBA can check by running `db2set -all` after setting the aggregate: members set by it are tagged `[DB2_WORKLOAD]`, and a value you override shows an `[O]` marker.
+
+A practitioner caution is worth hearing, too. In an IBM Community thread on tuning Db2 for report performance, Mark Robbins warned against leaning mainly on database-level settings, pointed out that read-optimising settings can slow writes such as saving records, and specifically advised caution with `DB2_SKIPINSERTED` and `DB2_SKIPDELETED`, because Maximo assumes certain behaviour for uncommitted rows. That does not contradict IBM's guide, since the aggregate is IBM's own recommendation for Maximo, but it is a reason to test rather than copy individual registry settings from forum posts.
+
+### How to apply it through the custom resource
+
+Because the role writes the registry into the Db2uCluster (or Db2uInstance) custom resource, the declarative way to change it is the role's override variable:
+
+```bash
+# db2_instance_registry takes semicolon-separated values
+export DB2_INSTANCE_REGISTRY="DB2_WORKLOAD=MAXIMO"
+```
+
+Two warnings from reading the defaults file:
+
+1. In the role's `main.yml`, the override is applied as `lookup('env','DB2_INSTANCE_REGISTRY') | ibm.mas_devops.db2_overwrite_config | default(db2_default_config.registry, true)`. That reads as: if you supply a value, it replaces the default registry map. Whether the `db2_overwrite_config` filter merges your value with the defaults (keeping `DB2AUTH`, `DB2_4K_DEVICE_SUPPORT` and `DB2_FMP_RUN_AS_CONNECTED_USER`) or replaces them, I could not determine from the pages I read. **Rehearse this on a throwaway instance and diff the resulting custom resource.** Losing `DB2AUTH` would be a bad surprise.
+2. The role README says the three override variables apply to the *Db2uCluster* custom resource. Part 2 explained the Db2uCluster to Db2uInstance migration. Check which kind you run (`oc get db2ucluster,db2uinstance -A`) and confirm the role handles overrides for your kind in your collection version.
+
+If you are not running the role (you built the instance by hand or with GitOps), the same settings live in `spec.environment.instance.registry` and `spec.environment.database.dbConfig` of the custom resource. Change them there, not only in the pod.
+
+<aside>
+
+💡 **Key insight:** The workload profile is a one-line change with a database restart attached. Treat the *discovery* (what do I have, who set it) as the work and the change as the easy part.
+
+</aside>
+
+---
+
+## 📏 Row-Organised Tables: The Non-Negotiable
+
+This is the one setting where every source agrees. The wiki says it plainly: Manage requires row-organised tables, the Db2 Warehouse default is column-based, and the command to correct a database is:
+
+```bash
+db2 update db cfg using DFT_TABLE_ORG ROW
+```
+
+The role agrees: `db2_table_org` defaults to ROW, and its README says ROW is required for MAS Manage while COLUMN is for dedicated analytical databases only. Db2's own documentation describes the default as ROW, unless it was set to COLUMN automatically by setting `DB2_WORKLOAD` to ANALYTICS before creating the database.
+
+That last sentence is the trap, and it is why the workload section matters. A database created under an ANALYTICS aggregate with no explicit table organisation could default new tables to column-organised. The role protects you by passing `DB2_TABLE_ORG=ROW` explicitly. A hand-built or Db2 Warehouse-derived database has no such protection.
+
+### Why Manage cares
+
+| Pattern | Row-organised | Column-organised |
+|---|---|---|
+| Single-row insert (new work order) | Cheap: one page, index maintenance | Expensive: write spread across column groups |
+| Update one attribute (status change) | In-place on one row | Touches column storage and delete-and-insert semantics |
+| `SELECT * FROM workorder WHERE wonum = ?` | Index lookup, one row | Reassembles one row from many columns |
+| Scan one column across 50M rows (analytics) | Reads every row's pages | Reads only that column |
+| Manage's workload mix | Matches | Mismatch |
+
+IBM's Db2 column-organised-tables page says the same thing in general terms: for transactional workloads, row-organised tables with index access are generally more suitable, and a mix of both can work for mixed workloads. Manage is not a mixed workload. It is OLTP with a reporting habit.
+
+### Verify, fix, and what not to do
+
+Run the Step Zero query for non-`R` tables. Expect nothing. If you get rows:
+
+1. **Stop.** Do not convert tables in place on a hunch. A column-organised table inside a Manage schema means either a bad build or a customisation, and conversion means data movement.
+2. Check `DFT_TABLE_ORG` with `db2 get db cfg for BLUDB | grep DFT_TABLE_ORG`. If it says COLUMN, set it to ROW with the command above so *new* tables are right.
+3. For existing column tables, treat it as a project: restore a copy, test the conversion, and involve IBM Support. The wiki says only that Manage requires row tables; it gives no procedure for converting. I do not either.
+
+If you want analytics on Maximo data, do it in a separate database or a replica, not by changing Manage's tables. Part 6 of this series covers the reporting workload.
+
+---
+
+## 🔢 Sequences: The Cheapest Win in the Database
+
+Every new row in a Maximo table needs a unique ID and a rowstamp. Maximo gets both from **database sequences**, tracked in the `MAXSEQUENCE` table of the data dictionary (IBM's configuring-databases documentation: "All sequences used in the system. SQL Server, Oracle, and Db2 use database sequence generators").
+
+A sequence with no cache hits the database's sequence catalog for every value. With a cache of 50, Db2 reserves 50 values in memory and hands them out without touching the catalog until they run out. For an insert-heavy system with integrations and cron tasks, the difference shows up as fewer waits.
+
+### What IBM says to set
+
+| Source | Guidance |
+|---|---|
+| MAS Performance Wiki | "Increase the maxsequence cache to 50" |
+| Maximo 7.6.x Best Practices guide | Cache 50 for all sequences, except `maxseq` (used for rowstamps) which gets 500 |
+| IBM Support (pureScale post) | If a sequence has both CACHE and ORDER, ORDER wins and caching is off; use NO ORDER, for example `ALTER SEQUENCE XXXX_SEQ CACHE 100 NO ORDER` |
+
+The sources differ slightly. The wiki gives one number, the older guide gives two, and the pureScale post shows 100 in an example. I would follow the detailed guide (50 everywhere, 500 for `maxseq`) because it is the only source with a procedure, and verify with your own measurements. Note that pureScale is a clustered Db2 feature; a Db2u single-pod instance is not pureScale, so the ORDER caveat is background and not an action for most MAS installs.
+
+### The generator script, and the exclusion list
+
+The guide gives a generator that builds the ALTER statements from `MAXSEQUENCE`:
+
+```bash
+db2 "select 'alter sequence maximo.' || sequencename || ' cache 50;' from maximo.maxsequence" > change_seq_cache.sql
+```
+
+Then three manual steps:
+
+1. Edit the file so the `maxseq` line says `cache 500`.
+2. **Delete every line for the protected Tivoli Asset Management for IT sequences.** The guide lists dozens of names, including `ASSETATTRIBUTESEQ`, `DPADISKSEQ`, `OMPSEQ`, `RELATIONSEQ`, `ACTCISEQ` and many `DPA*` entries. IBM's cache-size page is explicit that these "must not be altered manually."
+3. Run `db2 -tvf change_seq_cache.sql`.
+
+Do not skip step 2 because "we don't use TAMIT." The generator reads `MAXSEQUENCE`, and if those sequences exist in your data dictionary they are in your output. Remove them mechanically rather than by eye:
+
+```bash
+# Build a list of the protected names from the guide into protected.txt (one per line),
+# then filter the generated script
+grep -v -i -F -f protected.txt change_seq_cache.sql > change_seq_cache.filtered.sql
+```
+
+Review the filtered file before you run it. A script that quietly alters a protected sequence is the kind of thing that works until an upgrade.
+
+### Before and after
+
+```sql
+SELECT SEQNAME, CACHE
+  FROM SYSCAT.SEQUENCES
+ WHERE SEQSCHEMA = 'MAXIMO' AND SEQNAME IN ('MAXSEQ', 'WORKORDERSEQ', 'ASSETSEQ');
+```
+
+Check one more thing. IBM's pages say nothing about sequence caches resetting on a Db2 restart: cached values that were reserved but unused are normally lost when the database deactivates, which produces gaps in IDs. Gaps are harmless for Maximo's internal IDs (they are not business numbers like `wonum`, which come from autokeys), but tell your auditors before they find them. This is standard Db2 sequence behaviour and not from an IBM Maximo page.
+
+---
+
+## 📊 Statistics: Run Runstats on a Schedule
+
+The optimiser chooses access paths from statistics in the catalog. If they are missing or old, it guesses, and a guess on a table that has grown from 100,000 to 10 million rows is a table scan where an index lookup should be.
+
+The wiki's instruction is brief: run runstats and/or reorg periodically to update index statistics, and refresh index statistics after migrating from Maximo 7 to 8 (and rebuild indexes if needed). The 7.6.x guide supplies the detail:
+
+> For a stable production system, updating statistics weekly or monthly is sufficient. [...] Updating statistics is especially important when major changes to the number of rows in the tables is occurring. This usually happens during the first 12 months of a new system or when a large number of new users or assets are added.
+
+### The command
+
+```sql
+RUNSTATS ON TABLE MAXIMO.WORKORDER WITH DISTRIBUTION AND DETAILED INDEXES ALL ALLOW WRITE ACCESS
+```
+
+The guide explains the options:
+
+| Clause | What it buys you |
+|---|---|
+| `WITH DISTRIBUTION` | Value-frequency data so the optimiser handles skew, clustered values and duplicates; helps queries with literal predicates |
+| `DETAILED INDEXES ALL` | Index statistics that let the optimiser estimate page fetches for different buffer pool sizes |
+| `ALLOW WRITE ACCESS` | Users keep working during collection |
+
+### All tables at once
+
+The guide gives a table-iteration approach, which generates one statement per table:
+
+```bash
+db2 -x "select 'runstats on table maximo.' || tabname || ' on all columns and detailed indexes all allow write access;' from syscat.tables where tabschema = 'MAXIMO' and type = 'T'" > runstats_all.sql
+db2 -tvf runstats_all.sql
+```
+
+(The guide's version omits the `type = 'T'` filter, which includes views in the output; the filter keeps you from generating statements Db2 will reject. That addition is ours.)
+
+Maximo also exposes this in the UI: in the Database Configuration application, the Select Action menu has **Update Statistics**. That is fine for a one-off and convenient after configuration changes, but for a schedule you want a script.
+
+### Why not AUTO_RUNSTATS?
+
+Db2 can collect statistics automatically. IBM's guide says Maximo generally does not recommend turning on `AUTO_MAINT`, `AUTO_TBL_MAINT`, `AUTO_RUNSTATS` or `AUTO_STMT_STATS`, and instead recommends scheduling maintenance in regular windows to avoid hurting end-user performance. It is a defensible position: automatic collection runs when Db2 decides, not when your business is quiet, and in a pod with a hard CPU limit that can be a visible spike.
+
+Two caveats. The guide is for 7.6 on Db2 10.1 and later. The wiki, for MAS, says only "periodically." Test the advice on your Db2 version, and decide deliberately. An unscheduled database with automatic maintenance off is the worst of both worlds: no statistics at all.
+
+### How do you know it worked?
+
+```sql
+SELECT TABNAME, CARD, STATS_TIME
+  FROM SYSCAT.TABLES
+ WHERE TABSCHEMA = 'MAXIMO' AND TYPE = 'T'
+ ORDER BY STATS_TIME
+ FETCH FIRST 10 ROWS ONLY;
+```
+
+Every STATS_TIME should be within your schedule window. Then compare a known slow query's plan before and after:
+
+```bash
+db2expln -database BLUDB -schema MAXIMO -package % \
+  -statement "select * from maximo.workorder where status = 'APPR' for read only" \
+  -terminal -graph > plan_after.txt
+```
+
+The `db2expln` pattern is taken from the performance wiki's diagnosis page; substitute your own slow statement.
+
+---
+
+## 🗜️ Reorg Only on Evidence
+
+Reorganising a table rewrites it. It consumes CPU, I/O and log space, takes locks, and on a large table takes a long time. The 7.6.x guide is blunt about it: "Only run reorganization against a table when careful analysis has been done to determine that reorganization corrects the performance problem."
+
+### Find candidates
+
+The wiki's diagnosis page gives the check:
+
+```bash
+db2 reorgchk current statistics on schema 'MAXIMO' > /tmp/reorgchk.log
+```
+
+Any table or index with a `*` in the REORG column is a candidate. (`current statistics` uses the statistics already in the catalog, which is why you run runstats first. The 7.6.x guide's older form, `reorgchk update statistics on table all`, refreshes them as part of the check.)
+
+### The 70% trap
+
+Here is the reason "a star means reorg" is wrong. The guide explains that reorgchk flags a table for reorganisation if the table size in bytes is not more than 70 percent of the total space allocated for the table, and gives this example: a table using 56 percent of its allocated space could be improved to 66 percent by a reorg, which still does not meet the 70 percent test, so it is flagged again. You can reorganise it, see no meaningful gain, and watch it flagged again the next week.
+
+| Reorgchk says | Ask first | Reorg? |
+|---|---|---|
+| Table flagged, heavy deletes recently, no further inserts expected | Is space being wasted? | Maybe, with a window |
+| Table flagged, steady inserts continue | Will the space be reused anyway? | No: IBM says shrinking and growing "is detrimental to performance" |
+| Table flagged, but a slow query's plan shows an index problem | Is data aligned to the index? | Possibly an index reorg; check the plan first |
+| Same table flagged every week after reorg | Does the 70% rule apply? | No: the flag is not a fault |
+| Large table | How long will it take? | Plan a window; consider compression and archiving |
+
+### Online versus offline
+
+The guide describes the two modes:
+
+- **Inplace (online):** runs while users work. It needs a brief super-exclusive lock and cannot start while a pre-existing intent-share lock is held. At the truncation phase it takes another, and users perceive a slowdown. It also needs log space, which can be large for an index.
+- **Offline:** runs when the database is not active. Duration scales with table size.
+
+Neither is a casual choice on a production Manage database. Rehearse on the restored copy and time it. Given the log volumes involved, check your log and archive-log storage first, which in the role are 10Gi each by default.
+
+After any reorg, run runstats again. Reorg changes the physical layout and the old statistics no longer describe it.
+
+---
+
+## ⚙️ Db2u Specifics: Resources, Config and What the Operator Owns
+
+On a VM you tune the host. In a pod, there is a boundary: the operator and the container own some things, and you own others.
+
+### CPU and memory
+
+The role's defaults are:
+
+| Variable | Default |
+|---|---|
+| `db2_cpu_requests` / `db2_cpu_limits` | `4000m` / `6000m` |
+| `db2_memory_requests` / `db2_memory_limits` | `8Gi` / `16Gi` |
+
+The role says these are suitable for a dedicated worker node of 4 CPU and 16 GB, and says to set requests equal to limits, because Db2 is "sensitive to both CPU and memory issues, particularly memory." The wiki gives the same advice (same request and limit for stable performance). Those defaults are a starting point for a proof of concept and are not a production size. IBM's sizing page does not give Db2-for-Manage sizing numbers; its Db2 figures cover Db2 Warehouse on Cloud Pak for Data (at least 6.1 cores and 18 GB per instance). Size from your own load tests (Part 6).
+
+Do **not** set `INSTANCE_MEMORY`. The role README explains why: the Db2 engine does not know it runs inside a container, so `INSTANCE_MEMORY AUTOMATIC` would read the node's cgroups and could exceed the pod's limit. Db2u normalises the value instead. This is the one setting both the wiki and the role say not to touch.
+
+### Storage
+
+The role's defaults are sized for a lab (50Gi data), and the role's own documentation says production Manage typically needs 500Gi or more, with backup storage 2 to 3 times data. The wiki adds the principle: separate system, user, backup, transaction log and temporary storage onto different disks where possible, put large tables in a dedicated tablespace on high-throughput disks, and on AWS consider EFS Provisioned mode. Use the wiki's **Disk IOPS and Latency Checker** and **DBTest** (below) to measure your storage rather than trust the storage class name.
+
+### Which settings should go in the custom resource
+
+The role exposes three override variables, each written into the custom resource:
+
+| Variable | Custom resource section | Typical use |
+|---|---|---|
+| `db2_database_db_config` | `spec.environment.database.dbConfig` | Database configuration, e.g. `CUR_COMMIT`, `LOCKTIMEOUT` |
+| `db2_instance_dbm_config` | `spec.environment.instance.dbmConfig` | Instance configuration (not `INSTANCE_MEMORY`) |
+| `db2_instance_registry` | `spec.environment.instance.registry` | `db2set` registry variables |
+
+The role's default `dbConfig` is only `APPLHEAPSZ: 8192 AUTOMATIC` plus `LOGARCHMETH1/2: OFF`. That second pair deserves a flag: with both archive methods OFF, Db2 uses circular logging and the database is **not roll-forward recoverable**. The role comments say so. If you plan point-in-time recovery (Part 4 covers backup and DR), you need log archiving on, and it is a configuration change that must be made on purpose.
+
+### The 7.6.x configuration list: reference, not a to-do
+
+The old guide carries a long list of database configuration values. Here is the part of it worth reading, grouped by what it addresses:
+
+| Area | Parameter and value in the 7.6.x guide | Note |
+|---|---|---|
+| Logging | `LOGBUFSZ 1024`, `LOGFILSIZ 8192`, `LOGPRIMARY 20`, `LOGSECOND 100` | Sizes for write-heavy OLTP; size log storage to match |
+| Locking | `LOCKLIST AUTOMATIC`, `LOCKTIMEOUT 300` | Check MAXLOCKS too if you see escalation |
+| Concurrency | `CUR_COMMIT ON` | Readers do not block on uncommitted writers |
+| Memory | `DATABASE_MEMORY`, `PCKCACHESZ`, `DBHEAP`, `STAT_HEAP_SZ` all `AUTOMATIC` | Only if resources allow; else tune manually |
+| Statements | `STMTHEAP 20000`, `STMT_CONC LITERALS`, `DFT_QUERYOPT 5` | Concentrator has caveats (below) |
+| I/O | `CHNGPGS_THRESH 40`, `NUM_IOCLEANERS AUTOMATIC`, `NUM_IOSERVERS AUTOMATIC`, `MAXFILOP 61440`, `SOFTMAX 1000` | SOFTMAX speeds runtime but lengthens crash recovery |
+| Other | `AUTO_REVAL DEFERRED`, `DEC_TO_CHAR_FMT NEW`, `REC_HIS_RETENTN 30` | History file over 30MB can slow Db2 |
+
+Do not paste this list into a production instance. It was written for Db2 10.1 or later on VMs, before Db2u. Several parameters are certainly managed or overridden differently under Db2u, and some instance-level parameters in the older guide (for example `HEALTH_MON`) may not exist on current engines. Compare the list to your live `db2 get db cfg` output (Step Zero), and change only what differs and has a reason. The statement concentrator in particular needs the `REOPT ONCE` bind and a Maximo property (`mxe.db.DB2jdbcCollection`) to behave, and IBM's guide says text search queries perform better with it off.
+
+---
+
+## 🔬 Diagnosis: Find Out Before You Change
+
+Tuning without measurement is guesswork with extra steps. The wiki's Db2 diagnosis page gives a practical toolkit, and IBM's checklist gives the order:
+
+1. Confirm whether the app server or database server is the busy one.
+2. Check resource usage against limits.
+3. Check for background utilities such as backups.
+4. Check for locks.
+5. Check for high-cost queries.
+6. Check disk performance.
+
+(The checklist's triggers include response time over two seconds, any query over two seconds or with high CPU cost, and system or I/O wait around 20 percent on a node or pod.)
+
+### The queries worth keeping
+
+```sql
+-- Long-running statements right now
+SELECT ELAPSED_TIME_MIN, SUBSTR(AUTHID,1,10) AS AUTH_ID, AGENT_ID, APPL_STATUS,
+       SUBSTR(STMT_TEXT,1,60) AS SQL_TEXT
+  FROM SYSIBMADM.LONG_RUNNING_SQL
+ WHERE ELAPSED_TIME_MIN > 0
+ ORDER BY ELAPSED_TIME_MIN DESC;
+
+-- Busiest tables by rows read (table scans are the warning sign)
+SELECT SUBSTR(TABSCHEMA,1,10) AS SCHEMA, SUBSTR(TABNAME,1,20) AS NAME,
+       TABLE_SCANS, ROWS_READ, ROWS_INSERTED, ROWS_DELETED
+  FROM TABLE(MON_GET_TABLE('','',-1))
+ ORDER BY ROWS_READ DESC FETCH FIRST 5 ROWS ONLY;
+
+-- Busiest indexes, with page splits
+SELECT SUBSTR(TABSCHEMA,1,10) AS SCHEMA, SUBSTR(TABNAME,1,20) AS NAME, IID, NLEAF, NLEVELS,
+       INDEX_SCANS, KEY_UPDATES,
+       BOUNDARY_LEAF_NODE_SPLITS + NONBOUNDARY_LEAF_NODE_SPLITS AS PAGE_SPLITS
+  FROM TABLE(MON_GET_INDEX('','',-1))
+ ORDER BY INDEX_SCANS DESC FETCH FIRST 5 ROWS ONLY;
+```
+
+The wiki also offers `db2top -db <dbname>` for real-time views (press `z` then `5` on the dynamic SQL screen to sort by CPU), `db2mtrk -i -d -v` for memory, `db2pd -barstats -d <dbname>` to see if a backup is running, and `db2advis` for index advice on a statement. On `db2advis` there is a practitioner caution: Mark Robbins in the same community thread says he does not rely on it heavily because it can recommend an index on a single column that is already part of a composite index. Review the data dictionary and Maximo's existing indexes before adding anything.
+
+### Monitor switches: the 5-10% tax
+
+The wiki says to turn off all monitor switches in the database manager configuration except TIMESTAMP, because enabling them there turns them on for every session at roughly 5 to 10 percent overhead. To collect data, enable them in your own session only, and turn them off immediately afterwards:
+
+```bash
+db2 update monitor switches using BUFFERPOOL on LOCK on SORT on STATEMENT on TIMESTAMP on TABLE on UOW on
+# ... collect ...
+db2 update monitor switches using BUFFERPOOL off LOCK off SORT off STATEMENT off TIMESTAMP off TABLE off UOW off
+```
+
+### Is it the database or the network? DBTest
+
+The wiki's **DBTest** utility separates connection time, query execution and data fetch time from inside a Manage pod. Run it from the maxinst pod:
+
+```bash
+cd /tmp
+curl -L -o run-dbtest-in-maxinst-pod.sh https://ibm-mas.github.io/mas-performance/pd/download/DBTest/run-dbtest-in-maxinst-pod.sh
+bash run-dbtest-in-maxinst-pod.sh
+```
+
+IBM says that with healthy network latency and database, fetch time should be under 10 milliseconds. The sample in the docs showed a 6.55-second connection with fast execution and fetch, which points at connection setup, not at your SQL. That one distinction saves days: tuning indexes will not fix a slow connection path.
+
+---
+
+## 🚧 Known Limits: What Tuning Cannot Fix
+
+The wiki lists limitations that no setting changes. Set expectations accordingly:
+
+| Limitation | Effect | Workaround IBM gives |
+|---|---|---|
+| No text search on containerised Db2U and Db2WH | Some Description searches are slower than on Oracle or SQL Server | Add a non-unique index on Description; helps exact (`=text`) and prefix (`text%`) searches |
+| No MMP or table partitioning in Manage | Big tables cannot be partitioned | Archive records older than one year (the wiki names Optim) |
+| MMP unsupported by MAS applications | Never set `db2_mln_count` above 1 for MAS | Role README warning |
+| Leading `%` wildcards force table scans | Slow searches no matter what | Use prefix searches; the 7.6.x guide covers search types |
+
+The leading-wildcard point matters more than any registry variable. The 7.6.x guide says to eliminate the leading `%` and to change most search types from WILDCARD to EXACT or prefix. A database tuned perfectly still scans a table when a user types `%pump%` into a 5-million-row asset list.
+
+---
+
+## 🗓️ A Maintenance Schedule You Can Defend
+
+IBM says "periodically." Here is a schedule built from the 7.6.x guide's weekly-or-monthly statement. It is **our suggestion, not an IBM-published cadence**, so adjust it to your data growth and test it first.
+
+| Task | Frequency | Window | Trigger to run early |
+|---|---|---|---|
+| Runstats, all MAXIMO tables | Weekly (monthly if the system is stable) | Quiet period, `ALLOW WRITE ACCESS` | After any large load, integration backlog clearance, or migration |
+| Reorgchk, review the `*` list | Monthly | Quiet period | Plan degradation, heavy delete or archive job |
+| Reorg of chosen tables | On evidence only | Planned window, rehearsed timing | A flagged table with a measurable slow query |
+| Runstats after reorg | Every time | Immediately after | Always |
+| Sequence cache check | Quarterly and after upgrades | Any | After a Manage or Db2 upgrade |
+| Configuration drift check (`db2set -all`, `get db cfg`) | After every Db2 or MAS upgrade | Change window | Part 2's Db2 12 upgrade |
+| History and log housekeeping | Per your backup policy | Any | History file approaching 30MB |
+
+### Running it on OpenShift
+
+The sources do not give a scheduling mechanism for Db2u. A pattern that works is an OpenShift `CronJob` whose container runs `oc exec` against the engine pod with a service account allowed to exec into the Db2 namespace. Treat it as a pattern to design and review with your security team: it gives an exec-capable service account a standing credential. Alternatively run the same script from your existing scheduler (Jenkins, Ansible Automation Platform, Control-M) with a short-lived token. Either way, log each run, store the output, and alert on failure. Part 5 covers what to alert on.
+
+```bash
+#!/bin/bash
+# runstats_maximo.sh -- run inside the Db2 engine pod as db2inst1
+set -euo pipefail
+db2 connect to BLUDB
+db2 -x "select 'runstats on table maximo.' || tabname || ' with distribution and detailed indexes all allow write access;' \
+        from syscat.tables where tabschema = 'MAXIMO' and type = 'T'" > /tmp/runstats_all.sql
+db2 -tvf /tmp/runstats_all.sql | tee /tmp/runstats_$(date +%F).log
+db2 connect reset
+```
+
+---
+
+## 🧪 Change Runbook: How to Apply This Safely
+
+A tuning change is a production change. Run it like one.
+
+**1. Baseline (day -7).** Capture `db2set -all`, `get db cfg`, `get dbm cfg`, the three Step Zero queries, the top-5 tables and indexes from `MON_GET_*`, and DBTest numbers. Without a before, you cannot claim an after.
+
+**2. Back up and prove the restore (day -5).** Part 4 covers backup. The point here: a configuration change can be reverted by changing it back, but a failed reorg or an interrupted maintenance step is a recovery event.
+
+**3. Rehearse on a restored copy (day -3).** Apply the registry change through the custom resource or role override, confirm the pod restarts, diff the custom resource to see whether the defaults (`DB2AUTH` and friends) survived, and re-run the baseline. Check the setting survived a pod restart.
+
+**4. Order the production changes (day 0).** One change at a time, smallest blast radius first:
+
+| Order | Change | Needs restart | Reversible |
+|---|---|---|---|
+| 1 | Sequence cache (ALTER SEQUENCE) | No | Yes, ALTER again |
+| 2 | Runstats | No | n/a |
+| 3 | `DFT_TABLE_ORG ROW` (new tables only) | No | Yes |
+| 4 | WLM admission control / workload registry | Database restart per IBM's guide | Yes, revert variable and restart |
+| 5 | Reorg of specific tables | Window | Not cheaply |
+
+**5. Verify.** Re-run the baseline queries, compare `db2expln` plans for your slowest statements, run DBTest again, and watch the Manage UI response time for a day. If an integration or cron task misbehaves, the sequence change and the admission-control change are the first suspects because they alter concurrency behaviour.
+
+**6. Record.** Write the final values into your pipeline variables (`DB2_INSTANCE_REGISTRY`, `DB2_DATABASE_DB_CONFIG`) so the next rebuild matches. Db2 settings that live only in a pod are a disaster waiting for a reinstall.
+
+---
+
+## 🩺 Troubleshooting
+
+| Symptom | Likely cause | First check |
+|---|---|---|
+| Saves slow, CPU high on Db2 pod, plans changed after data growth | Stale statistics | `STATS_TIME` query; run runstats |
+| Same table flagged by reorgchk every week | The 70% rule | Compare size to allocated space; skip the reorg |
+| Queries queue during peak, little CPU used | Admission control enabled (ANALYTICS default) | `get db cfg` for WLM_ADMISSION_CTRL |
+| Bulk MIF or API load fails with statement limit errors | Concurrent statements per application | The wiki says to raise the limit and links IBM guidance |
+| Description searches slow | No text search on Db2U, wildcard type | Non-unique index on Description; fix search type |
+| Fetch slow, SQL fast | Network or connection | DBTest connection and fetch times |
+| Db2 pod OOMKilled | Memory limit, or `INSTANCE_MEMORY` set | Remove manual instance memory; align request and limit |
+| Setting vanished after restart or upgrade | Changed in pod, not in the custom resource | Compare CR with live config; move to CR |
+| Reorg run stalls | Waiting for a lock | Check for open intent-share locks (inplace reorg needs a Z lock) |
+| ID gaps after a Db2 restart | Sequence cache reserved values lost | Expected; harmless for internal IDs |
+
+---
+
+## 🛠️ The Seven Commandments of Db2 Tuning for Manage
+
+1. **Read before you write.** `db2set -all` and `get db cfg` first. Your cluster is the authority, not this post.
+2. **Row tables, always.** Anything else in the MAXIMO schema is a finding.
+3. **Question the workload profile.** The role says ANALYTICS, the wiki says Maximo, and Db2 turns admission control on for the first.
+4. **Cache your sequences, skip the protected ones.** 50, with `maxseq` at 500, and never the Tivoli list.
+5. **Schedule runstats; earn every reorg.** A flagged table is a question, not an order.
+6. **Never set instance memory in a container.** Let Db2u normalise it.
+7. **Put it in the custom resource.** A setting that lives only in a pod will not survive the next rebuild.
+
+---
+
+## 🎯 What to Do This Week
+
+| Day | Action |
+|---|---|
+| Monday | Capture the baseline: registry, configs, three catalog queries, DBTest |
+| Tuesday | Settle the workload question: record `DB2_WORKLOAD` and `WLM_ADMISSION_CTRL`, and decide whether a change is needed |
+| Wednesday | Check TABLEORG and `DFT_TABLE_ORG`; check sequence caches |
+| Thursday | Rehearse the sequence script (with the exclusion list) and runstats on a restored copy |
+| Friday | Write the findings and the schedule into the change calendar |
+
+The Db2 database behind Manage is the one component every transaction touches. It rewards an hour of measurement more than almost anything else on your platform, and it punishes a lazy "the operator handles it" assumption slowly and quietly, until a Monday morning when it does not.
+
+Next in the series: **Part 4, Backup, Restore and DR for MAS**, which is the safety net behind every change in this post.
+
+---
+
+## 📚 References
+
+- [MAS Performance Wiki: MAS Manage best practice (Db2 registry, row tables, sequence cache, runstats and reorg, monitor switches)](https://ibm-mas.github.io/mas-performance/mas/manage/bestpractice/)
+- [MAS Performance Wiki: DB2 Performance Diagnosis (db2top, MON_GET queries, reorgchk, db2advis)](https://ibm-mas.github.io/mas-performance/pd/db2-performance-diagnosis/)
+- [MAS Performance Wiki: DBTest utility for MAS Manage](https://ibm-mas.github.io/mas-performance/pd/dbtest/)
+- [MAS Performance Wiki: Diagnosis checklist](https://ibm-mas.github.io/mas-performance/pd/checklist/)
+- [IBM Maximo Asset Management 7.6.x Best Practices for System Performance v1.3 (sections 5.1 DB2 tuning, 5.4.3 Sequences, 5.5 Maintenance)](https://ibm-mas.github.io/mas-performance/maximo-7/download/Maximo%20Best%20Practices%20for%20System%20Performance%207.6.x%20v1.3.pdf)
+- [MAS DevOps Ansible Collection: db2 role (db2_workload, db2_table_org, override variables, CPU, memory and storage)](https://ibm-mas.github.io/ansible-devops/roles/db2/)
+- [GitHub: ibm-mas/ansible-devops db2 role defaults (DB2_WORKLOAD: ANALYTICS in default registry)](https://github.com/ibm-mas/ansible-devops/blob/master/ibm/mas_devops/roles/db2/defaults/main.yml)
+- [IBM Db2 documentation: wlm_admission_ctrl configuration parameter (default depends on DB2_WORKLOAD)](https://www.ibm.com/docs/en/SSHRBY/com.ibm.db2.luw.admin.config.doc/doc/r0062018.html)
+- [IBM Db2 documentation: dft_table_org, default table organization](https://www.ibm.com/docs/en/SSHRBY/com.ibm.db2.luw.admin.config.doc/doc/r0060587.html)
+- [IBM Docs: Modifying the sequence cache size (Maximo 7.6.2; cache 50 and 500, protected sequences)](https://www.ibm.com/docs/SSZQTT_7.6.2/com.ibm.mbs.doc/gp_sysperf/t_modify_sequence_cache.html)
+- [IBM Support: Enable Seq cache explicitly in pureScale database for Maximo (ORDER vs NO ORDER)](https://www.ibm.com/support/pages/node/1134045)
+- [IBM Community: Db2 database tuning for better Maximo report performance, let's share best practices (practitioner discussion)](https://community.ibm.com/community/user/discussion/db2-database-tuning-for-better-maximo-report-performance-lets-share-best-practices)
+- [GitHub: ibm-mas/ansible-devops releases (CHG-021: 37.21.3)](https://github.com/ibm-mas/ansible-devops/releases)
+- [GitHub: ibm-mas/cli releases (CHG-038: CLI 23.15.0, `db2_audit_retention_days`)](https://github.com/ibm-mas/cli/releases)
+
+---
+
+**About TheMaximoGuys:** We help Maximo administrators, developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | October 2026*
+
+<!--
+REVIEWER NOTES (night-shift, 2026-10-21, platops-03):
+- SOURCES: knowledge_base/DOC00 (section 5.3 and CHG-021/CHG-038 only; no DOC file carries Db2 tuning content, so the "primary" KB source is thin by design). SearchMaximo KB (611 files, /root/Amtrak proposal/ibm_userguides_markdown): only the MAXSEQUENCE data-dictionary description (maximo_manage_Section_90) and the mxe.maxsequencecheck property were relevant; no runstats/reorg tuning pages there.
+- Live fetches 2026-10-21: ibm-mas.github.io/mas-performance (manage/bestpractice, pd/db2-performance-diagnosis, pd/dbtest, pd/checklist, sizing/guidance), the 7.6.x Best Practices PDF v1.3 (text extracted locally with pdftotext), ansible-devops db2 role README and defaults/main.yml (raw GitHub), IBM Docs 7.6.2 sequence cache page, IBM Support node/1134045, Db2 docs for wlm_admission_ctrl.
+- KEY DISCREPANCY (flagged in post): wiki says db2_workload=maximo -> WLM_ADMISSION_CTRL defaults to NO; ansible-devops defaults to DB2_WORKLOAD=ANALYTICS with documented values ANALYTICS/PUREDATA_OLAP only; Db2 docs say admission control defaults to YES under ANALYTICS. Not resolved: whether the Db2u image applies anything beyond the registry map, and whether a stock MAS install actually runs with admission control on. Needs a check on a real cluster.
+- NOT VERIFIED: IBM Db2 reference page for DB2_WORKLOAD=MAXIMO (searches did not surface one); the five-variable breakdown is from the 7.6.x PDF only (written for Db2 10.1+). IBM Support node/410009 (registry variables to reduce locks) is behind login; its variables are not quoted.
+- NOT VERIFIED: whether ibm.mas_devops.db2_overwrite_config merges or replaces the default registry map when DB2_INSTANCE_REGISTRY is set (post tells readers to diff the CR in rehearsal). Whether in-pod db2 update db cfg changes survive Db2u reconcile/restart/12 upgrade (post says unverified, recommends CR route). Role README says overrides apply to Db2uCluster; Db2uInstance behaviour not confirmed.
+- Wiki says sequence cache 50; 7.6.x guide says 50 + 500 for maxseq; the pureScale post example uses 100 NO ORDER. Post follows the guide and says so. The guide's exclusion list is only partially reproduced (names quoted are from the PDF); the full list must be taken from the PDF/IBM page.
+- OUR ADDITIONS (not IBM): maintenance schedule table; CronJob/oc exec scheduling pattern; type='T' filter on the generator; TABLEORG/SYSCAT.SEQUENCES/STATS_TIME catalog queries (standard Db2 LUW catalog, not from an MAS page); sequence-gap remark (standard Db2 behaviour); change-runbook day offsets.
+- 7.6.x PDF parameters (HEALTH_MON, AGENT_STACK_SZ, etc.) are version-sensitive; the post tells readers not to paste the list and does not recommend HEALTH_MON.
+- Practitioner sources: IBM Community thread (Mohamed Ghareeb / Mark Robbins, May 2025) used for cautions. Searches for Maximo Secrets / Interloc Db2 tuning posts returned nothing relevant. No Db2 12-specific tuning change was found; post makes no Db2 12 tuning claim.
+- Part 2 'next' link and series index status updated in the same commit.
+-->
