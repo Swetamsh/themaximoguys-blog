@@ -1,0 +1,768 @@
+---
+title: "Backup, Restore and Disaster Recovery for MAS: What mas backup Covers, What It Doesn't"
+description: "IBM's MAS CLI backup covers Core, MongoDB CE, SLS and optionally Manage or Facilities with Db2, but not add-ons, CP4D, external MongoDB or Db2uInstance. Learn the scope and limits, Db2 logging rules, OADP and Kasten options, vendor-reported timings and a restore drill."
+date: "2026-10-21"
+slug: "mas-platops-04-backup-restore-dr"
+tags: ["Maximo", "MAS", "Backup", "Disaster Recovery", "OADP", "Kasten", "Db2", "MongoDB", "OpenShift", "Platform Operations", "Administrator"]
+draft: true
+tier: "admin"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-platops-04-backup-restore-dr.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What does the MAS CLI backup command actually back up?"
+    answer: "IBM's CLI guide (MAS 9.1.x and 9.2.x, CLI v19.0.0 or later) lists operator catalog definitions, Certificate Manager configuration (Red Hat provider only, and the certificates themselves are regenerated on restore), MongoDB Community Edition, Suite License Service (included unless you pass `--exclude-sls`) and the core Suite configuration and custom resources. On top of that you can opt in to the Manage or Facilities application resources and persistent volume data, plus the Db2 instance and a full database backup for each. Not covered: Monitor, IoT, Predict and the other add-ons, Cloud Pak for Data, the Data Reporter Operator, Grafana, external or enterprise MongoDB, and full OpenShift cluster state. So the often-repeated claim that it is 'Manage and Facilities only' is too narrow, but the claim that it is a full suite backup is far too wide. Treat it as a good Core-plus-Manage building block, not a disaster recovery plan."
+  - question: "Can I use mas backup if my Db2 is a Db2uInstance, or if Db2 uses circular logging?"
+    answer: "IBM's guide says only the standalone Db2 operator is supported for the Db2 part of the backup; Db2uInstance and other Db2 implementations are excluded. Check which custom resource you have with `oc get db2ucluster,db2uinstance -A` before you plan anything. Separately, the guide says an online Db2 backup requires archive logging (LOGARCHMETH1 or LOGARCHMETH2), and circular logging, which is the Db2 default, requires an offline backup. Part 3 of this series noted that the ansible-devops db2 role defaults both archive methods to OFF, so a stock install is likely circular. That means the CLI backup of Db2 will need an offline window unless you enable archive logging first. For anything outside the supported Db2 shape, use native Db2 backup or a storage-level tool and test the restore."
+  - question: "How long does a MAS restore take, and what RTO can I promise?"
+    answer: "IBM publishes no timings for the CLI pipeline, so any number you give the business must come from your own drill. The only MAS-specific figures are Veeam's, in a July 2026 vendor blog about Kasten: same-cluster recovery 'typically under an hour', MAS Core back in roughly 7 minutes against about 2.5 hours when the operator rebuilds from a cold start, and cross-cluster failover 'usually three to seven hours', depending mainly on whether you keep a warm standby. Those are vendor-reported, from a demo environment, with no RPO stated. Use them to size the conversation, not to write an SLA. Your restore time will be dominated by Db2 image size, storage class throughput, and how long Manage takes to reach a Ready workspace."
+  - question: "Is OADP or Velero a supported way to back up Maximo Manage?"
+    answer: "IBM Community has a walkthrough of OADP (Velero) backup and restore for Manage, using a DataProtectionApplication, an S3-compatible bucket, and a two-step restore: service accounts first, then the Manage project resources. It was posted in early 2022, does not state supported MAS versions, and contains inconsistencies such as two different OADP namespaces in its examples, so treat it as a pattern, not a procedure. IBM separately documents Maximo support on IBM Fusion with online backup and restore recipes for Core, Manage and the add-ons. Whatever tool you pick, confirm with IBM Support what is supported for your MAS version, and remember that file-level or volume snapshots of a running Db2 or MongoDB are only as good as the pre-hooks that quiesce or dump them."
+  - question: "What is the minimum I should do this month if I have no tested restore?"
+    answer: "Four things, in this order. First, find out where your backups live: if `mas backup` has only ever written to the in-cluster PVC, they die with the cluster, so configure S3 upload. Second, check Db2 logging mode and decide between offline backups in a window or enabling archive logging. Third, confirm that your MongoDB is Community Edition in-cluster; if it is external, your provider's native backup is the only protection it has. Fourth, restore the lot onto a scratch cluster and write down how long each step took and what broke. A backup you have never restored is a hope, and the restore drill is the only thing that turns it into a number you can defend."
+keyTakeaways:
+  - "mas backup (CLI v19.0.0 or later, MAS 9.1.x/9.2.x) covers catalogs, Certificate Manager config (Red Hat only), MongoDB CE, SLS, Suite config, and optionally Manage or Facilities with their Db2. It does not cover add-ons, CP4D, DRO, Grafana, external MongoDB or full cluster state"
+  - "Every backup is a full backup, one MAS instance per run, and without S3 upload the archives stay on an in-cluster PVC and are lost with the cluster. Restore from the pipeline works only from S3 or Artifactory, and Manage Db2 restore is offline"
+  - "Db2 logging mode decides your options: online backup needs archive logging; circular logging, the Db2 default and what a stock ansible-devops install is likely to run, forces an offline backup. Check LOGARCHMETH1 before you promise anyone a zero-downtime backup"
+  - "OADP, IBM Fusion and Veeam Kasten fill the gaps (add-ons, storage-level recovery, cross-cluster failover), but the only MAS-specific timings anywhere are vendor-reported: Kasten same-cluster under an hour, cross-cluster three to seven hours. Your RTO comes from your own restore drill"
+  - "Cross-cluster recovery has a short, ordered list of traps: do not restore cert-manager namespaces, set autoGenerateEncryptionKeys to false so the operator does not overwrite the restored key, restore MongoDB before Db2, then scale Manage up and wait for the workspace to be Ready"
+series:
+  name: "MAS PLATFORM-OPS"
+  part: 4
+  total: 8
+tldr: "IBM's MAS CLI gives you `mas backup` and `mas restore`, Tekton pipelines that capture Core, MongoDB CE, SLS and optionally Manage or Facilities with their Db2, to S3 or Artifactory. They are a solid building block with hard limits: no add-ons, no CP4D, no external MongoDB, no Db2uInstance, full backups only, offline Db2 restore. This post lays out the scope and limits from IBM's guide, the Db2 logging rule that decides online versus offline backup, where OADP, IBM Fusion and Veeam Kasten fit, the vendor-reported timings and how to treat them, a cross-cluster failover sequence, and a restore drill you can run before you need it."
+seoTitle: "MAS Backup, Restore and DR: CLI, OADP, Kasten"
+seoDescription: "What mas backup covers and misses, Db2 logging rules, OADP and Kasten options, cross-cluster DR order and a restore drill."
+targetQuestions:
+  - "What does mas backup cover in Maximo Application Suite?"
+  - "How do I back up and restore Maximo Manage on OpenShift?"
+  - "Does MAS backup support Db2uInstance or external MongoDB?"
+  - "Can I do an online Db2 backup for Maximo on OpenShift?"
+  - "How do I do disaster recovery for MAS to another cluster?"
+  - "How long does MAS restore take with OADP or Kasten?"
+  - "How do I test a MAS restore?"
+semanticKeywords:
+  - "mas backup restore CLI"
+  - "MAS disaster recovery"
+  - "OADP Velero Maximo Manage"
+  - "Veeam Kasten Maximo OpenShift"
+  - "IBM Fusion Maximo backup"
+  - "Db2 online backup LOGARCHMETH1"
+  - "MongoDB Community Edition backup MAS"
+  - "autoGenerateEncryptionKeys Manage"
+  - "Tekton pipeline backup MAS"
+  - "cross-cluster failover Maximo"
+  - "restore drill RTO RPO"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "cluster-admin access to the OpenShift cluster and the mas CLI v19.0.0 or later (or the quay.io/ibmmas/cli container)"
+  - "An S3-compatible bucket and credentials for backup upload and restore"
+  - "Knowledge of whether your Db2 is a Db2uCluster or a Db2uInstance, and its logging mode"
+  - "A scratch OpenShift cluster for the restore drill"
+speakableSections:
+  - "What mas backup Actually Covers"
+  - "Db2 Logging Mode Decides Everything"
+  - "Cross-Cluster Failover: The Ordered Version"
+clusterSlugs:
+  - "mas-platops-00-series-index"
+  - "mas-platops-01-patch-train"
+  - "mas-platops-02-db2-12-upgrade"
+  - "mas-platops-03-db2-tuning"
+  - "mas-platops-05-observability"
+  - "mas-platops-06-manage-performance"
+  - "mas-platops-07-support-window"
+  - "mas-platops-08-gitops-cli-ansible"
+relatedSlugs:
+  - "mas-platops-00-series-index"
+  - "mas-platops-02-db2-12-upgrade"
+  - "mas-platops-03-db2-tuning"
+  - "mas-platops-05-observability"
+---
+
+# Backup, Restore and Disaster Recovery for MAS: What mas backup Covers, What It Doesn't
+
+<aside>
+
+🎯 **Who this is for:** MAS administrators, platform engineers and DBAs who run Manage (or Facilities) on OpenShift and have been asked the question every operations lead eventually asks: "If the cluster is gone tomorrow, how long until we are working again, and how do you know?" This post separates what IBM's tooling documents from what you have to build.
+
+</aside>
+
+**Series:** MAS Platform Operations | **Part 4 of 8** | **Read time:** ~32 minutes
+
+**Previous:** [Part 3: Db2 Tuning for Maximo Manage](/blog/mas-platops-03-db2-tuning) | **Next:** Part 5: Observability for MAS (coming)
+
+---
+
+## 🔥 The Backup Nobody Restored
+
+Picture a Tuesday. A storage array firmware update goes wrong, or an engineer deletes the wrong namespace, or the OpenShift cluster simply will not come back after an upgrade. Your Manage users cannot reach anything. Someone says the words every administrator dreads:
+
+> *"We have backups, right?"*
+
+You do. The `mas backup` pipeline has been running every night for eight months. You check where the archives went. They are on a persistent volume claim in the `mas-<instance>-pipelines` namespace. On the cluster that no longer exists.
+
+That is not a hypothetical edge case. It is IBM's own documented behaviour: without S3 or Artifactory upload, backups stay in the cluster "and are lost if the cluster is decommissioned." The guide is clear. Most of us skim past that sentence.
+
+This part of the series is the safety net behind everything in [Part 2](/blog/mas-platops-02-db2-12-upgrade) (Db2 12) and [Part 3](/blog/mas-platops-03-db2-tuning) (Db2 tuning). Both told you to take and prove a backup before you changed anything. Here is how.
+
+Three things shape the rest of this post:
+
+1. **IBM ships a backup tool, and it is better than its reputation, but it has clear boundaries.** It is a pair of Tekton pipelines driven by `mas backup` and `mas restore`. Its scope is wider than "Manage only" and much narrower than "the whole suite."
+2. **Most real disaster recovery plans need a second layer.** OADP (Velero), IBM Fusion and Veeam Kasten each fill different holes.
+3. **Nobody publishes a restore time you can trust.** IBM publishes none for the CLI. The only MAS-specific figures come from a vendor blog. Your RTO is something you measure, not something you read.
+
+A note on how I sourced this. The scope and limits come from IBM's MAS CLI backup and restore guide (`ibm-mas.github.io/cli`), read in full on 21 October 2026. The Kasten material comes from Veeam's blog dated 21 July 2026. The Fusion matrix comes from IBM Docs. The OADP walkthrough is an IBM Community post from early 2022 and is dated. I did not run any of these procedures against a live cluster while writing this, so every command below is traced to a source or flagged as standard Db2 or OpenShift practice. The reviewer notes at the bottom list what is unverified.
+
+---
+
+## 🧭 What mas backup Actually Covers
+
+Start with the whole picture. This is the table from IBM's guide, reorganised so you can see the gaps at a glance.
+
+| Component | In `mas backup`? | Notes from IBM's CLI guide |
+|---|---|---|
+| IBM operator catalog definitions | Yes, always | Catalog source definitions only |
+| Certificate Manager | Configuration only | Red Hat provider only; the certificates themselves are **regenerated** on restore |
+| MongoDB | By default | **Community Edition only**; external MongoDB, including IBM Cloud Databases, is not backed up |
+| Suite License Service (SLS) | By default | Exclude with `--exclude-sls` |
+| MAS Suite core configuration and CRs | Yes, always | The Suite custom resource and related configuration |
+| Manage application and PV data | Optional | `--backup-manage-app`; PVs defined in `spec.settings.deployment.persistentVolumes` |
+| Facilities application and PV data | Optional | `--backup-facilities-app` |
+| Db2 for Manage or Facilities | Optional | Db2uCluster CR, secrets, ConfigMaps, services, routes, subscription **plus a full database backup**; standalone Db2 operator only |
+| Monitor, IoT, Predict, Health add-ons | **No** | "Not yet supported" for app-level backup |
+| Cloud Pak for Data | **No** | Not backed up and not restored |
+| Data Reporter Operator (DRO) | **No** | Installed or configured fresh during restore |
+| Grafana | **No** | Optional fresh install on restore |
+| OpenShift cluster state, node config, resources outside MAS namespaces | **No** | You rebuild the cluster yourself |
+
+Two corrections to folklore are worth making now.
+
+**"It only covers Manage and Facilities" is wrong.** The app-level options are limited to Manage and Facilities, which is where that claim comes from. But the default run also captures Core configuration, MongoDB CE and SLS. The series brief for this post said Manage and Facilities only; IBM's page says more. We follow IBM's page.
+
+**"It is a full suite backup" is also wrong.** If you run Monitor, IoT or Predict, none of their state is in these archives. If you run Maximo Health inside Manage, it is covered as part of Manage. If you run the add-ons as separate applications, you need another layer.
+
+### What is in the archive
+
+Each run produces tarballs named `mas-<instanceid>-backup-<backupversion>-<component>.tar.gz`. The component names tell you exactly what you got:
+
+| Archive component | Contains |
+|---|---|
+| `catalog` | Operator catalog source definitions |
+| `certmanager` | Certificate configuration |
+| `mongoce` | MongoDB data for MAS and SLS |
+| `sls` | License server data |
+| `suite` | Core Suite configuration and CRs |
+| `db2u-manage` | Manage Db2 resources and database backup |
+| `app-manage` | ManageApp CR, workspace CR, encryption secrets, labeled certificates, subscription, OperatorGroup, entitlement secret, auto-discovered secrets, PV data |
+| `db2u-facilities` / `app-facilities` | The same for Facilities |
+
+Notice what is in `app-manage`: **the encryption secrets**. Hold that thought. It is the single biggest trap in cross-cluster recovery, and we will come back to it.
+
+<aside>
+
+💡 **Key insight:** `mas backup` is a configuration-plus-data capture of the parts IBM can reach through standard operators. Everything it cannot reach, you must protect another way or accept as rebuildable.
+
+</aside>
+
+---
+
+## 🚧 The Limits You Must Read Before You Rely On It
+
+The guide lists its own limits plainly. Put them next to what each one means in practice.
+
+| Documented limit | What it means for you |
+|---|---|
+| Every backup is **full**; no incremental or differential | Backup time and storage scale with total data; nightly Db2 backups of a large Manage database are expensive |
+| **One MAS instance** per backup or restore run | Multi-instance estates run one pipeline per instance |
+| **Tekton pipelines must work** | If OpenShift Pipelines is broken, your backup tool is broken. Test it |
+| Without S3 or Artifactory upload, backups **stay on the cluster PVC** | A cluster loss is a backup loss. Always configure upload |
+| Archives must be **downloaded manually** | There is no built-in retention or lifecycle policy; you own that in your bucket |
+| **Pipeline restore only from S3 or Artifactory**; Artifactory is dev mode only | Production restore means S3. Local-file restore is documented as "not supported yet" |
+| **Standalone Db2 operator only**; Db2uInstance excluded | Check your custom resource type now |
+| **Db2 restore is offline**: no active connections | Restore means a Manage outage, always |
+| **MongoDB Community Edition, in-cluster only** | External MongoDB has no protection from this tool |
+| **Same MAS version and instance ID** strongly recommended | You cannot casually restore into a different version or rename |
+| **Target cluster must already exist** | The restore does not provision OpenShift |
+| **No selective restore** outside the full pipeline | You cannot restore only the Manage database through this tool |
+| **Backups from before CLI v19.0.0 cannot be restored** with v19.0.0 or later | After a CLI upgrade, pre-v19 archives are orphaned |
+| Cert-manager: **Red Hat provider only** | Other certificate managers are out of scope |
+| No CP4D restore | If your add-ons depend on CP4D, that is a separate recovery |
+
+### The Db2uInstance question
+
+The limit that bites hardest in 2026 is the Db2 one. IBM's guide says "Only the standalone Db2 operator is supported. Db2uInstance and other Db2 implementations are excluded." The series index flagged that this collides with the Db2 12 work in [Part 2](/blog/mas-platops-02-db2-12-upgrade). I cannot tell you from the sources I read which custom resource type your upgraded database ends up as; that depends on how it was created and upgraded. So do not guess. Ask the cluster:
+
+```bash
+# Which Db2 custom resources exist, in which namespaces?
+oc get db2ucluster -A
+oc get db2uinstance -A
+
+# Which operator subscription is installed?
+oc get subscription -A | grep -i db2u
+```
+
+If the Manage database is a `Db2uInstance`, the CLI's `--backup-manage-db` option is not for you, and the Db2 half of your protection has to come from native Db2 backup or a storage-level tool. That is not a disaster. It is a design decision you want to make on a calm Tuesday rather than a bad one.
+
+### Documentation wrinkles worth knowing
+
+IBM's guide is a working document, and a careful read turned up several inconsistencies. None of them change the advice here, but they explain why you should test rather than trust:
+
+- It says local restore is not supported, yet Scenario 1 restores from a "backup archive already present in the cluster PVC."
+- Scenario numbering repeats "Scenario 7" in the backup section.
+- The archive-selection section references `--restore-facilities-app` and `--restore-facilities-db`, but the restore flag table documents no Facilities-specific flags.
+- Several troubleshooting entries are incomplete.
+
+If you run Facilities, confirm the restore flags with `mas restore --help` on your installed CLI version before relying on them.
+
+---
+
+## ⚙️ Running a Backup: Flags, Storage and Sizing
+
+The CLI runs interactively in a container or from your workstation.
+
+```bash
+# Interactive
+docker run -ti --rm quay.io/ibmmas/cli mas backup
+
+# Non-interactive, core only
+mas backup --instance-id inst1 --no-confirm
+```
+
+You need `oc` logged in with cluster-admin, the `mas` CLI at v19.0.0 or later, and the ability to create Tekton resources. The pipeline prepares a `mas-<instance-id>-pipelines` namespace, validates or installs OpenShift Pipelines, creates the backup PVC and launches a PipelineRun. It prints a PipelineRun URL you can watch.
+
+### The flags that matter
+
+| Goal | Flags |
+|---|---|
+| Name the backup | `--backup-version` (otherwise a timestamp such as `20260117-191701` is used) |
+| Size the PVC | `--backup-storage-size 100Gi` (IBM recommends 100Gi or more with Manage or Facilities plus Db2) |
+| Pick storage | `--backup-storage-class`, `--backup-storage-access-mode` |
+| **Upload off-cluster** | `--upload-backup --aws-access-key-id ... --aws-secret-access-key ... --s3-bucket-name ... --s3-region ...` |
+| Include Manage | `--backup-manage-app --manage-workspace-id <ws>` |
+| Include Manage Db2 | `--backup-manage-db --manage-db2-namespace ... --manage-db2-instance-name ... --manage-db2-backup-type ...` |
+| Include Facilities | `--backup-facilities-app`, `--backup-facilities-db` with matching namespace, instance and type flags |
+| Skip SLS | `--exclude-sls` |
+| External MongoDB | `--exclude-mongo` (and use your provider's backup) |
+| Debugging | `--no-clean-backup` keeps the workspace; `--skip-pre-check` is for emergencies only |
+
+A realistic production invocation, assuming a Manage workspace named `masdev` with Db2 in the `db2u` namespace:
+
+```bash
+mas backup \
+  --instance-id inst1 \
+  --backup-version "2026-10-21-nightly" \
+  --backup-storage-size 200Gi \
+  --upload-backup \
+  --aws-access-key-id "$AWS_ACCESS_KEY_ID" \
+  --aws-secret-access-key "$AWS_SECRET_ACCESS_KEY" \
+  --s3-bucket-name my-mas-backups \
+  --s3-region us-east-1 \
+  --backup-manage-app --manage-workspace-id masdev \
+  --backup-manage-db \
+  --manage-db2-namespace db2u \
+  --manage-db2-instance-name db2u-manage \
+  --manage-db2-backup-type online \
+  --no-confirm
+```
+
+I wrote that command from the flag table in IBM's guide. The values for the Db2 namespace and instance name are placeholders; take yours from `oc get db2ucluster -A`. Do not copy the backup type without reading the next section.
+
+### How big does it get?
+
+IBM gives typical sizes, which let you size the PVC and the bucket.
+
+| Component | Typical size (IBM) |
+|---|---|
+| MAS configuration, SLS, catalogs, Certificate Manager | under 1 MB each |
+| Manage or Db2 Kubernetes resources | under 10 MB |
+| MongoDB | 0.05 to 20 GB |
+| Manage persistent volume data | 1 to 100 GB |
+| Db2 database backup | 0.5 to 2 times the database size (compressed) |
+
+The pattern is obvious: the Kubernetes objects are tiny, and **the Db2 backup is the whole story**. A 500 GB Manage database means a Db2 backup somewhere between 250 GB and a terabyte, uploaded to S3, every night, in full. Plan network egress and bucket costs accordingly, and decide how many generations you keep. IBM gives you no retention policy; set a lifecycle rule on the bucket.
+
+On storage classes: Single Node OpenShift uses RWO. Multi-node clusters prefer RWX and fall back to RWO. If your backup PVC lands on a slow class, the Db2 backup is where you will feel it.
+
+### The order inside the pipeline
+
+IBM documents the sequence, which helps when you are reading a failed PipelineRun:
+
+1. Validate cluster and MAS instance
+2. Prepare the pipelines namespace
+3. Validate or install OpenShift Pipelines
+4. Create the backup PVC
+5. Launch the PipelineRun
+6. Back up catalogs, Certificate Manager, MongoDB and SLS (in parallel where possible)
+7. Back up Suite configuration
+8. Back up Db2 (optional)
+9. Back up Manage and Facilities apps (optional)
+10. Create archives
+11. Upload (optional)
+12. Clean workspaces (on by default)
+
+Step 12 matters when something fails. By default the pipeline cleans its workspace, which removes evidence. Use `--no-clean-backup` while you are proving the process.
+
+---
+
+## 🗄️ Db2 Logging Mode Decides Everything
+
+Here is the section that connects this post to [Part 3](/blog/mas-platops-03-db2-tuning).
+
+IBM's guide says: **online backup requires archive logging (`LOGARCHMETH1` or `LOGARCHMETH2`). Circular logging, the default, requires offline backup.**
+
+In Part 3 we looked at the ansible-devops db2 role's default `dbConfig`. It sets `APPLHEAPSZ: 8192 AUTOMATIC` and `LOGARCHMETH1/2: OFF`. With both archive methods off, Db2 uses circular logging. Two consequences follow.
+
+| Consequence | Why |
+|---|---|
+| Only a full **offline** backup is possible | Circular logging overwrites log records, so there is nothing to roll forward |
+| The database is **not roll-forward recoverable** | You can restore to the moment of the backup, never to a point after it |
+
+So a stock install, unless somebody changed it, gives you a nightly offline backup (which means no connections, which means Manage downtime) and a recovery point equal to the last backup. A 24-hour RPO is the *default* answer, not a bad day. Whether that is acceptable is a business question you should ask out loud.
+
+### Check what you have
+
+Run these inside the Db2 engine pod as the instance owner, the same way Part 3 did:
+
+```bash
+oc exec -it -n db2u c-db2u-manage-db2u-0 -- su - db2inst1
+db2 connect to BLUDB
+db2 get db cfg for BLUDB | grep -i -E "LOGARCHMETH1|LOGARCHMETH2|LOGPRIMARY|LOGSECOND|LOGFILSIZ|NEWLOGPATH"
+```
+
+The pod name above is a placeholder. Read yours from `oc get pods -n db2u`. If `LOGARCHMETH1` shows `OFF`, you are on circular logging.
+
+### Choosing between the two modes
+
+| | Circular logging (default) | Archive logging |
+|---|---|---|
+| Backup type | Offline only | Online or offline |
+| Manage downtime for backup | Yes, a connection-free window | No |
+| Recovery point | Last backup | Any point in time via roll-forward |
+| Storage cost | Low | Archive logs accumulate and must be pruned |
+| Operational effort | Low | Higher: archive destination, retention, monitoring |
+| Fits `mas backup --manage-db2-backup-type online` | No | Yes |
+
+If you decide to move to archive logging, standard Db2 behaviour applies. Setting `LOGARCHMETH1` to a disk or other target puts the database into backup pending state, so you must take a full offline backup immediately afterwards. IBM Support and Db2 documentation both describe this. In Part 3, I recommended making configuration changes through the Db2uCluster custom resource (`db2_database_db_config` in the ansible-devops role) so they survive operator reconciles. Do the same here, and rehearse the change in a non-production cluster first. Log and archive-log storage default to 10Gi each in the role, which is small for a busy Manage database.
+
+```bash
+# Illustration of the standard Db2 sequence; rehearse before production.
+# 1. Point archive logging at a path with enough space
+db2 update db cfg for BLUDB using LOGARCHMETH1 DISK:/mnt/blumeta0/db2/archive_log/
+# 2. The database is now in backup pending state. Take a full offline backup:
+db2 force applications all
+db2 deactivate db BLUDB
+db2 backup db BLUDB to /mnt/backup
+db2 activate db BLUDB
+```
+
+That sequence is generic Db2 LUW practice, not an IBM MAS page. The path is an example. Verify the right archive location for your Db2u storage layout.
+
+### What an online backup looks like
+
+Veeam's Kasten pre-hook runs an online backup from inside the engine pod. The command, quoted from their blog, is "online db2 backup db BLUDB … include logs." The `include logs` clause bundles the log files needed to make the image consistent on restore. One IBM Support page describes the failure you get when an online image does not include the logs: `rollforward asks more logs are not included online backup image`. If you use online backups, make sure the logs travel with the image.
+
+<aside>
+
+💡 **Key insight:** Before you debate backup tools, read `LOGARCHMETH1`. If it says OFF, no tool will give you zero-downtime backup or point-in-time recovery of Db2.
+
+</aside>
+
+---
+
+## ♻️ Restoring: What Happens and in What Order
+
+The restore pipeline is the mirror image, with a few extra decisions.
+
+```bash
+# Restore from S3, same instance ID, same version
+mas restore \
+  --instance-id inst1 \
+  --restore-version 2026-10-21-nightly \
+  --download-backup \
+  --aws-access-key-id "$AWS_ACCESS_KEY_ID" \
+  --aws-secret-access-key "$AWS_SECRET_ACCESS_KEY" \
+  --s3-bucket-name my-mas-backups \
+  --s3-region us-east-1 \
+  --restore-manage-app \
+  --restore-manage-db \
+  --no-confirm
+```
+
+The documented restore sequence is:
+
+1. Validate the cluster and prerequisites
+2. Prepare the pipelines namespace and OpenShift Pipelines
+3. Create the PVC
+4. Launch the PipelineRun
+5. Run the pre-restore check
+6. Download archives (optional)
+7. Restore catalogs, Certificate Manager, Grafana (optional), MongoDB, SLS (optional), DRO (optional), and the Suite configuration
+8. Restore the Manage app and database (optional)
+9. Run post-restore verification
+10. Clean workspaces
+
+### The restore decisions
+
+| Decision | Flags | Guidance |
+|---|---|---|
+| SLS: restore from backup or point at an existing one | `--include-sls`, `--exclude-sls`, `--include-slscfg-from-backup`, `--sls-cfg-file`, `--sls-url-restore` | If your SLS is external, exclude it and supply the config |
+| DRO/BAS config | `--include-drocfg-from-backup`, `--dro-cfg-file`, `--dro-url-restore` | DRO is not backed up; you can install it fresh with `--include-dro` and entitlement details |
+| Grafana | `--include-grafana` / `--exclude-grafana` | Fresh install only; no data restored |
+| Different domain | `--mas-domain-restore` | Requires manual DNS and TLS updates; manually managed certificates and secrets need manual updates too |
+| Different storage classes | `--override-mongodb-storageclass`, `--override-manage-app-storageclass`, `--override-manage-db-storageclass` plus the class name flags | Required when the target cluster lacks the source's storage classes |
+
+IBM notes that the Manage Db2 flags replaced five per-volume flags (meta, data, backup, logs, temp), which were removed. If you have scripts from an older CLI, they will fail.
+
+### Things that always catch teams out
+
+- **The target cluster must already exist**, with OpenShift, storage and compatible operators. The restore does not build it. Your cluster build process (the subject of the GitOps part of this series) is part of your DR plan.
+- **Same instance ID and version.** Restoring a 9.1 backup onto a 9.2 target, or renaming the instance, is outside the strongly recommended path.
+- **Db2 restore is offline.** Plan for no active connections.
+- **Certificates are regenerated.** Because only configuration is backed up, new certificates are issued. Anything outside the cluster that pins the old certificate, such as an integration partner or a load balancer, needs attention.
+- **Components cannot be restored individually.** If only the Manage database is damaged, this tool still runs the full pipeline.
+
+---
+
+## 🧰 When the CLI Is Not Enough: OADP, Fusion and Kasten
+
+The CLI's limits (no add-ons, no Db2uInstance, no selective restore, no incremental) push most serious estates toward a second layer. There are three that come up repeatedly. They are not equivalent, and I will not pretend they are.
+
+| | OADP (Velero) | IBM Fusion | Veeam Kasten |
+|---|---|---|---|
+| What it is | Red Hat's OpenShift API for Data Protection, built on Velero | IBM's storage and data-protection platform with Maximo backup and restore recipes | Kubernetes-native data protection product from Veeam |
+| MAS evidence | IBM Community walkthrough for Manage (Feb 2022, dated) | IBM Docs support matrix; online recipes for Core, Manage and add-ons | Veeam blog, 21 Jul 2026, with Kanister hooks for Db2 and MongoDB |
+| Scope | Namespace-level resources plus volume data | Per-application recipes | Component-by-component protection, including cross-cluster restore |
+| Strength | Free with OpenShift, S3 targets | Vendor-matched recipes, IBM support path | Detailed MAS recovery flow, vendor-reported timings |
+| Watch for | Consistency of Db2 and MongoDB depends on your hooks | Check supported versions and storage backends | Commercial licence; timings are vendor-reported |
+
+### OADP: the pattern
+
+The IBM Community walkthrough by Sarika Budhiraja is the only IBM-hosted OADP-for-Manage procedure I found. Its shape is useful even though its details are dated:
+
+1. Create an S3-compatible bucket (IBM Cloud Object Storage, Amazon S3, GCS, Azure Blob or Minio).
+2. Install the OADP operator from OperatorHub and create a credentials secret.
+3. Create a `DataProtectionApplication` pointing at the bucket and secret.
+4. Create a `Backup` with `includedNamespaces` set to the Manage namespace.
+5. **Restore in two steps:** service accounts first, then the Manage project resources.
+6. Optionally create a `Schedule`.
+
+A sketch of the DataProtectionApplication, built from that article's description and **not** a tested manifest:
+
+```yaml
+apiVersion: oadp.openshift.io/v1alpha1
+kind: DataProtectionApplication
+metadata:
+  name: mas-dpa
+  namespace: openshift-adp
+spec:
+  configuration:
+    velero:
+      defaultPlugins:
+        - openshift
+        - aws
+    restic:
+      enable: true
+  backupLocations:
+    - velero:
+        provider: aws
+        default: true
+        objectStorage:
+          bucket: my-mas-oadp
+          prefix: inst1
+        config:
+          region: us-east-1
+          s3Url: https://s3.example.com
+        credential:
+          name: cloud-credentials
+          key: cloud
+```
+
+Treat the field names as a starting point. The article uses `restic` and an older configuration format; newer OADP releases changed this, and the article itself has an OADP namespace mismatch (`openshift-adp` versus `openshift-oadp`) and mismatched regions. Check the current Red Hat OADP documentation for your OpenShift version.
+
+Two points matter more than the YAML.
+
+**First, OADP backs up Kubernetes resources and volumes, not the meaning of your databases.** A Velero snapshot of a running Db2 or MongoDB volume is crash-consistent at best. To get an application-consistent backup you need hooks that run a Db2 backup or a `mongodump` before the snapshot. IBM's own Support page on MongoDB in MAS says to follow the official MongoDB documentation for backup and restore, and states that any example procedure is provided without IBM taking responsibility for lost or corrupted data.
+
+**Second, OADP restore performance is not free.** A Red Hat bug (OADP-3071) reports restoring a namespace with 33,000 secrets took 55 minutes on a first restore with OADP 1.3.0, and 28 minutes on later restores using the update policy. That is a synthetic test, not Maximo, and the bug is unresolved. The lesson is not the number. It is that restore time scales with object count, and you will not know yours until you try.
+
+### IBM Fusion: the support matrix
+
+IBM Docs publishes a support matrix for Maximo on IBM Fusion (version 2.10.x recipes):
+
+| Application | Supported versions | Recipe |
+|---|---|---|
+| Maximo Core | 8.11.6+, 9.0.0+ | core |
+| Maximo Manage | 8.7.4+, 9.0.0+ | manage |
+| Maximo Optimizer | 9.0.0+ | optimizer |
+| Maximo Health | deployed as part of Manage | manage |
+| Maximo IoT, Monitor, Predict | 9.0+ | iot, monitor, predict |
+| Maximo Collaborate (formerly Assist) | 9.0+ | assist |
+| Maximo Visual Inspection | 9.0+ | visualinspection |
+
+Each is an "online backup and restore" recipe. Storage can be IBM Storage Scale, Fusion Data Foundation or Red Hat OpenShift Data Foundation, and Hosted Control Plane is supported on both bare metal and virtualised. The page does **not** cover Db2, MongoDB, disaster recovery, timings or limitations, and it lists versions starting at 9.0, not 9.1 or 9.2. If you run Fusion, confirm with IBM that the recipe you intend to use is supported on your MAS version.
+
+This is the one option that covers add-ons through IBM-published recipes. If you run Monitor or Predict and need them recoverable, it is worth a serious look.
+
+---
+
+## 📦 Veeam Kasten: The Detailed Recovery Flow, With Timings You Should Treat Carefully
+
+Veeam published the most detailed MAS recovery description I found: "IBM Maximo on OpenShift: Backup and Disaster Recovery with Veeam Kasten" by Michael Courcy, dated 21 July 2026. It is a vendor blog, and it is specific enough to learn from.
+
+### What it protects
+
+| Component | What is captured |
+|---|---|
+| MAS Core (`mas-<instance>-core`) | Suite CR, secrets and JdbcCfg resources; supporting namespaces for cert-manager, ibm-sls and grafana |
+| MongoDB (`mongoce`) | MAS core and catalog data, dumped with `mongodump` to a dedicated backup PVC, which Kasten then snapshots |
+| Manage (`mas-<instance>-manage` plus `db2u`) | Workspace state, encryption keys and the application database |
+| **Excluded** | CertificateRequest objects (their admission webhook makes restore fail) and the Db2 SSL keystore (so cert-manager stays in control of certificates) |
+
+Storage strategy depends on capability: CSI snapshots where supported, shallow snapshots for CephFS, and Veeam Backup and Replication for storage that cannot snapshot.
+
+### How it handles Db2
+
+A Kanister pre-hook runs an **online** backup inside the engine pod. Two details are worth stealing even if you never buy Kasten:
+
+1. The **encryption master key is placed next to the backup image**, so a matching image and key pair always reaches the backup PVC before the snapshot is taken.
+2. For cross-instance restores, the saved key is **imported into the target keystore** so the image can be unlocked.
+
+If you use any other tool and your Db2 uses native encryption, ask yourself right now where your key lives and whether it is in the same backup set as the image. An encrypted backup image without its key is a very expensive blank file.
+
+### The timings, labelled for what they are
+
+| Scenario | Veeam's claim | How to read it |
+|---|---|---|
+| Same-cluster recovery | "Typically, under an hour" | Vendor-reported, demo environment |
+| MAS Core back, with state restored | "roughly 7 minutes" | Compare to the next row |
+| MAS Core when the operator rebuilds from a cold start | "about 2.5 hours" | The cost of *not* restoring state |
+| Cross-cluster failover | "Usually three to seven hours" | Depends mainly on warm standby versus rebuild |
+| RPO | Not stated | A real gap in the claim |
+
+The most useful number is not the headline. It is the contrast between 7 minutes and 2.5 hours. It says that restoring the *resources* is quick and letting the operators *recompute* everything is slow. That is plausible and consistent with how MAS operators behave, but it is one vendor's demo. Your Db2 image size, storage throughput and Manage workspace size will dominate your own number.
+
+<aside>
+
+⚠️ **Treat these as sizing hints, not an SLA.** The demo restores an on-premises bare-metal OpenShift Maximo instance onto OpenShift running on Azure. Your environment is different. The only timing you can promise is one you measured in your own restore drill.
+
+</aside>
+
+---
+
+## 🌍 Cross-Cluster Failover: The Ordered Version
+
+Veeam's blog gives the clearest step order for rebuilding MAS on a different cluster. The steps are Kasten-flavoured, but the sequence reflects genuine MAS behaviour, and it lines up with the CLI guide's own warnings about certificates.
+
+| Step | Action | Why |
+|---|---|---|
+| 1 | Reinstall Maximo on the new cluster using the source configuration. **Do not restore cert-manager namespaces** | The operator generates its own CA on the new cluster; restoring old certificate objects fights it |
+| 2 | **Scale Manage down** and set `autoGenerateEncryptionKeys: false` | Otherwise the operator generates fresh keys and **overwrites the encryption key you are about to restore** |
+| 3 | Restore the MongoCE database | Core configuration and catalog data must exist before Manage |
+| 4 | Restore the Manage database (Db2u or an external engine) | Needs the encryption key to unlock the image |
+| 5 | Scale Manage back up and wait for **ManageWorkspace to reach Ready** | Do not declare success before the workspace says so |
+
+### Why step 2 is the one that ruins weekends
+
+Manage encrypts certain values in the database, and the encryption keys live in secrets that `mas backup` captures inside `app-manage` and that Kasten captures with the Manage namespace. If the new cluster's Manage operator starts and generates a fresh set of keys before you restore the old ones, you can end up with a database encrypted under keys that no longer exist anywhere. The symptom is a Manage that starts, connects to a restored database and cannot decrypt stored passwords or properties.
+
+I have not tested this failure on a live system. The mechanism comes from Veeam's description of the `autoGenerateEncryptionKeys` setting, and the principle is generic: **restore keys before data, and stop the component that would regenerate them.** Whatever tool you use, put "who owns the encryption keys at restore time" on your DR checklist.
+
+### Warm standby versus rebuild
+
+Veeam says the three-to-seven-hour range depends mostly on whether a warm standby exists. Here is how I would frame the design choice with the business:
+
+| Strategy | What exists before disaster | Likely recovery shape | Cost |
+|---|---|---|---|
+| Backup only | Archives in a bucket | Build cluster, install operators, restore: the long end | Lowest |
+| Pilot light | A second cluster with operators installed, MAS not running | Restore data into a ready platform | Medium |
+| Warm standby | A second MAS instance with data refreshed on a schedule | The short end; failover plus final data sync | Highest |
+
+These tiers are generic DR patterns, not IBM terminology. IBM's CLI guide supports the first two directly (restore onto an existing cluster). It does not describe a continuously synchronised standby, so a warm standby is something you build with Db2 and MongoDB replication tooling and your own runbooks, and IBM's guide does not endorse it.
+
+---
+
+## 🍃 MongoDB and the Other Stateful Corners
+
+### MongoDB Community Edition
+
+The CLI backs up `mongoce` by default and restores into the same in-cluster Community Edition. If your Mongo is external, including IBM Cloud Databases or a vendor-managed enterprise deployment, run with `--exclude-mongo` and rely on the provider's native backup. IBM's support page on MongoDB in MAS points to MongoDB's own documentation and warns that any sample procedure carries no IBM liability.
+
+Do not skip this. MongoDB holds the MAS Core configuration. Without it, your backed-up Manage database has no suite to attach to. Check that whoever owns your external MongoDB actually runs backups, tests restores and covers the same retention as your Db2.
+
+### Persistent volumes in Manage
+
+The CLI captures persistent volume data defined under `spec.settings.deployment.persistentVolumes` in the ManageApp. Typical contents are attachments and report output, 1 to 100 GB in IBM's sizing table. If your attachments (DOCLINKS) live on file storage outside the cluster, they are outside this backup. Know where your documents are.
+
+### Other components
+
+| Component | Backed up by mas backup? | What to do |
+|---|---|---|
+| SLS data | Yes by default | Keep licence files and the entitlement key in your secrets manager as well |
+| DRO | No | Reinstalled fresh; keep the contact and entitlement settings in your runbook |
+| Grafana | No | Dashboards as code, or accept rebuild |
+| Kafka, Integration infrastructure | Not listed | Treat as rebuildable, but confirm no business messages are queued only in Kafka |
+| Cloud Pak for Data | No | Separate recovery; check what add-ons depend on it |
+| OpenShift cluster itself | No | Cluster build as code; etcd backup per Red Hat guidance |
+| Image registries, mirrored content | No | Keep your mirror reproducible for air-gapped sites |
+
+---
+
+## 🎯 Designing the DR Plan: RPO, RTO and the Layers
+
+Now stitch the pieces together. Start from two numbers the business owns, then pick the layers.
+
+| Question to ask the business | Why it matters |
+|---|---|
+| How much data can we lose (RPO)? | Decides archive logging and backup frequency |
+| How long can Manage be down (RTO)? | Decides backup-only versus pilot light versus warm standby |
+| Which apps matter: just Manage, or Monitor and IoT too? | Decides whether the CLI scope is enough |
+| What compliance retention applies? | Decides bucket lifecycle and immutability |
+| Is the second site in a different failure domain? | A DR copy in the same region as production is not DR |
+
+### A layered design that fits the documented limits
+
+| Layer | Tool | Protects | Frequency |
+|---|---|---|---|
+| 1 | `mas backup` to S3 | Core, Mongo CE, SLS, Manage/Facilities config and PV data | Nightly, plus before every change |
+| 2 | Native Db2 backup with archive logging | Database with point-in-time recovery | Full weekly, incrementals or log shipping per policy |
+| 3 | OADP, Fusion or Kasten | Add-ons and storage-level recovery | Per their policies |
+| 4 | Cluster as code (GitOps, ansible-devops) | Rebuilding the platform | Every change |
+| 5 | Off-site, immutable copies | Ransomware and region loss | Per retention policy |
+
+Layer 4 is the part people forget. The CLI restore needs an existing target cluster. If you cannot build one quickly and repeatably, your RTO is not backup time. It is cluster-build time plus backup time. Part 8 of this series covers GitOps and the CLI for that.
+
+### Before every change: take the backup that matters
+
+Parts 1, 2, 3 and 7 of this series all end with "take a backup first." Define what that means in one line in your change procedure:
+
+```text
+Pre-change backup = mas backup (uploaded to S3, verified present)
+                  + Db2 backup of the Manage database (verified restorable on scratch)
+                  + export of any custom resources not in either
+```
+
+---
+
+## 🧪 The Restore Drill: How You Get a Number You Can Defend
+
+A drill is the only thing that turns "we have backups" into "we can recover in N hours." Run it quarterly, and after any major change to the platform.
+
+### Drill runbook
+
+| Step | Action | Record |
+|---|---|---|
+| 1 | Provision a scratch OpenShift cluster, with the same storage classes or overrides | Time to build |
+| 2 | Install the same MAS version and CLI version | Version numbers |
+| 3 | Confirm the backup archive is in S3 and the version name is correct | Archive sizes |
+| 4 | Run `mas restore` with the same instance ID | Start and end time per phase |
+| 5 | Watch the PipelineRun; capture failures and the fix | Every error and workaround |
+| 6 | Wait for ManageWorkspace Ready | Total elapsed time |
+| 7 | Log in, open a work order, check attachments, run a report | Pass or fail per check |
+| 8 | Run an integration check (outbound endpoint, an inbound message) | Pass or fail |
+| 9 | Check the last transaction date in the restored data | Actual RPO |
+| 10 | Write the findings and update the runbook | A dated document |
+
+### What to verify after the restore
+
+```sql
+-- Run in the restored database: what is the newest data we recovered?
+SELECT MAX(changedate) AS last_wo_change FROM maximo.workorder;
+SELECT MAX(transdate)  AS last_inventory_txn FROM maximo.invtrans;
+SELECT COUNT(*) AS open_wo FROM maximo.workorder WHERE istask = 0 AND status NOT IN ('CLOSE','CAN');
+```
+
+Compare the newest timestamp with the time of the backup. That gap is your measured recovery point. The table and column names are standard Maximo (`WORKORDER.CHANGEDATE`, `INVTRANS.TRANSDATE`); confirm the schema name in your database, which may not be `maximo`.
+
+### Failure injection
+
+Once the basic drill works, break something on purpose, in the scratch cluster:
+
+- Delete the Manage namespace and restore only that.
+- Restore with the wrong storage class and read the error.
+- Rotate the Db2 encryption key before restoring and see what happens (this one tests whether your key handling is real).
+- Restore with a different domain using `--mas-domain-restore` and walk through the DNS and TLS updates.
+
+You learn more from one deliberate failure than from five clean runs.
+
+---
+
+## 🩺 Troubleshooting
+
+| Symptom | Likely cause | What to check |
+|---|---|---|
+| PipelineRun never starts | OpenShift Pipelines missing or unhealthy | `oc get pods -n openshift-pipelines`; the pipelines namespace events |
+| Backup PVC stays Pending | Storage class or access mode wrong | `--backup-storage-class` and `--backup-storage-access-mode`; RWX versus RWO |
+| Backup fills the PVC | Undersized for Db2 backup | IBM says 0.5 to 2x database size; use at least 100Gi, more for big databases |
+| Db2 backup step fails with online type | Circular logging | `LOGARCHMETH1` is OFF; use offline or enable archive logging |
+| Db2 step skipped or fails to find instance | Db2uInstance, or wrong namespace or name | `oc get db2ucluster,db2uinstance -A` |
+| `rollforward asks more logs` after restore | Online image without logs | Include logs in the backup; check the archive path |
+| Backups are gone after cluster loss | Upload not configured | Always use `--upload-backup` |
+| Restore refuses an old archive | Backup taken before CLI v19.0.0 | Pre-v19 archives cannot be restored by later CLIs |
+| Restore from local file fails | Documented as not supported yet | Upload to S3 and restore from there |
+| Manage starts but cannot decrypt values | Keys regenerated or missing | Check encryption secrets and `autoGenerateEncryptionKeys` |
+| Browser shows certificate warnings after restore | Certificates are regenerated | Re-pin or redistribute trust; update any external pinning |
+| Facilities restore flags unrecognised | Guide inconsistency | `mas restore --help` on your CLI version |
+| Cannot find failure reason | Workspace cleaned | Rerun with `--no-clean-backup` |
+
+---
+
+## 🛠️ The Eight Commandments of MAS Backup
+
+1. **Thou shalt upload off-cluster.** A backup on the cluster's own PVC is not a backup.
+2. **Thou shalt read `LOGARCHMETH1`.** Logging mode, not tooling, decides your recovery point.
+3. **Thou shalt know thy Db2 custom resource.** Db2uCluster or Db2uInstance decides whether the CLI can help.
+4. **Thou shalt remember MongoDB.** External Mongo is yours to protect.
+5. **Thou shalt keep keys with images.** An encrypted backup without its key is a blank file.
+6. **Thou shalt restore keys before data.** And stop whatever would regenerate them.
+7. **Thou shalt treat vendor timings as hints.** Your RTO is the number from your drill.
+8. **Thou shalt drill quarterly.** Write down what broke.
+
+---
+
+## 🎯 What to Do This Week
+
+| Day | Action |
+|---|---|
+| Monday | Run `oc get db2ucluster,db2uinstance -A` and record the result. Check `LOGARCHMETH1` on every Manage and Facilities database |
+| Tuesday | Find where the last `mas backup` archive actually lives. If it is only on the PVC, configure S3 upload |
+| Wednesday | Confirm whether MongoDB is Community Edition in-cluster or external, and who backs it up |
+| Thursday | Check CLI version against v19.0.0, and confirm no scheduled job uses removed Db2 flags |
+| Friday | Book a scratch cluster and a half-day for the first restore drill. Invite the DBA and the integration owner |
+
+Next in the series: **Part 5, Observability for MAS**, which covers the Prometheus, Grafana and Instana signals that tell you a backup has silently stopped working before you need it.
+
+---
+
+## 📚 References
+
+- [IBM MAS CLI: Backup and Restore guide (scope, flags, limits, archive names, restore process)](https://ibm-mas.github.io/cli/guides/backup-restore/)
+- [Veeam blog: IBM Maximo on OpenShift: Backup and Disaster Recovery with Veeam Kasten (21 Jul 2026, vendor-reported timings and cross-cluster steps)](https://www.veeam.com/blog/maximo-openshift-backup-recovery.html)
+- [IBM Docs: IBM Maximo applications support for IBM Fusion (support matrix and online recipes)](https://www.ibm.com/docs/en/SSFETU_2.11.0/cloudpaks/sfandmaximo.html)
+- [IBM Community: Backup and restore MAS Manage with OADP (Feb 2022, dated walkthrough)](https://community.ibm.com/community/user/blogs/sarika-budhiraja1/2021/12/31/backup-restore-mas-manage)
+- [IBM Support: MongoDB in MAS, backup and restore guidance](https://www.ibm.com/support/pages/node/7007769)
+- [IBM Support: rollforward asks for more logs that are not included in the online backup image](https://www.ibm.com/support/pages/rollforward-asks-more-logs-are-not-included-online-backup-image)
+- [Red Hat Jira OADP-3071: restore time for a namespace with 33K secrets (synthetic test)](https://issues.redhat.com/browse/OADP-3071)
+- [GitHub: ibm-mas/cli releases (check backup and restore changes against your CLI version)](https://github.com/ibm-mas/cli/releases)
+- [Part 3 of this series: Db2 Tuning for Maximo Manage (default LOGARCHMETH OFF, custom resource overrides)](/blog/mas-platops-03-db2-tuning)
+
+---
+
+**About TheMaximoGuys:** We help Maximo administrators, developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | October 2026*
+
+<!--
+REVIEWER NOTES (night-shift, 2026-10-21, platops-04):
+- SOURCES READ LIVE 2026-10-21: ibm-mas.github.io/cli/guides/backup-restore (full guide), Veeam Kasten blog (21 Jul 2026, Michael Courcy), IBM Docs Fusion support matrix (SSFETU_2.11.0), IBM Community OADP post (Feb 2022). IBM Support node/7007769 and the Db2 rollforward page and Red Hat OADP-3071 were seen only as search results/snippets; their pages were not fetched in full. IBM Support node/7007769 is behind login for full text.
+- KB: knowledge_base/DOC00 section 5.3 carries only a one-line brief for Part 4 (no backup facts and no CHG id for backup). No DOC file has backup content. The SearchMaximo KB path (/root/Amtrak proposal/baseline/knowledge-base/ibm_userguides_markdown) does not exist on this machine, so the SearchMaximo sweep found nothing; all facts come from web primaries.
+- DISCREPANCY: series brief said CLI backup is "Manage + Facilities only". IBM's guide covers Core, Mongo CE, SLS too; app-level options are Manage/Facilities only. Post follows IBM (same as the series index).
+- NOT VERIFIED: which Db2 CR type (Db2uCluster vs Db2uInstance) results after the Part 2 Db2 12 path; the post tells readers to check. Whether LOGARCHMETH default OFF applies to a given install (from Part 3 / role defaults, not re-checked). The pod name, archive path and namespaces in examples are placeholders.
+- NOT VERIFIED / OUR ADDITIONS: the Db2 offline backup and archive-logging command sequence (standard Db2 LUW practice, not an MAS page); DPA YAML (sketch from the community article, not tested; OADP syntax has changed); the SQL drill queries (standard Maximo table/column names; schema name may differ); the DR strategy tiers (generic patterns); the layered design table; the explanation of the encryption-key failure mode is inferred from Veeam's autoGenerateEncryptionKeys step, not tested.
+- Timings (7 min / 2.5 h / under an hour / three to seven hours) are Veeam vendor-reported, demo environment, no RPO. Not IBM. [IND]-grade.
+- Fusion matrix lists versions from 9.0; no 9.1/9.2 statement, and recipe set was for Fusion 2.10.x.
+- CLI doc inconsistencies (local restore vs Scenario 1, repeated Scenario 7, Facilities restore flags undocumented) reported as found.
+- Part 3 "Next" link updated in the same commit.
+-->
