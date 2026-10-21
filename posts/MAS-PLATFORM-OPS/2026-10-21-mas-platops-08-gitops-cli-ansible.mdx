@@ -1,0 +1,572 @@
+---
+title: "GitOps for MAS: ibm-mas/gitops, the CLI and ansible-devops"
+description: "How IBM's three MAS automation projects fit together, how the ibm-mas/gitops Argo CD hierarchy turns a config repository into running MAS instances, what air-gap, Amazon RDS for Db2, PrivateLink and Red Hat OpenShift AI support actually looks like in the release notes, and where GitOps is the wrong tool."
+date: "2026-10-21"
+slug: "mas-platops-08-gitops-cli-ansible"
+tags: ["Maximo", "MAS", "GitOps", "ArgoCD", "OpenShift", "MAS CLI", "ansible-devops", "Air-gap", "Platform Operations", "Administrator"]
+draft: true
+tier: "admin"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-platops-08-gitops-cli-ansible.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What is the difference between the MAS CLI, ansible-devops and ibm-mas/gitops?"
+    answer: "They are three layers of the same IBM automation stack. ansible-devops (the ibm.mas_devops Ansible collection) holds the roles and playbooks that actually install and configure things, such as mas_install_core, mas_add_manage, mas_update and the mirror playbooks. The MAS CLI is a container image that wraps that automation behind the mas command and Tekton pipelines, and every CLI release pins a specific ansible-devops version (CLI 23.16.0, published 21 October 2026, bundles ansible-devops 37.22.0). ibm-mas/gitops is a different shape of tool: a set of Helm charts and Argo CD ApplicationSets that describe MAS declaratively, which then call back into the CLI image for the imperative steps Helm cannot express. If you run mas install you are using the first two. If you run Argo CD against a config repository you are using all three."
+  - question: "Do I need AWS to use ibm-mas/gitops?"
+    answer: "In practice you need AWS for the secrets, and that is the biggest adoption constraint. IBM's own limitations page states that MAS GitOps only supports AWS Secrets Manager at present, accessed through the Argo CD Vault Plugin, and that support for other backends will be added in future releases. The reference demonstration installs MAS 9.1.x on ROSA with Amazon DocumentDB for MongoDB, and the demo repository states that other cloud providers are possible but have not been tested sufficiently for demonstration. Since 8.7.0 the repository can also install MongoDB Community through Argo CD, so DocumentDB is no longer the only database path, but the secrets backend has not changed in anything I found. If you are on Azure, on-premises OpenShift or IBM Cloud, treat ibm-mas/gitops as a design to learn from and a chart library to fork, not as a turnkey product."
+  - question: "Is MAS GitOps supported by IBM for customer clusters?"
+    answer: "I could not find an IBM support statement that says so, and the repository's own wording points the other way. The demo guide says the CLI gitops functions were structured primarily to suit IBM internal processes, and the limitations page mentions compatibility with internal IBM systems as the reason a single Argo CD instance cannot manage more than one Account Root Application. The repository is public, actively released (version 8.7.1 on 16 October 2026) and clearly built for IBM's own SaaS operation, which is a strong reason to study it. It is not the same as a documented, supported customer install path, which today is the CLI and the operator catalog. Ask IBM Support in writing before you put it in a regulated production design, and keep a CLI-based rebuild path alive."
+  - question: "What happens if an administrator changes something in the MAS UI on a GitOps-managed instance?"
+    answer: "Argo CD reverts it. The orchestration guide sets selfHeal and prune to true on the generated applications, which forces every change to MAS configuration to arrive as a commit to the config repository. The limitations page is explicit that modifications made through the MAS admin UI or REST API that change existing Kubernetes resources will be undone by Argo CD, and says IBM plans an option to disable those UI and API paths when MAS is under GitOps. In practice this means two rules for your admins: configuration that lives in a Kubernetes custom resource (Suite, workspace, JDBC config, add-on settings) is changed in Git, and only runtime data inside Manage or the databases is changed in the product. Teach the difference before the first outage, not after."
+  - question: "Can I run MAS in an air-gapped cluster with GitOps?"
+    answer: "Yes, but the air-gap work happens in three separate layers and GitOps only owns one of them. First you mirror the images, with the newer mas mirror command (modes m2m, m2d and d2m, built on oc-mirror, requiring catalog v9-260129-amd64 or newer) or the older mas mirror-images. Second you make the cluster use the mirror, with mas configure-airgap (which creates ImageDigestMirrorSet resources and triggers a rolling node restart of roughly 30 to 60 minutes, and does not work on IBM Cloud ROKS) or the ibm-mas/gitops 000-image-mirroring chart, which deploys an ImageDigestMirrorSet and an Amazon ECR token-rotator CronJob. Third, the gitops chart values accept a mirrored CLI image repository so the hook Jobs pull from your registry instead of quay.io. Plan all three before the first sync; discovering the third one from an ImagePullBackOff on a PreSync Job is not fun."
+keyTakeaways:
+  - "Three projects, one stack: ansible-devops does the work, the MAS CLI packages it (each CLI release pins one ansible-devops version, CLI 23.16.0 pins 37.22.0), and ibm-mas/gitops describes MAS as Helm charts and Argo CD ApplicationSets that call the CLI image for the imperative steps"
+  - "The design is Account → Cluster → Instance: one Account Root Application watches a config repository, merge-key YAML files at each level drive ApplicationSets, sync waves, custom health checks and hooks order the install, and a push to Git is the only control surface (Argo polls every three minutes)"
+  - "selfHeal and prune are on by default, so UI and REST edits to Kubernetes resources are reverted and deleting a config file deprovisions the instance. Decide who may merge to the config repository's production branch before you decide anything else"
+  - "The scope is narrower than the name suggests: AWS Secrets Manager is the only secrets backend, one Argo CD instance cannot manage more than one Account Root, only system-scope MAS config is supported (JDBC excepted), and the CLI gitops functions were built primarily for IBM's internal processes"
+  - "The release train is fast and moves under you: gitops 8.0.0 to 8.7.1 shipped in five months, and the last week added MongoDB Community via Argo CD, CPD 5.3.1 Helm installs, Db2 audit retention, and (in CLI 23.16.0, 21 October) GitOps support for the Db2 11 to 12 upgrade. Pin versions, read every major, and rehearse on a non-production cluster"
+series:
+  name: "MAS PLATFORM-OPS"
+  part: 8
+  total: 8
+tldr: "IBM publishes three MAS automation projects that people routinely confuse: ansible-devops (the roles), the MAS CLI (a container that wraps them) and ibm-mas/gitops (Helm charts and Argo CD ApplicationSets that describe MAS declaratively). This post explains how they relate, walks the Account, Cluster and Instance hierarchy of the gitops repository with real config files, reads the 8.x release notes for what changed (MongoDB Community, CPD 5.3.1, RHOAI, RDS Db2, PrivateLink, Db2 12), covers the three air-gap layers, and is blunt about the limits: AWS-only secrets, IBM-internal heritage and self-heal reverting UI changes. It ends with a decision table so you can choose between the CLI, Ansible and GitOps for your estate."
+seoTitle: "GitOps for MAS: ibm-mas/gitops, CLI, ansible-devops"
+seoDescription: "How ibm-mas/gitops, the MAS CLI and ansible-devops fit together, with Argo CD config, air-gap, RDS Db2 and RHOAI notes."
+targetQuestions:
+  - "What is ibm-mas/gitops and how does it deploy Maximo Application Suite?"
+  - "Can I manage Maximo Application Suite with Argo CD?"
+  - "What is the difference between the MAS CLI and ansible-devops?"
+  - "How do I do an air-gapped MAS install with the CLI?"
+  - "Does MAS GitOps support Amazon RDS for Db2?"
+  - "How do I bump the MAS operator catalog through GitOps?"
+  - "Does MAS support Red Hat OpenShift AI for AI Service?"
+semanticKeywords:
+  - "ibm-mas/gitops"
+  - "MAS Argo CD ApplicationSet"
+  - "Account Root Application MAS"
+  - "ibm.mas_devops Ansible collection"
+  - "mas gitops-bootstrap"
+  - "ArgoCD Vault Plugin AWS Secrets Manager MAS"
+  - "mas mirror m2d d2m air-gap"
+  - "ImageDigestMirrorSet MAS"
+  - "Amazon RDS Db2 Maximo Manage"
+  - "AI Service Red Hat OpenShift AI"
+proficiencyLevel: "advanced"
+dependencies:
+  - "Working knowledge of Argo CD and Helm, or time to learn them before touching production"
+  - "cluster-admin access to an OpenShift cluster and an Argo CD (OpenShift GitOps) instance"
+  - "An AWS account with Secrets Manager if you intend to follow IBM's reference flow"
+  - "The catalog and version concepts from Parts 1 and 7 of this series"
+speakableSections:
+  - "Three Projects, One Stack"
+  - "The Hierarchy: Account, Cluster, Instance"
+  - "Self-Heal Changes Who Is Allowed to Fix Things"
+clusterSlugs:
+  - "mas-platops-00-series-index"
+  - "mas-platops-01-patch-train"
+  - "mas-platops-02-db2-12-upgrade"
+  - "mas-platops-04-backup-restore-dr"
+  - "mas-platops-07-support-window"
+relatedSlugs:
+  - "mas-platops-00-series-index"
+  - "mas-platops-01-patch-train"
+  - "mas-platops-07-support-window"
+---
+
+# GitOps for MAS: ibm-mas/gitops, the CLI and ansible-devops
+
+<aside>
+
+🎯 **Who this is for:** MAS administrators and platform engineers who already run the monthly catalog cadence by hand and are asking whether Argo CD should do it for them. You will leave knowing how IBM's three automation projects relate, how the `ibm-mas/gitops` hierarchy works file by file, what the 8.x release notes say about air-gap, RDS Db2, PrivateLink and RHOAI, and a frank list of the places where this tooling is narrower than its name.
+
+</aside>
+
+> **GitOps does not make MAS safer. It makes MAS changes reviewable, and it makes unreviewed changes impossible. Those are different promises, and the second one surprises people.**
+
+Here is a story I have seen play out in three variations. A platform team gets excited about GitOps. They read that IBM publishes a repository called `ibm-mas/gitops`, they clone it, they point Argo CD at it, and within an afternoon they have the first operator catalog application going green. Everyone is happy. Then an administrator, doing what administrators have always done, opens the MAS admin UI, changes a setting on a workspace configuration, saves it, and watches it quietly snap back three minutes later.
+
+Nothing is broken. That is Argo CD's `selfHeal` doing exactly what it was configured to do. But the team never decided that the UI was now read-only for anything stored in a custom resource, and nobody told the admins.
+
+So this post is not "GitOps is great, go adopt it." The series so far (patch train, Db2, backup, observability, performance, support window) has been about controlling change on a platform that changes every month. GitOps is the logical last chapter because it moves control of change out of people's terminals and into a repository. It is also the chapter where you learn how much of that control you were exercising by hand without writing it down.
+
+I read the `ibm-mas/gitops`, `ibm-mas/cli` and `ibm-mas/ansible-devops` repositories and release notes live on 21 October 2026 for this post. Where I quote a version, a pull request number or a date, it came from the GitHub releases API that day. Where I am giving my own judgement, I say so.
+
+---
+
+## 🧩 Three Projects, One Stack
+
+Ask five Maximo admins what the difference is between "the CLI", "ansible-devops" and "the gitops repo" and you will get five answers, most of them wrong in a useful way. Here is the version I now give.
+
+| Project | What it is | Shape | Who runs it | Latest release read on 21 Oct 2026 |
+|---|---|---|---|---|
+| **ansible-devops** (`ibm.mas_devops`) | An Ansible collection: 42 playbooks and roughly 95 roles, from `ocp_provision` to `suite_install`, `suite_verify`, `mirror_images` and `suite_backup` | Imperative, run-to-completion | You, from a laptop or a pipeline | 37.22.0 (21 Oct 2026) |
+| **MAS CLI** (`mas`) | A container image (`quay.io/ibmmas/cli`) that wraps the Ansible content behind commands such as `mas install`, `mas update`, `mas upgrade`, `mas mirror` and `mas gitops-*`; also runs Tekton pipelines on the cluster | Imperative with a guided front end | You, usually through `docker run` | 23.16.0 (21 Oct 2026) |
+| **ibm-mas/gitops** | Helm charts, Argo CD Applications and ApplicationSets, grouped as root, cluster, instance and SLS applications | Declarative, continuously reconciled | Argo CD, from a config repository | 8.7.1 (16 Oct 2026) |
+
+The relationship between the first two is mechanical and you can verify it in every CLI release note. Each one ends with a "Dependency Versions" table that pins the Ansible collection and the Python library underneath. CLI 23.16.0 lists ansible-devops 37.22.0 and python-devops 12.11.0. CLI 23.14.2 listed ansible-devops 37.21.2. When you hear "upgrade the CLI", you are also upgrading the Ansible content, because they ship as one image.
+
+The third project relates to the other two in a way that is easy to miss. The gitops charts are not a replacement for the CLI; they depend on it. The hook Jobs that Argo CD runs against your cluster (create the Db2 database, wire up DNS, run the post-sync verification) run the **CLI image**. Release 6.0.0 of the gitops repository was a `[major]` change whose headline was "Pin CLI image versions in gitops Job templates", and release 8.4.1 (3 August 2026) added PR validation "to verify all `_cli_image_digest` values are the same", which shows IBM enforcing digest pinning in its own repository. So when you pick a gitops release, you are also picking the CLI image your clusters will pull, and that is why a mirrored CLI image repository is a configuration option (more on that in the air-gap section).
+
+<aside>
+
+💡 **Key insight:** ansible-devops is the work, the CLI is the packaging, and ibm-mas/gitops is the scheduling. If you think of Argo CD as "a thing that runs `mas install` for me on a timer", you will be close enough to reason about almost every failure mode below.
+
+</aside>
+
+### Where each one is the right tool
+
+I will give a fuller decision table near the end. For now the short version is that these projects answer different questions.
+
+| Question you are asking | Reach for |
+|---|---|
+| "Install MAS on this one cluster, today, with someone watching" | The CLI (`mas install`) |
+| "Wire MAS install into our existing Ansible Tower or Jenkins pipeline" | ansible-devops roles and playbooks |
+| "Mirror images for a disconnected cluster" | The CLI (`mas mirror`, `mas configure-airgap`) |
+| "Keep 12 MAS instances across 4 clusters at the same catalog and channel, with a pull request for every change" | ibm-mas/gitops |
+| "Prove to an auditor who changed the Suite configuration and when" | Git history in a gitops config repo |
+
+Notice that the last two rows are the only ones where GitOps wins outright. If your estate is one production cluster and one test cluster, the CLI plus the discipline from Parts 1 and 7 is simpler, and nothing in this post should talk you out of that.
+
+---
+
+## 🏛️ The Hierarchy: Account, Cluster, Instance
+
+The architecture page in the repository describes three inputs and one engine. The three inputs are the **source repository** (the Helm charts, which is `ibm-mas/gitops` or your fork), the **config repository** (YAML files that say what to deploy where), and the **secrets vault** (the values you must not put in Git). The engine is Argo CD, installed on a **management cluster**, which renders the charts into one or more **target clusters**.
+
+A single **Account Root Application** is registered with Argo CD, and everything else is generated from it:
+
+```
+                    ┌─────────────────────────────────────────────┐
+                    │  Argo CD (management cluster)                │
+                    │                                              │
+  config repo ────► │  root.<account>   (Account Root Application) │
+  (YAML, merge-key) │      │ ApplicationSet (merge + git files)    │
+                    │      ▼                                       │
+                    │  Cluster Root  (one per cluster)             │
+                    │      │  cluster-level apps: operator catalog,│
+                    │      │  cert-manager, DRO, GPU, logging...   │
+                    │      ▼                                       │
+                    │  Instance Root (one per MAS instance)        │
+                    │      │  sls, suite, db2u, cp4d, manage...    │
+                    └──────┼───────────────────────────────────────┘
+                           ▼
+                  target cluster(s): operators, CRs, Jobs
+```
+
+The Account Root is a plain Argo CD `Application` created directly on the management cluster. The manifest from IBM's documentation looks like this (trimmed to the parts that matter):
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root.dev
+  namespace: openshift-gitops
+spec:
+  destination:
+    namespace: openshift-gitops
+    server: https://kubernetes.default.svc
+  project: "mas"
+  source:
+    path: root-applications/ibm-mas-account-root
+    repoURL: https://github.com/ibm-mas/gitops
+    targetRevision: master
+    helm:
+      values: |
+        account:
+          id: dev
+        source:
+          repo_url: "https://github.com/ibm-mas/gitops"
+          revision: "mas"
+        generator:
+          repo_url: "https://github.com/me/my-config-repo"
+          revision: "main"
+        argo:
+          namespace: "openshift-gitops"
+  syncPolicy:
+    automated:
+      selfHeal: true
+```
+
+Two things deserve a pause. First, `source.revision` and `generator.revision` are independent. Your **charts** can sit on a tag of IBM's repository while your **configuration** moves on its own branch. That separation is the single best design decision in the project, because it lets you promote chart versions and configuration changes as two different pull requests. Second, the account root takes more parameters than the snippet shows: `cluster_admin_role`, `application_admin_role`, `auto_delete`, and `disable_docdb_instance_user_management` all appear in the template in the documentation. We will return to the first three, because they decide how dangerous this system is.
+
+### The config repository: where the real work lives
+
+The config repository mirrors the hierarchy as directories: account, then cluster, then instance. Each YAML file at a level causes Argo CD to generate one or more applications. IBM's documentation lists the file names it recognises:
+
+| Level | Files recognised (from the docs) | Generates |
+|---|---|---|
+| Cluster | `ibm-mas-cluster-base.yaml`, `ibm-operator-catalog.yaml`, `ibm-dro.yaml`, `redhat-cert-manager.yaml`, `nvidia-gpu-operator.yaml` | Cluster prerequisites: catalog source, cert-manager, DRO, GPU operator |
+| Instance (platform) | `ibm-mas-instance-base.yaml`, `ibm-sls.yaml`, `ibm-mas-suite.yaml`, `ibm-mas-workspaces.yaml`, `ibm-mas-suite-configs.yaml` | The Suite CR, licensing, workspaces and system-scope configs |
+| Instance (data) | `ibm-db2u.yaml`, `ibm-db2u-databases.yaml`, `ibm-cp4d.yaml`, `ibm-cp4d-services-base.yaml`, `ibm-wml.yaml`, `ibm-wsl.yaml`, `ibm-spss.yaml` | Db2u, databases, Cloud Pak for Data and its services |
+| Instance (apps) | `ibm-mas-masapp-manage-install.yaml`, `...-iot-install.yaml`, `...-monitor-install.yaml`, `...-predict-install.yaml`, `...-optimizer-install.yaml`, `...-visualinspection-install.yaml`, `...-facilities-install.yaml`, `...-assist-install.yaml`, `ibm-mas-masapp-configs.yaml` | Application install and configuration |
+
+Every file starts with a `merge-key`, which is how the ApplicationSet's merge generator groups scattered files into one object per cluster or instance. A cluster-level file carries `merge-key: "dev/cluster1"`; an instance-level one carries `merge-key: "dev/cluster1/instance1"`. Get the key wrong and the file is silently ignored, which is the most common first-day error I would expect from a team that hand-writes these files instead of using the CLI to generate them.
+
+Here is the heart of a real example from the repository's `example-config/dev` directory. The operator catalog file is three lines of substance:
+
+```yaml
+merge-key: "dev/cluster1"
+
+ibm_operator_catalog:
+    mas_catalog_version: v9-260326-amd64
+    mas_catalog_image: icr.io/cpopen/ibm-maximo-operator-catalog
+    ibm_entitlement_key: "<path:arn:aws:secretsmanager:us-east-1:xxxxxxxxxxxx:secret:dev/cluster1/ibm_entitlement#image_pull_secret_b64>"
+```
+
+That `mas_catalog_version` line is the monthly catalog from Part 1. In a GitOps estate, **moving the catalog is a one-line pull request**. The Suite file is similarly short:
+
+```yaml
+merge-key: "dev/cluster1/instance1"
+
+ibm_mas_suite:
+  domain: "useast1a.apps.rosa.mas-4.cakv.p3.openshiftapps.com"
+  mas_channel: "8.11.x"
+  mas_install_plan: Automatic
+  environment_type: "production"
+```
+
+And the Manage install file pins `mas_app_channel`, `mas_edition` and the namespace. Note that the example files in the repository are deliberately old (the catalog example is v9-260326 and the channel 8.11.x); they show structure, not recommended versions. Do not copy a version from an example file into production. Part 7 of this series is where you decide versions.
+
+### How ordering works without anyone typing a command
+
+IBM's orchestration page explains four Argo CD mechanisms that replace the human running steps in sequence.
+
+| Mechanism | What it does for MAS | Gotcha |
+|---|---|---|
+| Automated sync (`selfHeal: true`, `prune: true`) | Pushes drift back to Git state; deleting a config file deprovisions the resource | UI changes are reverted; a deleted file deletes the instance (see the next section) |
+| Sync waves | Every resource carries a wave annotation; filenames are prefixed with the wave | Waves are local to each application, not global |
+| Custom health checks | Argo understands MAS CRs enough to wait until they reconcile | The checks must be registered in the management cluster's Argo CD (the CLI bootstrap does it) |
+| Resource hooks | PreSync, PostSync and ordinary final-wave Jobs run CLI-image tasks | PostSync hooks are excluded from the owning app's health, so a later wave may start before they finish |
+
+That last gotcha is the one I find most instructive. The documentation explains that where a task *must* finish before a later application starts, IBM deliberately uses an ordinary Job in the application's final sync wave instead of a PostSync hook, because only the former counts toward health. If you write your own add-on charts, copy that rule.
+
+The ApplicationSet git generators poll the config repository every three minutes. IBM notes you can configure Argo CD to receive webhook events to remove that delay.
+
+### What the timings table tells you
+
+The repository publishes approximate sync durations per application. They are worth reading before you promise a change window, because MAS is not fast:
+
+| Application | Approx. duration | | Application | Approx. duration |
+|---|---|---|---|---|
+| operator-catalog | 3 min | | ibm-iot | 60 min |
+| ibm-sls | 10 min | | ibm-monitor-cfg | 30 min |
+| ibm-suite | 10 min | | ibm-manage | 8 min |
+| ibm-db2u-database | 12 min | | **ibm-manage-cfg** | **240 min** |
+| ibm-spss | 80 min | | ibm-facilities | 20 min |
+| ibm-wsl | 45 min | | **ibm-facilities-cfg** | **180 min** |
+
+IBM's own caveat applies: times are approximate and vary with cluster performance and external dependencies. But the shape is the lesson. The Manage configuration application (the step that builds the Manage database and bundles) dominates a fresh install at around four hours. A GitOps "install" is not faster than a CLI install; it is *unattended*. If someone promises you GitOps will cut your install time, they have confused automation with speed.
+
+---
+
+## 🔁 Self-Heal Changes Who Is Allowed to Fix Things
+
+Two settings in the generated applications decide the culture of your platform team.
+
+```yaml
+syncPolicy:
+  automated:
+    selfHeal: true
+    prune: true
+```
+
+`selfHeal: true` means that if something other than Argo CD changes a managed resource, Argo CD changes it back. IBM's documentation states the intent plainly: it forces any updates to MAS configuration to be made by pushing a commit to the config repository, so Git stays the source of truth.
+
+`prune: true` is the sharper one. When you **delete a configuration file** from the config repository, Argo CD deprovisions what it created. IBM's page is candid that this is convenient in development, where instances can be torn down with no manual step, and "may be too risky for production", and says IBM may make prune configurable per account in a future release. Alongside it, the Account Root template exposes an `auto_delete` parameter, and the CLI's bootstrap command documents `--auto-delete` as a flag that permits Argo CD to delete resources automatically. The exact interaction between those controls is something I did **not** verify on a live cluster, so read the chart before relying on it. My take: in production, leave auto-delete off, protect the production branch, and treat "delete a YAML file" as a change that needs two approvers.
+
+Let me translate the combination into rules your team can actually follow.
+
+| Change you want | Do it here | Why |
+|---|---|---|
+| Move to a new catalog (`mas_catalog_version`) | Config repo, one-line PR | Reviewable, revertable |
+| Change a Suite, workspace or add-on setting stored in a CR | Config repo | The UI edit will be reverted within minutes |
+| Add a user or edit a record inside Manage | The product | That is runtime data, not a managed Kubernetes resource |
+| Tune a Db2 parameter after creation | See the Db2 note below | Product behaviour is changing here |
+| Emergency fix at 2 a.m. | Pause the Argo CD application first, fix, then commit the same change | Otherwise self-heal races you |
+
+The same table also hides the documented limitation that "MAS GitOps only supports the definition of `system` scope for all MAS configuration types (other than JDBC, which supports all scopes)". If you rely on workspace-scoped or application-scoped configurations other than JDBC, they are outside what this repository manages, so they remain manual and you must keep a record of them somewhere else.
+
+### The Db2 configuration wrinkle
+
+Part 3 of this series covered `DB2_WORKLOAD`, row tables and the instance registry. In a gitops config repo those settings live in `ibm-db2u-databases.yaml`, and the example file carries a full set of `db2_instance_registry` (`DB2_WORKLOAD: 'MAXIMO'`, `DB2_SKIPINSERTED: 'ON'`, `DB2_USE_ALTERNATE_PAGE_CLEANING: 'ON'`), `db2_database_db_config` (`LOCKTIMEOUT: '300'`, `LOGPRIMARY: '100'`, `LOGSECOND: '156'`, `AUTO_REORG: 'OFF'`) and `db2_instance_dbm_config` blocks, plus per-volume storage classes and sizes.
+
+That is wonderful for a fresh database and a potential trap for a living one. An IBM Ideas request opened on 2 July 2026 (DB24LUW-I-2308, status "Submitted", 9 votes) claims that **starting with Db2 12.1.5 the Db2uInstance admission webhook allows `dbConfig`, `dbmConfig` and registry (`db2set`) settings only at initial creation**, and rejects later updates, so administrators must use native commands such as `db2 update db cfg`. The idea is titled around exactly our problem: restoring post-deployment updates "to support GitOps and ArgoCD workflows". It is a customer request, not an IBM release note, so I treat the webhook behaviour as reported, not confirmed by IBM. But if it is right, then the Git file stops being the whole truth for Db2 tuning the day you adopt Db2 12.1.5, and you need a written record of any `db2 update db cfg` you run by hand. Pair this with Part 2, because the Db2 12 upgrade is the moment you land on those versions.
+
+The good news in this area is recent. **CLI 23.16.0, published on 21 October 2026, lists "MAS Gitops support for db version upgrade from v11 to v12"** (pull request 2652). I read that release note, not the code, so I cannot tell you how it sequences the Db2 hand-over, or whether it requires the licence file Part 2 warned you about. Check the function's help text before you commit a window to it.
+
+---
+
+## 📈 The Release Train: What Changed Since May
+
+IBM tags `ibm-mas/gitops` with semantic versions, and **majors mean something**. Here is the train from the 8.0 line to today, built from the GitHub releases API.
+
+| Release | Date | Headline changes (from the release notes) |
+|---|---|---|
+| 8.0.0 `[major]` | 13 May 2026 | `droai` secret name changed to `dro` for the AI SaaS flow; support for **cluster-admin and application-admin roles** in Argo CD deployments; documentation overhaul across the repo |
+| 8.1.0 | 15 Jun 2026 | **RHOAI support added**; conditional **private NLB service for Db2 instances via ROSA LoadBalancer**; Amazon RDS creation and database-exists checks; configurable Db2u backup retention; manage as an option for log and audit upload |
+| 8.3.0 | 25 Jun 2026 | **RDS Db2 support for Monitor**; Manage MCP test added |
+| 8.4.0 | 9 Jul 2026 | Facilities Db2 volatile runstats CronJob; AI Service Db2 workflow fixes |
+| 8.5.0 | 25 Aug 2026 | Db2 HADR setup fix; clusterissuer validation fix for DRO and Suite; Instana agent toleration |
+| 8.6.0 | 24 Sep 2026 | Db2 audit logs shipped to S3 by CronJob; IP **allow-listing**; ClusterLogForwarder noise filters; **horizontal scaling for RHOAI**; ingress controller job for **path-based routing on 9.2**; public route for CPD |
+| 8.7.0 | 12 Oct 2026 | **MongoDB CE installed via Argo CD**; **CPD 5.3.1 Helm-based installs for WML, WSL, Spark, Cognos Analytics and SPSS**; `private_nlb` support "to match the validated AWS PrivateLink"; PostDelete CSV cleanup for stuck deletions |
+| 8.7.1 | 16 Oct 2026 | Configurable Db2u audit-cron retention mode; Argo permission fix to a ClusterRole; CIS edge-certificate YAML fix |
+
+Earlier majors tell the story of how the project grew. Release 6.0.0 (17 April 2025) pinned CLI image versions in Job templates, and 7.0.0 (10 October 2025) carried the "aibroker to aiservice" rename. Both are the kind of change that breaks a config repository that was valid the week before. The pattern I would adopt from this: **never move the `source.revision` of your account root across a major boundary without reading the release notes and rehearsing**, exactly as you would for a MAS channel upgrade.
+
+### The CLI and ansible-devops side of the same fortnight
+
+| Release | Date | Relevant content |
+|---|---|---|
+| CLI 23.14.0 | 8 Oct 2026 | `mongoce` added as a provider to the `gitops-mongo` function; entitlement key and Artifactory token moved to a secret (no longer a pipeline parameter); issuer derivation for MAS 9.3+ (the first 9.3 signal in Part 1's coverage); October interim catalog |
+| CLI 23.15.0 | 16 Oct 2026 | `db2_audit_retention_days` for all apps in the Db2 gitops function; logging-operator file removed when `CLUSTER_LOGGING_OPERATOR_INSTALL` is false; **documentation for mirroring v2**; catalog v9-261007 entry |
+| CLI 23.16.0 | 21 Oct 2026 | Cloud Pak for Data 5.4.0 Helm changes; **GitOps Db2 v11 to v12 upgrade**; gitops-test-recorder Tekton task; EBS storage class support |
+| ansible-devops 37.18.0 | 15 Sep 2026 | **OCP 4.16 support removed**; CIS OWASP Core Ruleset; Let's Encrypt HTTP-01 issuer in `suite_dns` |
+| ansible-devops 37.20.0 | 29 Sep 2026 | Kafka password default length 32 (FIPS); **airgap and fresh-install CP4D version-mismatch fix**; MinIO image source moved to `quay.io/ibmmas/minio` |
+| ansible-devops 37.22.0 | 21 Oct 2026 | **CP4D 5.4.0 support**; Atlas disk-size and EBS volume-type options; password-policy secret included in suite backup |
+
+One detail connects this to Part 7. CP4D 5.4.0 support landed on 21 October in both the CLI and ansible-devops, while the live catalog table I used in Part 7 still listed CPD **5.3.1** for the newest catalogs. Support in tooling is not the same as support in a catalog row. Until a catalog row says 5.4.0, the catalog table, not a release note, decides what you may run.
+
+---
+
+## 🛰️ Air-Gap: Three Layers, and GitOps Owns One of Them
+
+The brief for this post said "air-gap", and the most useful thing I can do is stop you from thinking of it as one thing. A disconnected MAS estate needs three separate problems solved, in this order.
+
+| Layer | Problem | Tool | Notes from the docs |
+|---|---|---|---|
+| **1. Get the images into your registry** | Cluster cannot reach `cp.icr.io`, `icr.io` or `quay.io` | `mas mirror` (v2) or `mas mirror-images` (legacy) | v2 uses `oc-mirror`; modes **m2m**, **m2d**, **d2m**; requires catalog **v9-260129-amd64 or newer**; image set configs come from `ibm-mas/image-set-configs` on GitHub |
+| **2. Make the cluster pull from your registry** | Image references still say `cp.icr.io/...` | `mas configure-airgap` or the gitops `000-image-mirroring` chart | Creates `ImageDigestMirrorSet` resources; **rolling node restart, about 30 to 60 minutes**; does **not** work on IBM Cloud ROKS |
+| **3. Make the automation itself run offline** | Hook Jobs use the CLI image from `quay.io`; Ansible roles pull MinIO and others | `mas_cli_image_repo` option in gitops functions; ansible-devops mirror playbooks | The CLI help says the option is "only needed if using a mirror registry, and not quay.io" |
+
+### Layer 1: mirroring, v2
+
+The v2 guide recommends the two-phase route: `m2d` (mirror to disk) on an internet-connected host, transfer the directory, then `d2m` (disk to mirror) from inside the private network. It costs more storage but cleanly separates the internet-facing download from the private upload, which makes recovery from a flaky network far easier. Required arguments are always `--catalog`, `--release`, `--mode` and `--dir`, plus `--target-registry` for the modes that push. A Core-only first stage looks like this, using the documented environment variables:
+
+```bash
+export IBM_ENTITLEMENT_KEY=xxx
+export LOCAL_DIR=/data/mas-mirror
+
+docker run -ti --rm -v $LOCAL_DIR:/mnt/registry \
+  -e IBM_ENTITLEMENT_KEY=$IBM_ENTITLEMENT_KEY \
+  quay.io/ibmmas/cli:<cli-version> mas mirror \
+  --catalog v9-261007-amd64 --release 9.2.x \
+  --mode m2d --dir /mnt/registry/core --core
+```
+
+(The catalog and release in the command are illustrative; take the pair from the catalog directory as Part 7 describes. The guide itself uses placeholders that IBM substitutes at publish time.) The guide breaks the work into four stages: Core and catalog, applications, Cloud Pak for Data, and other dependencies, and tells you to drop any `--<package>` flag for an application you do not deploy. Bootstrapping the CLI container itself into the disconnected network is its own documented step with `oc image mirror`.
+
+### Layer 2: making OpenShift use the mirror
+
+`mas configure-airgap` validates registry access, creates the pull secret, creates the `ImageDigestMirrorSet`, trusts your CA if you give it one, and then restarts machine config. Budget for that rolling restart. The non-interactive form takes the registry host and port, credentials and an optional `--ca-file`:
+
+```bash
+docker run -ti --rm -v ~:/mnt/local --pull always quay.io/ibmmas/cli mas configure-airgap \
+  -H registry.company.com -P 5000 \
+  -u $REGISTRY_USERNAME -p $REGISTRY_PASSWORD \
+  --ca-file /mnt/local/registry-ca.crt --no-confirm
+```
+
+On the GitOps side, the `000-image-mirroring` chart takes a different, very AWS-shaped route: it deploys an `ImageDigestMirrorSet` (`mas-ecr`) that redirects pulls from `icr.io` and `cp.icr.io` to **Amazon ECR**, plus an `ecr-token-rotator` CronJob that refreshes the global pull secret, because ECR tokens expire. Its values take `ecr_host`, `repo_path_prefix` and AWS credentials with `ecr:GetAuthorizationToken`, `ecr:BatchGetImage` and `ecr:GetDownloadUrlForLayer`. If your mirror is Harbor or Quay, this chart is not for you; use layer 2's CLI command once and keep the resulting resources out of Argo's management, or write your own chart.
+
+### Layer 3: the one people forget
+
+ansible-devops has been fixing exactly this layer in the last five weeks: 37.19.0 added a MinIO IDMS to the image-mirror job, 37.20.0 moved the MinIO image to `quay.io/ibmmas/minio` and fixed a CP4D version mismatch on airgap and fresh install, and 37.20.1 updated the MinIO image location again "for airgap". That sequence tells you two things. IBM is actively hardening disconnected installs, and the corners that break are the ones nobody mirrored because they are not in the main operator list. When you test disconnected, test it by **blocking egress at the firewall**, not by trusting that your mirror list is complete.
+
+---
+
+## ☁️ The AWS-Shaped Parts: RDS Db2, DocumentDB, PrivateLink, ROSA
+
+I want to be straightforward about the heritage. The demo guide in `ibm-mas/gitops-demo` states that its flow installs MAS 9.1.x on **AWS and ROSA**, and that the CLI `gitops` functions "have been structured primarily to suit IBM Internal processes". The limitations page lists AWS Secrets Manager as the only secrets backend. The account root even has a `disable_docdb_instance_user_management` parameter, which refers to Amazon DocumentDB. This is a toolchain built to run IBM's own MAS SaaS on AWS, then published.
+
+That does not make it useless to you. It makes it a **reference implementation** with a strong opinion about where it runs. Here is what the release notes show about the AWS-specific features the brief asked about.
+
+| Capability | What the notes show | First appeared | What I did not verify |
+|---|---|---|---|
+| **Amazon RDS for Db2** | Chart `120-ibm-dbs-rds-database` creates the RDS-side database objects, runs post-sync setup, and can run backup CronJobs to S3; user, role and backup creation (7.5.0), SSL setup (7.1.0), Manage and Facilities instance config (6.4.0), RDS Db2 for Monitor (8.3.0) | 6.4.0 (Jul 2025) onward | That RDS Db2 supports every Manage feature that Db2u does; the chart README's "minimal" example shows `engine_version: "14.10"`, which I could not reconcile with a Db2 version and flag below |
+| **AWS PrivateLink** | 8.1.0: conditional private NLB service for Db2 instances via a ROSA LoadBalancer; 8.7.0: `private_nlb` support "to match the validated AWS PrivateLink" | 8.1.0 (Jun 2026) | The network topology IBM validated; the note names the result, not the design |
+| **ROSA** | The reference platform for the demo; CLI functions `gitops-rosa` and `gitops-deprovision-rosa` exist; ansible-devops has `ocp_rosa_provision` and `ocp_rosa_hcp_idms` playbooks | Long-standing | Whether other managed OpenShift offerings are tested to the same depth |
+| **DocumentDB / MongoDB** | Demo uses DocumentDB; `gitops-mongo` accepts `mongoce` since CLI 23.14.0; 8.7.0 installs MongoDB CE through Argo CD | 8.7.0 for CE | CLI help text I read still lists providers as `aws` or `yaml`, so the help is stale relative to the release note |
+
+### A note on stuck deletions
+
+Several 8.x patches are about **teardown**, and that is where a GitOps system bites. 8.7.0 adds a PreDelete hook and finalizer patch fallback "to fix stuck Terminating CRs" and PostDelete jobs to clean up leftover ClusterServiceVersions for Manage, Db2u, SLS, Optimizer, Assist and Facilities; 8.6.0 fixes applications stuck in Deleting because of sync-wave ordering. If you only ever install, you will not notice. If you intend to build and destroy ephemeral test environments (and that is the best argument for GitOps), upgrade to 8.7.x before you start.
+
+---
+
+## 🤖 RHOAI and AI Service Under Argo CD
+
+The brief names Red Hat OpenShift AI, and the evidence here is concrete. Release 8.1.0 added "rhoai support to gitops repository", 8.6.0 added "GitOps automation changes to support horizontal scaling for RHOAI", and the repository now has an `instance-applications/116-ibm-rhoai` chart next to the older `112-ibm-odh` chart and the `113-ibm-aiservice` and `115-ibm-aiservice-tenant` charts. On the product side, IBM's AI Service 9.2.0 release page (25 June 2026) says that **AI Service has been migrated from OpenDataHub to Red Hat OpenShift AI**, and that it supports Db2 version 12.
+
+The RHOAI chart installs the operator subscriptions, the namespaces, a `DSCInitialization` and a `DataScienceCluster`, and Istio authentication and network policy resources. Its README documents an ODH-to-RHOAI migration that is worth quoting in steps because it is Argo-specific:
+
+1. Set `ibm_odh.install: "false"` in your configuration.
+2. Sync the ODH application in Argo CD with the **prune** option enabled.
+3. Wait for the ODH resources to go; shared resources (the aiservice namespace, ServiceMesh, Authorino, Serverless operators and NetworkPolicies) carry `Prune=false,Delete=false` protection annotations so RHOAI can reuse them.
+4. Set `ibm_rhoai.install: "true"`.
+5. Sync the RHOAI application.
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_rhoai:
+  install: true
+```
+
+The minimal configuration really is that short. The values reference shows how much is configurable underneath (channels, catalog sources, pipeline operator names), and that is where version mismatches hide. One caution that connects to Part 7: RHOAI and its Service Mesh dependencies have their own OpenShift version requirements, and I did not find an IBM page that lists them for the MAS 9.2 AI Service. Confirm against the AI Service prerequisites for your exact version before you enable the chart.
+
+AI Service is also where IBM's recent security bulletins landed (see Part 5 in the MAS-SECURITY-OPS series for the CVE discussion). Running it from Git means a patched chart revision and a catalog bump are the same pull request, which is an argument *for* GitOps, provided you are watching the bulletins.
+
+---
+
+## 🧭 Choosing: CLI, Ansible or GitOps
+
+Time for the decision table I promised. I am deliberately opinionated here, and these are my judgements, not IBM's.
+
+| Your situation | My recommendation | Reason |
+|---|---|---|
+| One or two clusters, one platform team, monthly catalog moves | **CLI** (`mas update`, `mas upgrade`) with Part 7's sequencing | The cost of GitOps (Argo CD, a vault, a config repo, chart upgrades) exceeds the benefit |
+| Existing Ansible Automation Platform or Jenkins estate with change control | **ansible-devops** roles in your pipeline | You keep your approval flow; the roles are the same ones the CLI runs |
+| Many clusters or instances, SaaS-style operation, on AWS or ROSA | **ibm-mas/gitops** | This is what it was built for |
+| Regulated environment needing an audit trail of configuration | **GitOps for configuration**, CLI for the first install | Git history is the evidence; do not fight the AWS-only vault if you are on AWS, and plan for it if you are not |
+| Disconnected environment, small team | **CLI mirroring first**, GitOps later | Air-gap alone is hard enough; add Argo CD after the mirror is boringly reliable |
+| Not on AWS | **CLI or ansible-devops**; study the gitops charts | AWS Secrets Manager is the only supported backend today |
+
+### Three estates, three paths
+
+**Estate 1: A utility on ROSA with 6 instances.** This is the shape the repository was designed around. Use the account root, one cluster root per cluster, instance directories per environment, and AWS Secrets Manager. Put the account root's `revision` on a chart tag and your config repo's production branch behind two-person review. Turn `auto_delete` off. Rehearse every chart major on a throwaway cluster that you can create and destroy from the same repository, which is where the 8.7 teardown fixes pay off.
+
+**Estate 2: A manufacturer on on-premises OpenShift, air-gapped, one production and one test cluster.** GitOps is the wrong first move. Spend the effort on `mas mirror` in two phases, `mas configure-airgap`, and a written runbook for the monthly catalog (Part 1) and the support window (Part 7). Revisit GitOps once you have a secrets backend you can support, because the repository gives you nothing for Vault or Kubernetes secrets today.
+
+**Estate 3: A consultancy running many small customer clusters.** The CLI is the right tool for each customer, but you will hit the same "who changed what" question repeatedly. The pragmatic middle path is to use the CLI for installs and keep a Git repository of the **inputs** (CLI parameters, catalog versions, channel choices, Db2 settings), even if you do not hand control to Argo CD. You will get half the audit value with none of the self-heal surprises.
+
+---
+
+## 🧰 A Minimal Bootstrap, Step by Step
+
+If you do want to try this, build a **sandbox**, not production. The flow from the demo repository's guide is:
+
+1. Provision a ROSA cluster and configure AWS Secrets Manager.
+2. Create a Git repository for configuration.
+3. Install and configure Argo CD, using `mas gitops-bootstrap` (it installs OpenShift GitOps, registers the custom health checks and accepts `--account-id`, `--app-revision`, `--restricted-access`, `--auto-delete`, `--cluster-admin-role`, `--application-admin-role` and the GitHub repository and token options).
+4. Create the Account Root Application.
+5. Provision the database (DocumentDB in the demo).
+6. Push configuration files, and write secrets to Secrets Manager, with the `mas gitops-*` functions (`gitops-cluster`, `gitops-suite`, `gitops-db2u`, `gitops-suite-app-install`, and so on). These accept `--github-push` plus host, org, repo and branch, so the CLI can commit to your config repository for you.
+
+The CLI ships more than fifty gitops functions, including matching `gitops-deprovision-*` functions for teardown, and their help screens are long: `gitops-suite` alone exposes options for Secrets Manager, routing mode (path-based routing needs MAS 9.2 or later), DNS provider (CIS today), manual certificates, OIDC clients and more.
+
+### The lock you will eventually trip over
+
+Because several people or pipelines may call these functions at once, the CLI serialises writes to the config repository with a **locking mechanism**. By default it creates a temporary Git branch named like `lock.gitops-suite.dev.masdemo1.inst1`, retries until it can create it, applies the change and deletes the branch. An optional Redis lock is available when you set `GITOPS_USE_REDIS_LOCKING=true` and provide host, port and credentials. The failure mode is documented: a crashed process can leave a stale lock branch, and the next run waits forever. The fix is to list and delete it:
+
+```bash
+git branch -r | grep "lock\."
+git push origin --delete lock.gitops-suite.dev.masdemo1.inst1
+```
+
+Also look for a leftover local clone ("destination path already exists and is not an empty directory") in `/tmp` or the working directory. These are boring problems, and boring problems are the ones that stall a Friday night change.
+
+### RBAC: the two admin roles
+
+Release 8.0.0 added support for **cluster-admin** and **application-admin** roles in Argo CD deployments, and the repository has an `rbac/` directory and a `600-application-admin-rbac` chart for it. In application-admin mode, Argo CD runs with namespace-scoped permissions and a separate Argo CD instance with cluster-admin handles cluster-level resources. That split is the answer to the segregation-of-duties problem raised publicly as long ago as August 2024, when a customer filed MASM-I-1170 asking IBM to support MAS installation beyond Ansible, with separate cluster-admin and namespace-admin duties and Kustomize via Argo CD. IBM closed that request as "not under consideration" and split it into six narrower ideas; two years on, the gitops repository has delivered a good part of what it asked for, in IBM's own shape rather than as a supported customer feature.
+
+---
+
+## 🔥 Failure Modes and What They Look Like
+
+| Symptom | Likely cause | First check |
+|---|---|---|
+| Config file pushed, nothing happens | Wrong or missing `merge-key`; file in the wrong directory level | Compare the key to the directory path; check the ApplicationSet generated parameters |
+| Setting you changed in the UI reverts within minutes | `selfHeal: true` doing its job | Change it in the config repo; pause the app for emergencies |
+| `ImagePullBackOff` on a PreSync or hook Job | CLI image still points at `quay.io` in a disconnected cluster | `mas_cli_image_repo` setting; IDMS resources present |
+| Application stuck in `Deleting` or CR stuck `Terminating` | Missing finalizer clean-up, sync-wave ordering | Upgrade to gitops 8.7.x (PreDelete hooks and finalizer fallback) |
+| `gitops-*` function hangs on start | Stale `lock.*` branch in the config repo | `git branch -r | grep "lock\."` and delete it |
+| Db2 parameter edit rejected after a Db2 upgrade | Db2uInstance webhook restricting post-creation changes (reported for 12.1.5) | Use native `db2 update db cfg` and record it; check IBM Ideas DB24LUW-I-2308 |
+| Instance disappears after a "cleanup" commit | `prune: true` plus a deleted config file | Restore the file; review branch protection and `auto_delete` |
+| Install works in dev, fails in a second cluster | Config examples copied with a stale catalog or channel | Check `mas_catalog_version` and `mas_channel` against Part 7's table |
+| Manage config app sits "progressing" for hours | Normal: the documented duration is about 240 minutes | Watch the Manage workspace status, not the Argo timer |
+
+---
+
+## ⚖️ Where the Sources Disagree or Look Dated
+
+I would rather tell you now than have you find out on a cluster.
+
+| Item | Source A | Source B | My handling |
+|---|---|---|---|
+| Mongo providers for `gitops-suite` | CLI help text lists `aws` or `yaml` | CLI 23.14.0 and gitops 8.7.0 add MongoDB CE | Release notes win; help text looks stale |
+| Who this is for | Public repository, active releases | Demo says functions suit "IBM Internal processes" | Treat as reference implementation, not a documented customer product |
+| Example versions | Example config uses catalog v9-260326 and channel 8.11.x | Current catalogs are v9-261007 and later | Examples show structure only |
+| RDS Db2 chart | README example `engine_version: "14.10"` | Db2 for LUW versions are 11.5 and 12.x | Flagged; confirm against the chart values before use |
+| CPD version | CLI 23.16.0 and ansible-devops 37.22.0 mention CPD 5.4.0 | Part 7's catalog table lists CPD 5.3.1 | Catalog table decides what is supported |
+
+---
+
+## 🛠️ The Seven Commandments of MAS GitOps
+
+1. **Thou shalt decide who can merge to production before thou decidest anything else.** Git is now your change control.
+2. **Thou shalt treat deleting a YAML file as deleting an instance**, because with `prune` enabled that is what it is.
+3. **Thou shalt pin the chart revision and the CLI image**, and read every major release note first.
+4. **Thou shalt teach admins the UI-versus-Git boundary** before self-heal teaches it for them.
+5. **Thou shalt mirror all three air-gap layers** and test with egress blocked.
+6. **Thou shalt write down every change made outside Git**, Db2 parameters above all.
+7. **Thou shalt keep a CLI rebuild path alive**, because the supported route and the reference implementation are not the same thing.
+
+---
+
+## 🎯 What to Do This Week
+
+| Day | Action |
+|---|---|
+| Monday | Decide with your team which of the three tools your estate needs, using the decision table. Write the answer and the reason down |
+| Tuesday | Read `docs/orchestration.md` and `docs/limitations.md` in `ibm-mas/gitops`, and check each limitation against your design (secrets backend, scopes, one account root) |
+| Wednesday | If you run disconnected, inventory the three air-gap layers and find which one you have not tested |
+| Thursday | Stand up a sandbox from the demo repository, or build the config skeleton only if you are not on AWS |
+| Friday | Draft your branch-protection and approval rules for a config repository, even if you never adopt Argo CD; the rules are useful for CLI inputs too |
+
+---
+
+## 🏁 Closing the Series
+
+Eight parts ago this series started with the question "go-live was the easy part; what now?" The answer turned out to be a set of habits more than a set of tools. Read the patch train (Part 1). Take the Db2 12 step deliberately (Part 2) and tune Db2 for Manage (Part 3). Know what your backup actually protects (Part 4). Watch the platform (Part 5), tune Manage (Part 6), and stay inside the support window (Part 7). GitOps is where those habits can become code, and where the lack of them becomes visible. If your team cannot yet say who approves a catalog bump, no tool will answer it for you.
+
+Return to the **[series index](/blog/mas-platops-00-series-index)** for the reading paths by role.
+
+---
+
+## 📚 References
+
+- [GitHub: ibm-mas/gitops releases (8.0.0 to 8.7.1, read 21 Oct 2026)](https://github.com/ibm-mas/gitops/releases)
+- [GitHub: ibm-mas/gitops repository and README (hierarchy, charts, RBAC)](https://github.com/ibm-mas/gitops)
+- [IBM MAS GitOps documentation site (architecture, config repository, orchestration, limitations, secrets, timings)](https://ibm-mas.github.io/gitops/)
+- [GitHub: ibm-mas/gitops-demo (step-by-step ROSA reference flow)](https://github.com/ibm-mas/gitops-demo)
+- [GitHub: ibm-mas/cli releases (23.12.0 to 23.16.0)](https://github.com/ibm-mas/cli/releases)
+- [GitHub: ibm-mas/cli, Image Mirroring v2 guide (`mas mirror`)](https://github.com/ibm-mas/cli/blob/master/docs/guides/mirroring-v2.md)
+- [GitHub: ibm-mas/cli, Configure OpenShift for Airgap Install (`mas configure-airgap`)](https://github.com/ibm-mas/cli/blob/master/docs/guides/configure-airgap.md)
+- [GitHub: ibm-mas/ansible-devops releases (37.18.0 to 37.22.0)](https://github.com/ibm-mas/ansible-devops/releases)
+- [MAS Ansible collection documentation (ibm.mas_devops)](https://ibm-mas.github.io/ansible-devops/)
+- [IBM Support: Maximo Application Suite AI Service component 9.2.0 (RHOAI migration, Db2 12)](https://www.ibm.com/support/pages/ibm-maximo-application-suite-ai-service-component-release-920)
+- [IBM Ideas DB24LUW-I-2308: Re-allow post-deployment Db2uInstance config updates for GitOps (customer request, Submitted)](https://ibm-data-and-ai.ideas.ibm.com/ideas/DB24LUW-I-2308)
+- [IBM Ideas MASM-I-1170: Support MAS installation beyond Ansible (closed, Aug 2024)](https://ibm-ai-apps.ideas.ibm.com/ideas/MASM-I-1170)
+- [MAS CLI documentation: IBM Maximo Operator Catalog directory](https://ibm-mas.github.io/cli/catalogs/)
+- [Part 1 of this series: The MAS Patch Train Explained](/blog/mas-platops-01-patch-train)
+- [Part 7 of this series: Staying Inside the MAS Support Window](/blog/mas-platops-07-support-window)
+
+---
+
+**About TheMaximoGuys:** We help Maximo administrators, developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | October 2026*
+
+<!--
+REVIEWER NOTES (night-shift, 2026-10-21, platops-08):
+- SOURCES READ LIVE 2026-10-21 via GitHub API/raw: ibm-mas/gitops releases (8.0.0-8.7.1, plus older majors), docs (index, architecture, configrepo, configtoinstances, orchestration, limitations, secrets, locking-mechanisms, timings, accountrootmanifest, rbac), README, chart READMEs (000-image-mirroring, 116-ibm-rhoai, 120-ibm-dbs-rds-database), example-config/dev; ibm-mas/cli releases 23.12.0-23.16.0, functions gitops_suite/gitops_bootstrap/gitops_rds_db2_database help text, docs/guides/mirroring-v2.md and configure-airgap.md; ibm-mas/ansible-devops releases 37.18.0-37.22.0, tree listing (42 playbooks, ~95 roles); gitops-demo 003 README. Web (WebFetch): IBM Ideas MASM-I-1170 and DB24LUW-I-2308, IBM AI Service 9.2.0 release page. Three WebSearches returned thin, mostly third-party results and no practitioner GitOps guide; none cited.
+- KB: DOC00 CHG-038, CHG-021, CHG-010, CHG-017, §5.3. DOC13/DOC15 have no GitOps content. SearchMaximo path (baseline/knowledge-base/...) does not exist on this machine (same as Parts 4-7); voice server on :8888 was down (curl exit 7).
+- NEW SINCE DOC00: CLI 23.16.0 and ansible-devops 37.22.0 (both 21 Oct 2026, CPD 5.4.0, GitOps Db2 v11->v12) post-date CHG-038 and should be added to DOC00 at the next scan. DOC00 says gitops 8.7.1 on 16 Oct: confirmed.
+- DISCREPANCIES: (1) CLI gitops_suite help lists Mongo providers 'aws' or 'yaml' vs release notes adding mongoce; (2) RDS Db2 chart README example engine_version "14.10" is unexplained; (3) digest-pinning validation PR #516 shipped in gitops 8.4.1 (corrected in body); (4) CPD 5.4.0 in tooling vs 5.3.1 in the Part 7 catalog table; (5) example-config versions are old (v9-260326, 8.11.x).
+- OUR ADDITIONS (not IBM): the decision tables, three estates, "reference implementation" framing, commandments, failure-mode table, and the advice to pause Argo for emergencies.
+- NOT VERIFIED: how auto_delete, --auto-delete and prune interact in the charts; how CLI 23.16.0's Db2 v12 GitOps upgrade works or whether it needs the licence file; the Db2uInstance webhook claim (customer request only, IBM page not found); AWS PrivateLink topology; RHOAI/ServiceMesh OCP version requirements for AI Service 9.2; whether any IBM support statement covers customer use of ibm-mas/gitops; the 600-application-admin-rbac chart behaviour (read from README only).
+- [IND]-only claims: none used.
+-->
