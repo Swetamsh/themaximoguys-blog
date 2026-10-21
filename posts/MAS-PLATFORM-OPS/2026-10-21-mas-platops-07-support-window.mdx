@@ -1,0 +1,624 @@
+---
+title: "Staying Inside the MAS Support Window: OCP 4.18–4.22, CPD 5.3.1 and MongoDB 8"
+description: "How to read IBM's operator catalog compatibility table, why OCP 4.16 dropped out, what the even-numbered OpenShift rule means for Predict and Collaborate, and the order to upgrade OpenShift, Cloud Pak for Data, MongoDB and MAS without leaving the supported range."
+date: "2026-10-21"
+slug: "mas-platops-07-support-window"
+tags: ["Maximo", "MAS", "OpenShift", "OCP", "Cloud Pak for Data", "MongoDB", "Operator Catalog", "Upgrade", "Platform Operations", "Administrator"]
+draft: true
+tier: "admin"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-platops-07-support-window.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Where do I find out which OpenShift, Cloud Pak for Data and MongoDB versions a MAS operator catalog supports?"
+    answer: "Use the Catalog Directory on the MAS CLI documentation site at ibm-mas.github.io/cli/catalogs. Each monthly catalog (for example v9-261007) has a row listing the supported OCP range, the Cloud Pak for Data version, the MongoDB range and the CLI version that matches it. As of 21 October 2026 the two newest published catalogs, v9-261007 and v9-260924, both list OCP 4.18 to 4.22, CPD 5.3.1 and MongoDB 7.0 to 8.0. The page is maintained by IBM's MAS team on GitHub, so it changes monthly; the catalogs scheduled for 29 October, 26 November and 24 December show TBD today. Read the row for the catalog you intend to move to, not the one you are on, and read it again on the day you schedule the change."
+  - question: "Is OpenShift 4.16 still supported for MAS?"
+    answer: "Not for any catalog published after v9-260827. That catalog, dated 27 August 2026, is the last whose row lists OCP 4.16 (4.16 to 4.22). The next catalog, v9-260924, starts at 4.18. The ibm-mas/ansible-devops project removed 4.16 support in release 37.18.0 on 15 September 2026. A cluster on 4.16 keeps running, and it can keep updating inside the v9-260827 catalog or earlier, but it cannot take a newer catalog until OpenShift moves. Plan the OpenShift step first, then the MAS step. Red Hat's own end of life for 4.16 is a separate question: on the data I could resolve, the EUS Term 1 date for 4.16 was 27 June 2026, so a 4.16 cluster is also outside Red Hat's published support unless you bought a later add-on term."
+  - question: "Can I run OpenShift 4.19 or 4.21 if I have Maximo Predict or Collaborate?"
+    answer: "No. IBM's documentation states that IBM App Connect and Cloud Pak for Data do not support odd-numbered Red Hat OpenShift versions, and that if Maximo Collaborate or Maximo Predict is deployed you must use even-numbered versions. Inside the current 4.18 to 4.22 window that leaves 4.18, 4.20 and 4.22. Even-numbered releases are also the ones Red Hat designates as Extended Update Support releases, which is why the rule and the lifecycle line up. One IBM page names Maximo Assist where another names Maximo Collaborate, and Maximo Health and Predict for Utilities is also listed on one page, so if you run anything in that family, treat even-numbered OpenShift as the safe default and confirm against the page for your MAS version."
+  - question: "Does mas update upgrade MongoDB and Cloud Pak for Data for me?"
+    answer: "Partly. IBM's update guide says each catalog is certified against a specific MongoDB and Kafka version, and mas update upgrades the MongoDB Community operator and the MongoDbCommunity operand to the tested version. When a major version change is needed the CLI asks you to approve it and recommends a database backup, while minor changes apply automatically. For Cloud Pak for Data, IBM says each catalog is certified with one specific CPD version, and it recommends against diverging from it because CPD versioning is brittle. So treat CPD as part of the catalog move, not as an independent upgrade, and do not patch individual CPD services by hand. MongoDB hosted outside the cluster (Atlas, a vendor service, or your own replica set) is yours to upgrade, within the catalog's 7.0 to 8.0 range."
+  - question: "What order should I upgrade OpenShift and MAS in?"
+    answer: "Move to an OpenShift version that is inside both the range of the catalog you are on and the range of the catalog you want, then update the catalog. In practice: take backups, step OpenShift up while you are still on a catalog that lists the intermediate versions, confirm the cluster is healthy, then run mas update to the newer catalog, which brings the matching CPD, MongoDB and operators. A cluster on 4.16 with catalog v9-260827 is the clean example, because 4.18 is in that row and in the v9-260924 and v9-261007 rows. Never do the reverse, because a catalog newer than your OpenShift range is outside IBM's tested combination. Rehearse on a non-production cluster first and keep the MAS version upgrade (a channel change with mas upgrade) as its own separate change."
+keyTakeaways:
+  - "Support is a three-way match: the operator catalog row (OCP range, CPD version, MongoDB range), Red Hat's OpenShift lifecycle, and the MAS version's own lifecycle. Passing one does not pass the others. The catalog page is the only one that updates monthly, so read it before every change"
+  - "OCP 4.16 left the window between catalogs: v9-260827 (27 Aug 2026) is the last row that lists it, v9-260924 and v9-261007 list 4.18 to 4.22, and ansible-devops 37.18.0 removed it on 15 Sep 2026. A cluster still on 4.16 must move OpenShift before it can take any newer catalog"
+  - "If Predict or Collaborate is deployed, run only even-numbered OpenShift (UPG-15): 4.18, 4.20 or 4.22 in today's window. App Connect and Cloud Pak for Data do not support odd releases, and 4.19 and 4.21 are inside the catalog range but outside your support"
+  - "CPD 5.3.1 arrives with catalog v9-260827 and later, and IBM certifies one CPD version per catalog. mas update handles MongoDB and Kafka alignment and prompts on major versions, but CPD versioning is brittle: never patch CPD services independently of the catalog"
+  - "Sequence matters more than speed: back up, move OpenShift inside the overlap of the old and new catalog ranges, then mas update, then (separately) mas upgrade the MAS channel. Keep the CLI at the version listed for the catalog, and mirror images first on disconnected clusters"
+series:
+  name: "MAS PLATFORM-OPS"
+  part: 7
+  total: 8
+tldr: "MAS is supported only as a tested combination of operator catalog, OpenShift, Cloud Pak for Data and MongoDB, and that combination moves every month. The live catalog table now shows OCP 4.18 to 4.22, CPD 5.3.1 and MongoDB 7.0 to 8.0 for v9-260924 and v9-261007, after v9-260827 became the last catalog to list OCP 4.16. If you run Predict or Collaborate, only even-numbered OpenShift (4.18, 4.20, 4.22) is allowed. This post shows how to read the table, where Red Hat's lifecycle and MAS's lifecycle disagree with it, the order to upgrade each layer, four worked estates, a pre-flight command set, and the failure modes to expect."
+seoTitle: "MAS Support Window: OCP 4.18–4.22, CPD, MongoDB 8"
+seoDescription: "Read IBM's MAS catalog table, drop OCP 4.16 safely, follow the even-OCP rule for Predict, and sequence OCP, CPD and MongoDB upgrades."
+targetQuestions:
+  - "Which OpenShift versions does MAS support in 2026?"
+  - "Is OpenShift 4.16 supported by Maximo Application Suite?"
+  - "Which Cloud Pak for Data version does the current MAS catalog use?"
+  - "Does MAS support MongoDB 8?"
+  - "Why does Maximo Predict require an even-numbered OpenShift version?"
+  - "In what order should I upgrade OpenShift and MAS?"
+  - "How do I check which operator catalog my MAS cluster is on?"
+semanticKeywords:
+  - "MAS operator catalog compatibility"
+  - "ibm-maximo-operator-catalog"
+  - "OpenShift 4.18 4.20 4.22 MAS"
+  - "even-numbered OpenShift Predict Collaborate"
+  - "Cloud Pak for Data 5.3.1 MAS"
+  - "MongoDB 8.0 Maximo Application Suite"
+  - "OpenShift Extended Update Support MAS"
+  - "mas update static catalog"
+  - "OCP 4.16 end of support MAS"
+  - "MAS upgrade sequencing"
+proficiencyLevel: "advanced"
+dependencies:
+  - "cluster-admin access to the OpenShift cluster hosting MAS"
+  - "A current backup of MongoDB, Db2 and MAS configuration (Part 4 of this series)"
+  - "Familiarity with the catalog and mas update flow from Part 1 of this series"
+  - "A non-production cluster to rehearse the OpenShift and catalog moves"
+speakableSections:
+  - "The Three Clocks Behind 'Supported'"
+  - "OCP 4.16 Leaves the Window"
+  - "The Even-Numbered OpenShift Rule"
+clusterSlugs:
+  - "mas-platops-00-series-index"
+  - "mas-platops-01-patch-train"
+  - "mas-platops-02-db2-12-upgrade"
+  - "mas-platops-04-backup-restore-dr"
+  - "mas-platops-06-manage-performance"
+  - "mas-platops-08-gitops-cli-ansible"
+relatedSlugs:
+  - "mas-platops-00-series-index"
+  - "mas-platops-01-patch-train"
+  - "mas-platops-04-backup-restore-dr"
+  - "mas-platops-08-gitops-cli-ansible"
+---
+
+# Staying Inside the MAS Support Window: OCP 4.18–4.22, CPD 5.3.1 and MongoDB 8
+
+<aside>
+
+🎯 **Who this is for:** MAS administrators and platform engineers who own the OpenShift cluster, the dependencies and the monthly catalog cadence. You will leave with a method for reading IBM's compatibility table, a clear answer on OpenShift 4.16 and on odd-numbered releases, an upgrade order you can defend in a change board, four worked estates, a pre-flight script, and a list of places where IBM's own pages disagree.
+
+</aside>
+
+> **"Is it supported?" has three different answers, and your cluster can pass two of them while failing the third.**
+
+Picture the change board. Someone asks whether the cluster is on a supported OpenShift. Someone else checks the Red Hat page and says yes. A third person has the MAS release notes open and says the Manage version is fine. Everyone nods. Six weeks later you try to take the next monthly catalog and the update stops, or worse, it starts and leaves you on a combination nobody at IBM tested.
+
+I have seen this exact meeting more than once, and the cause is always the same. People check support against one clock. MAS runs on three, and they do not tick together. The first is the **operator catalog**, which names the OpenShift range, the Cloud Pak for Data version and the MongoDB range IBM tested that month. The second is **Red Hat's OpenShift lifecycle**, which decides when your OpenShift version stops getting fixes. The third is the **MAS version lifecycle**, which decides when the suite itself stops getting fixes (Part 0 of the MAS-LIFECYCLE series covers those dates).
+
+This is Part 7 of the series. Part 1 taught you to read the monthly patch train and mentioned that platform support moves with the catalog. This part takes that sentence and turns it into an operating discipline: what the table says today, how OCP 4.16 fell out of it, why Predict and Collaborate shrink your OpenShift choices, how CPD and MongoDB travel with the catalog, and the order of operations that keeps you inside the lines.
+
+A note on sourcing, because this topic punishes sloppiness. Every catalog row and CLI statement below was read on 21 October 2026 from IBM's MAS CLI documentation (the page and its markdown source on GitHub). The even-numbered OpenShift rule is IBM's wording from IBM Docs and the MAS 9.2 factbase (UPG-15). The OpenShift lifecycle dates I could read directly from IBM's page are marked as IBM's; dates from third-party trackers are marked secondary. Where I add my own practitioner view, I say so.
+
+---
+
+## 🕰️ The Three Clocks Behind "Supported"
+
+Before any version numbers, the structure. Every supportability question you will get decomposes into these three clocks.
+
+```
+ ┌───────────────────────────────────────────────────────────────┐
+ │ CLOCK 1 — OPERATOR CATALOG (monthly, IBM MAS team)            │
+ │   "Which OCP / CPD / MongoDB did IBM test with this catalog?" │
+ │   Source: ibm-mas.github.io/cli/catalogs                      │
+ │   Moves: every month (v9-YYMMDD)                              │
+ └───────────────────────────────────┬───────────────────────────┘
+                                     │ must overlap with
+ ┌───────────────────────────────────▼───────────────────────────┐
+ │ CLOCK 2 — OPENSHIFT LIFECYCLE (Red Hat)                       │
+ │   "Will Red Hat still fix my OCP minor version?"              │
+ │   Even minors = EUS; MAS licence includes EUS Term 1          │
+ │   Moves: ~4 month minor cadence, 18-24+ month life per minor  │
+ └───────────────────────────────────┬───────────────────────────┘
+                                     │ must overlap with
+ ┌───────────────────────────────────▼───────────────────────────┐
+ │ CLOCK 3 — MAS VERSION LIFECYCLE (IBM Support)                 │
+ │   "Will IBM still fix my MAS 9.0 / 9.1 / 9.2?"                │
+ │   Source: MAS release and lifecycle pages                     │
+ │   Moves: announcement letters (e.g. 9.0 → Extended 30 Jun 27) │
+ └───────────────────────────────────────────────────────────────┘
+```
+
+| Clock | Question it answers | Owner | Where to read it | How often it changes |
+|---|---|---|---|---|
+| Operator catalog | Is this OCP, CPD and MongoDB combination tested? | IBM MAS team | CLI catalogs page | Monthly |
+| OpenShift lifecycle | Is my OCP minor version still receiving fixes? | Red Hat | Red Hat OCP lifecycle page | Per minor release (about every 4 months) |
+| MAS lifecycle | Is my MAS version still receiving fixes? | IBM Support | MAS supported-versions and per-version pages | Announcement letters, a few per year |
+
+> **My take:** the catalog clock is the one that bites first, because it is the only one that can lock you out of an update. Red Hat and MAS lifecycle expirations create risk. A catalog range change creates an immediate "you cannot do this" for a cluster that has not kept up.
+
+<aside>
+
+💡 **Key insight:** the catalog table is IBM's statement of a *tested combination*. It is not a guarantee that every combination outside it breaks. It is a statement that IBM stopped promising it works, and that is the line your support case will be measured against.
+
+</aside>
+
+---
+
+## 📋 Reading the Catalog Table Like an Auditor
+
+The MAS CLI documentation publishes a **Catalog Directory** page that lists every operator catalog, grouped by year. Each row has five fields: the catalog name, the OpenShift range (with an "EOS" date and link to Red Hat), the Cloud Pak for Data version, the MongoDB range, and the CLI version that goes with it. Architecture tags (amd64, s390x, ppc64le) sit under the catalog name.
+
+IBM's own description of the catalog is worth quoting in spirit, because it explains the model. The MAS team takes a snapshot of the online IBM Operator Catalog and tests all dependent IBM operators against supported MAS releases, so that breaking changes are intercepted before they reach your cluster. Every catalog version stays available indefinitely, but its useful life is limited by the support statements of its packages and by the OpenShift release it is certified on. The MAS CLI itself keeps a rolling window of roughly four months of catalogs for the install, mirror-images and update functions.
+
+Here is the portion of the table that matters for a cluster running today, read from the page on 21 October 2026.
+
+| Catalog | Date | OCP | CPD | MongoDB | Notes |
+|---|---|---|---|---|---|
+| v9-261224 | scheduled | TBD | TBD | TBD | Not yet published |
+| v9-261126 | scheduled | TBD | TBD | TBD | Not yet published |
+| v9-261029 | scheduled | TBD | TBD | TBD | Not yet published |
+| **v9-261007** | 7 Oct 2026 | 4.18 – 4.22 | 5.3.1 | 7.0 – 8.0 | Newest published; CLI "latest" |
+| **v9-260924** | 24 Sep 2026 | 4.18 – 4.22 | 5.3.1 | 7.0 – 8.0 | First catalog without 4.16 |
+| v9-260827 | 27 Aug 2026 | 4.16 – 4.22 | 5.3.1 | 7.0 – 8.0 | Last catalog listing 4.16; first with CPD 5.3.1 |
+| v9-260730 | 30 Jul 2026 | 4.16 – 4.21 | 5.2.0 | 7.0 – 8.0 | |
+| v9-260625 | 25 Jun 2026 | 4.16 – 4.21 | 5.2.0 | 7.0 – 8.0 | MAS 9.2.0 Feature Channel (CLI 21.10.0) |
+| v9-260527 | 27 May 2026 | 4.16 – 4.21 | 5.2.0 | 7.0 – 8.0 | CLI 21.5.0 |
+| v9-260430 | 30 Apr 2026 | 4.16 – 4.20 | 5.2.0 | 7.0 – 8.0 | CLI 20.2.0 |
+| v9-260326 | 26 Mar 2026 | 4.16 – 4.21 | 5.2.0 | 7.0 – 8.0 | CLI 19.4.0 |
+| v9-260226 | 26 Feb 2026 | 4.16 – 4.20 | 5.2.0 | 7.0 – 8.0 | CLI 18.18.1 |
+| v9-260129 | 29 Jan 2026 | 4.16 – 4.19 | 5.2.0 | 7.0 – 8.0 | CLI 18.11.0 |
+
+Four things in that table deserve a closer look, and none of them are obvious from a glance.
+
+**1. The OCP range moves at both ends.** The top of the range rose as Red Hat shipped new minors (4.19 by October 2025, 4.20 in the February 2026 catalog, 4.21 in March, 4.22 in the 27 August catalog). The bottom rose in two steps: 4.14 left after v9-251030 (v9-251127 starts at 4.16), and 4.16 left after v9-260827. A catalog row is a window that slides, and the trailing edge is where clusters fall out.
+
+**2. CPD moved to 5.3.1 in the 27 August catalog.** Every catalog from v9-251231 through v9-260730 lists CPD 5.2.0. The v9-260827 row changed it to 5.3.1 at the same time as adding OCP 4.22. Corroborating this from another IBM source: the ansible-devops release 37.14.0 on 24 August 2026 added "OLM/Helm-based installation support for CPD 5.3.1".
+
+**3. MongoDB 8 became part of the range in November 2025.** Catalogs through v9-251030 list MongoDB 6.0 to 7.0. From v9-251127 the row reads 7.0 to 8.0. That means MongoDB 6 left the tested range in a single step, not gradually. If you still run MongoDB 6.0 you have been outside every catalog since 27 November 2025.
+
+**4. The row is not strictly monotonic.** Look at the OCP column for v9-260326 (4.16 to 4.21) against v9-260430 (4.16 to 4.20). A newer catalog listing a lower top version is unusual. I do not know whether that is an intentional pause on 4.21 or an error in the published table, so I will not guess. It is a good reminder that you read the exact row for your target catalog and do not infer from neighbors.
+
+### What the "EOS" date next to the OCP range means
+
+Each OCP range carries an "EOS" link. For v9-261007 and v9-260924 it reads **Aug 3, 2027**; for v9-260430 and earlier-2026 rows it reads Oct 21, 2027 or Feb 25, 2027. IBM's note on the page says that for Extended Update Support (EUS) releases, the dates refer to the EUS Term 1 end dates, and that the Red Hat EUS Add-on Term 1 offering is included with the OpenShift subscription that comes with a MAS licence.
+
+Here is the catch. The page's own prose says extended support for OCP 4.18 expires on **25 February 2027**. The row for v9-261007 says 4.18 to 4.22, "EOS Aug 3, 2027". Those two statements do not describe the same thing, because 4.18's end date is six months before the date on the row. On the secondary tracker I checked (endoflife.date), 3 August 2027 is the end date for OpenShift **4.21**, and 4.22 is listed as 31 December 2027. So the single EOS date on a row does not map to either end of the range in any obvious way.
+
+> **What I would do:** treat the row's EOS date as a pointer to Red Hat, not as a statement about your version. Read the end date for *your* minor version on Red Hat's page. I list the dates I could resolve below, with their sources, in the lifecycle section.
+
+---
+
+## ✂️ OCP 4.16 Leaves the Window
+
+The brief for this post says "OCP 4.16 removal", so here is exactly what happened, in order, from the sources I could read.
+
+| Date | Event | Source |
+|---|---|---|
+| 27 Jun 2024 | OpenShift 4.16 released (secondary tracker) | endoflife.date |
+| 29 Jan 2026 | v9-260129 lists OCP 4.16 – 4.19 | CLI catalogs page |
+| 27 Jun 2026 | EUS Term 1 end for 4.16 as shown on the catalog rows of the era ("EOS Jun 27, 2026") and in the tracker | CLI catalogs page; endoflife.date |
+| 27 Aug 2026 | **v9-260827 is the last catalog to list 4.16** (4.16 – 4.22) | CLI catalogs page |
+| 15 Sep 2026 | ansible-devops **37.18.0**: "[patch] Remove Support for 4.16 OCP version" | GitHub releases |
+| 24 Sep 2026 | v9-260924 lists 4.18 – 4.22 | CLI catalogs page |
+| 7 Oct 2026 | v9-261007 lists 4.18 – 4.22 | CLI catalogs page |
+
+Two observations. First, IBM kept 4.16 in the catalog for about two months past the end of its EUS Term 1 on the earlier rows, and removed it at the same time as it added 4.22. That is how the window slides: the new top arrives and the old bottom leaves in the same catalog. Second, the removal shows up in tooling before it shows up in anyone's change calendar. The ansible-devops release was published nine days before v9-260924, and the CLI keeps only about four months of catalogs, so a team that is not watching releases finds out when a command refuses to run.
+
+### What "removed" does and does not mean
+
+It does **not** mean your 4.16 cluster stops working. Nothing in the MAS CLI documentation says MAS will detect the OpenShift version and shut down. What changes:
+
+| Aspect | On OCP 4.16 after v9-260827 |
+|---|---|
+| Running workloads | Keep running; nothing is forcibly changed |
+| Updating within v9-260827 or older | Still possible (the row lists 4.16) |
+| Updating to v9-260924 or newer | Outside the tested range. IBM no longer lists 4.16, so a support case on that combination is on thin ice |
+| Red Hat support | 4.16's EUS Term 1 ended 27 Jun 2026 on the data I could resolve, so only a purchased later add-on term would cover you |
+| Automation (ansible-devops) | Support for 4.16 removed from 37.18.0 onward; older releases still know it |
+
+> **My take:** an OCP 4.16 cluster is now in the position where *both* IBM and Red Hat lifecycle clocks say "move", and the catalog clock says "you cannot take new fixes until you do". If your MAS estate includes a 4.16 cluster, the OpenShift upgrade is your next change, ahead of any MAS patching. The CVE fixes in Part 1's patch train arrive in catalogs you cannot take.
+
+<aside>
+
+⚠️ **Gotcha:** if you pinned the CLI or your pipeline image to an older release to keep a stable pipeline, check that its catalog list still contains the catalog you want. The CLI documentation says it maintains a rolling window of roughly four months of catalogs for install, mirror-images and update. An old CLI will not offer a new catalog, and the documentation recommends using a CLI released around the same time as an old catalog.
+
+</aside>
+
+---
+
+## 🔴 Red Hat's Clock: EUS, Even Numbers and What Your Licence Includes
+
+OpenShift 4 has a time-delineated lifecycle. In Red Hat's words, at least four minor versions are supported at any time, and Red Hat forecasts releases at a four-month cadence. Support phases are Full Support, Maintenance Support and, for even-numbered minors, optional Extended Update Support add-ons. Red Hat states that even-numbered minor releases (4.12, 4.14, 4.16 and so on) are the EUS releases.
+
+IBM's catalog page adds the MAS-specific piece: the Red Hat EUS Add-on Term 1 offering is **included with the OpenShift subscription that comes with a MAS licence**. For EUS-denoted releases, the dates on the page are the EUS Term 1 end dates. The page also notes a nuance that catches planners: non-EUS release support expires before the extended support of the previous EUS release. IBM's example: extended support for OCP 4.18 ends on 25 February 2027, while standard support for 4.17 ended on 1 April 2026.
+
+Here is what I could resolve for the OpenShift versions in and around the current window. IBM-stated dates are from the catalog page. The rest are from endoflife.date, which republishes Red Hat's data and is a **secondary source**; confirm each against Red Hat's lifecycle page before putting it in a plan. (Red Hat's page renders its date tables with scripts, so I could not read them in the raw page.)
+
+| OCP | Even? | Released (secondary) | End of maintenance (secondary) | EUS Term 1 end | Status relative to catalog window |
+|---|---|---|---|---|---|
+| 4.16 | Yes | 27 Jun 2024 | 27 Dec 2025 | 27 Jun 2026 (secondary) | Out of window after v9-260827 |
+| 4.17 | No | 1 Oct 2024 | 1 Apr 2026 (IBM states this date) | none | Not in any current row |
+| 4.18 | Yes | 25 Feb 2025 | 25 Aug 2026 | **25 Feb 2027 (IBM states this date)** | In window; EUS only for about four more months |
+| 4.19 | No | 17 Jun 2025 | 17 Dec 2026 | none | In window; odd, so not for Predict or Collaborate |
+| 4.20 | Yes | 21 Oct 2025 | 21 Apr 2027 | not resolved | In window |
+| 4.21 | No | 21 Oct 2025 | 3 Aug 2027 | none | In window; odd |
+| 4.22 | Yes | 9 Jun 2026 | 31 Dec 2027 | not resolved | Newest in window |
+
+Two details to flag on that table. The 21 October 2025 release date appears for both 4.20 and 4.21 on the tracker, which looks like a data-entry artifact; treat both release dates with caution. And the IBM page's blanket "EOS Aug 3, 2027" matches the tracker's date for 4.21, not 4.22, which is another reason to read Red Hat directly.
+
+What this means in plain terms, as of today:
+
+- **4.18** is your oldest in-window version, and its Red Hat support ends in about four months (25 Feb 2027) on IBM's figure. If you are on 4.18 you are inside every row, but your next OpenShift move is already on the calendar.
+- **4.19** is inside the catalog range and ends maintenance in under two months (17 Dec 2026, secondary), and has no EUS. It is the worst place to sit: short life, and incompatible with Predict and Collaborate.
+- **4.20** is the sweet spot right now for a cluster that wants an even-numbered release with room to run.
+- **4.22** is the newest even release and the one a green-field build should choose, unless a component you run has not yet certified it.
+
+> **My take:** standardize on even-numbered OpenShift across the estate even if you do not run Predict or Collaborate today. It aligns you with EUS, it keeps the door open for Predict later, and it halves the number of OCP minors you ever have to qualify. The cost is that you skip every other minor, so each upgrade is a two-minor hop, which is the next topic.
+
+---
+
+## 🔢 The Even-Numbered OpenShift Rule
+
+The MAS 9.2 factbase (our DOC15, item UPG-15) records an infrastructure constraint that is easy to miss in the install guide and expensive to discover on go-live day. IBM's wording: *"IBM App Connect and Cloud Pak for Data do not support odd-numbered Red Hat OpenShift Container Platform versions. If Maximo Collaborate, or Maximo Predict is deployed, you must use even-numbered Red Hat OpenShift Container Platform versions."*
+
+I re-verified this through IBM Docs search results on 21 October 2026. The reasoning is straightforward and worth stating plainly, because it shapes your whole upgrade policy:
+
+1. Predict and Collaborate depend on **Cloud Pak for Data** services (Watson Studio and Watson Discovery per IBM's CPD page).
+2. Cloud Pak for Data does not support odd-numbered OpenShift.
+3. Therefore a cluster hosting Predict or Collaborate cannot be on an odd-numbered OpenShift.
+
+IBM's prerequisites matrix confirms the dependency side: the CPD control plane is marked required for some applications and optional for others, Watson Studio is required for Predict, and Watson Discovery for Collaborate. App Connect appears as an optional integration.
+
+### What the rule does to the catalog window
+
+The catalog says 4.18 to 4.22. The rule says even only if you run those add-ons. Intersect them:
+
+| OCP | In catalog window? | Allowed with Predict or Collaborate? | Allowed for Manage-only estates? |
+|---|---|---|---|
+| 4.18 | Yes | Yes | Yes |
+| 4.19 | Yes | **No** | Yes |
+| 4.20 | Yes | Yes | Yes |
+| 4.21 | Yes | **No** | Yes |
+| 4.22 | Yes | Yes | Yes |
+
+So a shop that runs Predict has exactly three legal OpenShift versions today, and every upgrade for it skips one minor release.
+
+### The rule at the edges
+
+I want to be careful with the edges of this rule, because I found inconsistencies in IBM's own wording.
+
+- The search results from IBM Docs show one page that names **Maximo Assist** and another that names **Maximo Collaborate** in the same sentence. Collaborate is the renamed Assist, so this looks like a rename that is not yet applied everywhere. (Our own DOC00 notes the rename: Collaborate, formerly Assist.)
+- Another page lists **Maximo Health and Predict – Utilities** in the same constraint. That product has its own App Connect dependency (an on-premises App Connect instance).
+- I did not find an equivalent statement for Manage-only estates, and the CLI catalog page makes no mention of the even rule at all. The catalog says 4.19 is fine because for a Manage-only estate it is, in IBM's tested matrix.
+
+> **Practical reading:** if any of Predict, Collaborate (Assist) or Health and Predict for Utilities is on your roadmap within the life of the cluster, build and upgrade on even-numbered releases. Retrofitting later means an OpenShift change under a running suite.
+
+<aside>
+
+💡 **Key insight:** the even rule is the only place where a single add-on changes your *OpenShift* policy. Most add-on decisions are MAS-level. This one reaches down into the platform team's roadmap, which is why it belongs in the architecture review and not in the post-install checklist.
+
+</aside>
+
+---
+
+## 🧱 Cloud Pak for Data 5.3.1: Travels With the Catalog
+
+Cloud Pak for Data (CPD) is the dependency that gets the least love and causes the most late-night pages. IBM's Cloud Pak for Data page for MAS describes it plainly: MAS includes an entitlement to use CPD, and for users who need Predict or Collaborate, CPD is required to install the Watson Studio or Watson Discovery dependencies. Watson Machine Learning and the optional Spark engine for Predict notebooks sit on the same platform. Db2 Warehouse, interestingly, does not need the CPD control plane; IBM states the Db2 operator can be installed standalone.
+
+What the support documents say about versions:
+
+| Statement | Source |
+|---|---|
+| Each catalog is certified compatible with **one specific CPD version** | MAS CLI update guide |
+| "It is not recommended to diverge from this compatible version because CP4D versioning is very brittle and even a small patch update to one of its services can create incompatibilities elsewhere" | MAS CLI update guide |
+| v9-260827, v9-260924 and v9-261007 list CPD **5.3.1** | CLI catalogs page |
+| Catalogs v9-251231 through v9-260730 list CPD 5.2.0 | CLI catalogs page |
+| ansible-devops 37.14.0 (24 Aug 2026) adds "OLM/Helm-based installation support for CPD 5.3.1" | GitHub releases |
+
+Put the two bold facts together and the operational rule falls out: **CPD is upgraded by moving the catalog, not by moving CPD.** If you run Predict or Collaborate and you are on a catalog before v9-260827, your next `mas update` to v9-260827 or later is also a CPD 5.2.0 to 5.3.1 change. That deserves its own rehearsal, a longer maintenance window than a Manage-only update, and a rollback plan that does not rely on "we will just revert".
+
+On rollback, IBM is blunt. The update guide says undoing an update is a lot of work because it reverses changes throughout the cluster, and compares it to a Windows update: there is no easy undo, and if something slipped through, IBM would fast-track a new catalog rather than revert. Treat that as the design assumption. Your rollback is your backup (Part 4), not your CLI.
+
+### What I would check on a CPD estate before the move
+
+1. **Which CPD services are actually deployed.** The prerequisite matrix says some are required for Predict and Collaborate and some are optional; remove nothing, but know what is there.
+2. **That nobody patched a CPD service by hand.** IBM's warning about brittleness is a hint that someone, somewhere, did.
+3. **The OpenShift version is even** (see the previous section) and sits inside the *target* catalog's range.
+4. **Storage health.** CPD services are heavy on persistent volumes; a degraded storage class turns an upgrade into an outage. This is my practitioner advice, not an IBM statement.
+
+---
+
+## 🍃 MongoDB 7 and 8: Who Upgrades What
+
+MongoDB holds MAS Core's configuration: instances, users, workspaces and application config live there, which is why Part 4's backup scope starts with it. The catalog page says MongoDB 7.0 to 8.0 for every catalog since v9-251127. Before that, 6.0 to 7.0.
+
+The MAS CLI update guide describes the dependency behavior precisely:
+
+> Each version of the IBM Maximo Operator Catalog is certified against a specific version of MongoDb and Apache Kafka. [...] `mas update` will perform updates to both the installed MongoCE Operator and the MongoDbCommunity operand to align the version of the operator and the MongoDb cluster with the same version we have tested with. When a major version update is required, users will be prompted to approve the major version update and recommended to take a database backup. All other updates will be automatically applied.
+
+Read that twice. It says three things that matter in a change plan:
+
+1. **In-cluster Mongo is managed by the catalog.** If you use the MongoDB Community operator that MAS installs, the update path moves the operator and the operand.
+2. **Major versions need your approval.** The CLI stops and asks. If the change is unattended (pipeline with `--no-confirm`), you need to have decided in advance.
+3. **Minor and patch versions apply silently.** Your backup cadence must already cover that.
+
+### The hop rule
+
+MongoDB's own upgrade documentation (as returned in search results) states that upgrading to 8.0 must start from a 7.0 series release; older deployments must go through each intermediate major version. For MAS that gives a practical sequence if you are still on 6.0:
+
+| From | To | Catalog that lists the target | Notes |
+|---|---|---|---|
+| 6.0 | 7.0 | Any from v9-250109 to v9-251030 lists 6.0 – 7.0 | Do this hop while a catalog still lists both |
+| 7.0 | 8.0 | v9-251127 and later list 7.0 – 8.0 | One major hop, with backup |
+| 6.0 | 8.0 directly | Not a supported hop in MongoDB's docs | Do not skip |
+
+The implication is uncomfortable for a team that has been coasting on Mongo 6.0: every catalog from v9-251127 onward starts at 7.0, so the two-hop path now crosses the catalog boundary. You do 6.0 to 7.0 on an older catalog or manually, and 7.0 to 8.0 with the newer one. I did not find an IBM statement that explains how `mas update` behaves when it detects MongoDB 6.0 against a catalog listing 7.0 to 8.0, so rehearse that case on non-production first and read the dependency summary the CLI prints before you approve anything.
+
+### MAS versions and MongoDB 8
+
+Catalog rows say what the *catalog* was tested with. They do not tell you whether an older MAS channel you still run is happy with MongoDB 8. IBM did publish compatibility patches: search results show the **8.10.31 and 8.11.28** readmes, dated 27 November 2025, adding compatibility for MongoDB v8, delivered via channel subscription. That date is the same day as v9-251127, the first catalog to list 8.0. If you are on 8.10 or 8.11 (both in Extended Support since 30 April 2026 according to IBM's lifecycle page), make sure you are at or above those patch levels before the Mongo 8 step. I did not open those readmes in full, so confirm the fix level in the readme for your own channel.
+
+### Externally hosted MongoDB
+
+If your MongoDB is in Atlas, a vendor service or your own replica sets, the catalog's MongoDB range still describes what IBM tested, but the update is yours. The CLI documentation's mirroring options include `--mirror-mongo` for disconnected clusters, which tells you the in-cluster path is the one IBM automates. The ansible-devops line has been busy here too: 37.19.0 (18 September 2026) added a variable to rotate between the MCK and community operators in the Mongo role, and 37.22.0 (21 October 2026, today) added Atlas disk-size options. I note them as evidence that the Mongo operator landscape is moving, not as instructions.
+
+---
+
+## 🧭 Upgrade Sequencing: The Order That Keeps You Supported
+
+Now the part you came for. There are four distinct changes in play, and people constantly blur them:
+
+| Change | What moves | Tool | Scope |
+|---|---|---|---|
+| **OpenShift upgrade** | OCP minor version | `oc adm upgrade`, console, or your platform's process | Whole cluster |
+| **Catalog update** | Operators, MongoDB, Kafka, CPD, fixes (same MAS channel) | `mas update` | Whole cluster; no mixed patch levels |
+| **MAS upgrade** | MAS channel, e.g. 9.1 to 9.2 | `mas upgrade` | One MAS instance, within n-1 |
+| **Dependency upgrade** | Db2, external Mongo, etc. | Varies (Part 2 for Db2 12) | Per dependency |
+
+IBM's wording draws the line between the second and third. An **update** delivers fixes on existing channels and is cluster-wide: "When applying a catalog update it will apply all the latest fixes for everything in the cluster (all MAS instances and all dependencies)... There's no option to mix patch levels." An **upgrade** is a channel switch that targets one MAS instance, within an n-1 range, and it can only target a MAS version that the installed catalog source already offers. IBM also states that you must pick a **newer** catalog than the one in use; updating to an older static catalog is not supported. (If you use the *dynamic* catalog, updates apply as soon as they are released, and the sequencing below is out of your hands, which is a reason many regulated shops stay on static.)
+
+### The sequencing principle: the overlap rule
+
+> **You may only move one layer at a time, and each step must land inside a catalog row that exists.**
+
+Take your *current* catalog's OCP range and your *target* catalog's OCP range. The OpenShift versions in both are your safe waypoint. You move OpenShift to a waypoint while still on the current catalog, then move the catalog.
+
+```
+ CURRENT STATE                          TARGET STATE
+ OCP 4.16, catalog v9-260827            OCP 4.18+, catalog v9-261007
+ (row: 4.16 – 4.22, CPD 5.3.1)          (row: 4.18 – 4.22, CPD 5.3.1)
+
+ ① Backups (Mongo, Db2, MAS config)  ← Part 4
+ ② OCP 4.16 → 4.17 → 4.18            ← still inside v9-260827's row
+ ③ Health check: operators, CPD, Mongo, MAS
+ ④ mas update → v9-261007            ← 4.18 is inside the new row
+ ⑤ Health check; read the CLI dependency summary before approving
+ ⑥ (Later, separate change) mas upgrade 9.1 → 9.2 if desired
+```
+
+Why OpenShift first? Because the other direction (catalog first) lands you on a catalog whose range does not include your OpenShift version. For the 4.16 example, a jump straight to v9-261007 puts you outside its 4.18 to 4.22 range at the moment the operators roll out. The reverse for the top end also holds: do not move OpenShift *past* the top of your current catalog's range, because then the cluster sits on a version IBM has not tested with the operators you run.
+
+### Two-minor hops on even-only estates
+
+For a Predict or Collaborate estate the even rule makes this harder, because the intermediate odd release is a stepping stone you are not supposed to *run* on. Red Hat supports updating between EUS releases, which is the whole point of the EUS designation; the cluster passes through the odd minor during the process but you do not leave workloads there. I am relying on general Red Hat practice for this, not an IBM statement, so check Red Hat's EUS-to-EUS update documentation and your own CPD service guidance before relying on it for a production Predict cluster.
+
+| Starting point | Target | Even-safe path | Waypoint check |
+|---|---|---|---|
+| 4.16 (catalog v9-260827) | 4.18 | 4.16 → 4.18 (EUS to EUS, pausing nothing on 4.17) | 4.18 is in v9-260827's row and v9-261007's row |
+| 4.18 (catalog v9-261007) | 4.20 | 4.18 → 4.20 | Both in the row; do it before 25 Feb 2027 |
+| 4.20 | 4.22 | 4.20 → 4.22 | Both in the row |
+
+### Mixed MAS versions and OpenShift
+
+Because `mas upgrade` supports an **n-1** range in one cluster (IBM's example: 8.10 and 8.9 can coexist, but 8.8 and 8.10 cannot), a cluster that hosts both a 9.1 and a 9.2 instance is allowed, but 9.0 and 9.2 together is not. That interacts with the support window: MAS 9.0 moves to Extended Support on 30 June 2027 per IBM's lifecycle announcement (AD26-0622). If you are running 9.0, the platform choices you make now have to work for the 9.1 or 9.2 instance you will have next.
+
+### Disconnected clusters add a step zero
+
+For air-gapped estates, the update and upgrade guides both begin with image mirroring: choose a mode (direct, to-filesystem or from-filesystem), run `mas mirror-images`, select the catalog version and the subset of content, and include the dependencies you use (the guide's example flags include `--mirror-cfs --mirror-sls --mirror-tsm --mirror-mongo --mirror-db2`). Mirroring is described as simple but time-consuming. Schedule it a week ahead of the maintenance window, not the day before.
+
+---
+
+## 🧪 Pre-Flight: Ten Commands Before You Touch Anything
+
+These are my additions (IBM does not publish this exact script), built from standard `oc` commands and the resource names the CLI uses by default. Namespace names are the defaults; adjust for your install.
+
+```bash
+# 1. OpenShift version and channel
+oc get clusterversion
+oc get clusterversion version -o jsonpath='{.status.desired.version}{"\n"}'
+
+# 2. Is the minor version even? (4.18, 4.20, 4.22 only if Predict/Collaborate)
+oc get clusterversion version -o jsonpath='{.status.desired.version}' | awk -F. '{print ($2 % 2 == 0) ? "EVEN minor" : "ODD minor"}'
+
+# 3. Which MAS operator catalog is installed (the static catalog image tag)
+oc get catalogsource ibm-operator-catalog -n openshift-marketplace \
+  -o jsonpath='{.spec.image}{"\n"}'
+
+# 4. Cluster operators healthy?
+oc get co | awk 'NR==1 || $3!="True" || $4!="False" || $5!="False"'
+
+# 5. Any nodes not Ready, or machine config pools updating?
+oc get nodes
+oc get mcp
+
+# 6. MAS suite and workspace status
+oc get suite -A
+oc get workspace -A
+
+# 7. MongoDB version and status (Community operator default namespace: mongoce)
+oc get mongodbcommunity -n mongoce -o wide
+
+# 8. CPD present? Which control plane version?
+oc get zenservice -A 2>/dev/null
+oc get ibmcpd -A 2>/dev/null
+
+# 9. Pending OLM install plans that need approval
+oc get installplan -A | grep -i -v Complete
+
+# 10. Persistent volume claims not Bound
+oc get pvc -A | grep -v Bound
+```
+
+Interpretation guide:
+
+| Command | Good result | Bad result and what it means |
+|---|---|---|
+| 1, 2 | Version inside the target catalog's range; even if required | Outside range: fix OpenShift before the catalog |
+| 3 | Image tag shows the catalog you think you are on | A tag older than expected: someone updated manually or mirrored a different one |
+| 4 | Header line only | Degraded or unavailable operators: stop; an OCP upgrade on a degraded cluster compounds the fault |
+| 5 | All nodes Ready; MCPs not updating | A paused or degraded MCP: resolve before the OCP step |
+| 7 | Phase Running, version in the 7.0 to 8.0 range | Version 6.0: do the hop plan above before the catalog update |
+| 9 | Nothing waiting | A manual-approval InstallPlan from a previous step is still pending |
+| 10 | Nothing printed | Unbound PVCs: CPD and Db2u upgrades will hang |
+
+On the MAS CLI side, the update and upgrade functions print a dependency summary before they start (unless you pass `--no-confirm`). Make that summary part of your change record: screenshot or paste it, because it is the CLI telling you what it believes the cluster is, and a mismatch with your expectations is the cheapest warning you will ever get.
+
+---
+
+## 🏗️ Four Estates, Four Plans
+
+Theory is easy; here are four estates I see regularly, with the plan the rules above produce. The versions are illustrative scenarios built on the catalog data above, not customer records.
+
+### Estate A: Manage-only on OCP 4.16, catalog v9-260827
+
+| Item | State |
+|---|---|
+| Add-ons | None (Manage only) |
+| OpenShift | 4.16, past Red Hat EUS Term 1 on the data I could resolve |
+| Catalog | v9-260827, the last one listing 4.16 |
+| Mongo | 7.0 in-cluster |
+
+**Plan:** backups, then OpenShift 4.16 → 4.17 → 4.18 (both are inside the current row), health check, then `mas update` to the newest catalog. No even rule applies, so 4.19 is allowed later, but I would still target 4.18 now and 4.20 next to keep even. Total: two changes, one OpenShift and one catalog. This is the most urgent estate because both IBM and Red Hat clocks have run out.
+
+### Estate B: Predict on OCP 4.18, catalog v9-261007
+
+| Item | State |
+|---|---|
+| Add-ons | Manage, Predict (CPD 5.3.1: Watson Studio) |
+| OpenShift | 4.18, EUS Term 1 ends 25 Feb 2027 |
+| Catalog | v9-261007 (current) |
+| Mongo | 7.0 |
+
+**Plan:** you are inside every window today. Calendar the OpenShift 4.18 → 4.20 move before the end of February 2027, schedule it for the quiet part of the quarter, and rehearse with CPD. Because the catalog row already covers 4.20, you do not need to touch the catalog for the OpenShift step. Mongo 8 is a separate, optional change at a time you choose. Do **not** pause on 4.19.
+
+### Estate C: Multi-instance on OCP 4.19, MAS 9.0 and 9.1 side by side
+
+| Item | State |
+|---|---|
+| Add-ons | Manage in both instances; no Predict today |
+| OpenShift | 4.19, no EUS, maintenance ends 17 Dec 2026 (secondary) |
+| Catalog | v9-260924 |
+| MAS | 9.0 (Extended Support from 30 Jun 2027) and 9.1 |
+
+**Plan:** two clocks are close. The OpenShift change comes first: a 4.19 cluster has no EUS to lean on, and the next stable stops are 4.20 and 4.21 (odd) or 4.22. If Predict is anywhere in the roadmap, go 4.19 → 4.20 now and plan 4.22 next. Then the MAS 9.0 instance needs its own `mas upgrade` to 9.1 or 9.2 before 30 June 2027, within the n-1 rule against the other instance. Do not combine the upgrade with the OpenShift move in one window.
+
+### Estate D: Mongo 6.0 and an old CLI
+
+| Item | State |
+|---|---|
+| Add-ons | Manage, Monitor |
+| OpenShift | 4.18 |
+| Catalog | v9-251030 (last catalog listing MongoDB 6.0 – 7.0) |
+| Mongo | 6.0 in-cluster |
+| CLI | 15.11.0 (the version listed for v9-251030) |
+
+**Plan:** the trap is the CLI. The rolling window means a CLI from 2025 will not offer a 2026 catalog. First update the CLI container image (`quay.io/ibmmas/cli`), then perform the MongoDB 6.0 → 7.0 step on a catalog that lists both, confirm health, then move to a catalog that lists 7.0 to 8.0. Whether you then take Mongo 8.0 is a choice; 7.0 is inside every current row. Read the CLI's dependency summary carefully on this one, because it is the case I could not find documented.
+
+### Summary of the four plans
+
+| Estate | First move | Second move | Deadline driver |
+|---|---|---|---|
+| A: 4.16 Manage-only | OCP 4.16 → 4.18 | `mas update` to latest | Both IBM and Red Hat clocks expired |
+| B: 4.18 with Predict | OCP 4.18 → 4.20 (no catalog change needed) | Optional Mongo 8 | 25 Feb 2027 (EUS Term 1 per IBM) |
+| C: 4.19, MAS 9.0 + 9.1 | OCP 4.19 → 4.20 | `mas upgrade` of 9.0 instance | 17 Dec 2026 (secondary); 30 Jun 2027 (9.0) |
+| D: Mongo 6.0, old CLI | New CLI, Mongo 6 → 7 | Catalog to 7.0–8.0 row | Mongo 6 outside all catalogs since 27 Nov 2025 |
+
+---
+
+## 🔥 Failure Modes and What They Look Like
+
+| Symptom | Likely cause | First check | Fix direction |
+|---|---|---|---|
+| `mas update` does not offer the catalog you want | CLI is too old for the rolling window | CLI version vs the "CLI" column on the catalog page | Pull a newer CLI image; use the version listed for the catalog |
+| Update refuses an older catalog | Static catalog must move forward | Current `ibm-operator-catalog` image tag | Choose a newer catalog; downgrades are unsupported |
+| Pre-update check complains about versions | OCP, CPD or MongoDB outside the target row | `oc get clusterversion`; Mongo status | Move OCP to the overlap first (Part 1's troubleshooting row says the same) |
+| Predict or Collaborate pods fail on an odd OCP | App Connect and CPD do not support odd releases | OCP minor version parity | Move to an even release; plan the hop |
+| CPD services unhealthy after catalog update | CPD version changed with the catalog (5.2.0 to 5.3.1) or a service was hand-patched | `oc get zenservice -A`; service operator logs | Restore from backup if needed; stop patching CPD by hand |
+| MongoDB prompt appears in a pipeline and stalls | Major version change needs approval | CLI dependency summary | Decide in advance; pass the CLI's confirm options deliberately |
+| Mirror step fails or is incomplete (air-gap) | Wrong catalog selected or content subset omits a dependency | Mirror flags (`--mirror-mongo`, `--mirror-db2`, etc.) | Re-run mirroring for the missing content before the window |
+| Cluster stuck mid-OCP-upgrade | Degraded operator or MCP | `oc get co`, `oc get mcp` | Resolve before continuing; never start an update on a red cluster |
+| Two MAS instances will not coexist | Outside n-1 | Channel versions per instance | Upgrade the older instance within n-1 before adding a newer one |
+
+---
+
+## ⚖️ Where the Sources Disagree or Look Dated
+
+I would be doing you a disservice if I smoothed these over.
+
+1. **The EOS date on each catalog row** (Aug 3, 2027 for the newest rows) does not match IBM's own statement on the same page that 4.18's extended support ends 25 Feb 2027, and matches the third-party date for 4.21. Use the date for your own OCP minor from Red Hat.
+2. **v9-260326 lists OCP up to 4.21 and v9-260430 lists up to 4.20.** A newer catalog with a lower top version could be intentional or a transcription error. I could not tell.
+3. **Add-on names in the even-number rule** differ across IBM pages (Assist, Collaborate, Health and Predict for Utilities). The rule is consistent; the product naming is not.
+4. **MongoDB prerequisites page lag.** IBM's "Application and add-ons upgrade prerequisites" page (the version that surfaced in my search) still talks about MongoDB 5.0 and 6.0 and about much older OpenShift and CPD versions. The catalog page is current; that page is not. Prefer the catalog page.
+5. **Red Hat date tables could not be read directly** because the lifecycle page renders them with scripts. The non-IBM dates in this post come from endoflife.date and should be confirmed.
+6. **Lifecycle dates for MAS versions** (9.0 to Extended on 30 Jun 2027; 8.10 and 8.11 in Extended Support; 8.7 to 8.9 unsupported since 30 Apr 2026) come from the factbase's reading of IBM's lifecycle pages. The 30 Sep 2030 date for 7.6.1 Sustained Support is reseller-sourced and out of scope here.
+
+---
+
+## 🛠️ The Seven Commandments of the Support Window
+
+1. **Read the row, not the headline.** The catalog you are moving *to* is the only compatibility statement that matters on change day.
+2. **Move OpenShift inside the overlap.** Old row and new row both list the version you land on, or you do not land there.
+3. **Even is a policy, not a coincidence.** If Predict or Collaborate might ever run here, standardize on 4.18, 4.20 and 4.22.
+4. **CPD travels with the catalog.** Never patch it on its own, and budget the extra time when a catalog changes the CPD version.
+5. **Approve Mongo majors with a backup in your hand.** The CLI will ask; your answer should already be written down.
+6. **Update and upgrade are separate changes.** One cluster-wide, one per instance. Do not stack them to save a weekend.
+7. **Calendar the clocks, not the versions.** Red Hat, IBM catalog and MAS lifecycle each need an entry in your change calendar, with a lead time longer than your longest rehearsal.
+
+---
+
+## 🎯 What to Do This Week
+
+| Day | Action |
+|---|---|
+| Monday | Run commands 1 to 3 on every cluster. Record OCP version, parity (even or odd), and the catalog tag in a single table |
+| Tuesday | Open the catalog page and mark each cluster's row, then the row for the newest catalog. Note any cluster whose OCP is outside the newest row (4.16 and older) |
+| Wednesday | For every cluster, write the Red Hat end date for its OCP minor from Red Hat's page, and put it in the change calendar with a 90 day lead time |
+| Thursday | Check Mongo (command 7) and CPD (command 8). Flag any Mongo 6.0 and any estate running Predict or Collaborate on an odd OCP |
+| Friday | Draft the sequence for your most urgent cluster using the overlap rule. Book the rehearsal on non-production, and confirm Part 4's backups restore |
+
+Next in the series: **Part 8, GitOps for MAS**, where the `ibm-mas/gitops` repository, the CLI and ansible-devops turn everything in this post into declarative, reviewable change, including the catalog and dependency versions you now know how to read.
+
+---
+
+## 📚 References
+
+- [MAS CLI documentation: IBM Maximo Operator Catalog (Catalog Directory, OCP, CPD, MongoDB and CLI per catalog)](https://ibm-mas.github.io/cli/catalogs/)
+- [MAS CLI documentation: Update (static catalogs, MongoDB and Kafka alignment, CPD certification, rollback)](https://ibm-mas.github.io/cli/guides/update/)
+- [MAS CLI documentation: Upgrade (n-1 rule, channel upgrades, disconnected mirroring)](https://ibm-mas.github.io/cli/guides/upgrade/)
+- [GitHub: ibm-mas/cli catalog source (docs/catalogs/index.md)](https://github.com/ibm-mas/cli/blob/master/docs/catalogs/index.md)
+- [GitHub: ibm-mas/ansible-devops releases (37.14.0 CPD 5.3.1, 37.18.0 OCP 4.16 removal, 37.19.0, 37.22.0)](https://github.com/ibm-mas/ansible-devops/releases)
+- [IBM Docs: Maximo Application Suite installation prerequisites (dependency matrix by application)](https://www.ibm.com/docs/en/SSRHPA_cd/appsuite/install/dependencies/index.html)
+- [IBM Docs: Cloud Pak for Data services for Maximo Application Suite (Predict, Collaborate, Db2 12 activation note)](https://www.ibm.com/docs/en/SSRHPA_cd/appsuite/install/dependencies/cloud_pak_for_data.html)
+- [IBM Docs: Application and add-ons upgrade prerequisites (older content; see disagreements section)](https://www.ibm.com/docs/en/SSRHPA_cd/appsuite/install/r_upgrade_prerequisites.html)
+- [Red Hat: OpenShift Container Platform life cycle policy (EUS, phases, support dates)](https://access.redhat.com/support/policy/updates/openshift)
+- [endoflife.date: Red Hat OpenShift (secondary source for release and end dates)](https://endoflife.date/red-hat-openshift)
+- [IBM Support: Maximo Application Suite 9.0.x lifecycle (Extended Support 30 Jun 2027, AD26-0622)](https://www.ibm.com/support/pages/ibm-maximo-application-suite90x)
+- [IBM Support: Supported versions of Maximo Application Suite (8.x support status)](https://www.ibm.com/support/pages/supported-versions-maximo-application-suite)
+- [MongoDB documentation: Upgrade to 8.0 (standalone)](https://www.mongodb.com/docs/current/release-notes/8.0-upgrade-standalone/)
+- [Part 1 of this series: The MAS Patch Train Explained](/blog/mas-platops-01-patch-train)
+- [Part 4 of this series: Backup, Restore and DR for MAS](/blog/mas-platops-04-backup-restore-dr)
+
+---
+
+**About TheMaximoGuys:** We help Maximo administrators, developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | October 2026*
+
+<!--
+REVIEWER NOTES (night-shift, 2026-10-21, platops-07):
+- SOURCES READ LIVE 2026-10-21: ibm-mas.github.io/cli/catalogs/ (full table parsed) and its markdown source on GitHub; docs/guides/update.md and upgrade.md from ibm-mas/cli master; ansible-devops releases API (37.14.0, 37.18.0, 37.19.0, 37.22.0); IBM Docs prerequisites index and Cloud Pak for Data pages (curl, no 403); Red Hat OCP lifecycle page (text only: the date tables are script-rendered, so no dates could be read from it); endoflife.date API for OCP 4.14-4.22 (SECONDARY). KB: DOC15 UPG-15 and REL entries, DOC00 CHG-017/CHG-021/CHG-018/CHG-004.
+- The SearchMaximo knowledge-base path (baseline/knowledge-base/...) does not exist on this machine (same as Parts 4-6); knowledge_base/MAS92-SOURCES/text/upgrade-prerequisites.txt is the old MAS 8.x page (MongoDB 5/6, OCP 4.10) and was used only to flag staleness.
+- Web searches (3): even-OCP rule, MongoDB 8 / mas update, OCP lifecycle. Facts taken only from search-result summaries and NOT opened in full: the 8.10.31 / 8.11.28 MongoDB v8 readmes (27 Nov 2025); MongoDB's "must start from 7.0" statement; the App Connect version list; the Assist vs Collaborate naming in the even-OCP rule. Hedged in the body.
+- DISCREPANCIES FOR REVIEW: (1) row EOS "Aug 3, 2027" vs the page's own 4.18 = 25 Feb 2027 statement vs endoflife.date 4.21 = 3 Aug 2027; (2) v9-260326 (4.21 top) vs v9-260430 (4.20 top) non-monotonic; (3) endoflife.date shows 4.20 and 4.21 both released 21 Oct 2025 (likely data error) and 4.16 EUS end 27 Jun 2026 matches the "EOS Jun 27, 2026" on 2025 catalog rows; (4) DOC00 CHG-017 says catalogs v9-260924+ support CPD 5.3.1 and "last catalog with 4.16 is v9-260827"; the live table also shows CPD 5.3.1 already in v9-260827, so CPD 5.3.1 started one catalog earlier than CHG-017 implies. KB and web agree on the 4.16 fact; the live page wins on the CPD start; (5) DOC00 CHG-017 says MongoDB 7-8, matches the live page.
+- OUR ADDITIONS (not IBM): the overlap rule, the EUS-to-EUS hop advice (general Red Hat practice, flagged), the pre-flight oc commands and default namespaces (mongoce, openshift-marketplace/ibm-operator-catalog; verify in your install), the four estates, the failure-mode table, the commandments, and all "My take" text. The "odd stepping stone" EUS-to-EUS comment is NOT from an IBM page.
+- NOT VERIFIED: how mas update behaves when MongoDB 6.0 is detected against a 7.0-8.0 catalog; Red Hat EUS end dates for 4.20 and 4.22; whether Manage-only estates have any even-OCP restriction (none found).
+- [IND]-only claims: none used. Dates for MAS 9.0 and 8.x come from DOC15 REL entries / CHG-018, which cite IBM pages.
+-->
