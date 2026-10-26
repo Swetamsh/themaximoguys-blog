@@ -2,8 +2,8 @@
 
 **Document:** DOC00. This is a living appendix to the knowledge base (DOC1–DOC17). It tracks two things: what changed at IBM (Maximo / MAS / related AI and platform), and which topics TheMaximoGuys blog does not cover yet.
 **Created:** October 16, 2026
-**Last scan:** 2026-10-18 (weekly scan #1; prior: 2026-10-16 initial build, 4 research passes + 224-post title audit)
-**Next scan:** Sunday 2026-10-25, 23:10. It runs automatically every week (see "How this document is maintained").
+**Last scan:** 2026-10-25 (weekly scan #2; prior: 2026-10-18 scan #1, 2026-10-16 initial build)
+**Next scan:** Sunday 2026-11-01, 23:10. It runs automatically every week (see "How this document is maintained").
 **Audience:** The TMG content team: choosing what to write next, what to correct, and what is time-sensitive.
 
 > **Source convention**
@@ -37,32 +37,34 @@
 
 ## 1. Snapshot
 
-**As of 2026-10-18.** Quiet week at IBM (no MAS 9.3 announcement, no new Manage/Core release found after 7 Oct); the main movement was on our side: MAS-LIFECYCLE, MAS-MOBILE and 6 of 7 MAS-SECURITY-OPS posts were drafted.
+**As of 2026-10-25.** Another quiet vendor week: no MAS 9.3 announcement, no Manage 9.2.5 / Core 9.2.9 and no catalog newer than v9-261007 (the 29 Oct catalog is still ahead). The ops-tooling repos moved (CLI 23.16/23.17, ansible-devops 37.22/37.23), two more Manage security bulletins surfaced, and IBM's own withdrawal notice appears to settle the 7.6.1 Sustained Support date. On our side MAS-PLATFORM-OPS and MAS-SECURITY-OPS are now fully drafted.
 
 ### Top 5 headline changes
 
 | # | Change | Why it matters to readers |
 |---|---|---|
-| 1 | **Maximo 7.6.1.x Extended Support ended 30 Sep 2026.** Sustained Support (no new fixes) runs to 2030 [IND]. **MAS dual support for EAM 7.6.1 ends 30 Apr 2027, now confirmed on an IBM page** (CHG-001, CHG-041). Open conflict: IBM's Control Desk page shows Sustained Support to 31 Dec 2026 | Every 7.6 shop now has an expired support status and a hard deadline 6 months out |
-| 2 | **MAS 9.0 base support ends 30 Jun 2027** (AD26-0622). 8.10/8.11 moved to Extended Support, and 8.7–8.9 lost support on 30 Apr 2026 (CHG-003, CHG-004) | 9.0 shops need a 9.1/9.2 plan inside 8 months |
-| 3 | **9.2.x patch train:** Core 9.2.8 / Manage 9.2.4. Fixes include **CVE-2026-105052** (unauthenticated path traversal in login, affecting 8.10–9.2) and DT501598 (MAXUSER data overwritten during the 9.1→9.2 upgrade) (CHG-005–CHG-008) | Upgrade and security guidance in the existing 9.2 posts is now out of date |
-| 4 | **Agentic Maximo:** IBM described the "Supervisor ALM agent" behind Maximo Assistant, write actions through the MAS 9.2 MCP server, and announced "automation scripts as custom tools" (CHG-012). AssetOpsBench grew to 460+ scenarios (CHG-014) | Developers will soon write autoscripts as AI tools; nobody has explained this yet |
-| 5 | **First MAS 9.3 code signal:** CLI 23.14.0 makes the internal certificate issuer always namespace-scoped on 9.3+ (CHG-010). TechXchange is Oct 26–29 in Atlanta (CHG-022). Still no 9.3 announcement as of 18 Oct | A news hook, and early planning input for platform teams |
-| 6 | **Partner consolidation:** Naviam is buying Cohesive from Bentley (Bentley becomes a minority holder; Norwest invests). Close was expected 30 Sep, not confirmed (CHG-040) | Changes the Maximo services landscape and the Bentley→Maximo geospatial story |
+| 1 | **Maximo 7.6.1.x Extended Support ended 30 Sep 2026; IBM's withdrawal notice lists Extended/Sustained completion as 30 Sep 2030** (CHG-048, upgrades CHG-001). The Dec 2026 Sustained date belongs to the separate **Control Desk 7.6.1** product (successor: Maximo IT). Dual support under MAS ends 30 Apr 2027 (CHG-041) | The open date conflict from scan #1 is largely explained; MAS-LIFECYCLE Part 1 should say so |
+| 2 | **MAS 9.0 base support ends 30 Jun 2027** (CHG-018); 8.10/8.11 are in Extended Support; 8.7–8.9 lost support 30 Apr 2026 (CHG-004) | 9.0 shops need a 9.1/9.2 plan inside 8 months |
+| 3 | **Two more Manage security bulletins:** CVE-2026-71290 (httpclient5 async TLS hostname verification, CVSS 9.1; fixed in Manage 9.0.32 / 9.1.25 / 9.2.4) and CVE-2026-25526 (JinJava sandbox bypass, CVSS 9.8; fixed in 9.0.29 / 9.1.21 / 9.2.2) (CHG-045, CHG-046). Plus CVE-2026-105052 (CHG-008) | MAS-SECURITY-OPS Part 5 predates both |
+| 4 | **Ops tooling:** CLI 23.16.0 adds GitOps Db2 v11→v12 upgrade support and CPD 5.4.0 helm changes; ansible-devops 37.22.0 adds CP4D 5.4.0 support and puts the password-policy secret in the suite backup; 37.23.0 adds COS region support (CHG-044) | Supports the PLATFORM-OPS Db2 12, backup and GitOps posts; CPD 5.4.0 moves the support-window post |
+| 5 | **TechXchange Oct 26–29 starts tomorrow.** No Maximo-specific announcement found; one IBM event-page snippet mentions an Anthropic/Claude partnership and Bob [UNVERIFIED] (CHG-047). MAS 9.2's AI bundle (AI Service, MCP server, Assistant, Condition Insight) is the current IBM message (CHG-049) | News hook; GAP-019 is now a same-week item |
 
 ### Top gaps (open)
 
 | Rank | Gap | Coverage | Proposal |
 |---|---|---|---|
-| 1 | GAP-002 MAS identity & security operations: Part 6 (agent security) still pending; Part 5 needs the CVE-2026-15687 update | PARTIAL (6 of 7 drafted) | §5.2 `MAS-SECURITY-OPS` |
-| 2 | GAP-019 TechXchange 2026 preview/recap (event starts 26 Oct) | NOT COVERED | §5.7 quick win |
-| 3 | GAP-003 MAS platform operations (Db2 12 on OpenShift, backup/DR, performance, observability, patch train, GitOps) | PLANNED (9 items queued, none written) | §5.3 `MAS-PLATFORM-OPS` (also absorbs GAP-007) |
-| 4 | GAP-006 Agentic Maximo in practice (Supervisor ALM agent, MCP, AssetOpsBench, TSFM) | PARTIAL | §5.6 `MAS-AGENTIC` |
-| 5 | GAP-004 / GAP-005 Data loading on MAS 9 and the autoscript cookbook (tied) | PARTIAL | §5.4 `MAS-DATA-LOADING`, §5.5 `MAS-AUTOSCRIPTS` |
+| 1 | GAP-019 TechXchange 2026 preview/recap (event starts 26 Oct) | NOT COVERED | §5.7 quick win |
+| 2 | GAP-006 Agentic Maximo in practice (Supervisor ALM agent, MCP, AssetOpsBench, TSFM) | PARTIAL | §5.6 `MAS-AGENTIC` |
+| 3 | GAP-007 9.2.x patch train refresh: COR-004 (upgrade watch-list post) still stale | PARTIAL (PLATFORM-OPS Part 1 drafted) | Correction COR-004 |
+| 4 | GAP-004 / GAP-005 Data loading on MAS 9 and the autoscript cookbook (tied) | PARTIAL | §5.4 `MAS-DATA-LOADING`, §5.5 `MAS-AUTOSCRIPTS` |
+| 5 | GAP-008 TRIRIGA → MAS Real Estate & Facilities migration (TRIRIGA support ends 30 Sep 2027) | PARTIAL | Candidate |
 
 
 **Closed or already queued (not gaps):**
 - `MAS-LIFECYCLE` (index + 4 parts drafted 2026-10-17; GAP-001 CLOSED 2026-10-18; covers pending)
+- `MAS-SECURITY-OPS` (index + 6 parts drafted; GAP-002 CLOSED 2026-10-25; covers pending)
+- `MAS-PLATFORM-OPS` (index + 8 parts drafted by 2026-10-25; GAP-003 CLOSED; covers pending, nanobanana `API_KEY_INVALID` in headless runs)
+- `MAS-BOB` (index + 5 parts, untracked drafts)
 - `MAS-MOBILE` (3 posts drafted 2026-10-17; covers pending)
 - `MAS-MAF-DEV` (10 posts, from DOC17), pending in queue
 
@@ -70,10 +72,16 @@
 
 ## 2. Change Log (newest first)
 
-Window for the initial build: Jan–Oct 2026, with emphasis on Jun–Oct. Scan #1 (2026-10-18) added CHG-038–CHG-043 at the top; CHG-026 is upgraded by CHG-041 (IBM-primary).
+Window for the initial build: Jan–Oct 2026, with emphasis on Jun–Oct. Scan #1 (2026-10-18) added CHG-038–CHG-043; scan #2 (2026-10-25) added CHG-044–CHG-049 at the top. CHG-026 is upgraded by CHG-041 (IBM-primary); CHG-001 is upgraded by CHG-048.
 
 | ID | Date | Area | Change | Tag / Conf. | Source |
 |---|---|---|---|---|---|
+| CHG-049 | 2026-07-13 → 10-09 | AI product | IBM Community post (13 Jul) says the **Maximo 9.2 MCP server exposes business capabilities that agents can invoke, not raw REST endpoints**. An Arrow partner article (9 Oct) lists the MAS 9.2 AI bundle as AI Service + MCP server + Maximo Assistant + Condition Insight, with Manage staying the system of record. Consistent with CHG-012; nothing newly shipped | [IBM] M (community) / [IND] M (Arrow) | https://community.ibm.com/community/user/blogs/stefan-hoffmanns/2026/07/13/ibm-maximo-92-mcp-server-ai-integration · https://www.arrow.com//globalecs/na/arrow-channel-advisor/ibm-mas-partner-opportunities/ |
+| CHG-048 | 2026-10-25 (verified; notice undated) | Lifecycle | **IBM's end-of-support notice lists Maximo Asset Management 7.6.1.x "Extended, Sustained, Extension availability" completing 30 Sep 2030**; Extended Support for 7.6.1.3 ends 30 Sep 2026; Sustained Support does not include new defect or security fixes. **IBM Control Desk 7.6.1 is a separate product**: Extended to 30 Sep 2026, Sustained to 31 Dec 2026, move to Maximo IT 9.x. This explains the scan #1 conflict (CHG-041). Read via search results, not the full page | [IBM] M | https://ibm.com/software/passportadvantage/endofsupportannouncementletters.html · https://www.ibm.com/support/pages/node/7044949 |
+| CHG-047 | 2026-10-26→29 (upcoming) | Events | TechXchange 2026 (Atlanta) event page snippet highlights **an Anthropic–IBM partnership bringing Claude into IBM software, and Bob**. A second search found no Anthropic or Maximo-specific TechXchange 2026 announcement. Treat as unconfirmed until the keynote | [UNVERIFIED] | https://www.ibm.com/events/techxchange |
+| CHG-046 | 2026-09-17 | Security | **CVE-2026-25526**: JinJava sandbox bypass in Manage, **CVSS 9.8**; fixed in Manage 9.0.29, 9.1.21, 9.2.2 or later. Bulletin page not pinned (appeared among IBM Support results; node id not confirmed) | [UNVERIFIED] (IBM page seen only via search summary) | https://www.ibm.com/support/pages/node/7290829 (search result set) |
+| CHG-045 | 2026-10-05 | Security | **CVE-2026-71290**: Manage's Apache HttpComponents Client 5.4+ ignores `HostnameVerificationPolicy#BUILTIN` for the async client (TLS hostname verification bypass); CVSS 9.1 (CWE-295), classic HttpClient not affected. Affects Manage 9.0/9.1/9.2; fixed in **9.0.32 / 9.1.25 / 9.2.4**. IBM also has bulletins for MAS and AI Service bundling httpclient5-5.6.3 (fix 5.6.4+). The CVE-2026-105052 bulletin (3 Oct) lists 8.10, 8.11 and 9.0 as affected plus a temporary image-tag override until the October monthly update; CHG-008 lists wider versions, so reconcile before quoting | [IBM] M (via search summary) | https://www.ibm.com/support/pages/node/7290829 · https://www.ibm.com/support/pages/node/7290791 |
+| CHG-044 | 2026-10-21 → 10-22 | Ops tooling | **CLI 23.16.0 (21 Oct):** CPD 5.4.0 helm changes, gitops-test-recorder Tekton task, **GitOps support for Db2 v11→v12 upgrade**, EBS storage-class support. **CLI 23.17.0 (22 Oct):** COS region support (bundles ansible-devops 37.23.0, python-devops 12.11.1). **ansible-devops 37.22.0 (21 Oct):** CP4D 5.4.0 support, optional disk size/EBS type for MongoDB Atlas, password-policy secret included in suite backup. **37.23.0 (22 Oct):** COS region, ODF add-on parameters, ArcGIS cluster role removed (MASCORE-14524), registry-allowlist and image-verification fixes. No new ibm-mas/gitops release since 16 Oct; no MAF Local Configuration release after beta.6 | [IBM] H | https://github.com/ibm-mas/cli/releases · https://github.com/ibm-mas/ansible-devops/releases |
 | CHG-043 | 2026-04-01 → 2026 | Competitors | **IFS named a Leader in the 2026 IDC MarketScape for AI EAM** (1 Apr). IFS 26R1 (May 2026) added AI-assisted FMECA and Copilot insights; its Cloud releases added agentic maintenance-strategy and automatic work-order generation. ServiceNow has launched an EAM application (Verdantix; date not found) | [IND] M | https://www.ifs.com/en/insights/news/IFS-named-2026-IDC-MarketScape-leader-for-AI-EAM · https://marketing.verdantix.com/blog/competition-intensifies-servicenow-launches-new-eam-solution-to-optimize-asset-lifecycle-management |
 | CHG-042 | 2026-09-10 → 09-24 | Release | Industry-solution patch levels (IBM fix-list pages): **Utilities 9.2.12 (24 Sep)**; Aviation 9.2.18 and Transportation 9.2.19 (pages modified 10 Sep, paired with Manage 9.2.3). These are the same train as CHG-007 | [IBM] M (read via search snippets) | https://www.ibm.com/support/pages/ibm-maximo-application-suite-ibm-maximo-aviation-92-released-apars-and-dts |
 | CHG-041 | 2026-10-18 (verified; page undated) | Lifecycle | **IBM-primary confirmation:** "Effective 30 April 2027, dual support under the MAS license for EAM 7.6.1.x is no longer available." IBM also lists 7.6.x Base Support ended 30 Sep 2025 and Extended Support ends 30 Sep 2026 (up to 5 years of Sustained Support can be bought). The **30 Sep 2030** Sustained date is still reseller-only [IND]. **Conflict:** IBM's Control Desk 7.6.1.x page shows Extended to 30 Sep 2026 and Sustained to 31 Dec 2026; it may apply to Control Desk only, and Maximo IT is named as the successor | [IBM] H (dual support, base/extended) / [IND] M (2030) | https://www.ibm.com/support/pages/node/7269505 · https://www.ibm.com/support/pages/node/7044949 · https://mavenasset.com/?p=9121 |
@@ -128,9 +136,9 @@ Status values: **COVERED** (dedicated series or post) · **PARTIAL** (overview o
 |---|---|---|---|
 | MAS 9.2 release content | COVERED (stale after 9.2.1) | MAS-9-2 (8), DOC15 | GAP-007 |
 | Support lifecycle / end-of-support | **COVERED (drafts)** | MAS-LIFECYCLE (index + 4 parts, `draft: true`; covers pending). Re-check Part 1 against the CHG-041 Control Desk date conflict | GAP-001 (CLOSED) |
-| Identity, SSO, MFA, SCIM, LDAP, CVE patching | PARTIAL (6 of 7 drafted) | MAS-SECURITY-OPS index + Parts 1–5 (drafts); Part 6 (agent security) `secops-06` pending; MAS-FEATURES "Security & Maps" | GAP-002 |
-| Db2 on OpenShift, backup/DR, performance, observability | PLANNED | `MAS-PLATFORM-OPS` queued (9 items, status pending; no folder yet) | GAP-003 |
-| Install/ops tooling (CLI, ansible-devops, GitOps, catalogs, OCP window) | PLANNED | `platops-01/07/08` queued; THINK-MAS architecture (conceptual only) | GAP-003 |
+| Identity, SSO, MFA, SCIM, LDAP, CVE patching | **COVERED (drafts)** | MAS-SECURITY-OPS index + Parts 1–6 (drafts; Part 6 = securing AI agents/MCP); MAS-FEATURES "Security & Maps". Part 5 needs CHG-045/046 (COR-007) | GAP-002 (CLOSED) |
+| Db2 on OpenShift, backup/DR, performance, observability | **COVERED (drafts)** | MAS-PLATFORM-OPS index + Parts 1–8 (drafts; covers pending) | GAP-003 (CLOSED) |
+| Install/ops tooling (CLI, ansible-devops, GitOps, catalogs, OCP window) | **COVERED (drafts)** | MAS-PLATFORM-OPS Parts 1, 7, 8; THINK-MAS architecture. CLI 23.16/23.17 and CPD 5.4.0 (CHG-044) postdate the drafts | GAP-003 (CLOSED) |
 | Data loading (MxLoader, Data Import, Migration Manager) | PARTIAL | RELIABILITY "Populating the Spine", THINK-MAS "Data Migration" | GAP-004 |
 | Automation scripts | PARTIAL | MAS-FEATURES "Customization Trinity", JAVA-EXTENSIONS | GAP-005 |
 | Agentic Maximo (Assistant agents, MCP, AssetOpsBench, TSFM) | PARTIAL | MAS-9-2 Part 5, MAS-ASSIST, MAS-BOB, ENTERPRISE-VIBE-CODING | GAP-006 |
@@ -147,8 +155,8 @@ Status values: **COVERED** (dedicated series or post) · **PARTIAL** (overview o
 | MAS 9.3 early signals | **NOT COVERED** | — | GAP-018 |
 | Events (TechXchange, MaximoWorld) | **NOT COVERED** | — | GAP-019 |
 | Maximo Mobile 9.2, app catalog | COVERED (drafts) | MAS-MOBILE Parts 1–3 drafted 2026-10-17 (covers pending); MANAGE Part 6 refreshed | — |
-| MAF development | PLANNED | `MAS-MAF-DEV` queued 2026-10-16 (DOC17) | — |
-| IBM Bob (coding agent) | COVERED | MAS-BOB (index + 5 parts, untracked drafts as of 2026-10-18) | — |
+| MAF development | **COVERED (drafts)** | `MAS-MAF-DEV` (10 posts, nightly commits through maf-09; DOC17) | — |
+| IBM Bob (coding agent) | COVERED | MAS-BOB (index + 5 parts, untracked drafts as of 2026-10-25) | — |
 | Reporting (BIRT / Cognos / KPI Manager) | COVERED (correction needed, §7) | 2026-07-22 reporting options, WORK-ORDER-OPS | — |
 | Scheduler, Optimizer, Health, Predict, Monitor, MVI, Nuclear, Civil, Supply chain, Integration, Java extensions, watsonx, Databricks, Bob | COVERED | dedicated series | — |
 | Collaborate, Maximo IT, Service Provider, Renewables, Linear, ACM, Calibration | PARTIAL (low demand) | MAS-FEATURES overviews | GAP-020 |
@@ -162,25 +170,25 @@ Score = demand × fit × freshness, each rated 1–5. A deadline counts as fresh
 | Rank | ID | Gap | Coverage | Demand | Fit | Fresh | Score | Status |
 |---:|---|---|---|---:|---:|---:|---:|---|
 | — | GAP-001 | Support-lifecycle cliff: 7.6.1 Extended Support ended, dual support ends Apr 2027, 9.0 base ends Jun 2027, 8.x status, perpetual vs subscription rights | COVERED | 5 | 5 | 5 | 125 | **CLOSED (2026-10-18, MAS-LIFECYCLE, drafts; covers pending)**. Follow-up: reconcile the Control Desk Dec 2026 conflict (CHG-041) |
-| 1 | GAP-002 | Identity & security ops: SAML + MFA via IdP, SCIM from Entra/Okta, LDAP, API keys, 9.2 user-management changes, CVE-2026 patch posture | PARTIAL | 5 | 5 | 4 | 100 | Parts 0–5 drafted; `secops-06` pending. Add CVE-2026-15687 (CHG-039) to Part 5 |
-| 2 | GAP-003 | Platform ops: Db2 12 upgrade (DT502701), Db2uInstance, backup/restore and DR (CLI scope limits, OADP/Kasten), Manage performance, Prometheus/Grafana/Instana, patch train and catalogs, OCP 4.18–4.22, GitOps | PLANNED | 4 | 5 | 5 | 100 | **QUEUED 2026-10-16** (`platops-*`, none written yet) |
-| 3 | GAP-006 | Agentic Maximo: Supervisor ALM agent, MCP write actions, AssetOpsBench, Granite TSFM + Confluent streaming, trusted autonomy, partner agents | PARTIAL | 4 | 5 | 4 | 80 | PROPOSED §5.6 |
-| 4 | GAP-007 | 9.2.x patch train & upgrade watch-list refresh (DT501598, CVE-2026-105052, version skew) | COVERED-stale | 4 | 5 | 4 | 80 | Fold into §5.3 Part 6 + §7 correction |
-| 5 | GAP-004 | Data loading on MAS 9: MxLoader with API keys, Data Import, Migration Manager gotchas | PARTIAL | 5 | 5 | 3 | 75 | PROPOSED §5.4 |
-| 6 | GAP-005 | Autoscript cookbook for Java 17/25, plus autoscripts as Assistant/MCP tools | PARTIAL | 5 | 5 | 3 | 75 | PROPOSED §5.5 |
-| 7 | GAP-008 | TRIRIGA → MAS Real Estate & Facilities migration | PARTIAL | 4 | 4 | 4 | 64 | Candidate |
-| 8 | GAP-019 | TechXchange 2026 preview and recap | NOT | 3 | 4 | 5 | 60 | **Quick win, now urgent**: the event starts 26 Oct. IBM's event page showed only general AI/developer highlights; no Maximo-specific announcement was found, so frame it as a session guide |
-| 9 | GAP-009 | ISO 55001:2024 mapped onto Maximo | NOT | 3 | 4 | 4 | 48 | Candidate (executive tier) |
-| 10 | GAP-011 | Hosting & buying guide: SaaS Essentials/Standard/Premium vs ROSA vs ARO vs Dedicated | PARTIAL | 4 | 4 | 3 | 48 | Candidate |
-| 11 | GAP-010 | HSE deep dive beyond mobile: permits, LOTO, incidents in Manage | PARTIAL | 3 | 4 | 3 | 36 | Mobile side drafted (MAS-MOBILE Part 3); Manage-side deep dive still open |
-| 12 | GAP-017 | Competitive & analyst landscape Q4 2026 (SAP Joule, IFS Loops, Octave, ServiceNow; Verdantix, IDC, Gartner) and partner consolidation (Naviam/Cohesive) | NOT | 3 | 4 | 3 | 36 | Candidate; folds into §5.6 Part 6 |
-| 13 | GAP-012 | Spatial 9.x (ArcGIS Enterprise requirement, 3D/geofencing) | PARTIAL | 3 | 3 | 3 | 27 | Backlog |
-| 14 | GAP-018 | MAS 9.3 first look from code signals | NOT | 2 | 4 | 3 | 24 | Watch (§8) |
-| 15 | GAP-013 | AIP + Maintenance Cost Insights | PARTIAL | 2 | 3 | 2 | 12 | Backlog |
-| 16 | GAP-014 | Vegetation Management + EIS; EV fleet PMs | PARTIAL | 2 | 3 | 2 | 12 | Backlog |
-| 17 | GAP-015 | OT cybersecurity asset inventory (CISA 2025, IEC 62443) and EAM | NOT | 2 | 3 | 2 | 12 | Backlog (thought leadership) |
-| 18 | GAP-016 | Envizi / sustainability connector how-to | PARTIAL | 2 | 3 | 2 | 12 | Backlog |
-| 19 | GAP-020 | Collaborate, Maximo IT, Service Provider, Renewables, Linear, ACM, Calibration deep dives | PARTIAL | 1 | 3 | 1 | 3 | Backlog |
+| — | GAP-002 | Identity & security ops: SAML + MFA via IdP, SCIM from Entra/Okta, LDAP, API keys, 9.2 user-management changes, CVE-2026 patch posture | COVERED | 5 | 5 | 4 | 100 | **CLOSED (2026-10-25, MAS-SECURITY-OPS, drafts; covers pending)**. Part 5 already cites CVE-2026-15687; add CHG-045/046 (COR-007) |
+| — | GAP-003 | Platform ops: Db2 12 upgrade (DT502701), Db2uInstance, backup/restore and DR (CLI scope limits, OADP/Kasten), Manage performance, Prometheus/Grafana/Instana, patch train and catalogs, OCP 4.18–4.22, GitOps | COVERED | 4 | 5 | 5 | 100 | **CLOSED (2026-10-25, MAS-PLATFORM-OPS, index + Parts 1–8 drafted; covers pending)** |
+| 2 | GAP-006 | Agentic Maximo: Supervisor ALM agent, MCP write actions, AssetOpsBench, Granite TSFM + Confluent streaming, trusted autonomy, partner agents | PARTIAL | 4 | 5 | 4 | 80 | PROPOSED §5.6 |
+| 3 | GAP-007 | 9.2.x patch train & upgrade watch-list refresh (DT501598, CVE-2026-105052, version skew) | PARTIAL | 4 | 5 | 4 | 80 | PLATFORM-OPS Part 1 covers the patch train; the older upgrade watch-list post (COR-004) is still stale |
+| 4 | GAP-004 | Data loading on MAS 9: MxLoader with API keys, Data Import, Migration Manager gotchas | PARTIAL | 5 | 5 | 3 | 75 | PROPOSED §5.4 |
+| 5 | GAP-005 | Autoscript cookbook for Java 17/25, plus autoscripts as Assistant/MCP tools | PARTIAL | 5 | 5 | 3 | 75 | PROPOSED §5.5 |
+| 6 | GAP-008 | TRIRIGA → MAS Real Estate & Facilities migration | PARTIAL | 4 | 4 | 4 | 64 | Candidate |
+| 1 | GAP-019 | TechXchange 2026 preview and recap | NOT | 3 | 4 | 5 | 60 | **Quick win, same-week**: the event starts 26 Oct, so a preview is already late; do a recap after 29 Oct instead. No Maximo-specific announcement found (CHG-047 is unverified) |
+| 7 | GAP-009 | ISO 55001:2024 mapped onto Maximo | NOT | 3 | 4 | 4 | 48 | Candidate (executive tier) |
+| 8 | GAP-011 | Hosting & buying guide: SaaS Essentials/Standard/Premium vs ROSA vs ARO vs Dedicated | PARTIAL | 4 | 4 | 3 | 48 | Candidate |
+| 9 | GAP-010 | HSE deep dive beyond mobile: permits, LOTO, incidents in Manage | PARTIAL | 3 | 4 | 3 | 36 | Mobile side drafted (MAS-MOBILE Part 3); Manage-side deep dive still open |
+| 10 | GAP-017 | Competitive & analyst landscape Q4 2026 (SAP Joule, IFS Loops, Octave, ServiceNow; Verdantix, IDC, Gartner) and partner consolidation (Naviam/Cohesive) | NOT | 3 | 4 | 3 | 36 | Candidate; folds into §5.6 Part 6 |
+| 11 | GAP-012 | Spatial 9.x (ArcGIS Enterprise requirement, 3D/geofencing) | PARTIAL | 3 | 3 | 3 | 27 | Backlog |
+| 12 | GAP-018 | MAS 9.3 first look from code signals | NOT | 2 | 4 | 3 | 24 | Watch (§8) |
+| 13 | GAP-013 | AIP + Maintenance Cost Insights | PARTIAL | 2 | 3 | 2 | 12 | Backlog |
+| 14 | GAP-014 | Vegetation Management + EIS; EV fleet PMs | PARTIAL | 2 | 3 | 2 | 12 | Backlog |
+| 15 | GAP-015 | OT cybersecurity asset inventory (CISA 2025, IEC 62443) and EAM | NOT | 2 | 3 | 2 | 12 | Backlog (thought leadership) |
+| 16 | GAP-016 | Envizi / sustainability connector how-to | PARTIAL | 2 | 3 | 2 | 12 | Backlog |
+| 17 | GAP-020 | Collaborate, Maximo IT, Service Provider, Renewables, Linear, ACM, Calibration deep dives | PARTIAL | 1 | 3 | 1 | 3 | Backlog |
 
 ---
 
@@ -207,7 +215,7 @@ All proposals are **PROPOSED — not queued**. Before queuing a series:
 - Dual-support date (30 Apr 2027) is now IBM-confirmed (CHG-041). The 30 Sep 2030 Sustained date is still [IND].
 - Reconcile the Control Desk page (Sustained to 31 Dec 2026) with the Maximo 7.6.1 Sustained date before the posts are published.
 
-### 5.2 `MAS-SECURITY-OPS` — Identity, Access & Patching (GAP-002, CHG-008/020) · priority: high · **QUEUED 2026-10-16; Parts 0–5 DRAFTED 2026-10-18** (Part 6 pending)
+### 5.2 `MAS-SECURITY-OPS` — Identity, Access & Patching (GAP-002, CHG-008/020) · priority: high · **QUEUED 2026-10-16; Parts 0–6 DRAFTED** (complete as of 2026-10-25; covers pending)
 
 `posts/MAS-SECURITY-OPS/`. Index plus 6 parts. Tier: admin. Cover: BlueprintBoard.
 
@@ -221,7 +229,7 @@ All proposals are **PROPOSED — not queued**. Before queuing a series:
 | 5 | Patching as a Security Program: The 2026 CVE Year | CVE-2026-105052, CVE-2026-90920 (AI Service, CVSS 9.8), IoT DoS, monthly bulletin cadence, catalog-driven patching |
 | 6 | Securing MAS for AI Agents | MCP auth flow (Core IdP token → Manage authz), scoping agent permissions, audit |
 
-### 5.3 `MAS-PLATFORM-OPS` — Running MAS on OpenShift (GAP-003, GAP-007) · priority: high · **QUEUED 2026-10-16** (priority 3)
+### 5.3 `MAS-PLATFORM-OPS` — Running MAS on OpenShift (GAP-003, GAP-007) · priority: high · **QUEUED 2026-10-16; Parts 0–8 DRAFTED** (complete as of 2026-10-25; covers pending)
 
 `posts/MAS-PLATFORM-OPS/`. Index plus 8 parts. Tier: admin/developer. Cover: InfoBlocks.
 
@@ -283,7 +291,7 @@ All proposals are **PROPOSED — not queued**. Before queuing a series:
 
 | Post | Gap | Timing |
 |---|---|---|
-| "TechXchange 2026: The Maximo Sessions Worth Your Time" | GAP-019 | **Publish before Oct 26**; follow with a recap after Oct 29 |
+| "TechXchange 2026: The Maximo Sessions Worth Your Time" | GAP-019 | **Preview window closes 26 Oct**; prioritise a recap after Oct 29 |
 | "MAS 9.3: What the Code Already Tells Us" | GAP-018 | After TechXchange, if no announcement contradicts the code signal |
 | "ISO 55001:2024 and Maximo: A Clause-by-Clause Map" | GAP-009 | Q4 2026 (deadline Jul 2027) |
 
@@ -295,6 +303,7 @@ All proposals are **PROPOSED — not queued**. Before queuing a series:
 |---|---|---|---|---|---|
 | 2026-10-16 | Initial build (manual, 4 research agents + 224-title audit) | Created DOC00. User approved and queued §5.1–§5.3 (21 posts + 3 cover batches). Fixed MAS-FEATURES Part 5 (PWA error) and refreshed MANAGE Part 6 (9.2 section; removed the "Mobile Studio/JSON" error). Queued MAS-MOBILE (3) and MAS-MAF-DEV (10). Set up the weekly gap-scan | 37 | 20 | 0 |
 | 2026-10-18 | Weekly scan #1 (web, GitHub APIs, IBM Support pages) | Quiet IBM week. Added CHG-038–043 (CLI 23.15.0/gitops, AI Service bulletin 15687, Naviam/Cohesive, IBM-confirmed dual support, industry patch levels, IFS/ServiceNow). Updated coverage for LIFECYCLE, MOBILE, SECURITY-OPS, PLATFORM-OPS. Re-ranked gaps. No new proposals | 6 | 0 | 1 (GAP-001) |
+| 2026-10-25 | Weekly scan #2 (web search, GitHub APIs) | Quiet vendor week. Added CHG-044–049 (CLI 23.16/23.17 + ansible-devops 37.22/37.23, Manage CVE-2026-71290 and -25526, IBM 7.6.1 2030 notice resolving the Control Desk conflict, TechXchange claim [UNVERIFIED], MCP/AI bundle). GAP-002 and GAP-003 closed by drafted series. Re-ranked gaps; added COR-007. No new proposals | 6 | 0 | 2 (GAP-002, GAP-003) |
 
 ---
 
@@ -307,6 +316,8 @@ All proposals are **PROPOSED — not queued**. Before queuing a series:
 | COR-003 | MAS-FEATURES "Integration & Reporting: … the End of BIRT in MAS 9" | Says BIRT reports must be recreated. 9.2 ships BIRT 4.21 and IBM docs (Mar 2026) still document BIRT | OPEN — fact-check and soften |
 | COR-004 | `MAS-9-2/…-06-upgrade-watchlist.mdx` | Predates 9.2.1–9.2.8. Add DT501598 (MAXUSER overwrite) and CVE-2026-105052 | OPEN |
 | COR-005 | THINK-MAS-07, MAS-FEATURES Part 23 | "MAF Configuration application" naming; add the 9.1 rename to Application Configuration | OPEN (low) |
+| COR-007 | `MAS-SECURITY-OPS/…-05-cve-patching-2026.mdx` | Predates CVE-2026-71290 (CVSS 9.1) and CVE-2026-25526 (CVSS 9.8, still [UNVERIFIED] bulletin); add after confirming IBM pages | OPEN |
+| COR-008 | `MAS-LIFECYCLE/…-01-761-sustained-support.mdx` | Mentions Control Desk; state that Control Desk 7.6.1 (Sustained to 31 Dec 2026) is a separate product from Maximo Asset Management 7.6.1 (to 30 Sep 2030, CHG-048) | OPEN |
 | COR-006 | DOC15 MAS 9.2 factbase | Stops at 9.2.1 (12 Aug) | OPEN — extend with CHG-005–008 |
 
 ---
@@ -317,14 +328,17 @@ Things to re-check on the next scan:
 
 - **MAS 9.3:** announcement letter, Feature Channel listing, TechXchange news (CHG-010).
 - **AI Service CVE-2026-90920:** IBM's own bulletin and fixed version. IBM's CVE-2026-15687 bulletin lists 9.1.19 / 9.2.3 (CHG-039); trackers quote the same for 90920 but this is not IBM-confirmed (CHG-020).
+- **TechXchange 2026 (26–29 Oct):** any Maximo/9.3 news, and whether the Anthropic–Claude/Bob claim (CHG-047) is real.
 - **Naviam/Cohesive close** and any Bentley–Maximo integration news (CHG-040).
-- **Manage 9.2.5 / Core 9.2.9 / catalog v9-261029** (scheduled 29 Oct): none found as of 18 Oct.
+- **Manage 9.2.5 / Core 9.2.9 / catalog v9-261029** (scheduled 29 Oct): none found as of 25 Oct (newest readme is Core 9.2.8, 7 Oct).
 - **"Automation scripts as custom tools":** shipped or still future (CHG-012).
 - **Asset-investment-planning agent:** promised by IBM Research for 2026; not shipped (CHG-012 context).
 - **Document abstraction beyond leases** (OEM manuals, inspection procedures) (CHG-011).
 - **Granite TSFM on Confluent Platform** (on-prem/hybrid) (CHG-023).
 - **MAF Local Configuration:** Marketplace listing, beta.7+, and the offline-mirror documentation fix (DOC17).
-- **IBM's 7.6.1 Sustained date:** dual support is confirmed (CHG-041); the 2030 Sustained date and the Control Desk Dec 2026 conflict are not.
+- **IBM's 7.6.1 Sustained date:** dual support is confirmed (CHG-041); the 2030 date now appears on IBM's notice and the Control Desk Dec 2026 date is a separate product (CHG-048); read the full notice page to confirm.
+- **Maximo AI Service component dates:** one search snippet says AI Service 9.2.0 shipped 29 Jan 2026 with a model swap to gpt-oss-120b; conflicts with MAS 9.2 GA of 25 Jun, so [UNVERIFIED] and not logged.
+- **CVE-2026-25526 bulletin:** pin the IBM page (CHG-046).
 - **Unverified 9.2 claims to confirm:** Spatial 3D/geofencing, user-sync removal, Collaborate becoming a Manage add-on, Maximo IT Self Serve.
 - **IBM Docs access:** it returned 403 to automated fetches on 2026-10-16. If it persists, rely on IBM Support pages and GitHub.
 
