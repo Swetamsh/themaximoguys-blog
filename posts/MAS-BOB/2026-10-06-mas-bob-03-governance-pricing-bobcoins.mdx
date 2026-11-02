@@ -1,0 +1,706 @@
+---
+title: "Governing Bob: Admin Controls, Audit, Bobcoins, and CAB-Style Change Control for AI-Authored Maximo Changes"
+description: "What IBM Bob's group policies, Bobalytics, CADF activity log, SIEM feed, SSO, plans, and Bobcoins actually enforce, where each control stops, and how to wire them into a Maximo change advisory board so AI-authored changes stay auditable."
+date: "2026-10-06"
+slug: "mas-bob-03-governance-pricing-bobcoins"
+tags: ["Maximo", "MAS 9", "IBM Bob", "AI Governance", "Change Management", "Bobcoins", "AI Coding Agents", "Audit"]
+draft: false
+tier: "admin"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-bob-03-governance-pricing-bobcoins.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Can we force developers to approve every Bob command and edit instead of letting Bob auto-approve?"
+    answer: "Yes, on the Bob IDE. The DisabledAutoApprovalGroups group policy accepts a comma-separated list of tool-permission groups (read, edit, execute, mcp, skill, todo, subtask, subagent, mode) and permanently disables auto-approval for each one you list. It is delivered through an MDM profile on macOS (com.ibm.bob), the Software\\Policies\\IBM\\Bob registry key through GPO or Intune on Windows, or /etc/bob/policy.json on Linux, and locked settings appear read-only to the user. The catch is scope: IBM documents group policies for the Bob IDE only, so confirm in writing whether Bob Shell, and therefore any CI runner that calls it, honors the same policy. For client Maximo code, we recommend at least edit, execute, mcp, and skill on every managed workstation."
+  - question: "Does the Bob activity log give us the audit trail a Maximo change board needs?"
+    answer: "Not by itself. The Enterprise activity log is a CADF-format JSON record, one file per hour, of authentication events (sign-in, sign-out, token renewal) and admin events (user, team, membership, and seat changes). IBM's SIEM page says the events forwarded to Splunk are the same audit events as the activity log. Nothing in IBM's documentation says it records prompts, tool calls, file edits, or which model answered. That makes it a good answer to who had access and when, and a poor answer to what did the agent change. For the second question you need your own evidence: the Plan-mode artifact, the git diff, EnforcedHooks output, and the Maximo-side record of what the API key actually did."
+  - question: "What does a Bobcoin cost, and how many do we need?"
+    answer: "IBM's published allowances are 50 Bobcoins a month on Pro at $20 (about $0.40 each), 180 on Pro+ at $60 (about $0.33), and 1,000 on Ultra at $200 ($0.20), after the September 24, 2026 increase from 40, 160, and 500. Individual overage is $0.50 per Bobcoin and must be re-enabled each month. Enterprise buys packs of 1,000 Bobcoins at $500, with overage packs at $550, and packs expire one year after purchase. IBM does not publish tokens per Bobcoin or Bobcoins per task, so any headcount-times-coins budget is a guess until you measure Bobcoins per completed Maximo task in a pilot. Treat the first quarter as data collection, not forecasting."
+  - question: "Why is Enterprise the only plan that makes sense for a Maximo consultancy or regulated owner?"
+    answer: "Four things only exist on Enterprise: IP indemnity for output (IBM states none for Free Trial, Pro, Pro+, or Ultra), Bobalytics, the activity log with SIEM forwarding, and the central admin console with team budgets and a shared Bobcoin pool. A consultancy using an individual Pro seat on client code has no indemnity and no audit feed, which usually contradicts what the client contract assumes. The price is custom, so you cannot compare it with the $20 to $200 individual tiers on the pricing page. Get the quote early and compare it with what a single unreviewed change to a work order or integration costs you."
+  - question: "How should a CAB treat a change that Bob wrote?"
+    answer: "Treat Bob as an author, not an approver, and keep a human accountable on every change record. We recommend classifying changes by blast radius (read-only analysis, autoscript or app XML change, Java extension or integration change, production data change), requiring the Bob Plan-mode output and the diff as attachments, and requiring that the person who approved the agent's actions is not the only CAB approver. On the Maximo side, give the agent a dedicated API key for each use case, created in the API Keys application, with a security group scoped to exactly the object structures that use case needs. The agent should never hold the key that can apply the change in production."
+keyTakeaways:
+  - "Bob's admin surface has four distinct layers (device policy, identity, usage analytics, audit), and each stops at a different place: group policies are Bob IDE only, the activity log covers authentication and admin events, and neither tells you what the agent changed in a Maximo repository"
+  - "DisabledAutoApprovalGroups is the single highest-value control: lock edit, execute, mcp, and skill centrally, because the PromptArmor lesson was that auto-approve, not the model, is the attack surface"
+  - "Bobalytics (Enterprise, SaaS only) reports adoption rate, Bob factor, and Bobcoin spend; Bob factor measures the percent of committed lines Bob wrote, which is activity, not value, so pair it with defect escape rate and review hours"
+  - "Individual Bobcoin allowances rose on September 24, 2026 (Pro 50, Pro+ 180, Ultra 1,000) at unchanged prices, but tokens per Bobcoin and Bobcoins per task are unpublished, so budget from a pilot, not from a formula"
+  - "A CAB-ready AI change record needs five attachments Bob does not produce for you: the Plan-mode output, the diff, the approval log, the Maximo-side API key scope, and a named human owner; Enterprise seats are the only ones with IP indemnity"
+series:
+  name: "MAS BOB"
+  part: 3
+  total: 5
+tldr: "Bob ships real governance controls: group policies that lock auto-approval, SSO with domain verification, Bobalytics for adoption and Bob factor, a CADF activity log with a Splunk feed, team budgets, and Bobcoins as the billing unit. But each control has a boundary. Policies are IDE-only, the audit log covers identity and admin events rather than agent actions, Bobalytics is SaaS Enterprise only, and Bobcoin-to-token rates are unpublished. This part maps every control to what it proves, lays out the plan and Bobcoin economics, and shows how to build CAB-style change control for AI-authored Maximo changes from the evidence you can actually collect."
+seoTitle: "Governing IBM Bob: Admin, Audit, Bobcoins, CAB"
+seoDescription: "IBM Bob group policies, Bobalytics, activity log, SIEM, plans, and Bobcoins, plus CAB-style change control for AI-authored Maximo changes."
+targetQuestions:
+  - "How do you lock IBM Bob's auto-approval centrally?"
+  - "What does the IBM Bob activity log and SIEM feed actually record?"
+  - "What is the Bob factor in Bobalytics and how should it be used?"
+  - "How much does IBM Bob cost and what is a Bobcoin?"
+  - "Does IBM Bob support SSO and SCIM?"
+  - "How do you put AI-authored Maximo changes through a change advisory board?"
+semanticKeywords:
+  - "IBM Bob governance"
+  - "Bobalytics Bob factor"
+  - "Bobcoins pricing"
+  - "DisabledAutoApprovalGroups"
+  - "Bob activity log CADF"
+  - "Bob SIEM Splunk"
+  - "Bob Enterprise IP indemnity"
+  - "AI change advisory board"
+  - "Maximo change control AI agent"
+  - "EnforcedHooks"
+proficiencyLevel: "advanced"
+dependencies:
+  - "Parts 1 and 2 of this series (what Bob is, models, data handling, indemnity)"
+  - "A working change management process (CAB, change records, approval tiers)"
+  - "Familiarity with Maximo security groups and the API Keys application"
+speakableSections:
+  - "The Short Version"
+  - "Lock Auto-Approval First"
+  - "What the Audit Trail Does and Does Not Prove"
+clusterSlugs:
+  - "mas-bob-00-series-index"
+  - "mas-bob-01-what-is-ibm-bob"
+  - "mas-bob-02-models-security-self-hosted"
+  - "mas-bob-04-bob-and-maximo"
+  - "mas-bob-05-pilot-playbook"
+relatedSlugs:
+  - "evc-04-plan-before-you-vibe"
+  - "evc-11-teach-ai-house-rules"
+  - "evc-12-maximo-eam-shops"
+  - "evc-13-first-maximo-ai-agent"
+  - "mas-java-extensions-series-index"
+---
+
+# Governing Bob: Admin Controls, Audit, Bobcoins, and CAB-Style Change Control for AI-Authored Maximo Changes
+
+<aside>
+
+🎯 **Who this is for:** Maximo platform owners, security and compliance leads, change managers, and engagement leads who have to answer one question before an AI agent touches a Maximo customization: "Who approved this, what exactly did it change, and what does it cost us?" You do not need to be an AI enthusiast. You need to know which controls are real, where each one stops, and how to fill the gaps with your own process.
+
+</aside>
+
+**Series:** *IBM Bob for Maximo Teams* | **Part 3 of 5** | **Read time:** ~28 minutes
+**Previous:** [Part 2, Models, Security, and Self-Hosted](/blog/mas-bob-02-models-security-self-hosted) | **Next:** [Part 4, Bob Meets Maximo](/blog/mas-bob-04-bob-and-maximo)
+
+---
+
+## 🔥 The Change Request Nobody Knows How to Classify
+
+It is Tuesday, and the CAB agenda has a new kind of line item.
+
+*"CHG-20418: Update WOCOMPLETE autoscript to validate failure class before closing. Author: A. Developer (with Bob). Risk: Medium."*
+
+Somebody on the board asks the obvious question: "With Bob? What does that mean? Did a person write this?" The developer says Bob drafted it, they reviewed it, and it works in dev. A second member asks which model wrote it. Nobody knows. A third asks whether there is a record of what Bob was allowed to do on that workstation while it worked. The developer says they clicked "approve" a lot.
+
+That meeting is the reason this part exists. In [Part 1](/blog/mas-bob-01-what-is-ibm-bob) we covered what Bob is. In [Part 2](/blog/mas-bob-02-models-security-self-hosted) we covered what IBM says about models, data, and indemnity. This part is about the other half of adoption: **the controls you operate after you say yes**. That means the admin console, the policy files, the analytics, the logs, the bill, and, most importantly, how you fit all of it into a change process you already run.
+
+Two principles run through everything below.
+
+**First, a control is only as good as the claim it lets you make.** "We have a policy file" and "we have an audit trail" are different claims. Throughout this part, every control gets a plain statement of what it proves and what it does not.
+
+**Second, an AI agent is an author, never an approver.** Your CAB does not need a new religion. It needs to treat Bob-authored changes the way it treats contractor-authored changes: a named human is accountable, the evidence is attached, and the people who approve are not the people who benefit from speed.
+
+<aside>
+
+💡 **Key insight:** Bob gives you decent device-level and identity-level governance. It gives you almost nothing that says what the agent did to your Maximo estate. That evidence comes from your own process, and the sooner you design it, the less painful the first audit.
+
+</aside>
+
+---
+
+## 📌 The Short Version
+
+| Question | Short answer | Source label |
+|---|---|---|
+| Can we lock auto-approval centrally? | Yes, via `DisabledAutoApprovalGroups`, on the Bob IDE | IBM docs |
+| Does the policy cover Bob Shell and CI runners? | Documented as IDE only; confirm in writing | IBM docs, open item |
+| What does the activity log record? | Authentication and admin events in CADF JSON, one file per hour | IBM docs |
+| Does it record prompts, tool calls, or edits? | Not stated anywhere in IBM's documentation | Gap |
+| How does SIEM forwarding work? | Open an IBM support case; Splunk is the tested example; takes "a few days" | IBM docs |
+| Where is Bobalytics available? | SaaS Enterprise only; not supported on self-hosted at GA | IBM docs |
+| What is the Bob factor? | Percent of committed lines of code that Bob created | IBM docs |
+| Individual plan prices | Pro $20, Pro+ $60, Ultra $200 per month | IBM pricing |
+| Individual Bobcoin allowances (since Sep 24, 2026) | 50, 180, 1,000 | IBM blog and docs |
+| Overage | $0.50 per Bobcoin for individuals; Enterprise packs of 1,000 at $500, overage packs at $550 | IBM docs |
+| IP indemnity | Enterprise only | IBM FAQ |
+
+Everything labeled "IBM docs" is vendor-stated. We fetched the group policy, Bobcoins, SIEM, activity log, Bobalytics, and identity provider pages in this run. We did not independently test any of the controls against a live tenant, and we say so wherever it matters.
+
+---
+
+## 🗺️ The Control Map: Four Layers, Four Different Stopping Points
+
+Bob's governance surface is easier to reason about if you stop treating it as one thing. It is four layers, each answering a different question.
+
+```
+╔══════════════════════════════════════════════════════════════════╗
+║  LAYER 1: DEVICE POLICY      "What can the agent do on this box?" ║
+║  Group policies (MDM / GPO / policy.json)         [Bob IDE only] ║
+╠══════════════════════════════════════════════════════════════════╣
+║  LAYER 2: IDENTITY           "Who is this person?"               ║
+║  SSO (SAML / OIDC), domain verification, teams    [Enterprise]   ║
+╠══════════════════════════════════════════════════════════════════╣
+║  LAYER 3: USAGE ANALYTICS    "How much and how well is it used?" ║
+║  Bobalytics, Bobcoin spend, budgets         [SaaS Enterprise]    ║
+╠══════════════════════════════════════════════════════════════════╣
+║  LAYER 4: AUDIT              "What happened, and can we prove it?"║
+║  CADF activity log, SIEM (Splunk), EnforcedHooks   [Enterprise]  ║
+╚══════════════════════════════════════════════════════════════════╝
+         None of these four layers records what Bob did
+         inside your Maximo environment. That is Layer 5, and you build it.
+```
+
+| Layer | Answers | Proves | Does not prove |
+|---|---|---|---|
+| 1. Device policy | Can auto-approve be turned on? | A setting is locked on managed machines | That a developer used a managed machine; that the agent behaved |
+| 2. Identity | Who signed in? | Authentication through your IdP, on a verified domain | What that person asked the agent to do |
+| 3. Analytics | How much is Bob used and how much code is Bob's? | Adoption, spend, and share of committed lines | Whether the code was right, reviewed, or valuable |
+| 4. Audit | When did identity and admin events occur? | Sign-ins, user and seat changes | Prompts, tool calls, edits, or model choice |
+| 5. Maximo-side evidence (yours) | What changed in the estate? | The API calls, the diff, the approvals | Nothing about the agent's reasoning, which is why Plan mode matters |
+
+Keep this table handy. Every section below slots into one row.
+
+---
+
+## 🔒 Lock Auto-Approval First
+
+If you do one thing from this entire series, do this.
+
+In Part 2 we covered the PromptArmor finding from January 2026, where a prompt injection hidden in a README steered Bob toward downloading and running malware once command auto-approval was in play. The lesson was not "Bob is unsafe." The lesson was that **the approval gate is the control, and anything that lets users switch it off is a hole**. Group policies are how you close it.
+
+### What IBM documents
+
+IBM's group policy page lists the policy names and their types. These are the ones that matter for governance:
+
+| Policy | Type | What it does (IBM's description) |
+|---|---|---|
+| `DisabledAutoApprovalGroups` | string | "Permanently disables auto-approval for one or more tool-permission groups." Comma-separated group IDs: `read`, `edit`, `execute`, `mcp`, `skill`, `todo`, `subtask`, `subagent`, `mode` |
+| `UpdateMode` | string | Controls automatic update behavior. Allowed values: `default`, `start`, `manual`, `none` |
+| `GatewayUrl` | string | Enforces the backend gateway URL, for example `https://bob.gateway.example.com` |
+| `EnforcedHooks` | string | "Must be a JSON-encoded string that matches the hooks configuration schema." Runs before user-defined hooks and cannot be overridden |
+
+DOC16 also records `RequiredExtensions` (added in the September release) and endpoint distribution for self-hosted. We did not re-fetch those two on the live page, so treat them as carried from our knowledge base.
+
+### Where the policy lives
+
+| Platform | Source | Mechanism |
+|---|---|---|
+| macOS | `com.ibm.bob` managed preferences | MDM configuration profile |
+| Windows | `Software\Policies\IBM\Bob` registry key | Group Policy (GPO), Intune via ADMX/ADML, or registry edit |
+| Linux | `/etc/bob/policy.json` | Configuration management tool or manual edit |
+
+IBM states that locked settings show as read-only in the product, and DOC16 records that on Linux the file should be root-owned with mode 644.
+
+> **Scope warning, in IBM's own words:** group policies are documented as **Bob IDE only** at the time of writing. That has direct consequences for Bob Shell, CI runners, and any scripted `bob run` usage. See "Open items" below.
+
+### What each approval group means for Maximo work
+
+IBM's page describes the groups by tool coverage: `read` covers file reads, directory listing, and search; `edit` covers file write, create, and delete; `execute` covers terminal and shell command execution. The others (`mcp`, `skill`, `todo`, `subtask`, `subagent`, `mode`) cover the remaining operational areas. Here is how we translate that into Maximo terms:
+
+| Group | What it lets an agent do without asking | Maximo-flavored risk | Our recommendation |
+|---|---|---|---|
+| `read` | Read files, list directories, search | Reads `maximo.properties`, `.env` files, exported XML with real data | Leave auto-approved only if `.bobignore` and workspace hygiene are in place; otherwise lock |
+| `edit` | Write, create, delete files | Overwrites an autoscript, deletes a migration file, edits app XML | **Lock** |
+| `execute` | Run terminal commands | Runs `curl` against a Maximo endpoint, runs a script that posts to REST | **Lock, always** |
+| `mcp` | Call MCP tools | Calls a Maximo MCP tool that updates a work order | **Lock, always** |
+| `skill` | Run installed skills | Runs a skill that contains shell steps | Lock on client-code machines |
+| `subagent`, `subtask` | Spawn delegated work | Fans out edits you did not individually approve | Lock where `edit` and `execute` are locked, since delegated work inherits the problem |
+| `todo`, `mode` | Update task lists, switch modes | Low | Leave open |
+
+### An illustrative policy
+
+The key names below are IBM's. The exact file shape, quoting, and the way the registry value must be typed are **illustrative, not verified against a live install**. Check IBM's current page before deploying.
+
+```json
+{
+  "DisabledAutoApprovalGroups": "edit,execute,mcp,skill,subagent,subtask",
+  "UpdateMode": "manual",
+  "GatewayUrl": "https://bob.gateway.example.com"
+}
+```
+
+```text
+# Windows (illustrative): push via GPO or Intune ADMX/ADML rather than by hand
+HKLM\Software\Policies\IBM\Bob
+    DisabledAutoApprovalGroups  (REG_SZ)  edit,execute,mcp,skill,subagent,subtask
+    UpdateMode                  (REG_SZ)  manual
+```
+
+Why `UpdateMode: manual`? Because of Part 2's point about SaaS routing: you cannot pin the model, but you can at least stop the client from changing underneath a regulated change window. That is a judgment call, so write down why you picked it.
+
+### Prove it is locked
+
+A policy is a claim until you check it. Add a one-line verification to your workstation baseline:
+
+```bash
+# Linux (illustrative): confirm the policy file exists, is root-owned, and contains the lock
+stat -c '%U %a %n' /etc/bob/policy.json
+grep -o '"DisabledAutoApprovalGroups"[^,}]*' /etc/bob/policy.json
+```
+
+Then do the human test: ask a developer to try to enable auto-approve for `execute` in settings. The control should appear read-only. Screenshot it for the audit file.
+
+<aside>
+
+💡 **Key insight:** Auto-approval is not a convenience setting. It is the point at which the human stops being the control. Your policy file is the CAB's first line of evidence that the human is still in the loop.
+
+</aside>
+
+---
+
+## 🪝 EnforcedHooks: The Closest Thing to an Agent Action Log
+
+The activity log, as we will see, does not record agent actions. The mechanism IBM does give you for that is **enforced hooks**. `EnforcedHooks` is a policy whose value is a JSON-encoded string matching Bob's hooks configuration schema. IBM states these hooks run before user-defined hooks and cannot be overridden by the user. DOC16 adds that hook handlers can be HTTPS endpoints, and that the GA release says Bob Shell "records agent actions as they happen."
+
+That combination is the design lever for CAB evidence: a hook that fires on tool use and posts a record to a service **you** own, outside the developer's control.
+
+### What a Maximo-shaped hook should capture
+
+We have not seen IBM's hook schema fields in this run, so the table below describes the **evidence you want**, not field names. Map each row onto whatever events the schema exposes.
+
+| Evidence | Why the CAB wants it | Where it should land |
+|---|---|---|
+| Who (SSO identity) and which workstation | Accountability | Your logging service, tagged with the change ID |
+| Timestamp | Sequence of events | Same |
+| Tool type (edit, execute, mcp) | Classifies the action | Same |
+| File path or command or MCP tool name | What was touched | Same |
+| Approval decision (user approved or denied) | Proves the human gate | Same |
+| Repository and branch | Ties to the diff | Same |
+
+### Guardrails for the hook itself
+
+- **Fail closed or fail loud.** If the hook endpoint is unreachable, decide in advance whether the action is blocked or merely flagged. Our default for production-adjacent repositories is flag-and-alert, because blocking every developer on an endpoint outage will push people toward workarounds.
+- **Do not log secrets.** A hook that records command lines will capture tokens passed in headers. Redact before storage.
+- **Test it on Bob Shell and the IDE separately.** IBM documents group policies, including `EnforcedHooks`, as IDE-scoped. If your pipeline calls Bob Shell, you may have no enforced hook at all there.
+
+---
+
+## 🪪 Identity: SSO, Domains, Teams, and What Is Not Documented
+
+IBM's identity provider page states that Bob supports **SAML** and **OIDC**, with verified OIDC providers **Auth0, Keycloak, Okta, and PingOne**. Domain ownership is proven with a DNS TXT record in the form `bob-verify=<verification-code>`, and the status flips to "Verified" once Bob sees it.
+
+| Item | What IBM documents | What it means for you |
+|---|---|---|
+| Protocols | SAML and OIDC | Covers Entra ID and most enterprise IdPs through SAML; verify yours explicitly |
+| Verified OIDC providers | Auth0, Keycloak, Okta, PingOne | Keycloak matters if you already run Red Hat build of Keycloak beside MAS |
+| Domain verification | TXT record `bob-verify=<code>` | A DNS change request; plan lead time |
+| Removing an IdP | Delete under Administration, Authentication; "removes the SSO configuration for all associated domains" | Deleting an IdP can lock out everyone on it; make it a CAB-controlled admin change |
+| SCIM | **Not mentioned** on the page we fetched | DOC16 says "contact IBM"; ask directly |
+
+### The deprovisioning question
+
+DOC16 records that deprovisioning follows the IdP. For a consultancy, the question to ask is practical: when a contractor leaves the engagement and their IdP account is disabled, how fast does their Bob seat stop working and stop consuming Bobcoins, and is that event in the activity log? We could not find that stated. Put it on your vendor questionnaire.
+
+### Teams and budgets
+
+Per IBM's enterprise documentation, an admin can add and remove team members, form teams, assign seats, allocate Bobcoins from a shared pool, and set individual spending limits. That makes **team** the natural unit for governance. We suggest aligning Bob teams to your Maximo delivery boundaries, such as "Manage customizations," "Integrations," and "Reporting," so that spend, Bobalytics, and your CAB categories line up.
+
+---
+
+## 📊 Bobalytics: What It Measures and What It Cannot
+
+Bobalytics is Bob's analytics view for admins. IBM states it is available to **Enterprise** plan users, is reached from the Admin console's Bobalytics tab, and, per the self-hosted known-limitations page, is **not supported on self-hosted Bob at GA**.
+
+### The three KPIs
+
+| KPI | IBM's definition | How to read it |
+|---|---|---|
+| **Adoption rate** | Average daily active users divided by total licensed seats | Seat waste detector. Low adoption means you are paying for shelfware |
+| **Bob factor** | Percentage of committed lines of code that Bob created (lines by Bob divided by total lines committed) | How much of your committed code is agent-written |
+| **Bobcoin spend** | Total Bobcoins consumed over a selected period | Cost, by period and team |
+
+DOC16 adds two details from IBM's documentation: a user counts as "active" after accepting at least one code completion or completing a chat conversation, and commits with zero Bob lines are excluded when the total exceeds 40,000 lines of code, to filter out templates and fixtures. We did not re-confirm those two on the live page.
+
+### IBM's interpretation guide
+
+IBM pairs the metrics: **high Bob factor with low spend** indicates effective use; **high spend with low Bob factor** suggests Bob is being used for research, explanation, or exploration rather than code. That second pattern is not a problem. It is a different job, and you should decide whether you are funding it.
+
+### Exports and privacy
+
+Available tables are Bob factor compared with team, Bob's repository impact, most frequently used modes, and Bob's code contribution by language. Each exports as a separate CSV in a ZIP, which is easy to feed to Power BI, Tableau, or Looker. On privacy, team charts anonymize users as "User 1, User 2," and IBM states that "admins cannot access a specific user's data from any team-level chart." Individual users can see their own data.
+
+That privacy design is good for developer trust. It is also a limit: **you cannot use Bobalytics to investigate an individual's behavior in an incident.** For that you need the SIEM and your own hooks.
+
+### The measurement trap
+
+Bob factor counts lines authored. It does not count defects, rework, review time, or whether the lines were the right ones. IBM's own Think content says token consumption "is a cost signal, not a value metric," and the same logic applies to lines. If you report Bob factor to executives as productivity, you are about to be asked what the defect rate is, and Bobalytics will not have the answer.
+
+| Metric | Source | Why you need it beside Bob factor |
+|---|---|---|
+| Bob factor | Bobalytics | Share of code the agent wrote |
+| Defect escape rate on AI-authored changes | Your ticketing and CAB records | Quality |
+| Review hours per change | PR tooling, CAB timestamps | The real bottleneck (the GitLab survey IBM cites says 85% of DevSecOps professionals see AI moving the bottleneck from writing to reviewing) |
+| Rollbacks and emergency changes | Change records | Operational impact |
+| Bobcoins per completed Maximo task | Bobalytics spend divided by closed tickets | The unit economics IBM does not publish |
+
+We build the pilot scorecard around exactly this table in [Part 5](/blog/mas-bob-05-pilot-playbook).
+
+---
+
+## 🧾 What the Audit Trail Does and Does Not Prove
+
+This is where most governance conversations go wrong, so we will be literal.
+
+### What IBM documents
+
+The Enterprise **activity log** is a downloadable record of security-relevant events in the Bob Enterprise organization. IBM lists two categories:
+
+| Category | Events | Storage |
+|---|---|---|
+| Authentication | User sign-in and sign-out; token renewals | Stored globally |
+| Admin activity | User creation, updates, and removal; team creation, updates, and deletion; team membership changes; seat assignments | Stored per region |
+
+Each file covers a one-hour window identified by date and hour. Files are JSON in the **CADF** (Cloud Auditing Data Federation) format. The documented fields are `action`, `outcome`, `eventTime` (UTC), `initiator.id` (the email address of the user who performed the action), and `attachments[].content.subscription_id`, `.instance_id`, and `.category`. The page does not specify a retention period and gives no example JSON.
+
+DOC16 records example `action` values such as `admin.user.create` and `bob-authn.session.authenticate`. We did not see those on the live page, so treat them as illustrative.
+
+### The SIEM feed
+
+IBM's SIEM integration page says you **cannot configure SIEM integration yourself** on the Administration page. You open a case with IBM Support, and "in most cases, onboarding takes a few days." You provide:
+
+- Subscription ID(s)
+- Splunk HEC endpoint
+- Splunk HEC token
+- Splunk index name
+- CA certificate, if you use a self-signed certificate
+
+"Splunk is the tested example today. Bob can also route your logs to other SIEM backends that use Vector integrations," with coordination required. Critically: "The events forwarded to your SIEM are the same audit events available in the activity log."
+
+### Evidence matrix: what a CAB or auditor will ask, and whether Bob can answer
+
+| Auditor question | Answered by Bob's audit log? | Where the answer actually lives |
+|---|---|---|
+| Who had a Bob seat on date X? | **Yes** (seat assignments, admin events) | Activity log, SIEM |
+| Who signed in during the change window? | **Yes** (authentication events) | Activity log, SIEM |
+| Was a user added or removed, and by whom? | **Yes** | Activity log, SIEM |
+| What prompt produced this autoscript? | **Not documented** | Developer's local task history (default 14 days, per IBM's FAQ via DOC16), your own hook records |
+| Which files did the agent edit? | **Not documented** | Git history; your hook records |
+| Which commands did the agent run? | **Not documented** | Your hook records; terminal history |
+| Which Maximo records did it touch through MCP or API? | **No** | Maximo logs, API key usage, Max_mcp or native MCP server logs |
+| Which model wrote it? | **No** (not even IBM discloses it on SaaS) | Unavailable; record Bob version only |
+| Did a human approve each action? | **Not in the activity log** | Hook records, if configured |
+
+DOC16 flags this explicitly as an open question: it is "unclear whether prompts, tool calls, and file edits reach Splunk SIEM," and recommends verifying the SIEM event schema. Our reading of the pages we fetched is that the answer is no, because the SIEM feed is stated to be the same events as the activity log. Confirm with IBM before you promise anyone otherwise.
+
+### Illustrative detection queries
+
+Once the feed lands in Splunk, there are still genuinely useful detections. The index name, field names, and `action` strings below are **placeholders based on the documented CADF fields**; adjust to the real schema after your first test file arrives.
+
+```text
+# Seat or user changes outside the approved admin group (illustrative SPL)
+index=bob_audit action="admin.*" outcome="success"
+| where NOT match(initiator.id, "^(bob-admin1|bob-admin2)@example\.com$")
+| table eventTime, initiator.id, action, outcome
+
+# Sign-ins from accounts that should have been offboarded (illustrative SPL)
+index=bob_audit action="*authenticate*" outcome="success"
+| lookup offboarded_users email AS initiator.id OUTPUT left_on
+| where isnotnull(left_on)
+| table eventTime, initiator.id, left_on
+
+# Seat assignment bursts (illustrative SPL)
+index=bob_audit action="admin.*seat*"
+| bin _time span=1h
+| stats count by _time, initiator.id
+| where count > 10
+```
+
+### Self-hosted: the audit conflict, one more time
+
+Part 2 documents this in detail, so here is only the governance consequence. IBM's September release blog says the self-hosted backend includes "audit logging, and usage metering," while the solution-architecture page says the Audit Logs and Metering services are "Not included in the initial release; planned for a future release," and the overview says security event logging is managed at the OpenShift platform level. Until IBM resolves that in writing, **a self-hosted CAB design must assume audit evidence comes from OpenShift logging and your own hooks**, and Bobalytics is not available.
+
+---
+
+## 💰 Plans and Bobcoins: The Economics, Without the Guessing
+
+### What IBM publishes
+
+| Plan | Price per month | Bobcoins per month (since Sep 24, 2026) | Previous allowance | Effective $ per Bobcoin | IP indemnity |
+|---|---|---|---|---|---|
+| Free trial (30 days) | $0 | 50 | 40 | n/a | No |
+| **Pro** | $20 | 50 | 40 | $0.40 | No |
+| **Pro+** | $60 | 180 | 160 | about $0.33 | No |
+| **Ultra** | $200 | 1,000 | 500 | $0.20 | No |
+| **Enterprise** | Custom | Custom, plus packs | n/a | See packs below | **Yes** |
+
+The effective rate column is our arithmetic (price divided by allowance), not an IBM figure. The September 24, 2026 announcement, titled "More Bobcoins. Same price. More room to build," raised allowances at unchanged prices, and applied automatically to existing customers. Notice what it did to the economics: **Ultra's effective rate fell from $0.40 per Bobcoin to $0.20**, while Pro went from $0.50 to $0.40.
+
+### Overage and packs
+
+| Item | Rule | Source |
+|---|---|---|
+| Individual overage | $0.50 per Bobcoin, charged to the monthly bill; must be manually enabled each month; the user sets a ceiling (a 20-Bobcoin cap limits extra charges to $10) and it resets to disabled each billing cycle | Bobcoins doc, Sep 24 blog |
+| Enterprise standard packs | 1,000 Bobcoins at $500 | Bobcoins doc |
+| Enterprise overage packs | 1,000 Bobcoins at $550 (a 10% premium); admins set the maximum overage limit in pack increments; the pool is shared across the organization | Bobcoins doc |
+| Pack expiry | One year after purchase | Bobcoins doc |
+| Allowance reset | At the start of each billing cycle | Bobcoins doc |
+| Tokens per Bobcoin | **Not published**; IBM calls Bobcoins a "unified billing metric" across models | IBM docs |
+
+Two details from this table deserve a callout. First, individual overage at $0.50 means a Pro user who runs out pays 25% more per coin than their allowance rate, and an Ultra user pays 2.5 times more. If your heavy users routinely overflow Pro, moving them up is cheaper than paying overage. Second, an Enterprise standard pack is also $0.50 per Bobcoin: IBM's enterprise pricing for incremental capacity looks, at list, the same as individual overage. Negotiate.
+
+> **Discrepancy for human review:** DOC16 states Enterprise packs are "$550 USD per 1,000 Bobcoins." The live Bobcoins page shows standard packs at $500 and overage packs at $550. Per our rule that the knowledge base wins on conflict, we flag it rather than overwrite: the live page appears more precise and we describe both numbers above. Verify against your quote.
+
+### Worked scenario: the budget you can actually build
+
+Because IBM publishes neither tokens per Bobcoin nor Bobcoins per task, **we cannot tell you what a Maximo task costs**. What we can do is show how sensitive the budget is to that one unknown. The figures below are *our illustrative arithmetic*, with the Bobcoins-per-task value an assumption you must replace with pilot data.
+
+Assume a team of 8 developers on Pro+ (180 Bobcoins per month each, $60 each, so $480 per month and 1,440 Bobcoins in total).
+
+| Assumed Bobcoins per completed task | Tasks per developer per month covered by allowance | Team tasks per month | Overage if the team does 150 tasks per month |
+|---|---|---|---|
+| 1 | 180 | 1,440 | None |
+| 5 | 36 | 288 | None |
+| 10 | 18 | 144 | 6 tasks over, 60 Bobcoins, about $30 at $0.50 |
+| 20 | 9 | 72 | 78 tasks over, 1,560 Bobcoins, about $780 |
+
+The point is not the numbers. The point is that if one task costs 1 Bobcoin your budget is irrelevant, and if it costs 20 your Pro+ allowance is gone in the second week. **Measure it in the pilot** (Part 5 gives the method) before you commit to a seat mix.
+
+### Seat mix guidance
+
+| Situation | Recommended plan | Why |
+|---|---|---|
+| Individual evaluating Bob on non-client code | Free trial, then Pro | Cheap, no commitment; no indemnity, so keep it away from client code |
+| Developer with sustained heavy use | Ultra at $200 for 1,000 coins | Lowest effective rate by far, but still no indemnity or audit feed |
+| Any seat touching client or regulated Maximo code | **Enterprise** | Only tier with IP indemnity, Bobalytics, activity log, SIEM, team budgets |
+| Consultancy with mixed work | Enterprise for delivery staff, individual tiers for internal R&D only | Keeps the indemnity boundary clean |
+
+### Premium Packages
+
+IBM sells specialized workflows as add-ons. Per DOC16 (IBM-reported):
+
+| Package | Scope | Price |
+|---|---|---|
+| **Java Modernization** | Java 8 to 11, 17, 21, 25; JSF and Struts to React; WebLogic, Tomcat, WebSphere Traditional to Liberty; Spring Boot to Quarkus | From $20 per user per month |
+| **IBM i** | RPG, COBOL, CL, SQL, DDS, QSYS workflows | From $40 per user per month |
+| **IBM Z (PP4Z)** | COBOL and PL/I modernization, JCL analysis, Z Understand, Z Refactor, Z RAG | Enterprise, annual |
+
+The Java and IBM i packages carry a first month free for new subscribers through December 31, 2026, per DOC16. For Maximo estates, the **Java Modernization package is the only one plausibly relevant**: Maximo's Java customizations (see our [Java Extensions series](/blog/mas-java-extensions-series-index)) sit on the same Java upgrade and Liberty-adjacent journeys. But we found no IBM material that ties the package to Maximo MBOs specifically, so test before you buy. Premium packages purchased for Bob Enterprise are covered by the Enterprise indemnity, per IBM's FAQ; packages bought for individual plans are not.
+
+### Price context against alternatives
+
+| Tool | Entry or team price (2026; verify on vendor pages) |
+|---|---|
+| Cursor | $20 and $40 |
+| GitHub Copilot | $10 Pro, $19 Business |
+| Claude (Pro and Max) | $20, then $100 to $200 |
+| Amazon Q Developer | Replaced by Kiro |
+| **IBM Bob** | $20, $60, $200; Enterprise custom |
+
+Bob's entry price is in line with the market. What differs is not the sticker. It is the **opaque coin-to-token conversion**, the **absence of model choice**, and **indemnity only at the Enterprise tier**. A $10 Copilot Pro seat is not like-for-like with a Bob Enterprise seat, and the comparison that matters to a regulated Maximo owner is indemnity, audit, and policy control, not price per month.
+
+---
+
+## 🏛️ CAB-Style Change Control for AI-Authored Maximo Changes
+
+Now we put the layers to work. The goal is a change process where an AI-authored change is **no harder to approve than a human-authored one, and no easier**.
+
+### Step 1: Classify by blast radius, not by author
+
+Do not create an "AI change" category that triggers a separate bureaucracy. Add one field to your existing change record, `Authoring method`, and let your existing risk tiers do the work.
+
+| Change class | Examples in Maximo | Default CAB tier | Bob mode and approvals | Evidence required |
+|---|---|---|---|---|
+| **A. Analysis only** | Explain an autoscript, summarize a crontask, draft a Job Plan description | None (no change) | Ask mode; read-only | None beyond workstation policy |
+| **B. Dev and test artifacts** | New or changed autoscript in dev, app XML in a sandbox, BIRT draft | Standard or pre-approved | Plan then Agent; `edit` approved per action | Plan output, diff, test result |
+| **C. Production-bound code** | Autoscript promoted via Migration Manager, Java extension, integration object structure or publish channel change | Normal change, CAB review | Plan mode output attached; no agent access to production credentials | Plan, diff, code review by a second human, test evidence, rollback plan |
+| **D. Data or configuration change in production** | Bulk update of work orders, domain value changes, security group changes | High-risk change, CAB approval plus business owner | Agent **drafts** the change script or payload only; a human runs it through your normal path | Plan, payload, dry-run results, named executor |
+| **E. Security and access** | New API keys, security group edits, Bob admin changes | CAB plus security approval | Agent does not perform | Normal security process |
+
+Notice class D. For anything that mutates production data, our recommendation is that the agent writes the change but never holds the credential that applies it.
+
+### Step 2: Make Plan mode the review artifact
+
+Bob has Plan mode, and IBM's own line is that "the plan is the review artifact." (Part 1 covers the modes.) For a CAB that is the most useful sentence in Bob's documentation, because it moves the review upstream of the code. Attach the plan to the change record for classes B through D, and require the reviewer to check three things in the plan itself:
+
+1. **Scope:** Are the files and Maximo objects listed the ones the change request names, and no others?
+2. **Side effects:** Does the plan call any MCP tool, API, or shell command that writes?
+3. **Rollback:** Does the plan say how to undo it?
+
+### Step 3: Define the evidence package
+
+Here is a change record template. It is not an IBM artifact; it is a suggested shape. Keep it in whatever your ITSM tool supports.
+
+```yaml
+change_id: CHG-20418
+title: "WOCOMPLETE autoscript: validate failure class before close"
+authoring_method: ai-assisted            # human | ai-assisted | ai-drafted
+change_class: C
+accountable_human: a.developer@example.com
+code_reviewer: b.reviewer@example.com    # must differ from accountable_human
+ai_tooling:
+  tool: IBM Bob (SaaS)
+  seat_type: Enterprise                  # indemnity depends on this
+  client_version: "record from About dialog"
+  model: "not disclosed by IBM (SaaS auto-routing)"
+  mode_used: [Plan, Agent]
+  policy_locked_groups: "edit,execute,mcp,skill,subagent,subtask"
+evidence:
+  plan_output: attachments/CHG-20418-bob-plan.md
+  diff: "git: feature/wocomplete-failureclass @ <commit>"
+  approval_log: attachments/CHG-20418-hook-records.json
+  test_results: attachments/CHG-20418-dev-tests.md
+  maximo_api_key_scope: "key TMG-DEV-AUTOSCRIPT-RW, group BOB_DEV_SCRIPTS"
+rollback: "Migration Manager package v-prev; documented in plan step 6"
+```
+
+Three fields are worth explaining. `model` is deliberately filled in with "not disclosed," because writing down what you do not know is better than leaving it blank. `seat_type` matters because indemnity depends on it. `code_reviewer` must differ from the accountable human, which is separation of duties.
+
+### Step 4: Scope the Maximo-side credential
+
+This is Layer 5, and it is the part only you can build. Bob will happily operate through whatever credential you give it. In Maximo Manage, API keys are created in the **API Keys** application, which registers the key to a user; IBM's documentation notes an API key is displayed only once and cannot be retrieved later, and that API key authentication requires the `mxe.oslc.webappurl` system property to point at your Manage server. A user's reach is then defined by the security group of the user the key belongs to.
+
+| Use case | Key owner (service user) | Security group scope | Object structures (examples) | Environment |
+|---|---|---|---|---|
+| Analysis and read-only Q&A | `BOB_READONLY` | Read on specific apps and object structures | `MXAPIWODETAIL`, `MXAPIASSET` read | Non-production data only, or masked |
+| Autoscript development | `BOB_DEV_SCRIPTS` | Autoscript and script-deploy signature options; **no production** | Autoscript object structure | Dev only |
+| Work order drafting | `BOB_WO_DRAFT` | Create and change on draft work orders; no status change to approved states | `MXAPIWODETAIL` | Test |
+| Production execution | None for Bob | Human service accounts via your normal path | n/a | Production |
+
+Three rules:
+
+1. **One key per use case, never per developer, never shared.** When something goes wrong, the key name tells you what the agent was doing.
+2. **No production key on a workstation that runs Bob.** `.bobignore` is not a sandbox (Part 2), and an agent with command execution can read environment variables.
+3. **Rotate on a schedule and on every offboarding.** Keys are shown once, so rotation is a re-issue, not a lookup.
+
+If you use the native MAS 9.2 MCP server or TMG's Max_mcp (agent-neutral, proprietary, 175 tools; see [Part 4](/blog/mas-bob-04-bob-and-maximo)), mark which tools are destructive and keep them out of the key's reach through the security group, not just through the tool list.
+
+### Step 5: Separation of duties
+
+| Role | Can do | Cannot do |
+|---|---|---|
+| Developer | Drive Bob, approve agent actions in dev | Approve own CAB item; hold production credentials |
+| Code reviewer | Review diff and plan | Be the developer |
+| CAB approver | Approve or reject | Be author or reviewer |
+| Bob admin | Assign seats, set budgets, view Bobalytics | Alter group policy without a change record |
+| Maximo security admin | Create API keys and security groups | Use Bob's agent to do it |
+
+IBM's own measure of where AI moves the bottleneck is worth quoting for your CAB charter: the GitLab 2026 AI Accountability Report, cited by IBM, found 85% of DevSecOps professionals say AI shifted the bottleneck from writing code to reviewing it. If you add Bob without adding review capacity, you will make the CAB the slowest thing in the pipeline.
+
+### Step 6: Run a periodic control review
+
+| Frequency | Check | Evidence |
+|---|---|---|
+| Per change | Plan, diff, approval log, key scope attached | Change record |
+| Weekly | New Bob seats versus HR roster; overage spend; failed or denied approvals | Activity log, Bobalytics CSV |
+| Monthly | Policy file hash on a sample of workstations; API key inventory | Baseline scan |
+| Quarterly | Bob factor versus defect escape rate; seat mix; open items with IBM | Scorecard |
+| On every Bob release | Re-read the changelog for policy, audit, and model changes | Release notes |
+
+---
+
+## ⚠️ Pitfalls and Troubleshooting
+
+| Symptom | Likely cause | What to do |
+|---|---|---|
+| A developer says auto-approve "still works" | The user is on Bob Shell or a non-managed install; group policies are documented for the IDE only | Inventory install types; confirm Shell coverage with IBM; restrict Shell in CI until confirmed |
+| Policy change not visible | MDM, GPO, or config management has not propagated; Windows policy under the wrong hive | Check the exact location (`com.ibm.bob`, `Software\Policies\IBM\Bob`, `/etc/bob/policy.json`); restart the client |
+| Settings appear editable | Policy not read, or keys misspelled | Verify key names against IBM's page and match them exactly |
+| SIEM shows nothing | Onboarding is a support case and "takes a few days"; HEC token or index wrong; self-signed CA not supplied | Re-open the case with all five items; test HEC separately |
+| SIEM shows sign-ins but no agent actions | By design, the feed equals the activity log | Add EnforcedHooks to your own endpoint |
+| Bobalytics Bob factor is low despite heavy use | Heavy research or exploration (high spend, low Bob factor), or commits excluded by the 40,000-line rule | Read IBM's interpretation guide; do not penalize teams for it |
+| Bobalytics empty on self-hosted | Not supported at GA | Plan your own metrics |
+| Overage appeared unexpectedly | Individual overage was enabled; it resets to disabled each cycle, but a pool admin may have raised the Enterprise limit | Review overage limits per team monthly |
+| Pack Bobcoins vanished | Packs expire one year after purchase | Track purchase dates; buy to usage, not to discount |
+| Contractor still has access after leaving | Seat tied to an IdP account or a non-SSO login still active | Reconcile seats against the IdP weekly; ask IBM how deprovisioning reaches seats |
+| Auditor asks which model wrote the code | SaaS does not disclose model per task | State that plainly; rely on diff and review, not on model identity |
+
+---
+
+## 🔎 Open Items to Put to IBM
+
+We verified what we could. These remain unresolved or conflict across IBM sources:
+
+1. **Group policy coverage of Bob Shell and CI runners.** Documented as IDE only.
+2. **SIEM event scope.** Confirm in writing that prompts, tool calls, and file edits are not in the feed, or get the schema if they are.
+3. **Activity log retention.** The page does not specify one.
+4. **Deprovisioning and SCIM.** SCIM is not mentioned on the identity page; DOC16 says to contact IBM.
+5. **Tokens per Bobcoin and Bobcoins per task.** Unpublished.
+6. **Enterprise pack price.** DOC16 says $550 per 1,000; the live page lists $500 standard and $550 overage.
+7. **Enterprise seat price and minimums.** Custom; get a quote.
+8. **Self-hosted audit and metering.** Conflict between the September blog and the solution-architecture page.
+9. **EnforcedHooks schema and failure behavior.** What happens when the HTTPS endpoint is down?
+10. **Group policy `RequiredExtensions` and Bob version pinning.** Whether `UpdateMode` can pin a version.
+
+---
+
+## 🧭 What to Take Away
+
+### The Ten Commandments of Governing an AI Agent in a Maximo Estate
+
+1. **Lock auto-approval centrally** for edit, execute, mcp, and skill before anyone opens client code.
+2. **Verify the lock** with a screenshot and a file check, not a policy export alone.
+3. **Never say "audit trail"** until you can name the system that records agent actions.
+4. **Use enforced hooks** to send agent-action records to a service you own.
+5. **Buy Enterprise for client work** because indemnity, Bobalytics, and the activity log live there.
+6. **Never read Bob factor as productivity.** Pair it with defect escape rate and review hours.
+7. **Budget from Bobcoins per completed task**, measured in a pilot, never from a formula.
+8. **Make Plan mode the review artifact** and attach it to the change record.
+9. **Give the agent keys for drafting, never for production execution.**
+10. **Write down what you do not know**, including the model, on every change record.
+
+### Your next steps
+
+**This week:**
+- Add an `Authoring method` field to your change template and use the YAML above as a starting point.
+- Send IBM the ten open items.
+- Inventory every Bob install by type (IDE, Shell) and plan (individual, Enterprise).
+
+**This month:**
+- Deploy `DisabledAutoApprovalGroups` through your MDM or GPO channel and verify on a sample.
+- Open the SIEM support case, and in parallel stand up an HTTPS endpoint for enforced hooks.
+- Create the scoped service users and API keys in Maximo for dev use cases only.
+
+**Before the pilot:**
+- Agree the scorecard: Bob factor, defect escape rate, review hours, Bobcoins per task.
+- Get an Enterprise quote and compare it against the cost of one unreviewed production change.
+
+---
+
+## References
+
+- [Group policies (Bob docs)](https://bob.ibm.com/docs/ide/security/group-policies)
+- [Bobcoins (Bob docs)](https://bob.ibm.com/docs/ide/account/bobcoins)
+- [More Bobcoins. Same price. More room to build (Bob blog, September 24, 2026)](https://bob.ibm.com/blog/more-bobcoins/)
+- [Reviewing the activity log (Bob docs)](https://bob.ibm.com/docs/ide/enterprise/getting-started/activity-log)
+- [SIEM integration (Bob docs)](https://bob.ibm.com/docs/ide/enterprise/getting-started/siem-integration)
+- [Identity providers (Bob docs)](https://bob.ibm.com/docs/ide/enterprise/getting-started/identity-providers)
+- [Bobalytics (Bob docs)](https://bob.ibm.com/docs/ide/features/bobalytics)
+- [Bob Enterprise plan overview (Bob docs)](https://bob.ibm.com/docs/ide/enterprise/enterprise-index)
+- [Frequently Asked Questions (Bob docs)](https://bob.ibm.com/docs/ide/faq)
+- [Bob pricing](https://bob.ibm.com/pricing)
+- [IBM Bob expands with Premium Packages, new architecture, and greater enterprise control (IBM)](https://www.ibm.com/new/announcements/ibm-bob-expands-with-premium-packages-new-architecture-and-greater-enterprise-control)
+- [Known limitations: IBM Bob self-hosted](https://bob.ibm.com/docs/ide/enterprise/on-premises/known-limitations)
+- [Max_mcp (TheMaximoGuys Maximo MCP server)](https://github.com/themaximoguys/Max_mcp)
+
+---
+
+## Continue the Series
+
+**Next:** [Part 4, Bob Meets Maximo](/blog/mas-bob-04-bob-and-maximo). It covers the MAS 9.2 native Maximo MCP server, IBM-published Bob skills for Maximo, MAF Local Dev Mode, and how to connect an agent to Manage with least privilege.
+
+**Back to:** [Part 2, Models, Security, and Self-Hosted](/blog/mas-bob-02-models-security-self-hosted) | [Part 1, What IBM Bob Is](/blog/mas-bob-01-what-is-ibm-bob) | [Series Index](/blog/mas-bob-00-series-index)
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | October 2026*
+
+<!--
+Editorial note for human review (night-shift draft, bob-03-governance-pricing):
+- Primary source: knowledge_base/DOC16_IBM_BOB_FIELD_GUIDE.md s5-s8, s10, s12.4, s15-s16.
+- Web pages fetched and read this run (live): bob.ibm.com group-policies, bobcoins, more-bobcoins blog, activity-log, siem-integration, identity-providers, bobalytics. Search results also confirmed the Enterprise-only Bobalytics statement and Sep 24, 2026 allowance increase.
+- NOT fetched: bob.ibm.com/pricing and the FAQ (indemnity, 14-day task history, trial terms come from DOC16). Premium Package prices, "first month free through Dec 31 2026", competitor prices, 40,000-LOC Bob factor exclusion, RequiredExtensions, EnforcedHooks HTTPS handlers, and group-policy file mode 644 are carried from DOC16 and not re-verified.
+- DISCREPANCY (pack price): DOC16 s8.1 says Enterprise packs $550 per 1,000 Bobcoins. Live Bobcoins page: standard packs $500, overage packs $550 (10% premium). Post shows both. Per knowledge-base-wins rule DOC16 is noted, but human should verify with an IBM quote.
+- DISCREPANCY (identity page): DOC16 says SCIM is "contact IBM"; the live identity page does not mention SCIM at all. Post says "not mentioned" and flags it.
+- DISCREPANCY (allowances): DOC16 attributes launch allowances (40/160/500) to third-party trackers; the IBM Bob blog (fetched) confirms them as the pre-Sep-24 values.
+- ILLUSTRATIVE, UNVERIFIED: policy.json shape, Windows registry layout, Splunk SPL queries and action names, the change-record YAML, the hook-evidence table (IBM hook schema fields were not read), API key group/user names, and the Bobcoins-per-task budget scenario (our arithmetic, assumptions flagged).
+- Maximo-side facts (API Keys application shows key once; mxe.oslc.webappurl for API key; security groups) come from the local IBM Maximo knowledge base files found under /root/TMG_RFP_DRAFTER/baseline/knowledge-base/ibm_userguides_markdown (the repo-relative SearchMaximo path does not exist in this environment).
+- Part 4 and Part 5 slugs are planned and will 404 until written. The cover is generated per Step 4; see the image file.
+-->

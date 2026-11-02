@@ -1,0 +1,563 @@
+---
+title: "What IBM Bob Is: Project Bob to Self-Hosted, Clients, Agent, and Modes"
+description: "IBM Bob started as an internal pilot and is now a SaaS and self-hosted agentic platform. Here is the dated timeline, the V2 three-tier design, the clients, the Agent/Plan/Ask modes, and the extension points a Maximo team will actually touch."
+date: "2026-10-06"
+slug: "mas-bob-01-what-is-ibm-bob"
+tags: ["Maximo", "MAS 9", "IBM Bob", "AI Coding Agents", "Bob Shell", "MCP", "Agentic Development", "Maximo Automation Scripts"]
+draft: false
+tier: "developer"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-bob-01-what-is-ibm-bob.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Is IBM Bob the same product as watsonx Code Assistant?"
+    answer: "No, but they sit on one lineage. IBM announced Bob at general availability on April 28, 2026 as the successor to watsonx Code Assistant (WCA), including the WCA for Z and WCA for i lines, and IT Jungle described the October 2025 Project Bob reveal as IBM converging its RPG and COBOL assistants into one product. IBM's stated commitment is that existing WCA clients stay fully supported and get an adoption path to Bob. IBM has not published a WCA end-of-support date, so if you run WCA today, treat the migration as something to schedule with your IBM rep rather than a deadline that has already been set."
+  - question: "What is the difference between Agent, Plan, and Ask mode in Bob?"
+    answer: "Ask is read-only: it explains code and answers questions and changes no state. Plan runs what IBM calls an opinionated planning process, gathering requirements and discovering context, and its output is a plan you review before anything is written. Agent is the full agentic mode that edits files, runs commands, and calls tools, with approval gates on state-changing actions. V1 had five modes (Ask, Plan, Code, Advanced, Orchestrator); V2 on June 24, 2026 folded Code, Advanced, and Orchestrator into Agent, with orchestration now handled by subagents. IBM's own advice is to start unfamiliar or high-surface-area work in Ask or Plan and switch to Agent once the work is clear."
+  - question: "Which Bob client should a Maximo developer start with?"
+    answer: "Start with whichever client your team already lives in, because V2 runs the same agent and harness behind all of them. The Bob IDE (a VS Code fork) is the natural fit if your Maximo work is application XML, BIRT, and autoscripts edited alongside the MAF Local Dev Mode extension, which lists the Bob IDE as a supported editor. Bob Shell suits repository-wide jobs, headless runs with bob run, and CI. ACP support lets IntelliJ, Zed, and Neovim users run Bob without leaving their editor, which matters for shops with a Java MBO estate in IntelliJ. You can start a task in one client and continue it in another with /resume."
+  - question: "When did self-hosted Bob become generally available?"
+    answer: "IBM's sources disagree, and you should quote the conflict rather than pick one. The Bob September 2026 release notes say 'As of September 24, 2026, IBM Bob is generally available for self-hosted deployment.' IBM's newsroom announcement is dated October 1, 2026 and does not use the phrase 'GA', and one fact base we use records September 30. The safe phrasing for a contract or a deck is 'GA per release notes September 24, 2026; announced by IBM newsroom October 1, 2026.' Part 2 covers what self-hosted actually includes at GA, which is a separate and more consequential question."
+  - question: "Do I need to learn Bob-specific features to use it on Maximo, or can I reuse what I know from Claude Code or Cursor?"
+    answer: "Most of the concepts transfer, and that is deliberate: skills, rules, an AGENTS.md file, MCP servers, hooks, and plan-then-act workflows exist across the current generation of agents. What is Bob-specific is the file layout (.bob/skills, .bob/rules, .bob/mcp.json, .bob/custom_modes.yaml, .bob/plugins), the harness controls such as approval classes and workspace trust, the enterprise policy layer, and the IBM-authored Maximo skills. Plan an afternoon to map your existing house rules into the .bob layout, then spend your real effort on the context you give the agent, which is what independent Maximo testing found drives output quality."
+keyTakeaways:
+  - "Bob went from a June 2025 internal pilot of 100 developers to Project Bob (October 7, 2025), global SaaS GA (April 28, 2026), V2 (June 24, 2026), and self-hosted on OpenShift (September 2026); IBM calls it the successor to watsonx Code Assistant"
+  - "V2 rebuilt Bob as three tiers, Agent, Harness, and Clients, so the IDE, Bob Shell, and ACP editors all run the same agentic loop with no duplicated logic"
+  - "V2 collapsed five modes into Agent, Plan, and Ask; Plan's output is the review artifact, which maps directly onto a Maximo change record"
+  - "Extensibility lives in plain files you can version: skills in .bob/skills, rules in .bob/rules, AGENTS.md, MCP in .bob/mcp.json, hooks, plugins, and .bobignore, which is explicitly not a sandbox"
+  - "Quote the self-hosted GA date as 'GA per release notes September 24, 2026; announced October 1, 2026' because IBM's own sources disagree"
+series:
+  name: "MAS BOB"
+  part: 1
+  total: 5
+tldr: "IBM Bob is IBM's agentic SDLC platform, successor to watsonx Code Assistant, and since the V2 rebuild on June 24, 2026 it is one agent and one harness behind three kinds of client: the Bob IDE, the Bob Shell CLI, and ACP-connected editors. It works in Agent, Plan, and Ask modes and extends through skills, rules, AGENTS.md, MCP, hooks, and plugins. This part gives you the dated timeline (with the self-hosted GA date conflict intact), the architecture, and a Maximo-flavored map of every extension point."
+seoTitle: "What IBM Bob Is: Timeline, Clients, Agent, Modes"
+seoDescription: "IBM Bob explained for Maximo teams: Project Bob to self-hosted timeline, V2 architecture, IDE vs Bob Shell vs ACP, Agent/Plan/Ask modes, skills and MCP."
+targetQuestions:
+  - "What is IBM Bob and how did it evolve from Project Bob?"
+  - "Is IBM Bob replacing watsonx Code Assistant?"
+  - "What are the Agent, Plan, and Ask modes in IBM Bob?"
+  - "What is the difference between the Bob IDE, Bob Shell, and ACP?"
+  - "How do skills, rules, MCP, and hooks work in IBM Bob?"
+  - "When did self-hosted IBM Bob become generally available?"
+semanticKeywords:
+  - "IBM Bob"
+  - "Project Bob"
+  - "Bob Shell"
+  - "Bob V2 architecture"
+  - "Agent Client Protocol"
+  - "watsonx Code Assistant successor"
+  - "Bob skills rules AGENTS.md"
+  - "Plan mode"
+  - "MCP client"
+  - "self-hosted Bob"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Working familiarity with Maximo Manage customization: automation scripts, MBOs, application XML, and the REST/OSLC API layer"
+  - "Basic awareness of what an AI coding assistant does; no prior Bob experience required"
+speakableSections:
+  - "The Short Version"
+  - "The Timeline, With Its Date Conflicts Intact"
+  - "The V2 Design: Agent, Harness, Clients"
+clusterSlugs:
+  - "mas-bob-00-series-index"
+  - "mas-bob-02-models-security-self-hosted"
+  - "mas-bob-03-governance-pricing-bobcoins"
+  - "mas-bob-04-bob-and-maximo"
+  - "mas-bob-05-pilot-playbook"
+relatedSlugs:
+  - "evc-04-plan-before-you-vibe"
+  - "evc-11-teach-ai-house-rules"
+  - "evc-12-maximo-eam-shops"
+  - "evc-13-first-maximo-ai-agent"
+  - "mas-java-extensions-series-index"
+---
+
+# What IBM Bob Is: Project Bob to Self-Hosted, Clients, Agent, and Modes
+
+<aside>
+
+🎯 **Who this is for:** Maximo developers, technical leads, and architects who have been told "we should look at IBM Bob" and need to know what the product actually is before anyone installs it. No Bob experience required. If you have used any agentic coding tool, you will recognize most of the pieces and learn which ones are distinctive here.
+
+</aside>
+
+**Series:** *IBM Bob for Maximo Teams* | **Part 1 of 5** | **Read time:** ~17 minutes
+**Previous:** [Series Index](/blog/mas-bob-00-series-index) | **Next:** [Part 2, Models, Security, and Self-Hosted](/blog/mas-bob-02-models-security-self-hosted)
+
+---
+
+## 🔥 Why Start With What It Is
+
+Someone forwarded you a press release. It said Bob is an "AI SDLC partner," it mentioned the Maximo development team, and it had a percentage in it. Your director's note was one line long: "Thoughts?"
+
+Before you can have thoughts about Bob on Maximo customizations, you need a boring, accurate answer to a simpler question: **what is this thing, structurally?** Is it a plugin? A chat window? A cloud service? A replacement for something IBM sold you last year? The answers matter because they decide where your code goes, who can see it, what the tool can touch, and which of your existing habits carry over.
+
+This part is the product explained without the pitch. We will walk the dated timeline (including the one place IBM's own sources disagree), the V2 architecture that now sits under every Bob client, the three modes, and the extension surface. Along the way we flag where Bob is distinctive and where it is the same idea you already know from other agents.
+
+<aside>
+
+💡 **Scope note:** The tool-independent concepts, such as why a prompt is a spec, what plan mode is for in general, and how house rules work, are covered in our [Enterprise Vibe Coding series](/blog/evc-00-series-index). Here we stay Bob-specific and link out rather than repeat. If Plan mode is new to you as an idea, read [Plan Before You Vibe](/blog/evc-04-plan-before-you-vibe) first, then come back for how Bob implements it.
+
+</aside>
+
+Throughout the series, vendor figures are labeled **[IBM]** (vendor-reported, not independently audited) and independent sources **[IND]**. That convention starts here.
+
+---
+
+## 📌 The Short Version
+
+If you only have a minute:
+
+- **Bob is IBM's agentic software-development platform**, which IBM markets as an "AI SDLC partner" spanning planning, coding, testing, deployment, and modernization [IBM].
+- **It reached global GA as SaaS on April 28, 2026**, and IBM positions it as the **successor to watsonx Code Assistant** [IBM].
+- **V2 (June 24, 2026) rebuilt it** as one agent and one harness behind several clients: the **Bob IDE** (a VS Code-based IDE), the **Bob Shell** CLI, and **Agent Client Protocol (ACP)** integration for IntelliJ, Zed, and Neovim [IBM].
+- **You work in three modes:** Ask (read-only), Plan (produces a reviewable plan), and Agent (acts, with approval gates).
+- **You extend it with plain files:** skills, rules, `AGENTS.md`, custom modes, MCP servers, hooks, and plugins, all under a `.bob/` directory you can put in version control.
+- **Self-hosted Bob on Red Hat OpenShift** arrived in September 2026, with a date conflict you should quote carefully (see below).
+
+Everything below earns those bullets.
+
+---
+
+## 🕰️ The Timeline, With Its Date Conflicts Intact
+
+Bob's history is short enough to memorize and recent enough that the sources still disagree on details. Here it is in one table, then we unpack the entries that matter for planning.
+
+| Date | Milestone | Source |
+|------|-----------|--------|
+| **June 2025** | Internal deployment to 100 IBM developers (the pilot behind "Project Bob") | [IBM] newsroom, Apr 28, 2026 |
+| **October 7, 2025** | **Project Bob** unveiled at TechXchange as an "AI-first IDE" in private tech preview, announced alongside IBM's plan to integrate Anthropic models into its software "starting with" Project Bob. IBM reported 6,000+ internal adopters and a 45% average productivity gain | [IBM] newsroom, Oct 7, 2025 |
+| **January 7, 2026** | PromptArmor reports that the beta Bob Shell could be prompt-injected into downloading and running malware | [IND] The Register |
+| **March 24, 2026** | Bob 1.0.0 released | [IND] IDC, Techzine, IT Jungle |
+| **April 28, 2026** | **Global GA as SaaS**: 30-day trial, individual and enterprise plans, 80,000+ IBM users; Bob replaces watsonx Code Assistant | [IBM] newsroom |
+| **June 24, 2026** | **Bob V2**: one agent, one harness, many clients; five modes become three; subagents; 270k-token context window; 100,000+ IBM developers onboarded | [IBM] Bob blog |
+| **July 9, 2026** | Premium Packages (Java Modernization, IBM i, Z), Bobalytics, new Japan and Europe regions | [IBM] newsroom; [IND] IT Jungle notes the V2 packages shipped June 24 |
+| **August 2026** | Bob Shell v2 (skills, subagents, `/resume`, headless `bob run`); a second release adds group policies, native ACP, MCP elicitation, hooks, Splunk SIEM forwarding | [IBM] Bob blog (two posts) |
+| **September 24, 2026** | Release notes: "As of September 24, 2026, IBM Bob is generally available for self-hosted deployment" | [IBM] Bob blog |
+| **October 1, 2026** | IBM newsroom announces self-hosted deployment (does not use the phrase "GA") | [IBM] newsroom |
+| **October 26-29, 2026** | TechXchange 2026, Atlanta, with a "Build with IBM Bob" area | [IBM] |
+
+### What the timeline tells you
+
+**Bob is young.** From the Project Bob reveal to self-hosted availability is under twelve months, and the V2 rebuild landed barely two months after GA. That is a rapid cadence. It cuts both ways: features arrive quickly, and the documentation and your internal runbooks will go stale quickly too. Date-stamp anything you write about Bob, including your own standards.
+
+**"GA" is not one date.** Bob 1.0.0 shipped March 24, 2026 [IND], and global GA was announced April 28. IDC's paper uses both dates. When someone asks "how long has Bob been GA?", the honest answer depends on which milestone they mean.
+
+**The audience for each milestone differs.** Project Bob in October 2025 was a tech preview. April 2026 was the first moment a company could buy it. June 2026 was the architecture you will actually run today. If you read an early-2026 blog about Bob and its modes or its shell, check it against V2 before believing it.
+
+### The self-hosted GA date conflict
+
+Three candidate dates exist for self-hosted availability:
+
+| Source | What it says |
+|--------|--------------|
+| Bob September 2026 release blog | "As of September 24, 2026, IBM Bob is generally available for self-hosted deployment" |
+| A fact base we maintain | Records September 30 |
+| IBM newsroom announcement | Dated October 1, 2026; does not say "GA" |
+
+Our convention for the whole series: **"GA per release notes September 24, 2026; announced by IBM newsroom October 1, 2026."** It is longer than one date, and it is the only phrasing that survives a procurement lawyer reading your deck against IBM's pages. The date matters less than a different discrepancy we cover in Part 2: IBM's September blog says the self-hosted package includes "identity, the inference gateway, audit logging, and usage metering," while the solution-architecture documentation says the Audit Logs and Metering services are not in the initial release. Before anyone promises an audit trail on a self-hosted Bob, resolve that with IBM in writing.
+
+<aside>
+
+💡 **Key insight:** Treat every Bob date as "per source." The product is moving faster than IBM's own pages stay consistent, and a one-line footnote naming the source costs you nothing and protects you later.
+
+</aside>
+
+---
+
+## 🔄 WCA Succession, in Plain Terms
+
+If your estate or a client's estate has **watsonx Code Assistant**, the obvious question is whether Bob replaces it.
+
+- **IBM's statement at GA:** Bob replaces WCA, and "existing WCA clients will continue to be fully supported and will have an adoption path to Bob" [IBM].
+- **Lineage:** Bob is the successor product line for WCA, including WCA for Z and WCA for i. IT Jungle described the October 2025 reveal as IBM "converging" its IBM i RPG and System Z COBOL assistants into Project Bob [IND].
+- **What is not published:** an end-of-support date for WCA. As of this writing we found none.
+
+For Maximo teams, this is mostly background. WCA's strongest lines were mainframe and IBM i modernization, and Bob's Premium Packages for Z and IBM i carry that forward. Your relevant question is not "what happens to WCA?" but "does Bob's agent work well on automation scripts, Java MBOs, and application XML?" That is what Part 4 examines. Still, if you are a consultancy with clients on WCA, put the missing end-of-support date on your list of things to ask IBM, because "fully supported" with no end date is a comfort that has no expiry you can plan against.
+
+---
+
+## 🏗️ The V2 Design: Agent, Harness, Clients
+
+V1 had a structural problem that IBM names plainly: Bob's IDE extension and its shell "were built on two separate foundations," so every improvement had to be built twice. V2 replaced both with one stack, and that stack is the thing to understand because it explains most of Bob's behavior.
+
+```
+┌───────────────────────────────────────────────────────────────────────────┐
+│                               CLIENTS                                       │
+│   Bob IDE (VS Code fork)   Bob Shell (CLI)   ACP clients (IntelliJ, Zed,   │
+│                                               Neovim, custom orchestrators) │
+└──────────────────────────────────┬────────────────────────────────────────┘
+                                   │   same behavior in every client
+┌──────────────────────────────────▼────────────────────────────────────────┐
+│                               THE AGENT                                     │
+│   Agentic loop: reasoning + code generation · Modes: Agent / Plan / Ask    │
+│   Subagents · Parallel native tool calling · Rollback · Background tasks   │
+│   Workflows                                                                  │
+└──────────────────────────────────┬────────────────────────────────────────┘
+┌──────────────────────────────────▼────────────────────────────────────────┐
+│                              THE HARNESS                                    │
+│   Auth · logging · feature flags · telemetry · approvals · hooks · policy │
+└──────────────────────────────────┬────────────────────────────────────────┘
+        Extensibility: Skills · Rules · AGENTS.md · Custom modes · MCP ·
+                       Plugins · .bobignore · Hooks
+              ┌────────────────────▼────────────────────┐
+              │ Model layer: SaaS multi-model routing,   │
+              │ or self-hosted single core model + guard │
+              └──────────────────────────────────────────┘
+```
+
+IBM's own one-line definitions of the three tiers [IBM, V2 blog]:
+
+| Tier | IBM's wording | What it means in practice |
+|------|---------------|---------------------------|
+| **The Agent** | "The agentic loop. All reasoning and code generation happens here, identically in every client." | A prompt gives the same behavior whether you typed it in the IDE, the shell, or an ACP editor |
+| **The Harness** | "Shared infrastructure: authentication, logging, feature flags, telemetry." | Sign-in, policy, and logging are centralized, which is where admin controls attach |
+| **The Clients** | "The interfaces, IDE, shell, and more to come, with no duplicated logic." | Clients are thin; you choose by workflow, not by capability |
+
+### Why this matters to a Maximo shop
+
+**Consistency across the team.** If one developer prefers the IDE, another lives in the terminal, and a third is an IntelliJ person maintaining Java MBOs, they are not running three different Bobs. A rule you write once in `.bob/rules/` applies to all of them, because the agent reads it the same way.
+
+**One place to govern.** Because auth, logging, and policy live in the harness, the governance material in Part 3 (group policies, approvals, hooks) applies across clients rather than being a per-tool afterthought. One caveat we flag now and revisit later: IBM documents group policies as "Bob IDE only," so verify coverage of Bob Shell before you rely on it for CI runners.
+
+**One agent to evaluate.** When you pilot Bob (Part 5), you are measuring a single agent, not a matrix of client variants. That makes your measurement design simpler.
+
+---
+
+## 🖥️ The Clients: IDE, Bob Shell, and ACP
+
+### Bob IDE
+
+The Bob IDE is a standalone IDE built on VS Code [IBM]. IBM's FAQ lists macOS, Linux, and Windows, with a minimum of 4 GB RAM (8 GB recommended) and 500 MB of disk. If you already use VS Code for Maximo work (application XML, BIRT files, autoscript source exported to a repository), the interface will feel familiar. Self-hosted architecture documentation also mentions an Eclipse-based extension, which is worth a note if your Java customization team is an Eclipse shop.
+
+For Maximo specifically, this is the client with a documented tie-in: IBM's **MAF Local Dev Mode** extension for Maximo application configuration lists "IBM Bob IDE or VSCode 1.74.0+" as prerequisites and has a Bob-specific install path. It supports MAS 9.1.21+ and 9.2.1+ and provides sign-in via OAuth/OIDC, a live-reload preview, an offline cache, and Maximo XML diff and merge [IBM]. Part 4 returns to this.
+
+### Bob Shell
+
+Bob Shell is the CLI. Shell v2 (August 2026) separates interactive from headless use [IBM, Bob blog]:
+
+| Command | Purpose |
+|---------|---------|
+| `bob chat` | Interactive session in the terminal |
+| `bob run` | Headless run for scripts and CI, with human-readable, single-JSON, or streaming-JSON output |
+| `bob mcp` | Manage MCP server configuration |
+| `bob acp` | Run Bob as an Agent Client Protocol agent |
+
+Authentication uses API keys of two kinds: **General** (subscription-scoped) and **Inference** (team-scoped).
+
+The headless mode is the one platform teams get excited about, and the one security teams should read twice. Here is a representative shape of a CI-style invocation. Treat the flags as illustrative, since Bob Shell evolves monthly; the point is the pattern of a non-interactive run with machine-readable output:
+
+```bash
+# Illustrative: confirm exact flags with `bob run --help` for your Bob Shell version.
+# Non-interactive review of a changed autoscript, JSON output for a pipeline step.
+export BOB_API_KEY="${BOB_INFERENCE_KEY}"   # an Inference (team-scoped) key from your secret store
+
+bob run "Review scripts/autoscripts/WO_STATUS_CHECK.py against .bob/rules/ \
+  and list security, performance, and standards findings as a table" \
+  --output json > review-findings.json
+```
+
+Two Maximo-minded cautions. First, a headless agent has nobody to click Approve, so decide in advance which tool classes it may use (read-only analysis is a very different risk from edits or MCP calls). Second, per IBM's own V2 notes, reads are auto-approved while edits, commands, MCP calls, and skill invocations still need approval, which interacts with unattended runs in ways Part 3 covers.
+
+### ACP: Bob inside IntelliJ, Zed, and Neovim
+
+The **Agent Client Protocol** is an open protocol for connecting an agent to an editor. In August 2026 IBM announced that Bob Shell "now speaks the Agent Client Protocol natively," so IntelliJ, Neovim, and Zed can run Bob as a first-class agent, with session management, modes, streaming, MCP, and guardrails carried over the protocol [IBM]. IBM also frames this as Bob running "as one agent inside" existing enterprise orchestrators.
+
+Why a Maximo reader should care: **the Java MBO estate lives in IntelliJ** at a lot of shops. Custom `MboSet` and `Mbo` classes with a PLUS prefix, `FldXxx` field classes, and `CronTaskInstance` subclasses are usually maintained in a Java IDE, not VS Code. ACP means those developers do not have to switch editors to use Bob. (The Java side of the story, including PLUS prefixes and Java 17, is in the [MAS Java Extensions series](/blog/mas-java-extensions-series-index).)
+
+### Continuity between clients
+
+Shell v2 adds `/resume`, so you can start a task in the IDE and continue it in Shell, or the reverse [IBM]. This is a quiet but practical feature: a long conversion job begun at your desk can be finished from a terminal on a jump host, with the same task state.
+
+### Which client for which Maximo job
+
+| Maximo job | Natural client | Why |
+|------------|----------------|-----|
+| Editing application XML and previewing with Local Dev Mode | Bob IDE | Documented Local Dev Mode support; diff and merge in the editor |
+| Reviewing a folder of exported autoscripts | Bob IDE or Bob Shell | Either works; IDE gives a diff view, Shell scripts it |
+| Bulk, repeatable analysis in a pipeline | Bob Shell (`bob run`) | Headless, JSON output |
+| Maintaining custom Java MBO classes | ACP in IntelliJ | Stay in the Java IDE |
+| Exploring an unfamiliar customization | Any client, **Ask mode** | Read-only, no risk |
+
+---
+
+## 🎚️ The Modes: Agent, Plan, and Ask
+
+V2 changed the mode model, and a lot of pre-June content is now out of date, so here is the mapping [IBM, V2 blog]:
+
+| V1 (to June 2026) | V2 (from June 24, 2026) | Notes |
+|-------------------|-------------------------|-------|
+| Ask | **Ask** | Read-only Q&A and explanation; no state changes |
+| Plan | **Plan** | An "opinionated planning process": gather requirements, discover context, produce a plan |
+| Code | **Agent** | Full agentic capability: edit, run, call tools |
+| Advanced | Agent | Folded into Agent |
+| Orchestrator | Agent plus subagents | Orchestration is now native to the agent |
+
+Custom modes still exist and live in `.bob/custom_modes.yaml`; mode rule files travel with export and import [IBM, Aug blog]. A custom mode is how you would build, say, a "Maximo script reviewer" persona with a restricted tool set.
+
+### Ask: free exploration
+
+Ask is how you learn a customization nobody documented. "Explain what this crossover domain script does and which objects it touches." It cannot change anything, so it is the right default for onboarding to an inherited codebase. Use it liberally.
+
+### Plan: the review artifact
+
+IBM's advice is consistent across its posts: on unfamiliar code, or on a change with real surface area, **start in Ask or Plan and switch to Agent once the work is clear**. Its blog recommends the cycle **Explore, Plan, Implement, Verify**, and puts the rationale in four short lines [IBM]:
+
+- "Iterate, do not one-shot."
+- "The plan is the review artifact."
+- "The code is the cheap part."
+- "It is now easy to produce a large amount of code that works and is wrong."
+
+For a Maximo team, "the plan is the review artifact" is the most useful sentence in IBM's content. A plan is something your technical lead, your integration owner, and your change advisory board can actually read. A 400-line diff across an automation script, an object structure, and a domain is something they can only skim. Attach the Plan output to the change record, review the plan first, and the diff review becomes a check against an agreed intent rather than an archaeology exercise.
+
+A worked example. Suppose the request is to stop work orders moving to `COMP` when open child tasks remain, a classic launch-point script. In Plan mode you would expect the agent to read the existing scripts and object structure, then propose something like this (illustrative output shape, not a captured transcript):
+
+```text
+PLAN: Block WO completion while child tasks are open
+1. Discover: list automation scripts on object WORKORDER (launch points: Object / Save),
+   and any existing status-change scripts that could conflict.
+2. Confirm domain: WOSTATUS synonym for COMP in this environment (do not assume).
+3. Proposed change: new object-save script WO_BLOCK_COMP_OPEN_TASKS (Jython),
+   fires on WORKORDER, condition: STATUS changing to a COMP-maintained value.
+4. Logic: query child WOACTIVITY / tasks with ISTASK=1 and open status; if any,
+   raise error via service.error(group, key) with a message-group entry.
+5. Out of scope: no schema changes, no domain edits, no data fixes.
+6. Verification: test on a sandbox with (a) no tasks, (b) one open task,
+   (c) all tasks closed; confirm no change to WO with no tasks.
+RISKS: interaction with existing WO_STATUS_* scripts; message group must be added.
+```
+
+Notice what the plan gives you: **the assumption you must verify** (the status synonym), the **boundary** (what it will not touch), and the **test cases**. Each is a place a reviewer can correct the agent before a single file is edited. That is the cheapest quality control in the whole workflow, and it costs a few minutes.
+
+<aside>
+
+💡 **Key insight:** Plan mode does not make the agent smarter. It makes the *disagreement* happen early, in a document, where it is cheap. Plans can still be confidently wrong, so the reader needs to know the system. That reader is you.
+
+</aside>
+
+### Agent: act, with approval gates
+
+Agent is the mode that edits files, runs commands, and calls MCP tools. V2's approval model [IBM]:
+
+| Action class | Default behavior |
+|--------------|------------------|
+| Read operations | Auto-approved |
+| File edits | Require approval |
+| Shell commands | Require approval |
+| MCP tool calls | Require approval |
+| Skill invocations | Require approval |
+
+Approvals are tunable per tool class, and IBM's summary line is "fewer interruptions, same control." In Part 3 we cover how an admin can disable auto-approval for chosen classes centrally. For now, remember the asymmetry: **reads are free, writes are gated**, and that asymmetry is a natural fit for the "read-only first" posture we recommend for any agent pointed at Maximo.
+
+---
+
+## ⚙️ Agent Mechanics Introduced in V2
+
+Beyond the modes, V2 added capabilities that change how long and how complex a task can get. The table lists each with IBM's own description, then what it means for you.
+
+| Capability | What it does [IBM] | What it means for Maximo work |
+|------------|--------------------|-------------------------------|
+| **Subagents** | Spin off a self-contained investigation in a clean context and return only a summary | Ask a subagent to survey 200 autoscripts for a deprecated API call without flooding the main conversation |
+| **Parallel native tool calling** | Several tool requests per turn, run together, without V1's XML wrapping; IBM says a task taking ~30 seconds in V1 often finishes in under 10 | Faster repository-wide analysis (IBM-reported, not independently measured) |
+| **270k context window** | Up from 200k tokens | Longer sessions before compaction; room for a larger rules file and API catalog |
+| **Rollback** | Tracks file state per task, conversation turn, and tool call; replaces git-based "checkpoints" | Undo an agent's edits at a fine grain; note the FAQ still says rollback "uses Git," so confirm current behavior |
+| **Background tasks** | Several concurrent tasks, each with its own thread and context | Run a review and a conversion side by side |
+| **Workflows** | Engine for multi-phase, repeatable work mixing automation, AI, and human-approval steps | At GA, only IBM-shipped workflows (via Premium Packages); you cannot author your own yet |
+| **Documents** | Read and edit .docx, .pdf, .xlsx; emit self-contained HTML reports | Update a design document or generate a findings report |
+
+Two points deserve emphasis. First, **subagents are the V2 replacement for the old Orchestrator mode**, and they matter because context is the scarce resource. A subagent explores in a clean context and returns a summary, so a big investigation does not crowd out the instructions you care about. Second, **workflows are restricted at GA**. If a vendor deck shows you "repeatable multi-phase workflows with human approval steps," ask whether that is authorable by your team or only available as an IBM-shipped package. Today it is the latter.
+
+Compaction, the process of summarizing a long conversation to free context, also gained hooks in September: `PreCompact` runs before compaction and can prevent it, and `PostCompact` runs after [IBM, September blog]. We return to hooks below.
+
+---
+
+## 🧰 The Extensibility Surface: Skills, Rules, MCP, Hooks, and More
+
+This is the part a Maximo team will spend the most time in, because it is where *your* knowledge gets into the agent. Everything is a file or a small config, so everything can live in your repository and go through code review.
+
+| Mechanism | Location / command | Purpose |
+|-----------|-------------------|---------|
+| **Skills** | `.bob/skills/<name>/SKILL.md` (a name and a description, plus the procedure) | Reusable procedures: a release checklist, a review routine, a domain playbook |
+| **Rules** | `.bob/rules/` | Persistent house rules injected into context |
+| **AGENTS.md** | Generated by `/init` | A repository conventions file, readable by multiple agents |
+| **Custom modes** | `.bob/custom_modes.yaml` | Role-scoped personas with tool restrictions |
+| **MCP** | `.bob/mcp.json` | Connect external systems; OAuth for MCP servers (August); MCP client v2 on the 2026-07-28 spec |
+| **MCP elicitation** | Inline forms | When a tool call lacks a required value, ask the human instead of guessing |
+| **Hooks** | `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, plus `PreCompact`/`PostCompact` | Deterministic guardrails and audit; `EnforcedHooks` policy for admin-mandated hooks |
+| **Plugins** | `.bob/plugins/<name>/` (workspace) and `~/.bob/plugins/<name>/` (global) | Bundle skills, modes, rules, and MCP config as one distributable unit |
+| **`.bobignore`** | Workspace root | Exclude secrets and sensitive files from agent context |
+| **Workspace trust** | `~/.bob/trustedFolders.json`, `/permissions` | Untrusted folders disable project config and MCP servers |
+
+IBM press materials talk about "reusable playbooks." In the product, that capability is **skills, rules, and workflows**. Use the product terms in technical writing, and be skeptical of a pitch that uses the press term, because it may be pointing at the one of the three that you cannot author yet (workflows).
+
+### Rules: where your autoscript standards go
+
+A rules file is the highest-leverage thing a Maximo team can write. It tells the agent how your shop writes scripts, so that its output arrives in your style instead of a generic one. A short, concrete example for `.bob/rules/maximo-autoscripts.md`:
+
+```markdown
+# Maximo automation script standards (house rules)
+
+- Language: Jython (Python 2.7 syntax) for object-launch-point scripts unless noted.
+- One script per business rule; name as <OBJECT>_<RULE> in UPPER_SNAKE_CASE.
+- Never call the database directly. Use MboSet/Mbo APIs and `mbo.getMboSet(...)`.
+- Always null-check relationships before dereferencing; always `close()` MboSets you open.
+- User-facing errors via `service.error(group, key)`; never hard-code message text.
+- Do not use `reload()` or write to the file system.
+- Every script gets a header comment: purpose, launch point, objects, author, date.
+- When unsure of a field name, STOP and ask; never invent object or attribute names.
+```
+
+The last rule matters more than it looks. The failure mode that hurts in Maximo is the agent confidently inventing an attribute name that does not exist, producing a script that compiles and then fails at runtime on someone's data. Independent testing by a Maximo consultant at Sopra Steria, summarized on DEV Community, concluded that **"the quality of the output depends heavily on the quality of the context provided"** [IND]. Rules are how you pay down that dependency once, centrally. Our [house rules post](/blog/evc-11-teach-ai-house-rules) covers the general technique; the Bob-specific part is simply the directory and the fact that `AGENTS.md` (generated by `/init`) gives you a second, cross-agent home for the same conventions.
+
+### Skills: procedures with a name
+
+A skill is a folder with a `SKILL.md`. IBM has published two Maximo skills (covered properly in Part 4), and you can write your own. A minimal skeleton, following the name-and-description pattern IBM describes:
+
+```markdown
+---
+name: autoscript-review
+description: Review a Maximo automation script against house standards and report findings.
+---
+
+# Autoscript review
+
+1. Read the script and identify its launch point, object, and language.
+2. Check each rule in .bob/rules/maximo-autoscripts.md and list violations.
+3. Flag: unclosed MboSets, missing null checks, hard-coded text, direct SQL, loops over large MboSets.
+4. Output a table: line, rule, severity, suggested fix. Do not edit files in this skill.
+```
+
+Notice the final line: a review skill that explicitly does not edit. Skills invoke under the same approval gates, so a review-only skill plus Ask or Plan mode gives you a safe first use that changes nothing.
+
+### MCP: connecting Bob to Maximo (and why it comes later)
+
+Bob is an MCP client. The MCP configuration lives in `.bob/mcp.json`, and the September release moved the client to the 2026-07-28 MCP specification, including stateless Streamable HTTP transport while retaining compatibility with MCP 2025 [IBM]. HTTP+SSE servers need to move to Streamable HTTP, which matters because older community MCP servers may need an update.
+
+MAS 9.2 ships a native Maximo MCP server (an `instance_ID-mcp` deployment on OpenShift) whose tools are generated from Manage and which external agents can reach with an `apikey` header or a JWT [IBM docs]. Pointing Bob at it would look broadly like the sketch below. **This is an illustrative shape, not a verified recipe**, because as of this writing we found no published end-to-end walkthrough of Bob calling the native 9.2 server in production, and you should confirm the exact `mcp.json` schema in Bob's docs for your version:
+
+```json
+{
+  "mcpServers": {
+    "maximo-sandbox": {
+      "url": "https://<your-mcp-route>/mcp",
+      "headers": { "apikey": "${MAXIMO_SANDBOX_READONLY_KEY}" }
+    }
+  }
+}
+```
+
+Two habits to start on day one: use a **dedicated, read-only API key** for a **sandbox** instance, and reference it through an environment variable instead of pasting it into the file, so the secret never lands in version control. Because every MCP tool call is state-changing from Bob's perspective, it needs approval by default, which is the behavior you want. Part 4 covers the tool-fit table and the native-versus-agent-neutral server choice. For the hands-on first-agent version of this in general terms, see [Your First Maximo AI Agent](/blog/evc-13-first-maximo-ai-agent).
+
+### Hooks: deterministic guardrails
+
+Prompts are persuasion; hooks are code. Bob's hook events are `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, and (since September) `PreCompact` and `PostCompact`, with HTTPS hook handlers and an `EnforcedHooks` policy that lets admins mandate them [IBM]. Use cases for a Maximo shop: a `PreToolUse` hook that refuses any command string containing `UPDATE ` or `DELETE ` against a database; a `PostToolUse` hook that logs every file edit to your change record; a `Stop` hook that runs your script linter. A hook is the right tool when "please do not" is not strong enough and you need "cannot."
+
+### `.bobignore` and workspace trust: useful, not a sandbox
+
+`.bobignore` keeps listed files out of the agent's context, and workspace trust (`~/.bob/trustedFolders.json`, `/permissions`) disables project configuration and MCP servers in folders you have not trusted. Both are valuable. Neither is a security boundary. IBM is explicit that `.bobignore` "does not create a system-level sandbox." Treat both as hygiene that reduces accidents, and read Part 3 for what actually enforces policy.
+
+### Plugins, in one paragraph
+
+Since September, skills, modes, rules files, and MCP configuration can be bundled under `.bob/plugins/<plugin-name>/` at workspace or global level, so a team can distribute a coherent configuration as one unit [IBM]. For a consultancy, that is the natural packaging for a "Maximo delivery kit": your autoscript rules, your review skill, your sandbox MCP stanza, shipped to every engagement the same way.
+
+---
+
+## 🧪 A First Hour With Bob on a Maximo Repository
+
+Concrete sequencing beats abstract advice, so here is a low-risk first session that exercises everything above without touching production or writing a single file you have not reviewed.
+
+1. **Set up the sandbox repo.** Export your automation scripts and application XML from a non-production instance into a git repository. Add a `.bobignore` that excludes `maximo.properties`, keystores, and any `.env`.
+2. **Trust the workspace deliberately.** Open the folder in the Bob IDE and trust it only after reviewing what project configuration it contains.
+3. **Run `/init`** to generate `AGENTS.md`, then edit it by hand. Add your naming conventions, your Jython version, and the objects that matter.
+4. **Add the rules file** from the example above to `.bob/rules/`.
+5. **Start in Ask mode.** Prompt: "Summarize the automation scripts on the WORKORDER object: launch points, what each does, and any that look like they overlap." Compare its answer against what you know. Where it is wrong, that tells you what context to add.
+6. **Switch to Plan mode** for a small, real change. Read the plan critically. Edit it.
+7. **Only then use Agent mode**, with approvals left on, and review every diff.
+8. **Record what happened**: time spent, number of corrections, whether the output was usable. This is the seed of the measurement design in Part 5.
+
+The session produces no production change, takes an afternoon, and teaches you more about Bob's real behavior on your code than any demo.
+
+---
+
+## ⚠️ Pitfalls and Troubleshooting
+
+| Symptom | Likely cause | What to do |
+|---------|--------------|-----------|
+| Output ignores your standards | Rules not loaded, folder untrusted, or file in the wrong directory | Check `.bob/rules/`, check workspace trust, restart the session |
+| MCP server tools never appear | Workspace untrusted (project MCP config disabled), or an old HTTP+SSE server against the new client | Trust the folder; move the server to Streamable HTTP |
+| Agent invents field or object names | Missing API catalog or object structure in context | Put an accurate catalog in rules, and add "never invent names, ask" |
+| Headless `bob run` stalls | An action class requires approval and nobody is there | Restrict the run to read-only tasks, or define policy explicitly |
+| Blog or video instructions do not match your Bob | Written for V1 modes or shell | Check the date; V2 changed modes (June 24) and Shell (August) |
+| Rollback behaves differently than a doc says | V2 blog says rollback no longer depends on git; FAQ still says it does | Test on a throwaway repo before relying on it |
+| Colleagues quote different GA dates | IBM sources conflict | Use the "per release notes / per newsroom" phrasing from this post |
+
+---
+
+## 🧭 What to Take Away
+
+### The Ten Commandments of Meeting a New Agent
+
+1. **Learn its structure before its demo.** Agent, harness, clients: know which part you are judging.
+2. **Date-stamp every claim.** Bob changed its modes and its shell within a quarter.
+3. **Label the source.** [IBM] and [IND] are not interchangeable.
+4. **Start in Ask.** Read before you write.
+5. **Make Plan the review artifact.** Attach it to the change record.
+6. **Put your standards in rules.** Context quality drives output quality.
+7. **Gate the writes.** Reads free, edits and MCP calls approved.
+8. **Treat `.bobignore` as hygiene, not security.** It is not a sandbox.
+9. **Keep secrets out of files.** Environment variables, never pasted keys.
+10. **Measure your own task.** No vendor number replaces it.
+
+### Your next steps
+
+- **This week:** Read Part 2 before anyone installs Bob, because model routing and data handling are the first questions security will ask.
+- **If you are building a pilot:** keep the first-hour checklist above and add the metrics from Part 5.
+- **If you are choosing a client:** pick by workflow, not capability; V2 runs the same agent everywhere.
+
+---
+
+## References
+
+- [Bob V2: Faster, better, smarter (Bob blog)](https://bob.ibm.com/blog/bob-v2-release-announcement/)
+- [Run Bob on your own infrastructure (Bob blog, September 2026 release)](https://bob.ibm.com/blog/september-2026-release/)
+- [IBM Bob expands to self-hosted environments for sensitive and mission-critical enterprise software (IBM)](https://www.ibm.com/new/announcements/ibm-bob-expands-to-self-hosted-environments-for-sensitive-and-mission-critical-enterprise-software)
+- [IBM Newsroom: Introducing IBM Bob (April 28, 2026)](https://newsroom.ibm.com/2026-04-28-introducing-ibm-bob-ai-development-partner-that-takes-enterprises-from-ai-assisted-coding-to-production-ready-software)
+- [IBM Newsroom: Self-hosted deployment for IBM Bob (October 1, 2026)](https://newsroom.ibm.com/2026-10-01-ibm-introduces-self-hosted-deployment-for-ibm-bob-to-help-enterprises-advance-ai-sovereignty-and-governance)
+- [IBM Newsroom: Project Bob unveiled (October 7, 2025)](https://newsroom.ibm.com/2025-10-07-ibm-unveils-new-software-product-and-intelligent-infrastructure-capabilities-to-help-enterprises-operationalize-ai)
+- [SiliconANGLE: IBM allows on-prem deployment of its Bob agentic development platform](https://siliconangle.com/2026/10/01/ibm-allows-on-prem-deployment-of-its-bob-agentic-development-platform/)
+- [IT Jungle: Big Blue Ships Bob 2.0 and Premium Package for IBM i](https://www.itjungle.com/2026/07/13/big-blue-ships-bob-2-0-and-premium-package-for-ibm-i/)
+- [IT Jungle: Big Blue converges IBM i RPG and System Z COBOL code assistants into Project Bob](https://www.itjungle.com/2025/10/13/big-blue-converges-ibm-i-rpg-and-system-z-cobol-code-assistants-into-project-bob/)
+- [DEV Community: Exploring IBM Bob on real Maximo challenges (Sopra Steria evaluation summary)](https://dev.to/abhayraoym/from-code-assistant-to-maximo-gateway-exploring-ibm-bob-on-real-maximo-challenges-4jfa)
+- [MAF Local Dev Mode](https://ibm-mas.github.io/maf-local-dev-mode/)
+- [IBM Documentation: Maximo MCP server overview (MAS 9.2)](https://www.ibm.com/docs/en/masv-and-l/cd?topic=developing-maximo-mcp-server-overview)
+
+---
+
+## Continue the Series
+
+**Next:** [Part 2, Models, Security, and Self-Hosted on OpenShift](/blog/mas-bob-02-models-security-self-hosted). It covers SaaS routing, why you cannot pin a model, the self-hosted single core model, data handling, and the audit-logging conflict flagged above.
+
+**Back to:** [Series Index](/blog/mas-bob-00-series-index)
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | October 2026*
+
+<!--
+Editorial note for human review (night-shift draft, bob-01-what-is-bob):
+- Primary source: knowledge_base/DOC16_IBM_BOB_FIELD_GUIDE.md s1-s3, s12.3, s13, s15, s16. Per knowledge-base-wins rule, DOC16 wording used where web differed.
+- DISCREPANCY (self-hosted GA date): release notes Sep 24; newsroom Oct 1 (no "GA"); FACTBASE Sep 30. Post uses "GA per release notes Sep 24; announced Oct 1."
+- DISCREPANCY (audit logging): Sep blog (re-fetched this run) says self-hosted "includes identity, the inference gateway, audit logging, and usage metering"; DOC16 s6.5 records architecture docs saying Audit Logs/Metering "not included in the initial release". Unresolved; flagged for Part 2.
+- Web verified this run: Bob V2 blog (three tiers, modes, 270k, approvals, rollback), Sep 2026 blog (GA wording, plugins, MCP 2026-07-28, RequiredExtensions, Pre/PostCompact), and search summaries confirming V2 GA June 24. DOC16 URLs not re-fetched this run (Apr 28 / Oct 1 / Oct 7 newsroom, IT Jungle, MAF Local Dev Mode, Maximo MCP docs) are cited from DOC16 section 17.
+- ILLUSTRATIVE, UNVERIFIED snippets: the `bob run` flags/--output json, the .bob/mcp.json schema, the SKILL.md frontmatter, and the Plan-mode sample output. Verify against current Bob docs before publishing; syntax is not in DOC16.
+- Local SearchMaximo knowledge base (611 files) has no Bob or MCP content; it only confirmed generic automation-script/Java interface material. Nothing from it is cited.
+- Group policies "Bob IDE only" and rollback-vs-git FAQ conflicts are carried from DOC16 s16.
+- The post links to planned slugs mas-bob-02..05 which will 404 until those posts exist; evc-04/11/12/13 slugs taken from the EVC series files.
+- "Ten Commandments" section deliberately lists 10 items; fine to trim.
+- The $-free post makes no pricing claims; pricing is Part 3.
+-->

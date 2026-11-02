@@ -1,0 +1,904 @@
+---
+title: "Bob Meets Maximo: MAS 9.2 MCP Server, IBM Skills, Local Dev Mode, and Agent-Neutral TMG Tooling"
+description: "What IBM Bob can actually do against Maximo today: the MAS 9.2 native MCP server, IBM's two Maximo Bob skills, MAF Local Dev Mode, a community evaluation, a task-fit table, and where TMG's Max_Interfaces, Max_mcp, and Max_autoscripts fit."
+date: "2026-10-06"
+slug: "mas-bob-04-bob-and-maximo"
+tags: ["Maximo", "MAS 9", "IBM Bob", "MCP", "Maximo Automation Scripts", "AI Coding Agents", "MAS 9.2", "Agentic Development"]
+draft: false
+tier: "developer"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-bob-04-bob-and-maximo.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Can IBM Bob call the MAS 9.2 Maximo MCP server directly?"
+    answer: "In principle yes, and IBM's own documentation lists Bob among the external agent frameworks the server supports, alongside Claude and OpenAI. The 9.2 server is an instance_ID-mcp deployment on OpenShift that exposes Manage capabilities as MCP tools through a public route, authenticated with a Maximo API key or a JWT. Bob is an MCP client that reads server definitions from .bob/mcp.json (project) or ~/.bob/settings/mcp.json (global) and supports a streamable-http transport with custom headers. What we could not find is a published, end-to-end walkthrough of Bob calling this specific server in production, and IBM's server returns its results over SSE, so test the transport match in a sandbox before you promise anyone a demo. Treat it as an experiment with a read-only API key first."
+  - question: "Is IBM's '69% time savings' figure for Maximo something we can use in a business case?"
+    answer: "No, not as a planning number. IBM's GA announcement says the Maximo development team used Bob for code generation, refactoring, and updates that normally take days and finished them in hours, for an estimated 69% time savings. That is one sentence about IBM's own product engineering team, with no task mix, baseline, sample size, or statement about whether review and test time were counted. A customer Maximo shop spends its time on configuration, integrations, data fixes, and upgrades, which is a different mix. If you quote the number, label it IBM-reported, internal estimate, and then replace it with your own pilot data as soon as you have it."
+  - question: "What are the names of IBM's Maximo skills for Bob, and where do I get them?"
+    answer: "IBM's Build Engineering team publishes two Maximo skills, maximo-code-optimization and maximo-java-conversion, in the ibm-self-serve-assets/building-blocks repository under automation/operate/asset-management/bob-skills. We verified this in October 2026: the older build-and-deploy/asset-management path that earlier material cites no longer exists, because IBM restructured the repository on September 30, 2026. The zip files are maximo-code-optimization.zip and maximo_java_conversion.zip, the second with an underscore, and the README says to unzip them into your project and enable them in Bob's Skills panel. Beware a similarly named file, maximo-modernization-java.zip, under ai/engineering/code-modernization; its SKILL.md is a generic code-modernization skill, not the Java-to-automation-script converter."
+  - question: "Should we use IBM's native MCP server or TMG's Max_mcp?"
+    answer: "They solve overlapping problems for different estates, so the honest answer depends on your version and your goals. The native server requires MAS 9.2, is synchronized from Manage, powers the agentic Maximo Assistant, and exposes only the tools you configure, which keeps its surface small and governed by Manage. Max_mcp is a TypeScript server with 175 purpose-built tools across 20 modules that works against Maximo 7.6, MAS 8, 9.0, and 9.1 as well, but it is proprietary software, not open source, and you operate it yourself. A 9.1 estate can use Max_mcp today and adopt the native server at upgrade. Either way, the credential and the security group decide what the agent can do, not the tool list."
+  - question: "What is MAF Local Dev Mode and does it need Bob?"
+    answer: "Maximo Application Framework Local Dev Mode is an IBM-hosted extension that lets you develop and preview Manage application configuration from your editor with live reload, an offline cache, and Maximo XML diff and merge. Its prerequisites list IBM Bob IDE or VS Code 1.74.0 or later, plus Node.js 20 or higher, so Bob is supported but not required. It supports MAS 9.1.21 and later and MAS 9.2.1 and later, authenticates with OAuth 2.0 and OIDC, and the project states it is provided as is with no warranty. It is the nearest thing to an inner development loop for app configuration, and pairing it with Bob's Plan mode gives reviewers a diff to read instead of a screenshot."
+keyTakeaways:
+  - "IBM's 69% Maximo time-savings figure is a one-sentence internal estimate about IBM's own product team; cite it only as IBM-reported and never extrapolate it to a customer Maximo estate"
+  - "MAS 9.2 ships a native Maximo MCP server (an instance_ID-mcp OpenShift deployment) whose tools are generated from Manage and called through the REST layer, so every agent action inherits Manage authorization, business rules, and validation"
+  - "IBM publishes two Maximo Bob skills, maximo-code-optimization and maximo-java-conversion, now under automation/operate/asset-management/bob-skills; the old build-and-deploy path is gone and a similarly named maximo-modernization-java.zip is a different, generic skill"
+  - "Java MBO to automation-script conversion and autoscript review are the highest-fit Bob tasks because they are pattern-heavy and testable, while production data fixes through direct database access are a hard no"
+  - "TMG's Max_Interfaces (MIT), Max_autoscripts (MIT), and Max_mcp (proprietary, not open source) are agent-neutral and complement IBM's native server, especially on pre-9.2 estates"
+series:
+  name: "MAS BOB"
+  part: 4
+  total: 5
+tldr: "Bob meets Maximo through four doors: the MAS 9.2 native MCP server that turns Manage into agent-callable tools, two IBM-authored skills for automation-script optimization and Java-to-script conversion, the MAF Local Dev Mode extension for application configuration, and plain repository work on autoscripts, XML, BIRT, and integration code. Only the first door lets an agent act on a live Maximo, and it does so through the REST layer under whatever API key you give it. This part verifies each asset against IBM's current pages, flags where IBM's own paths and file names have drifted, scores Maximo tasks by agent fit, shows a least-privilege connection pattern, and places TMG's agent-neutral tools beside IBM's server."
+seoTitle: "IBM Bob Meets Maximo: MCP, Skills, Local Dev Mode"
+seoDescription: "How IBM Bob works with Maximo: MAS 9.2 MCP server, IBM's Bob skills, MAF Local Dev Mode, task fit, and agent-neutral TMG tools."
+targetQuestions:
+  - "Can IBM Bob connect to the MAS 9.2 Maximo MCP server?"
+  - "What IBM Bob skills exist for Maximo automation scripts and Java conversion?"
+  - "What is MAF Local Dev Mode and does it support the Bob IDE?"
+  - "Which Maximo tasks is an AI coding agent good at, and which should it never touch?"
+  - "How do you give an AI agent least-privilege access to Maximo Manage?"
+  - "Is Max_mcp open source and how does it compare to IBM's Maximo MCP server?"
+semanticKeywords:
+  - "IBM Bob Maximo"
+  - "Maximo MCP server MAS 9.2"
+  - "maximo-code-optimization skill"
+  - "maximo-java-conversion skill"
+  - "Java MBO to automation script"
+  - "MAF Local Dev Mode"
+  - "Maximo API key least privilege"
+  - "Max_mcp"
+  - "Max_Interfaces"
+  - "Max_autoscripts"
+  - ".bob/mcp.json"
+proficiencyLevel: "advanced"
+dependencies:
+  - "Parts 1 to 3 of this series (what Bob is, security and data handling, governance)"
+  - "Working knowledge of Maximo automation scripts, MBOs, object structures, and the REST/OSLC API layer"
+  - "Access to a non-production Maximo (MAS 9.2 for the native MCP server) and permission to create API keys"
+speakableSections:
+  - "The 69% Claim, With Its Caveat Attached"
+  - "The MAS 9.2 Maximo MCP Server"
+  - "Where Bob Fits in Maximo Work"
+clusterSlugs:
+  - "mas-bob-00-series-index"
+  - "mas-bob-01-what-is-ibm-bob"
+  - "mas-bob-02-models-security-self-hosted"
+  - "mas-bob-03-governance-pricing-bobcoins"
+  - "mas-bob-05-pilot-playbook"
+relatedSlugs:
+  - "evc-11-teach-ai-house-rules"
+  - "evc-12-maximo-eam-shops"
+  - "evc-13-first-maximo-ai-agent"
+  - "mas-java-extensions-series-index"
+  - "mas-92-vs-91-vs-90"
+---
+
+# Bob Meets Maximo: MAS 9.2 MCP Server, IBM Skills, Local Dev Mode, and Agent-Neutral TMG Tooling
+
+<aside>
+
+🎯 **Who this is for:** Maximo developers, integration engineers, and technical leads who have read the Bob pitch, heard "69% time savings," and now need to know what Bob can actually do against a Maximo estate on Monday morning. You should already know what an automation script, an MBO, and an object structure are. We will not explain those.
+
+</aside>
+
+**Series:** *IBM Bob for Maximo Teams* | **Part 4 of 5** | **Read time:** ~35 minutes
+**Previous:** [Part 3, Governance, Pricing, and Bobcoins](/blog/mas-bob-03-governance-pricing-bobcoins) | **Next:** [Part 5, Pilot Playbook](/blog/mas-bob-05-pilot-playbook)
+
+---
+
+## 🔥 The Demo That Skips the Hard Part
+
+Picture the vendor demo. A developer types: *"Close out all the work orders for pump P-1001 that have been in COMP for more than thirty days."* The agent thinks for a moment, calls a tool, and a green check appears. Applause.
+
+Now picture the same sentence at 2 a.m. in your production estate, where nobody is clapping.
+
+*"Which API key did it use?"* — *"The admin one. It was already in the environment."*
+*"Which work orders did it touch?"* — *"We think forty. Maybe four hundred."*
+*"Was there a dry run?"* — *"There was a plan."*
+
+Every Maximo shop that has stood up an AI agent against a live instance has had some version of this conversation. In [Part 3](/blog/mas-bob-03-governance-pricing-bobcoins) we covered the controls around Bob: policies, identity, audit, and cost. This part is about the other side of the connection. **What does Bob actually touch in Maximo, through which door, and under whose authority?**
+
+There is real substance here. IBM shipped a native Maximo MCP server in MAS 9.2. IBM's Build Engineering team published Bob skills for Maximo automation scripts. A Maximo Application Framework extension supports the Bob IDE as a first-class editor. An independent consultant has tested Bob against real Maximo chores and written down what happened. And we run three open or semi-open tools of our own that any agent can use.
+
+But the substance comes with caveats, some of which IBM's own pages disagree on, and we found one where a file path in IBM's own README no longer matches the repository. We will show our work.
+
+<aside>
+
+💡 **Key insight:** "Bob works with Maximo" is four different claims. Reading and rewriting files in a repository is one. Calling Maximo APIs through MCP is another. Using an IBM skill is a third. Previewing app XML in Local Dev Mode is a fourth. Each has a different risk profile, a different credential, and a different evidence trail. Never let anyone merge them into one sentence.
+
+</aside>
+
+---
+
+## 📌 The Short Version
+
+| Question | Short answer | Source label |
+|---|---|---|
+| Is the 69% figure usable in a business case? | No. One sentence, internal estimate, no method | IBM-reported |
+| Does MAS 9.2 have a native MCP server? | Yes: an `instance_ID-mcp` deployment on OpenShift | IBM docs |
+| Can external agents (including Bob) use it? | Yes, via a public route with an `apikey` header or JWT | IBM docs, third-party summary |
+| How are its tools created? | Generated from Manage: AI configurations plus custom tools from object structures, automation scripts, workflows, API routes | IBM docs |
+| Does an agent bypass Manage security through it? | No. Every tool is a Maximo REST API POST under Manage authorization | IBM docs |
+| What are IBM's two Maximo Bob skills? | `maximo-code-optimization` and `maximo-java-conversion` | IBM GitHub, verified Oct 2026 |
+| Where do they live now? | `automation/operate/asset-management/bob-skills` in `ibm-self-serve-assets/building-blocks` | IBM GitHub, verified Oct 2026 |
+| Does Local Dev Mode support Bob? | Yes: "IBM Bob IDE or VSCode 1.74.0+"; MAS 9.1.21+ and 9.2.1+ | IBM docs |
+| Is there an end-to-end Bob to MAS 9.2 MCP walkthrough? | Not that we could find | Gap |
+| Are TMG's tools open source? | Max_Interfaces: MIT. Max_autoscripts: MIT. **Max_mcp: proprietary, not open source** | TMG repos |
+
+"Source label" means where the claim comes from, not that we tested it. We read IBM's pages and repositories this run and downloaded the skill packages to inspect their contents. We did **not** connect Bob to a live MAS 9.2 server, because we have not got one in this environment. Where a claim rests on a vendor page alone, the text says so.
+
+---
+
+## 📊 The 69% Claim, With Its Caveat Attached
+
+IBM's April 2026 GA announcement contains the sentence every Maximo conversation about Bob starts with. The IBM Maximo development team used Bob for code generation, refactoring, and updates that "normally take days," finished them in hours, and IBM calls the result "an **estimated 69% time savings**."
+
+Read it again, slowly, the way you would read a vendor performance claim in an RFP.
+
+| What a number needs | Does the Bob sentence provide it? |
+|---|---|
+| A defined task mix | **No.** "Code generation, refactoring, and updates" is a category list |
+| A baseline | **No.** "Normally take days" is not a measured control |
+| A sample size | **No** |
+| A measurement method | **No.** "Estimated" tells you it was not timed |
+| Whether review, test, and rework time were counted | **No** |
+| Who did the work | Partly: IBM's own product team, who know the codebase |
+| Whether it transfers to a customer estate | **No.** Product engineering is not configuration, integration, data, or upgrade work |
+
+None of that means the number is false. It means it is **unusable for planning**. A product team with deep codebase knowledge doing greenfield-adjacent refactoring is the best case for any coding agent. A customer team doing the third rework of an integration against an undocumented ERP endpoint is a different animal.
+
+### How to cite it
+
+| Do | Don't |
+|---|---|
+| "IBM reports an estimated 69% time savings on internal Maximo product development tasks (IBM-reported, no published method)" | "Bob makes Maximo development 69% faster" |
+| Put it in a footnote next to your own pilot metric | Put it on the slide as the headline |
+| Ask IBM for the task mix and measurement method | Extrapolate it to upgrade projects |
+| Use it to justify running a pilot | Use it to justify a seat count |
+
+[Part 5](/blog/mas-bob-05-pilot-playbook) builds the replacement: a scorecard of Bobcoins per task, review hours, and defect escapes that you collect yourself. For now, hold the number at arm's length and read on, because the interesting material is not the percentage. It is the plumbing.
+
+---
+
+## 🗺️ Four Doors Between Bob and Maximo
+
+Before the deep dives, here is the map. Everything Bob does with Maximo goes through one of four doors, and the doors have very different consequences.
+
+```
+╔══════════════════════════════════════════════════════════════════════╗
+║  DOOR 1: THE REPOSITORY            files on the developer's machine  ║
+║  Bob reads/edits autoscripts, app XML, BIRT, Java, integration code  ║
+║  Credential: none needed.   Blast radius: the working tree           ║
+╠══════════════════════════════════════════════════════════════════════╣
+║  DOOR 2: IBM SKILLS                packaged instructions + tools     ║
+║  maximo-code-optimization / maximo-java-conversion                   ║
+║  Credential: API key (optimizer fetches scripts).  Blast: scripts    ║
+╠══════════════════════════════════════════════════════════════════════╣
+║  DOOR 3: MAF LOCAL DEV MODE        editor extension for app config   ║
+║  OAuth/OIDC sign-in, live preview, offline cache, XML diff/merge     ║
+║  Credential: your MAS login.   Blast: app configuration             ║
+╠══════════════════════════════════════════════════════════════════════╣
+║  DOOR 4: MCP                       the agent acts on LIVE Maximo     ║
+║  MAS 9.2 native server  |  TMG Max_mcp  |  any MCP server            ║
+║  Credential: API key / JWT.   Blast: whatever the key can do         ║
+╚══════════════════════════════════════════════════════════════════════╝
+       Doors 1 to 3 change files or previews. Door 4 changes data.
+```
+
+| Door | Agent changes | Needs a Maximo credential? | Review artifact | Where Part 3's controls apply |
+|---|---|---|---|---|
+| 1. Repository | Files in a working tree | No | Git diff | Approval groups `edit`, `execute` |
+| 2. IBM skills | Files, plus a fetch from Maximo by the optimizer | Yes for the optimizer | Diff, skill's before/after report | `skill` group |
+| 3. Local Dev Mode | App configuration in preview, local files | Yes (your login) | Maximo XML diff | `edit` group |
+| 4. MCP | Live Maximo records and configuration | **Yes, and it is the dangerous one** | Maximo-side API logs, Plan output | `mcp` group, key scope |
+
+A useful rule: **move up the table only when the evidence above you is boring.** Run Door 1 for a month before you open Door 4, and run Door 4 read-only before you ever give it a write key.
+
+---
+
+## 🔌 The MAS 9.2 Maximo MCP Server
+
+MCP, the Model Context Protocol, is the open standard that lets an AI agent discover and call tools on another system through a uniform interface. If you have not met it, think of it as a typed, self-describing API catalog an agent can read at runtime. MAS 9.2 puts one in front of Manage.
+
+### What IBM documents
+
+Everything in this section comes from IBM's "Maximo MCP server overview" documentation for MAS 9.2 unless stated otherwise.
+
+| Aspect | What IBM states |
+|---|---|
+| Deployment | A pod on Red Hat OpenShift, named `instance_ID-mcp` |
+| Readiness | The pod stays unready until Manage is ready, then performs a full tools refresh |
+| Tool sources | **AI configurations** (`mcc`, `pcc`, `similarity`, `nl2oslc`, `docsearch`, `insightsgenerator`), plus **custom tools** from automation scripts, object structures, workflows, and API routes |
+| Tool registry | AI configuration tools are governed through the `MAXAICFGTOOL` table |
+| Transport to Manage | "All Maximo Manage-based tools are Maximo REST API POST calls." Not all Maximo APIs are tools |
+| Refresh | Pulls the tool list on startup, re-checks every `POLLING_FREQUENCY` (default 10 minutes) |
+| Timeout | `TOOL_RESPONSE_TIMEOUT`, default 10 minutes |
+| External access | Public-facing OpenShift route; `apikey` header or JSON Web Token |
+| Protocol | JSON-RPC 2.0 `tools/call`; responses via Server-Sent Events (SSE), per DOC16 |
+| Annotations | MCP annotations can be applied after deployment, for example marking a tool as destructive |
+| Built-in consumer | In MAS 9.2 the agentic Maximo Assistant runs on the ALM-agent, which chains tool calls through this server |
+
+A practitioner write-up from Naviam adds two details worth knowing. The server refreshes tool definitions from OpenAPI specifications using ETags, so polling is cheap. And for built-in agents the call carries an `x-access-token` JWT validated through Core IDP, while external agents authenticate with API keys or JWT, with internal MCP-to-Manage-to-Core traffic protected by MAS certificates. Naviam also notes that only non-interactive workflows are supported, meaning workflows built from nodes, condition nodes, and actions. A workflow that opens a dialog for a human cannot be a tool in this release.
+
+### The architecture in one picture
+
+```
+ ┌──────────────┐   apikey / JWT     ┌────────────────────────┐
+ │  Bob IDE or  │ ─────────────────► │  OpenShift route        │
+ │  Bob Shell   │   JSON-RPC 2.0     │  (public-facing)        │
+ │  (MCP client)│ ◄───────────────── │                         │
+ └──────────────┘   SSE responses    └───────────┬─────────────┘
+                                                 │
+ ┌──────────────┐                    ┌───────────▼─────────────┐
+ │  Maximo      │   tool call        │  instance_ID-mcp pod    │
+ │  Assistant   │ ─────────────────► │  tools list synced from │
+ │  (ALM-agent) │                    │  Manage every 10 min    │
+ └──────────────┘                    └───────────┬─────────────┘
+                                                 │ REST POST (as a Manage user)
+                                     ┌───────────▼─────────────┐
+                                     │  Maximo Manage          │
+                                     │  security groups, rules,│
+                                     │  validation, workflow   │
+                                     └─────────────────────────┘
+```
+
+### Why the REST-POST detail matters for governance
+
+The single most important sentence in IBM's documentation, for a Maximo person, is that tools are REST API calls. It means an agent action is not a side door. The call goes through Manage's security layer, so the agent can only do what the user behind the API key could do in the product. It also goes through business rules, validations, and workflow, so an agent cannot, for instance, put a work order into a status your status-change rules forbid.
+
+That is good news. It is also a trap if you stop reading there.
+
+| Protection | Provided by the MCP server's design? | Provided by you |
+|---|---|---|
+| Agent cannot bypass Manage security | **Yes** | Choosing the key's security group |
+| Agent cannot skip business rules | **Yes** | Writing good business rules |
+| Agent cannot do more than the key allows | **Yes** | **Making the key small** |
+| Agent cannot be tricked into a legal but harmful action | **No** | Read-only keys, destructive annotations, human approval |
+| Agent actions are attributable | Partly (key identity in Maximo logs) | One key per use case |
+| Tool set is small | By default; grows as you expose scripts and object structures | Curating what you expose |
+
+A legal but harmful action is the interesting category. "Cancel all open work orders at this location" is a valid, authorized, rule-compliant call for a planner's account. The agent did not break any rule. It did the wrong thing. Only a narrow key, a destructive annotation, and a human approval step stop that.
+
+### Which tools exist, and how to read them
+
+The AI-configuration tools are Maximo's own AI building blocks surfaced as MCP tools. We do not have IBM's per-tool descriptions, so treat the following interpretations as our reading of the names, to be verified against `tools/list` on your server.
+
+| Tool | Likely purpose (our reading; verify with `tools/list`) |
+|---|---|
+| `nl2oslc` | Turn a natural-language question into an OSLC query against Manage |
+| `docsearch` | Search documentation or attached document content |
+| `similarity` | Find similar records, for example similar work orders |
+| `mcc`, `pcc` | AI configuration categories used by Manage's AI features |
+| `insightsgenerator` | Produce condition insights summaries for assets |
+
+The custom tools are the part that matters to a developer, because **you decide what the agent can call**. IBM's own Assistant announcement gives the examples of changing work order status, creating follow-up work orders, and executing custom automation scripts as tools. In other words, an automation script with a clear input and output contract can become an agent-callable tool without you writing an MCP server at all.
+
+### Exposing your own capability, the right way
+
+Here is the design pattern we recommend for custom tools. The principle is that a tool should be **a narrow verb with a validated input**, not a generic "run anything" door.
+
+| Good tool | Bad tool |
+|---|---|
+| `wo_set_failure_class(wonum, failurecode)` | `wo_update(any_field, any_value)` |
+| `asset_get_last_5_downtimes(assetnum)` | `run_sql(statement)` |
+| `sr_add_worklog(ticketid, text)` | `execute_script(name, args)` |
+| Read-only by construction | Write capability hidden behind a read-sounding name |
+
+If you build tools from automation scripts, put the validation in the script. Here is a minimal Jython example of a script that is safe to expose, because it checks its own input and refuses to act outside a narrow lane. The script name, object, and message keys are illustrative.
+
+```python
+# Illustrative: an action-style script intended to back a narrow agent tool.
+# Verify implicit variable names and launch point configuration in your version.
+from psdi.mbo import MboConstants
+
+ALLOWED_STATUSES = ["WAPPR", "APPR"]
+
+# "params" stands for whatever input mapping your action launch point provides.
+if mbo.getString("STATUS") not in ALLOWED_STATUSES:
+    service.error("wo", "agentstatusnotallowed")   # custom message you create in MAXMESSAGES
+
+mbo.setValue("FAILURECODE", params["failurecode"], MboConstants.NOACCESSCHECK)
+```
+
+The detail worth stealing is the pattern, not the exact syntax: **an allow-list, a hard refusal, and a custom message key** that appears in the agent's tool result so the failure is legible.
+
+<aside>
+
+💡 **Key insight:** The MCP server decides how a tool is invoked. **You** decide how narrow the tool is. A permissive tool behind a careful server is still a permissive tool.
+
+</aside>
+
+### What we could not verify: Bob to this server
+
+Here is the honest part. IBM's documentation and a third-party summary both say external agents such as Bob, Claude, and OpenAI can connect through the supported route and authentication model. But we found **no published end-to-end write-up of Bob calling this server in production**. DOC16 records the same gap, and the independent Bordelanne evaluation we discuss below explored MCP only as a future possibility.
+
+There is also a transport detail worth a sandbox test. Bob's documented remote transport is `streamable-http` with custom `headers`. IBM's Maximo server is described as accepting JSON-RPC 2.0 `tools/call` and responding over SSE. Streamable HTTP and SSE are related, and many clients handle both, but we have not seen that exact pairing confirmed. Test it.
+
+---
+
+## 🔧 Connecting Bob to Manage Without Handing It the Keys to the Plant
+
+Bob stores MCP server definitions in two places, per IBM's Bob documentation: globally in `~/.bob/settings/mcp.json`, or per project in `.bob/mcp.json`, where the project file takes precedence and can be shared through version control. Both use a JSON object named `mcpServers`. Each entry can set `command`, `args`, `cwd`, `env`, `alwaysAllow`, and `disabled` for local (stdio) servers, or `type: "streamable-http"`, `url`, and `headers` for remote servers.
+
+That last field is the one to be careful with. `alwaysAllow` is a list of tools Bob will run **without asking**. In [Part 3](/blog/mas-bob-03-governance-pricing-bobcoins) we recommended locking the `mcp` approval group through group policy. If you do that, `alwaysAllow` entries in a project file do not defeat your policy. If you do not, a single `alwaysAllow` line in a repository you cloned from somewhere can turn a read tool into an unattended one.
+
+### A project file, step by step
+
+This is an illustrative `.bob/mcp.json`. The server name, URL path, and header handling are placeholders. IBM's page for the Maximo server does not publish a sample for Bob, and we have not tested this against a live route. Check the route URL in your own OpenShift console, and **do not commit a real key**.
+
+```json
+{
+  "mcpServers": {
+    "maximo-native-readonly": {
+      "type": "streamable-http",
+      "url": "https://<instance_ID>-mcp.<your-apps-domain>/mcp",
+      "headers": {
+        "apikey": "<paste a READ-ONLY key from your secret manager, never commit>"
+      },
+      "alwaysAllow": [],
+      "disabled": false
+    }
+  }
+}
+```
+
+Three habits protect you here.
+
+1. **Keep `alwaysAllow` empty at first.** Make every call a human click until you understand what the agent calls and how often.
+2. **Keep the project file out of git, or keep the key out of the file.** Add `.bob/mcp.json` to `.gitignore` for any repository that holds client code, and add `.bobignore` entries for key files. (Part 2 explains why `.bobignore` is a courtesy, not a sandbox.)
+3. **Prefer a key per use case and name it for the use case.** When the agent does something odd, `BOB_READONLY_ANALYSIS` in the Maximo log tells you what it was meant to be doing.
+
+For the pre-flight check, use MCP Inspector or plain `curl` before you involve Bob. IBM notes MCP Inspector can be used for debugging the server. A raw JSON-RPC call looks like this (illustrative, adjust the route and confirm the exact path and required `Accept` headers in your environment):
+
+```bash
+# List available tools (read-only metadata call), illustrative
+curl -sS -X POST "https://<instance_ID>-mcp.<your-apps-domain>/mcp" \
+  -H "apikey: $MAXIMO_READONLY_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+If `tools/list` works from `curl` and fails from Bob, you have a client transport problem. If it fails from both, you have a route, key, or TLS problem. That binary split saves an afternoon.
+
+### The API key ladder
+
+Maximo's own guidance is the foundation here. In Manage, API keys are created in the **API Keys** application and are registered to a user; the key value is shown once and cannot be recovered later, and API key authentication depends on the `mxe.oslc.webappurl` system property pointing at your Manage server. What the key can do is defined by the security groups of the user that owns it. That makes the **service user and its security group** your real control surface.
+
+Climb this ladder one rung at a time, and only when the previous rung has been boring for long enough to trust.
+
+| Rung | Service user (example name) | What the security group allows | Environment | Promote when |
+|---|---|---|---|---|
+| 0. Files only | none | n/a | none | Always start here |
+| 1. Read-only analysis | `BOB_READONLY` | Read on a short list of object structures (for example `MXAPIWODETAIL`, `MXAPIASSET`) | Non-production, or masked data | Two clean weeks, no surprise calls in the Maximo log |
+| 2. Draft writes | `BOB_DRAFT` | Create and change on **draft** records only; no approving status changes | Test | A named owner and a rollback script exist |
+| 3. Dev configuration | `BOB_DEV_SCRIPTS` | Autoscript and deploy signature options | Dev only | Reviewed script diffs, tests in CI |
+| 4. Production write | **None for agents** | Humans, through your normal change path | Production | Never delegate this to an agent |
+
+Notice that rung 4 is empty on purpose. Our position, consistent with Part 3, is that the agent drafts and a human executes in production.
+
+### Marking tools as destructive
+
+IBM states that MCP annotations can be applied after deployment, for example to mark a tool as destructive. Use that. A destructive annotation tells a well-behaved client to ask for confirmation. But remember the layering: an annotation is a hint to the client, not an access control. **The security group is the enforcement.** Do both.
+
+| Layer | Mechanism | Strength |
+|---|---|---|
+| Tool design | Narrow verbs, validated inputs | Prevents whole classes of misuse |
+| MCP annotation | `destructive` marking | Hint to the client; depends on client behavior |
+| Bob approval | Group policy locks `mcp`; no `alwaysAllow` | Human gate per call |
+| Maximo security group | Object structure and operation permissions | **Hard enforcement** |
+| Environment | Non-production endpoint | Limits blast radius regardless of the above |
+
+### A read-only session, annotated
+
+Here is the kind of session we recommend as the first MCP experiment. Every step is a read.
+
+| Step | Prompt to Bob | What should happen | What you verify |
+|---|---|---|---|
+| 1 | "List the tools the Maximo server exposes and tell me which ones can modify data." | Bob calls `tools/list` and classifies | Compare against your own tool inventory and annotations |
+| 2 | "How many work orders for asset 11450 are in status COMP in the last 90 days?" | One query-style tool call | The Maximo-side request log shows a single read under `BOB_READONLY` |
+| 3 | "Summarize the open service requests for location BEDFORD." | One or two read calls | Count matches a query you run yourself |
+| 4 | "Close those work orders." | Bob should refuse, ask for approval, or fail on permission | **The security group blocks it.** If it succeeds, your key is too wide. Stop and fix it |
+
+Step 4 is the test that matters. A pilot that never tries a forbidden action has not proven the control.
+
+---
+
+## 🧰 IBM's Two Maximo Skills for Bob
+
+A Bob **skill** is a packaged bundle of instructions, knowledge files, and sometimes helper tools that Bob loads on demand. IBM's Build Engineering team publishes two for Maximo.
+
+### What we verified, and what changed
+
+DOC16 (our knowledge base, written from IBM material) names the skills `maximo-code-optimization` and `maximo-java-conversion` and places them in `ibm-self-serve-assets/building-blocks` under `build-and-deploy/asset-management`. We checked the live repository this run. The skill names are correct. **The path is not.**
+
+| Item | DOC16 and older material | Live repository (verified October 2026) |
+|---|---|---|
+| Repository | `ibm-self-serve-assets/building-blocks` | Same |
+| Directory | `build-and-deploy/asset-management` | `automation/operate/asset-management` |
+| Skill 1 zip | `bob-skills/maximo-code-optimization.zip` | Same filename, now under `automation/operate/asset-management/bob-skills/` |
+| Skill 2 zip | `bob-skills/maximo_java_conversion.zip` (underscore) | Same filename, same folder |
+| Skill 2 name inside | `maximo-java-conversion` | `maximo-java-conversion` (version 1.2.0 in its `SKILL.md`) |
+| Web app | "Maximo Modernization Asset" | `assets/maximo_code_modernization_asset/` |
+
+The directory move matches IBM's September 30, 2026 repository restructure, whose commit message describes renaming and regrouping the AI blocks and updating "skill installers, zips, extension config, and MCP tool descriptions." If you have scripted a download from the old path, it will 404. This is the kind of drift that breaks a pipeline silently, so pin a commit, not a branch.
+
+### A trap in the same repository
+
+Under `ai/engineering/code-modernization/assets/` there is a file called `maximo-modernization-java.zip`. The name looks like the Java-to-script converter. **It is not.** When we opened it, its `SKILL.md` identifies itself as `code-modernization-expert`, a generic modernization skill covering Python 2 to 3, Java 8 to 21, React, Spring Boot, and monolith-to-microservice patterns. It is a fine generic skill, and it is **not** the Maximo MBO-to-automation-script converter.
+
+| File | Real identity (from its `SKILL.md`) | Use it for |
+|---|---|---|
+| `maximo-code-optimization.zip` | Frontmatter name `maximo-script-optimizer`, v1.0.0; fetch, analyze, optimize, and secure Maximo automation scripts | Reviewing and hardening existing autoscripts |
+| `maximo_java_conversion.zip` | `maximo-java-conversion`, v1.2.0; convert Maximo Java classes to Python, Jython, JavaScript, Nashorn, ECMAScript, or MBR | Java MBO to automation script conversion |
+| `maximo-modernization-java.zip` | `code-modernization-expert`; generic multi-language modernization | **Not** Maximo-specific; do not confuse with the converter |
+
+Note the name drift inside the optimizer: the folder and file are `maximo-code-optimization`, but its own frontmatter says `maximo-script-optimizer`. That will not break anything, but if you search Bob's Skills panel for one name and see the other, now you know why.
+
+### What each skill actually contains
+
+We downloaded both packages into an isolated temporary directory and listed their contents without executing anything. This is a description of the package structure, not an audit of the code.
+
+| Skill | Structure we observed | Notable contents |
+|---|---|---|
+| `maximo-code-optimization` | `SKILL.md` (about 20 KB), `tools/fetch_maximo_scripts.py`, a `knowledge/` tree (core, procedures, troubleshooting, reference), an `examples/` folder | Scripting fundamentals, security best practices, performance optimization, common issues, quick reference, a worked optimization example |
+| `maximo-java-conversion` | `.bob/skills/maximo-java-conversion/` with `skill.json`, `knowledge/` (core, reference, troubleshooting, procedures), `tools/java_to_script_converter.py` (about 45 KB), `tools/business_logic_analyzer.py` | A language-mapping guide, a best-practices reference, a converter and a business-logic analyzer |
+
+The optimizer's workflow, as written in its `SKILL.md`, is worth knowing before you enable it. It tells Bob to create a `maximo-scripts/` project folder, copy the fetch script, **ask you for the Maximo base URL and an API key**, write those into a `.env` file, and call `/maximo/api/os/MXAPIAUTOSCRIPT` to pull your automation scripts. That is Door 2 and Door 4 in one step: a skill that quietly uses a credential.
+
+<aside>
+
+⚠️ **Operational warning:** The optimizer creates a `.env` file containing your Maximo API key inside the workspace. Make sure that file is covered by `.bobignore`, by `.gitignore`, and by your secret scanner. The key it needs is **read** access to `MXAPIAUTOSCRIPT`. Give it a read-only key, never an admin one.
+
+</aside>
+
+### Installing the skills
+
+IBM's README says to unzip the packages from your project root and then open Bob's Skills panel to enable them. Because the packages differ in how they unzip (the Java converter ships with a `.bob/skills/...` prefix, and the optimizer's own `SKILL.md` refers to `.bob/skills/maximo-code-optimization/tools/...`), **inspect the resulting tree** before relying on a path.
+
+```bash
+# In a throwaway test repository, not in client code.
+mkdir -p ~/bob-maximo-lab && cd ~/bob-maximo-lab
+
+# Pin a commit rather than main; IBM restructured paths on 2026-09-30.
+BASE="https://raw.githubusercontent.com/ibm-self-serve-assets/building-blocks/<pinned-commit>/automation/operate/asset-management/bob-skills"
+curl -fsSLO "$BASE/maximo-code-optimization.zip"
+curl -fsSLO "$BASE/maximo_java_conversion.zip"
+
+# List before you extract; never run extracted scripts you have not read.
+unzip -l maximo-code-optimization.zip
+unzip -l maximo_java_conversion.zip
+
+unzip maximo-code-optimization.zip
+unzip maximo_java_conversion.zip
+find . -name SKILL.md -o -name skill.json
+```
+
+Then enable the skills in Bob's Skills panel. If your policy locks the `skill` approval group (and for client machines we recommend it), each skill run will prompt. Good. A skill is instructions plus code, and the code runs with your privileges.
+
+### Worked example: Java MBO to automation script
+
+This is the task where an IBM skill, a testable outcome, and a real Maximo need line up. Suppose you have a custom `WO` subclass from a 7.6 era customization that enforces a failure code before completion.
+
+The Java, simplified:
+
+```java
+package com.acme.app.workorder;
+
+import java.rmi.RemoteException;
+import psdi.app.workorder.WO;
+import psdi.mbo.MboSet;
+import psdi.util.MXApplicationException;
+import psdi.util.MXException;
+
+public class AcmeWO extends WO {
+    public AcmeWO(MboSet ms) throws MXException, RemoteException { super(ms); }
+
+    @Override
+    public void save() throws MXException, RemoteException {
+        if ("COMP".equals(getString("STATUS")) && isNull("FAILURECODE")
+                && "CM".equals(getString("WORKTYPE"))) {
+            throw new MXApplicationException("acme", "failurecoderequired");
+        }
+        super.save();
+    }
+}
+```
+
+The equivalent Jython automation script, as an Object launch point on WORKORDER (Save event, before save). The structure is what the converter should produce; your exact launch point settings and message setup need to be checked in your environment:
+
+```python
+# Script: ACME_WO_FAILURECODE_REQUIRED   Object launch point: WORKORDER, Save, Before Save
+if mbo.getString("STATUS") == "COMP" and mbo.getString("WORKTYPE") == "CM" \
+        and mbo.isNull("FAILURECODE"):
+    service.error("acme", "failurecoderequired")   # the message must exist in MAXMESSAGES
+```
+
+The conversion is short, which is why it is dangerous: it **looks** obviously right. Here is what a human reviewer must check and what a good skill run should surface on its own.
+
+| Check | Why it matters | How to test |
+|---|---|---|
+| The message group and key exist in Maximo | A missing message produces an unhelpful error at runtime | Create the message; trigger the rule in dev |
+| Event semantics differ from `save()` | A Java `save()` override and an Object Save launch point do not fire in identical circumstances, for example around child MBOs and non-user saves | Test UI save, REST save, workflow-driven status changes, and MIF inbound |
+| Status check uses the right value | Java compared an internal value; synonym domains (internal vs. external status) need care | Test with a synonym status in your environment |
+| Entry conditions | `WORKTYPE` filter and `isNull` semantics preserved | Unit-style test cases: CM with code, CM without, PM without |
+| Performance | An autoscript on a hot object runs on every save | Check the launch point condition field; add one rather than testing in the body |
+| Deployment and rollback | Autoscripts deploy through different paths than JAR classes | Keep the Java class until the script is proven, then retire it deliberately |
+
+IBM's converter skill advertises business-logic preservation and a conversion report. Treat the report as a **checklist for your review**, never as a pass certificate. The test matrix above is yours.
+
+### Using the optimizer skill responsibly
+
+The optimizer targets patterns Maximo practitioners know well: unreleased `MboSet` handles, missing error handling, string-built SQL, repeated `getMboSet` calls inside loops, and logging gaps. We have not benchmarked its findings, so here is how we would review them.
+
+| Finding class (typical) | Auto-accept? | Reason |
+|---|---|---|
+| Add logging or comments | Yes, after a skim | Low risk |
+| Close or release MboSet resources | Review | Easy to introduce use-after-close errors |
+| Replace string-built queries with bind parameters | Review and test | Security win; check the semantics of the filter |
+| Restructure loops for performance | **Never auto-accept** | Behavior changes hide here |
+| Change transaction or save behavior | **Never auto-accept** | Data consequences |
+| "Fix" security by deleting functionality | Reject | Not a fix |
+
+Feed it your house rules. TMG's [Max_autoscripts](https://github.com/themaximoguys/Max_autoscripts) ships a standards file and an `AGENTS.md`, and IBM's own README says the patterns apply to any AI coding assistant. Put your standards in `.bob/rules/` or an `AGENTS.md` at the repository root so the skill's generic advice is overridden by **your** conventions. The [house rules post in our vibe-coding series](/blog/evc-11-teach-ai-house-rules) covers how to write them.
+
+### The companion web app, and a data-egress question
+
+The same IBM directory includes a **Maximo Modernization Asset**, a Node.js and React web application for script optimization, Java conversion, batch conversion, impact analysis, and pushing optimized scripts back to Maximo via REST `PUT`. The README lists an **OpenAI API key** as a prerequisite for its AI-powered optimization.
+
+That is a governance fact you cannot skip. If you run the web app, your automation script source goes to the model provider you configure, which is a different data path from Bob. [Part 2](/blog/mas-bob-02-models-security-self-hosted) covers Bob's own data handling. The web app is a separate trust decision. It also offers a write-back path. Our recommendation matches rung 4 of the key ladder: **do not give a tool with write-back a production key.**
+
+---
+
+## 🧪 MAF Local Dev Mode: The Inner Loop for App Configuration
+
+If your work is Manage application configuration rather than Java or scripts, the relevant IBM asset is **Maximo Application Framework (MAF) Local Dev Mode**, an extension published through IBM's `ibm-mas.github.io` project pages.
+
+### What IBM documents
+
+| Aspect | IBM's statement |
+|---|---|
+| Editor | "IBM Bob IDE or VSCode 1.74.0+" |
+| Node.js | 20.0.0 or higher |
+| Supported MAS versions | **MAS 9.1.21 and newer; MAS 9.2.1 and newer** |
+| Authentication | OAuth 2.0 / OIDC |
+| Features | Local development server with live reload; offline data caching; Maximo XML comparison with visual highlighting; an application browser panel inside the editor; self-signed certificate support |
+| Bob install path | `curl -fsSL https://ibm-mas.github.io/maf-local-dev-mode/scripts/install.sh | bash -s bob` |
+| VS Code install | The same script without the `bob` argument; interactive mode auto-detects |
+| Warranty | Provided "AS IS," with no warranty of any kind |
+
+Two practical notes. The version floor is **patch-level specific**: 9.1.21 and 9.2.1, not "9.1" and "9.2." Check your Manage version before you plan around it. And the "AS IS" language is standard for IBM-hosted community assets, but it is your signal that this is a developer productivity tool and not a supported product feature. Do not make it a dependency of your delivery contract.
+
+### Why this pairs well with Bob
+
+App Designer XML is exactly the kind of artifact where a reviewer wants a **diff, not a description**. Local Dev Mode's XML comparison gives that diff, and Bob's Plan mode gives the intent. A change request that carries both is easier to approve than one with a screenshot.
+
+| Step | Tool | Output for the change record |
+|---|---|---|
+| 1. Describe the screen change | Bob Plan mode | Plan listing the controls and fields to change |
+| 2. Apply in the local project | Bob Agent mode with `edit` approved per action | Modified XML |
+| 3. Preview | Local Dev Mode live-reload server | Screenshot of the preview |
+| 4. Review the delta | Local Dev Mode XML compare | Visual diff |
+| 5. Import | **Human**, through your normal change path | Change record entry |
+
+A caution about step 5: a preview that looks right locally is not evidence the import will behave on your server, particularly with security groups, conditional UI expressions, and data restrictions. Keep a test-environment import in the loop.
+
+---
+
+## 🗣️ What a Practitioner Found: The Sopra Steria Evaluation
+
+Independent evidence matters more than vendor sentences, and there is little of it. The best Maximo-specific piece we found is by **Yann Bordelanne**, a Maximo consultant at Sopra Steria, summarized on DEV Community by Abhay Rao. Note the layering: it is a **secondhand summary** of Bordelanne's work, so we cite the summary and treat finer detail with care.
+
+### What was tested
+
+| Scenario | What Bob was asked to do |
+|---|---|
+| Maximo SQL | Generate and explain queries (per DOC16's summary) |
+| **BIRT reports** | Identify components, understand logic, suggest changes |
+| **Application XML** | Locate controls, assist with field additions and layout changes |
+| **Log analysis** | Investigate a Java library conflict and dependency problem |
+| **Java to Jython** | Convert Java implementations into Maximo-compatible automation scripts |
+
+### What was concluded
+
+The headline finding is about context. When Bob was given work order details, business rules, naming conventions, and existing internal scripts, the quality and relevance of its output improved markedly compared to generic requests. DOC16 quotes the conclusion this way: "The quality of the output depends heavily on the quality of the context provided." The proposed formula is **Context + Tools + Governance + Human Validation**.
+
+Two more points matter for readers of this series:
+
+- **MCP was a future possibility, not a tested result.** The summary describes MCP integration as the most promising next step, with Bob interacting with Maximo through authorized APIs while keeping security and business logic intact. It did not report a working MCP test.
+- **The recommendation favors the API layer.** Prefer APIs, object structures, and automation scripts over direct database access. That matches IBM's own architecture, and it matches our position.
+
+### What the evaluation does not give you
+
+| Gap | Why it matters |
+|---|---|
+| No quantitative results | No time savings, defect rates, or cost per task |
+| Single practitioner, single environment | Not a sample |
+| Secondhand summary | Details may be compressed |
+| No MCP result | The most strategic capability is untested here |
+
+So read it as **directional evidence** that context quality drives output quality, and as a map of scenarios worth including in your own pilot. It is not a benchmark.
+
+---
+
+## ⚖️ Where Bob Fits in Maximo Work
+
+Now to the table most readers want. This is our assessment, built on DOC16's task-fit framework, IBM's skill scope, and the Sopra Steria scenarios. "Fit" means the combination of how well agents do this kind of work, how testable the outcome is, and how contained the failure is. It is **not** a measured result.
+
+| Maximo task | Fit | Why | Door | Credential | Review artifact |
+|---|---|---|---|---|---|
+| Java MBO to autoscript conversion | **High** | IBM skill exists; pattern-heavy; outcomes are testable | 1, 2 | None to read-only | Diff, test matrix |
+| Autoscript review and refactor | **High** | IBM skill exists; house standards can be fed in | 1, 2 | Read-only for fetch | Diff, skill report |
+| Integration code (OSLC, REST, MIF, Kafka) | Medium to high | Needs an accurate API catalog in context | 1, 4 (read) | Read-only key | Diff, API call log |
+| BIRT report changes | Medium | Works with context; layout and SQL need human QA | 1 | None | Rendered report, SQL review |
+| App Designer XML edits | Medium | Local Dev Mode diff helps; review before import | 1, 3 | Your MAS login | XML diff |
+| Upgrade analysis (7.6 to MAS 9) | Medium | Good at inventorying customizations; **verify every finding** | 1 | None | Inventory with sampled verification |
+| Read-only operational Q&A | Medium | Valuable and low-risk via MCP, but only as good as the tools | 4 (read) | `BOB_READONLY` | Maximo request log |
+| Draft record creation (test) | Low to medium | Acceptable with draft-only keys and review | 4 (draft) | `BOB_DRAFT` | Records in test |
+| Production data fixes | **Do not** | Use scoped API tools through a human-run path, never direct database access | n/a | None for agents | Normal change process |
+| Security group or access changes | **Do not** | A privilege escalation path | n/a | None | Security process |
+
+### Reading the table
+
+**High fit** means a bounded input, a known output shape, and a way to check. A Java class has behavior you can characterize. An autoscript either passes your tests or does not.
+
+**Medium fit** means the agent is useful but the result depends on context it may not have. A BIRT change needs the report's data model and a human to look at the rendered output.
+
+**Do not** is not about whether the agent *can*. It is about whether the cost of a mistake is too high for the evidence you can gather. Production data goes through the API layer under a human's hands, with a dry run.
+
+### Anti-patterns we have seen
+
+| Anti-pattern | What goes wrong | Fix |
+|---|---|---|
+| "Let it fix the data directly" | Direct database writes bypass business rules, audit fields, and integration events | API layer only; agent drafts the payload |
+| One shared admin key in `.env` | No attribution, maximum blast radius | Key per use case, scoped group |
+| Agent summarizes a customization without the source | Hallucinated behavior | Give it the script or class; require citations to lines |
+| "Convert everything in batch" | Review debt piles up | Convert by launch-point group, with test evidence per batch |
+| Treating the skill's report as acceptance | Lulls reviewers | Reports are checklists; tests are acceptance |
+| Letting Bob author the rule that guards Bob | Circular control | Humans write policy and security groups |
+
+---
+
+## 🧱 TMG Tooling: Agent-Neutral Assets for Any Maximo Agent
+
+Everything above uses IBM-native tools. Our own tools sit beside them, and we want to be precise about what each is, because **licenses differ and we will not blur that.**
+
+### The three tools
+
+| Tool | What it is | Version coverage | License |
+|---|---|---|---|
+| **[Max_Interfaces](https://github.com/themaximoguys/Max_Interfaces)** | Maximo API library: 2,439+ endpoints across 14 modules, OSLC and NextGen REST, Postman v2.1 and OpenAPI 3.0 collections, an automation-script deploy pipeline (120 requests), and API discovery | Maximo 7.x, 8.x, MAS 9 | **MIT, open source** |
+| **[Max_mcp](https://github.com/themaximoguys/Max_mcp)** (npm `@themaximoguys/maximo-mcp`, v2.0.0) | A Maximo MCP server with **175 tools across 20 modules**: TypeScript with Zod validation, rate limiting, caching, retries, multi-environment configuration, Docker | Maximo 7.6 through MAS 9 (per TMG; see note below) | **Proprietary. Not open source.** Available on npm and GitHub; all rights reserved |
+| **[Max_autoscripts](https://github.com/themaximoguys/Max_autoscripts)** | 67 Jython sample scripts, 28 templates, a standards file `TMG_AUTOSCRIPT_STANDARDS.md`, Java to Jython and TRM to Jython conversion guides, plus `CLAUDE.md` and `AGENTS.md` house rules | MAS 9 targeted, stock objects | **MIT, open source** |
+
+A note on terminology that matters to us: **Max_mcp is not open source.** Its GitHub repository is publicly readable, which people sometimes confuse with an open license. Its README states it is proprietary software with all rights reserved, and GitHub's license detection reports no recognized license. The npm package metadata points to a LICENSE file rather than an OSI license identifier. If you need to evaluate it for use, read the LICENSE file and talk to us. Max_Interfaces and Max_autoscripts, by contrast, carry the MIT license.
+
+A second note on version coverage: the Max_mcp README describes it as a server for MAS 9.x, while the TMG knowledge base (DOC16) describes it as working across Maximo versions. The README's own title and examples focus on MAS 9, so **verify your version** against its documentation and a test instance before assuming 7.6 or 8.x support. We flag the difference rather than smooth it over.
+
+### What "agent-neutral" means here
+
+None of these tools care which agent calls them.
+
+| Tool | How Bob uses it | How Claude, Copilot, or Cursor uses it |
+|---|---|---|
+| Max_Interfaces | Reference the API catalog and OpenAPI files in the repository so Bob writes correct REST calls | Same files, same effect |
+| Max_autoscripts | `AGENTS.md` and the standards file as `.bob/rules/` or repository instructions | `CLAUDE.md` or `AGENTS.md` equivalents |
+| Max_mcp | Add as an stdio server in `.bob/mcp.json` | Add to that client's MCP configuration |
+
+A Max_mcp entry in Bob's project file looks like the following. The `command`, `args`, and `env` shape follows both Bob's documented stdio schema and the Max_mcp README's `npx` example. The environment variable names `MAXIMO_HOST` and `MAXIMO_API_KEY` come from that README.
+
+```json
+{
+  "mcpServers": {
+    "tmg-maximo": {
+      "command": "npx",
+      "args": ["-y", "@themaximoguys/maximo-mcp"],
+      "env": {
+        "MAXIMO_HOST": "https://<your-dev-maximo-host>",
+        "MAXIMO_API_KEY": "<read-only dev key from your secret manager>"
+      },
+      "alwaysAllow": [],
+      "disabled": false
+    }
+  }
+}
+```
+
+Two cautions specific to local stdio servers. Bob's own documentation warns that local MCP servers "run with the same permissions as Bob" and can reach your file system and environment variables, so you are trusting the package you install. Pin the version, and review its dependency tree like any other supply-chain input. And with a 175-tool server, **a read-only key matters even more**, because the tool list includes create, update, status change, bulk, and security group operations. The key's security group is what stops those.
+
+### IBM's native server versus Max_mcp
+
+These are complementary, not rivals. Here is how we decide.
+
+| Dimension | MAS 9.2 native MCP server | TMG Max_mcp |
+|---|---|---|
+| Availability | **MAS 9.2 only** | Per README, MAS 9.x; check older versions on a test instance |
+| Where it runs | OpenShift pod beside Manage | Your machine, a container, or a server you host |
+| Tool source | Generated from Manage; you expose what you choose | 175 purpose-built tools, fixed set |
+| Tool surface | Small by default, grows with your exposure | Broad by default |
+| Powers Maximo Assistant | **Yes** | No |
+| Auth to the agent | Public route, `apikey` or JWT | Environment-supplied API key to Maximo |
+| Validation | Manage's REST layer | Zod input validation, plus Manage's REST layer |
+| Operations | IBM-supported platform component | You operate it |
+| License | IBM product | **Proprietary, not open source** |
+| Best for | A 9.2 estate that wants governed, Manage-native tools | Estates not yet on 9.2, developer workstations, broad API coverage in dev and test |
+
+### The decision by estate
+
+| Your estate | What we would do |
+|---|---|
+| MAS 9.2, agents for operations | Native server; curate tools; keys per use case |
+| MAS 9.0 or 9.1 | Max_mcp in dev and test against a non-production instance; adopt the native server when you upgrade ([our 9.0 vs 9.1 vs 9.2 comparison](/blog/mas-92-vs-91-vs-90) helps you plan) |
+| Maximo 7.6 or MAS 8 | Use Max_Interfaces and Max_autoscripts as reference material for any agent; test Max_mcp on a lower environment before relying on it |
+| Mixed estate | Use the same agent configuration conventions across both and keep key naming consistent |
+| Any estate, regulated | Whichever you choose, the controls from Part 3 apply: locked approval groups, scoped keys, and evidence outside the model |
+
+The practical point is that the **governance model is the same either way**. Whichever server you connect, a narrow key in a scoped security group is what keeps the agent in its lane.
+
+---
+
+## 🧭 Three Worked Scenarios
+
+Abstractions are cheap. Here are three scenarios, each with a door, a credential, a prompt, a review, and a stop condition. These are our recommended experiments, not reported results. Replace our assumptions with your pilot data.
+
+### Scenario 1: Convert a legacy Java customization
+
+| Element | Choice |
+|---|---|
+| Door | 1 and 2 (repository plus `maximo-java-conversion`) |
+| Credential | None |
+| Environment | A sandbox repo holding the Java class and a dev Maximo for testing |
+| Mode | Plan first, then Agent with `edit` approved per action |
+| Prompt | "Using the maximo-java-conversion skill, convert `AcmeWO.java` to an automation script. Produce the script, the launch point settings, the list of message keys I must create, and a test matrix." |
+| Evidence | Plan, diff, conversion report, test matrix results from dev |
+| Stop condition | Any difference in behavior between Java and script in a test case |
+| Rollback | Keep the Java class deployed until the script is proven; retire it as a separate change |
+
+### Scenario 2: Review a folder of existing autoscripts
+
+| Element | Choice |
+|---|---|
+| Door | 2 (`maximo-code-optimization`), optionally with a read-only fetch |
+| Credential | `BOB_READONLY` with read on `MXAPIAUTOSCRIPT` only, in dev |
+| Prompt | "Review these scripts against `TMG_AUTOSCRIPT_STANDARDS.md` and the skill's security guidance. Report findings by severity. Do not modify files." |
+| Evidence | Findings list; a human triages and then asks for fixes in a second, separate prompt |
+| Stop condition | Any finding the reviewer cannot reproduce by reading the code |
+| Why two prompts | Separating "find" from "fix" gives you a review artifact before any edit |
+
+### Scenario 3: Read-only operational questions over MCP
+
+| Element | Choice |
+|---|---|
+| Door | 4, read-only |
+| Credential | `BOB_READONLY` on a non-production instance with masked data |
+| Prompt | "Using the Maximo tools, list the five assets with the most corrective work orders in the last 180 days, and show the query you ran." |
+| Evidence | The tool calls Bob made, the Maximo request log, and your own query to cross-check |
+| Stop condition | Any numeric disagreement between Bob's answer and your own query |
+| What to measure | Calls per question, wall-clock time, Bobcoins per question, and answer accuracy |
+
+The measurement lines feed [Part 5](/blog/mas-bob-05-pilot-playbook). Bobcoins per completed task is the number IBM does not publish, and these three scenarios are small enough to produce it.
+
+---
+
+## ⚠️ Pitfalls and Troubleshooting
+
+| Symptom | Likely cause | What to do |
+|---|---|---|
+| Download from the old `build-and-deploy/asset-management` path returns 404 | IBM restructured `building-blocks` on 2026-09-30 | Use `automation/operate/asset-management/bob-skills`; pin a commit |
+| Skill panel shows `maximo-script-optimizer`, not `maximo-code-optimization` | Frontmatter name differs from folder and file name | Cosmetic; search by either name |
+| You enabled `maximo-modernization-java` and Bob talks about Spring Boot | It is the generic `code-modernization-expert` skill | Use `maximo_java_conversion.zip` for MBO conversion |
+| Optimizer skill asks for a Maximo URL and API key | By design: it fetches scripts from `MXAPIAUTOSCRIPT` | Supply a read-only dev key; protect the generated `.env` |
+| `tools/list` empty after you deploy a new script tool | Tool list refreshes every `POLLING_FREQUENCY` (default 10 minutes) | Wait for the poll, or restart the MCP pod; check Manage readiness |
+| Tool call fails with a timeout | `TOOL_RESPONSE_TIMEOUT` default is 10 minutes, or the underlying script is slow | Profile the script; do not raise the timeout first |
+| Pod never becomes ready | MCP pod waits for Manage readiness | Check Manage health before debugging MCP |
+| Works in `curl`, fails in Bob | Transport or header handling mismatch (streamable HTTP versus SSE) | Test with MCP Inspector; check the Bob server entry type and headers |
+| 401 or 403 from the route | Wrong header name, expired key, or `mxe.oslc.webappurl` not set for API key auth | Re-check the key, the header, and the system property |
+| Agent "can't find" a Maximo API | Not all Maximo APIs are tools | Expose a custom tool through an object structure or script |
+| Agent did something you thought forbidden | Key's security group is wider than you intended | Audit the service user's groups; revoke and re-issue the key |
+| Local Dev Mode will not authenticate | Self-signed certificate, or MAS version below 9.1.21 or 9.2.1 | Check the version floor and the certificate setting |
+| Max_mcp shows write tools on a "read-only" setup | The tool list is broad; only the key limits writes | Use a read-only security group; consider disabling the server's write modules if supported |
+| Converted script behaves differently from the Java class | Event semantics, status synonyms, or non-UI save paths | Expand the test matrix; test REST, MIF, and workflow saves |
+| Reviewer cannot tell what Bob changed | No plan or diff attached | Make Plan mode output and the git diff mandatory attachments |
+
+---
+
+## 🔎 Open Items and Discrepancies
+
+We verified what we could. These remain open or conflict across sources, and they are the backlog for the next pass.
+
+1. **Bob to MAS 9.2 MCP end-to-end.** No IBM or community write-up shows it in production. Treat as a sandbox experiment.
+2. **Transport match.** Confirm streamable HTTP from Bob works against the server's SSE responses, or whether a different client mode is needed.
+3. **Per-tool schemas.** IBM's overview names the AI configuration tools; the full tool schemas and descriptions come from `tools/list` on your server.
+4. **Route URL format and path.** Take it from your OpenShift route, not from our placeholder.
+5. **Repository path drift.** DOC16's `build-and-deploy/asset-management` is now `automation/operate/asset-management`. We updated our text; DOC16 needs a correction.
+6. **Skill naming.** `maximo-modernization-java.zip` is a generic skill; the Java-to-script converter is `maximo_java_conversion.zip`.
+7. **Max_mcp version support.** README says MAS 9.x; DOC16 says across Maximo versions. Test and document.
+8. **The 69% method.** Ask IBM for the task mix and measurement approach, or leave the figure out.
+9. **Skill code review.** We listed package contents but did not audit the converter and fetch scripts. Read them before you run them.
+10. **Optimizer data path.** The companion web app's use of an OpenAI key is a separate data-handling decision from Bob's.
+
+---
+
+## 🧭 What to Take Away
+
+### The Ten Commandments of Connecting an AI Agent to Maximo
+
+1. **Never repeat the 69%** without the words "IBM-reported internal estimate."
+2. **Open the doors in order:** repository, skills, Local Dev Mode, then MCP, and read-only first.
+3. **Agents go through the API layer, never the database.** No exceptions.
+4. **One key per use case,** named for the use case, owned by a service user with a small security group.
+5. **The security group is the enforcement.** Annotations and approval clicks are hints and gates, not walls.
+6. **Keep `alwaysAllow` empty** until you have watched the agent for weeks.
+7. **Pin the commit** for every IBM asset you depend on, because IBM moves paths.
+8. **Read every skill before you run it.** A skill is instructions plus code with your privileges.
+9. **Convert in testable batches,** and treat a conversion report as a checklist, not a certificate.
+10. **Write down what you do not know,** especially the transport match, the tool list, and the model.
+
+### Your next steps
+
+**This week:**
+- Create `BOB_READONLY` in a non-production Maximo, with a security group limited to two or three object structures, and record its key in your secret manager.
+- Download both IBM skill zips from the **current** path, list their contents, and read the two Python tools before enabling anything.
+- Run Scenario 1 against one real Java customization in a sandbox.
+
+**This month:**
+- If you are on MAS 9.2, run `tools/list` against the native server with `curl` and with MCP Inspector, then connect Bob read-only and run Scenario 3.
+- Add Max_autoscripts' standards file to your `.bob/rules/` or `AGENTS.md` and rerun Scenario 2 to see whether the findings change.
+- Try Local Dev Mode against a test environment if you are on 9.1.21 or 9.2.1 or later.
+
+**Before the pilot:**
+- Decide your task-fit list and your stop conditions in writing.
+- Capture Bobcoins per task, review hours, and defects for each scenario, so [Part 5](/blog/mas-bob-05-pilot-playbook) has data to work with.
+
+---
+
+## References
+
+- [Maximo MCP server overview (IBM Documentation, MAS 9.2)](https://www.ibm.com/docs/en/masv-and-l/cd?topic=developing-maximo-mcp-server-overview)
+- [IBM Bob GA announcement, April 28, 2026 (IBM Newsroom)](https://newsroom.ibm.com/2026-04-28-introducing-ibm-bob-ai-development-partner-that-takes-enterprises-from-ai-assisted-coding-to-production-ready-software)
+- [Agentic workflows in Maximo Assistant (IBM Think)](https://www.ibm.com/think/perspectives/working-smarter-agentic-workflows-maximo-assistant)
+- [Introducing Maximo Application Suite 9.2 (IBM)](https://www.ibm.com/new/announcements/introducing-maximo-application-suite-9-2)
+- [IBM MAS 9.2 and MCP: What Changes for Maximo Teams (Naviam)](https://www.naviam.io/resources/blog/ibm-mas-9-2-and-mcp-what-changes-for-maximo-teams)
+- [Using MCP in Bob (Bob docs)](https://bob.ibm.com/docs/ide/configuration/mcp/mcp-in-bob)
+- [Asset Management building blocks, including the Maximo Bob skills (IBM, GitHub)](https://github.com/ibm-self-serve-assets/building-blocks/tree/main/automation/operate/asset-management)
+- [Building Blocks skills for IBM Bob (IBM, GitHub)](https://github.com/ibm-self-serve-assets/building-blocks-skills-for-ibm-bob)
+- [Build with Bob (IBM Self-Serve Assets)](https://ibm-self-serve-assets.github.io/build-with-bob/)
+- [Maximo Application Framework Local Dev Mode (IBM MAS, GitHub Pages)](https://ibm-mas.github.io/maf-local-dev-mode/)
+- [From Code Assistant to Maximo Gateway: Exploring IBM Bob on Real Maximo Challenges (DEV Community)](https://dev.to/abhayraoym/from-code-assistant-to-maximo-gateway-exploring-ibm-bob-on-real-maximo-challenges-4jfa)
+- [AI Powered Maximo Automation Scripts Modernization using Bob (YouTube, Build with Bob)](https://www.youtube.com/watch?v=bNID8QRi7Iw)
+- [Max_Interfaces (TheMaximoGuys, MIT)](https://github.com/themaximoguys/Max_Interfaces)
+- [Max_mcp (TheMaximoGuys, proprietary)](https://github.com/themaximoguys/Max_mcp)
+- [Max_autoscripts (TheMaximoGuys, MIT)](https://github.com/themaximoguys/Max_autoscripts)
+
+---
+
+## Continue the Series
+
+**Next:** [Part 5, Piloting Bob on Maximo](/blog/mas-bob-05-pilot-playbook). It turns the scenarios in this part into a measured pilot: metrics, competitors, and the open questions to close with IBM.
+
+**Back to:** [Part 3, Governance, Pricing, and Bobcoins](/blog/mas-bob-03-governance-pricing-bobcoins) | [Part 2, Models, Security, and Self-Hosted](/blog/mas-bob-02-models-security-self-hosted) | [Part 1, What IBM Bob Is](/blog/mas-bob-01-what-is-ibm-bob) | [Series Index](/blog/mas-bob-00-series-index)
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | October 2026*
+
+<!--
+Editorial note for human review (night-shift draft, bob-04-bob-and-maximo):
+- Primary source: knowledge_base/DOC16_IBM_BOB_FIELD_GUIDE.md s13-s14 (also s15-s16).
+- Fetched live this run: IBM MAS 9.2 Maximo MCP server overview; Bob MCP config docs (bob.ibm.com/docs/ide/configuration/mcp/mcp-in-bob); MAF Local Dev Mode page; DEV Community Bordelanne summary; Naviam MAS 9.2 + MCP article; IBM Think agentic Maximo Assistant; GitHub API + raw files for ibm-self-serve-assets/building-blocks and themaximoguys repos; downloaded and listed (not executed) the three zip packages in an isolated temp dir.
+- DISCREPANCY (path): DOC16 s13.3 says build-and-deploy/asset-management; live repo is automation/operate/asset-management (restructure commit 2026-09-30). Skill names and zip filenames (maximo-code-optimization.zip, maximo_java_conversion.zip) confirmed. DOC16 should be updated.
+- DISCREPANCY (skill identity): ai/engineering/code-modernization/assets/maximo-modernization-java.zip contains SKILL.md name "code-modernization-expert" (generic), not the Java-to-script converter. maximo-code-optimization.zip frontmatter name is "maximo-script-optimizer". The asset README tells users to "enable maximo-code-optimization and/or maximo-java-conversion".
+- DISCREPANCY (Max_mcp versions): README says MAS 9.x; DOC16 s14 says works across Maximo versions. Post flags it. Max_mcp GitHub license field is NOASSERTION; README states proprietary/all rights reserved; npm license "SEE LICENSE IN LICENSE" (v2.0.0 confirmed via npm view). Post says proprietary, not open source.
+- DISCREPANCY (Max_mcp tool count): README module table sums to 175 across 20 modules; consistent with DOC16.
+- NOT VERIFIED: Bob calling the native MAS 9.2 MCP server (no sandbox MAS 9.2); streamable-http vs SSE compatibility; exact route URL/path; per-tool schemas and purposes of mcc/pcc/similarity/nl2oslc/docsearch/insightsgenerator (post labels interpretations as ours); the Maximo Jython snippets and the Java example are illustrative and untested; the Jython "request_params" action-script example is a pattern sketch, not production code; Max_Interfaces endpoint counts, Max_autoscripts counts (67/28) carried from DOC16 and repo README intro (67+).
+- SearchMaximo: local IBM user guide files were grepped for API key / MXAPIAUTOSCRIPT context under /root/TMG_RFP_DRAFTER/baseline/knowledge-base/ibm_userguides_markdown; key-shown-once and mxe.oslc.webappurl facts carried from Part 3's research of the same corpus.
+- Sopra Steria SQL test is from DOC16's summary; the fetched DEV page listed BIRT, XML, log analysis, and Java to Jython only.
+- Cover: SketchNote style, see image file. Part 5 slug is planned; Part 3 already links to this slug.
+-->

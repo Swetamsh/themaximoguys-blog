@@ -1,0 +1,692 @@
+---
+title: "Bob Models, Security, and Self-Hosted on OpenShift: What Maximo Security Teams Must Know"
+description: "SaaS Bob auto-routes models and you cannot pin one. Self-hosted Bob runs a single core model on OpenShift. Here is what IBM states about data handling, indemnity, regions, the PromptArmor incident, sizing, and GA limits, with every unverified claim flagged."
+date: "2026-10-06"
+slug: "mas-bob-02-models-security-self-hosted"
+tags: ["Maximo", "MAS 9", "IBM Bob", "AI Security", "OpenShift", "Self-Hosted AI", "Data Residency", "AI Coding Agents"]
+draft: false
+tier: "admin"
+author: "Surendra Katta"
+authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop"
+coverImage: "./images/mas-bob-02-models-security-self-hosted.png"
+authorTitle: "Maximo Technical Team"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Can we pin IBM Bob to a specific model, or restrict which models it uses?"
+    answer: "Not on SaaS. IBM's FAQ answers 'Can I choose which model Bob uses?' with 'No,' and says Bob selects the model per task based on complexity, required capabilities, context size, and cost. IBM names the families (Anthropic Claude, Mistral open-source models, IBM Granite, plus fine-tuned IBM models) but not the versions, the routing policy, or which model answered a given task. If your change-control process needs a reproducible model version, SaaS cannot give you one today. Self-hosted Bob is the opposite: you configure exactly one core inference model in model-gateway.yaml, so you control the model, but you also give up automatic routing and take on the quality consequences of whichever model you pick."
+  - question: "Does IBM Bob keep or train on our Maximo code and prompts?"
+    answer: "IBM states that customer data (payload and prompts) is not used to train AI models, and that Bob's default architecture is 'effectively zero-retention for payload data,' with payloads held in ephemeral memory generally on the order of minutes and never written to persistent disk. Telemetry covers feature usage, performance, and errors, and IBM says it does not include your code or prompts. Task history stays on the developer's machine, with a default retention of 14 days. All of this is vendor-stated on IBM's FAQ. IBM offers ISO 27001 evidence and pen-test summaries under NDA, but DOC16 found no public SOC 2, FedRAMP, or ISO 42001 statement for Bob, so ask for the artifacts before your security team signs off."
+  - question: "Which Bob plans carry IP indemnity, and why does it matter for consultancies?"
+    answer: "Only Bob Enterprise, including premium packages purchased for Bob Enterprise. IBM's FAQ says no output indemnity is provided for the Free Trial, Pro, Pro+, or Ultra plans, and the indemnity covers patent and copyright claims, not non-IP claims. For a consultancy, an individual Pro seat used on client Maximo code carries no IBM indemnity at all, so the commercial protection your client contract assumes may not exist. Settle the seat type before the first line of client code goes through Bob, and have legal read the actual Enterprise terms rather than the FAQ summary."
+  - question: "What should we budget to run self-hosted Bob on OpenShift?"
+    answer: "For Bob Core, IBM's published aggregate is 22.1 vCPU, 35.1 GiB memory, and about 30 GiB of storage, with a production footprint of 28.1 vCPU, 41.1 GiB, and about 50 GiB raw, or roughly 36.5 vCPU and 53.4 GiB once you add 25 to 30 percent headroom. The minimum reference topology is nine nodes (three control plane, three infrastructure, three workers) on OpenShift 4.20, 4.21, or 4.22 on amd64. None of that includes GPUs: IBM publishes no GPU sizing for Nemotron, Laguna, or Mistral, and self-hosted pricing is not public. Budget the GPU line item separately, or point the gateway at a frontier model in your own cloud account if your sovereignty rules allow it."
+  - question: "Does self-hosted Bob give us an audit trail at GA?"
+    answer: "That is unresolved, and you should not promise it to a client yet. IBM's September 2026 release blog says the self-hosted backend includes 'identity, the inference gateway, audit logging, and usage metering.' IBM's solution-architecture page says the Audit Logs and Metering services are not included in the initial release and are planned, the known-limitations page says activity logs are not available in the Admin UI, and the overview says security event logging is managed at the OpenShift platform level and not provided by Bob. Until IBM resolves the conflict in writing, plan on reading the bob-authn, bob-authz, and bob-admin pod logs and on forwarding OpenShift platform logs to your own SIEM."
+keyTakeaways:
+  - "SaaS Bob auto-routes across Claude, Mistral, Granite, and fine-tuned IBM models; IBM's FAQ says you cannot choose the model, and it does not disclose versions or routing policy, so behavior is not pinnable"
+  - "Self-hosted Bob runs exactly one core inference model plus a recommended guardrail model (openai/gpt-oss-20b), with static routing at GA; air-gapped options are Mistral 3.5, Nemotron 3, and Laguna S2.1, and IBM says frontier models give the best results"
+  - "IBM states zero-retention for payloads, no training on customer data, and no code or prompts in telemetry, but these are vendor claims, there is no OS-level sandbox, and IP indemnity applies to Enterprise only"
+  - "The PromptArmor finding (January 2026, beta) shows the real attack surface is auto-approve: lock execute and mcp auto-approval centrally and treat README files and web content as untrusted input"
+  - "Self-hosted Bob Core needs about 36.5 vCPU and 53.4 GiB with headroom on OpenShift 4.20+, excluding GPUs; GA limits include no Bobalytics, no in-place upgrades, and an unresolved audit-logging conflict you must clear with IBM"
+series:
+  name: "MAS BOB"
+  part: 2
+  total: 5
+tldr: "Your security team will ask four questions: which model sees our code, where does the data go, what stops the agent doing something dangerous, and can we run it inside our own walls. On SaaS, Bob picks the model for you, states zero payload retention and no training, stores data in one of three regions (with account and billing metadata always in US East), and offers IP indemnity only on Enterprise. Self-hosted Bob on OpenShift gives you one model you choose, air-gapped operation, and a long list of GA gaps, including an audit-logging conflict in IBM's own docs. This part gives you the facts, the labels, and a review checklist."
+seoTitle: "IBM Bob Security, Models, and Self-Hosted for Maximo"
+seoDescription: "IBM Bob model routing, data retention, indemnity, regions, PromptArmor lessons, and self-hosted OpenShift sizing and limits, for Maximo security teams."
+targetQuestions:
+  - "Can IBM Bob be pinned to a specific model?"
+  - "Does IBM Bob retain or train on our code and prompts?"
+  - "Which IBM Bob plans include IP indemnity?"
+  - "Where does IBM Bob store data, and what stays in US East?"
+  - "What was the PromptArmor vulnerability in IBM Bob and is it still relevant?"
+  - "What does self-hosted IBM Bob on OpenShift require and what are its GA limitations?"
+semanticKeywords:
+  - "IBM Bob security"
+  - "Bob model routing"
+  - "self-hosted Bob OpenShift"
+  - "Bob model gateway"
+  - "Bob zero data retention"
+  - "Bob IP indemnity"
+  - "Bob data residency"
+  - "PromptArmor Bob"
+  - "air-gapped AI coding agent"
+  - "Bob bobctl"
+proficiencyLevel: "advanced"
+dependencies:
+  - "Part 1 of this series (what Bob is, the V2 architecture, modes, and extension points)"
+  - "Working knowledge of OpenShift namespaces, storage classes, and operators"
+  - "Familiarity with your organization's vendor security review and data classification process"
+speakableSections:
+  - "The Short Version"
+  - "SaaS: You Cannot Choose the Model"
+  - "What Self-Hosted Bob Costs You at GA"
+clusterSlugs:
+  - "mas-bob-00-series-index"
+  - "mas-bob-01-what-is-ibm-bob"
+  - "mas-bob-03-governance-pricing-bobcoins"
+  - "mas-bob-04-bob-and-maximo"
+  - "mas-bob-05-pilot-playbook"
+relatedSlugs:
+  - "evc-04-plan-before-you-vibe"
+  - "evc-11-teach-ai-house-rules"
+  - "evc-12-maximo-eam-shops"
+  - "evc-13-first-maximo-ai-agent"
+  - "mas-java-extensions-series-index"
+---
+
+# Bob Models, Security, and Self-Hosted on OpenShift: What Maximo Security Teams Must Know
+
+<aside>
+
+🎯 **Who this is for:** Maximo security leads, platform and OpenShift administrators, architects, and the person who has to sign the vendor risk questionnaire. You do not need to like AI coding agents to read this. You need to be able to answer, in writing, where your Maximo code goes and what the tool can touch.
+
+</aside>
+
+**Series:** *IBM Bob for Maximo Teams* | **Part 2 of 5** | **Read time:** ~24 minutes
+**Previous:** [Part 1, What IBM Bob Is](/blog/mas-bob-01-what-is-ibm-bob) | **Next:** [Part 3, Governance, Pricing, and Bobcoins](/blog/mas-bob-03-governance-pricing-bobcoins)
+
+---
+
+## 🔥 The Questionnaire Lands on Your Desk
+
+A developer on your team has already tried Bob. They liked it. They pasted a chunk of an automation script into it, maybe two, and now someone in procurement has forwarded you a vendor risk form with a note that says, "Can you turn this around by Friday?"
+
+The form has the usual questions. Which AI model processes our data? Is it retained? Is it used for training? Where is it stored? Who is liable if the output infringes someone's IP? What happens if the tool is tricked into doing something harmful? Can we run it inside our own network?
+
+> *"Is it secure?"*
+>
+> That is not a question with a yes or a no. It is six questions wearing a trench coat.
+
+Maximo customization code is not a toy. Your automation scripts encode business rules. Your integration code holds endpoint names, queue names, and sometimes credentials that someone forgot to externalize. Your application XML describes your security model. If you are in a regulated utility, a defense contractor, or a public-sector estate, some of that is the kind of material you are contractually forbidden to send to a third party.
+
+This part answers the six questions with what IBM has actually published, who said it, and how strong the evidence is. We are not here to tell you Bob is safe or unsafe. We are here to give you a defensible, labeled set of facts so that your answer on Friday is one you can stand behind in an incident review.
+
+<aside>
+
+💡 **Evidence labels, as in the rest of the series:** **[IBM]** means vendor-stated in IBM documentation, FAQ, or press material and not independently audited. **[IND]** means independent press, analyst, researcher, or practitioner. Where IBM's own sources contradict each other, we show both readings. Every claim we could not verify is listed in the "Open Items" section, so you know what to ask IBM before you rely on it.
+
+</aside>
+
+---
+
+## 📌 The Short Version
+
+If you only have a minute:
+
+- **SaaS Bob picks the model for you.** IBM's FAQ says you cannot choose or restrict it. IBM names Claude, Mistral, and Granite families but not versions or routing policy [IBM].
+- **Self-hosted Bob runs exactly one core model.** You choose it. Multi-model routing is on IBM's roadmap, not in the GA product [IBM].
+- **IBM states** payloads are "effectively zero-retention," customer data is not used for training, and telemetry excludes code and prompts [IBM]. None of that has been independently audited.
+- **IP indemnity is Enterprise-only.** Free Trial, Pro, Pro+, and Ultra carry none [IBM].
+- **Three SaaS regions** (US East, Frankfurt, Tokyo), but account, admin, policy, and billing metadata live in US East regardless [IBM].
+- **There is no OS-level sandbox.** The January 2026 PromptArmor finding showed auto-approve is the attack surface [IND].
+- **Self-hosted Bob Core** needs roughly 36.5 vCPU and 53.4 GiB with headroom on OpenShift 4.20 to 4.22, excluding GPUs [IBM]. Bobalytics, in-place upgrades, and Admin UI activity logs are not available at GA [IBM].
+
+---
+
+## 🧠 SaaS: You Cannot Choose the Model
+
+IBM's FAQ includes the question "Can I choose which model Bob uses?" The answer is a single word: **No.** Bob "automatically selects the most appropriate language model for each task based on complexity, required capabilities, and cost-efficiency," and IBM lists task complexity, required capabilities, context size, and cost optimization as the inputs [IBM, FAQ]. A separate FAQ entry asks whether an organization can choose or restrict which models Bob routes to. We could not retrieve the full answer text from the FAQ page during this run (the page rendered question headings only), so the statement below rests on the "No" recorded in DOC16 and on the consistent IBM messaging that routing is automatic. Confirm the exact wording with your IBM representative if your policy depends on it.
+
+The GA announcement on April 28, 2026 names "Anthropic Claude, Mistral open source models, and IBM Granite," plus fine-tuned models for code reasoning, security, and next-edit prediction [IBM]. The October 2025 preview also listed Llama [IBM]. IBM's tagline for the design is **"Stop managing models. Start managing outcomes."**
+
+### What IBM does not tell you
+
+| Question a security team asks | What IBM publishes | Status |
+|---|---|---|
+| Which model families are in rotation? | Claude, Mistral, Granite, fine-tuned IBM models | Published [IBM] |
+| Which model versions? | Nothing | **Not disclosed** |
+| What is the routing policy? | "Complexity, capabilities, context size, cost" | Criteria only, no thresholds |
+| Which model answered this task? | No per-task visibility documented | **Not disclosed** |
+| Can we exclude a provider? | "No" per DOC16 | Confirm in writing |
+| Tokens per Bobcoin? | Not published | **Not disclosed** (see Part 3) |
+
+### Why a Maximo shop should care
+
+Auto-routing is a feature for a developer and a problem for a change-control board. Consider what you cannot do:
+
+- **You cannot reproduce a result.** If Bob generated an automation script on Tuesday and a different script from the same prompt on Thursday, you cannot establish whether the model changed, because you cannot see which model ran.
+- **You cannot attest to model provenance.** If your data-handling policy says "customer data may only be processed by models hosted in region X by vendor Y," you cannot verify that on SaaS from the product surface.
+- **You cannot freeze behavior across an audit period.** Models in the rotation can change under you without a notice in your change calendar.
+
+RedMonk's Kate Holterhoff called auto-selection "a double edged sword, as developers can be suspicious of black box tools," while noting it "eliminates the paralysis of choice" [IND, The Register and DevClass coverage, April 2026]. Techzine flagged the same black-box skepticism [IND].
+
+<aside>
+
+💡 **Key insight:** A model you cannot pin is a model you cannot put in a change record. If a Maximo customization needs a reproducible AI step, treat Bob as an assistant whose output you review and version like human-written code, not as a deterministic build tool. The artifact you control is the diff, not the model.
+
+</aside>
+
+### A practical compensating control
+
+You cannot pin the model, but you can pin everything around it:
+
+1. **Commit the output, not the prompt.** The authoritative artifact is the reviewed script or XML in your repository.
+2. **Record the Plan.** Bob's Plan mode produces a reviewable plan before anything is written (covered in Part 1). Attach it to the change record so a reviewer sees the intent, not just the result.
+3. **Keep your own regression tests** for converted or refactored automation scripts, so a behavioral drift in the model shows up as a failed test and not as a production incident.
+4. **Log the Bob client version** you used (IDE 2.2.0 and Shell 2.0.5 are the versions IBM lists against the self-hosted 2.0.0 release) alongside the change.
+
+---
+
+## 🏠 Self-Hosted: One Core Model, a Gateway, and a Guardrail
+
+Self-hosted Bob replaces automatic routing with a **Model Gateway**: an OpenAI-compatible inference service with an embedded router called Bifrost [IBM, solution architecture]. You define models in `model-gateway.yaml` and keep secrets in `config.yaml` under `bob.modelGateway.secrets` [IBM, configuration docs].
+
+IBM's rule is blunt: "Configure only one core inference model in the model gateway at a time. Configuring multiple core models simultaneously is not supported and results in undefined behavior" [IBM].
+
+### The reserved model-name slots
+
+The gateway requires three reserved `model_name` values. Bob's clients ask for these names, and your configuration maps each name to a real model [IBM, configuration docs]:
+
+| Reserved name | Purpose | Notes |
+|---|---|---|
+| `premium-ide` | Default model for interactive chat | Recommended as the router's default model |
+| `security` | Guardrail and security checks | Backed by the guardrail model |
+| `background` | Background and autonomous agent tasks | Used by background tasks (Part 1) |
+
+The router is static at GA:
+
+```yaml
+routers:
+  - name: router
+    strategy: static
+    static:
+      default_model: premium-ide
+```
+
+IBM's guidance is to leave `default_model: premium-ide` alone and change providers at the model-entry level instead. Installation and updates use the `bobctl` CLI [IBM, configuration docs]:
+
+```bash
+# Initial install with a model configuration
+bobctl install --model-config path/to/model-gateway-config.yaml
+
+# Later model changes, refreshing secrets
+bobctl update-model-config --model-config <file> --update-secrets
+```
+
+Automatic multi-model routing is described as planned, not shipped [IBM via FACTBASE, and echoed by launch coverage].
+
+### Where the models run
+
+IBM is explicit that Bob does not host the model for you: Bob "connects to deployed models … but does not provision, host, or manage model-serving infrastructure" [IBM]. You have three connection patterns:
+
+| Pattern | Examples | Fits |
+|---|---|---|
+| **On-cluster** via Red Hat OpenShift AI | OCI/ModelCar images, air-gapped mirroring | Air-gapped and sovereign estates |
+| **Public-cloud endpoint** in your own account | AWS Bedrock, Google Vertex AI, Azure OpenAI | Regulated shops that already trust a hyperscaler |
+| **Private inference endpoint** | vLLM and similar | Teams with an existing GPU platform |
+
+### Supported models, and the quality tier you are choosing
+
+| Category | Models IBM lists (October 2026) [IBM] |
+|---|---|
+| **Frontier (recommended)** | Claude Sonnet 5 and Claude Opus 4.8 (AWS Bedrock); Google Gemini 3.7 Flash (Vertex AI); OpenAI GPT 5.6 Sol (Azure OpenAI) |
+| **Air-gapped / open-weight** | Mistral 3.5 (example config `mistralai/mistral-medium-3-5-0`); NVIDIA Nemotron 3 (`nvidia/nemotron-3-ultra-550b`); Poolside Laguna S2.1 (`poolside/laguna-s-2.1`) |
+| **Guardrail** | `openai/gpt-oss-20b`, or provider-native guardrails (Bedrock Guardrails, Vertex AI safety filters, Azure OpenAI content filters) |
+
+IBM's own documentation draws the line: frontier models "deliver the highest level of reasoning, accuracy, and generation quality" for complex work, while the air-gapped models suit "strict air-gap compliance and standard coding assistance" [IBM]. In plain terms, **a fully air-gapped Bob is a different quality tier from SaaS Bob.** BERI's independent analysis made the same point under the headline "IBM's Air-Gapped Bob Drops Claude for Nemotron and Laguna" and noted IBM published no evaluations of Bob running on either local model [IND].
+
+> **Independent hardware numbers, treat with caution [IND].** BERI reports that Nemotron needs on the order of "8x B200 or 8x H200, or 16x H100" at minimum, while Laguna can run on a single NVIDIA DGX Spark, and cites model-maker benchmark scores (Laguna S 2.1 at 70.2% and Nemotron at 56.4% on Terminal-Bench 2.1). Those scores come from the model makers, not from testing inside Bob's harness, and **IBM itself publishes no GPU sizing.** Use BERI's suggestion instead: run your own 20-ticket test before committing.
+
+### The decision matrix for a Maximo estate
+
+| Your situation | Likely fit | Why |
+|---|---|---|
+| Commercial manufacturer, no residency mandate | SaaS | Highest model quality, no platform to run |
+| EU or Japan estate with regional processing rule | SaaS in region, with metadata caveat | Inference stays in region; metadata does not |
+| Contract says *all* data stays in region or inside your boundary | Self-hosted | Only option that removes the US East metadata store |
+| Air-gapped utility, defense, or public sector | Self-hosted with Nemotron, Laguna, or Mistral | Only options that run fully disconnected |
+| Regulated but cloud-permitted | Self-hosted pointing at a frontier model in your own cloud account | Keeps your cloud tenancy and a stronger model |
+
+### Doc inconsistencies you should know about
+
+IBM's supported-models page lists **Gemini 3.7 Flash**, while the gateway configuration examples use `gemini-3.6-flash` and also reference `gemini-3.1-pro` [IBM, per DOC16]. The page lists "Mistral 3.5" while the config example uses `mistral-medium-3-5-0`. IBM's October 1 press release names no models at all, and third-party coverage emphasizes Nemotron and Laguna as the air-gapped pair at launch [IND]. Verify model identifiers against the live docs on the day you write your configuration.
+
+---
+
+## 🔐 Data Handling: What IBM States, and How Strong Each Claim Is
+
+This is the section your questionnaire cares about most. Every row is a **vendor statement**. We list the evidence level next to each so you know which ones to ask IBM to document.
+
+| Control | What IBM says [IBM, FAQ and docs] | Evidence |
+|---|---|---|
+| **Training** | "Customer data (payload and prompts) is not used to train AI models." | Vendor statement |
+| **Retention** | "IBM Bob's default architecture is effectively zero-retention for payload data." Payloads sit in ephemeral in-memory storage, "generally on the order of minutes," and are "never written to persistent disk storage." | Vendor statement; mechanism not independently verified |
+| **Telemetry** | Feature usage, performance, and errors. "IBM Bob does not collect your code or prompts as part of telemetry data." | Vendor statement |
+| **Local task history** | Stored on the developer's machine; default retention 14 days | Vendor statement |
+| **Network egress** | Not by default; internet access "depends entirely on which MCP servers you have configured and trusted." An experimental `web_fetch` tool was added in September 2026 | Vendor statement |
+| **Runtime guardrails** | "Prompt normalization, sensitive data scanning, real-time policy enforcement, and AI red-teaming"; also secrets detection | Mechanisms **not documented publicly** |
+| **License filtering** | "No. License filtering is not a capability of IBM Bob." | Vendor statement, and a notable gap |
+| **Compliance** | "IBM is ISO 27001 certified"; pen-test summaries and ISO certificates under NDA | **No public SOC 2, FedRAMP, or ISO 42001 statement for Bob** |
+| **Sandbox** | None at OS level. `.bobignore` "does not create a system-level sandbox"; commands run as child processes | Vendor documentation |
+
+Two things deserve emphasis for a Maximo audience.
+
+**"Effectively zero-retention" is a careful phrase.** It describes the payload store, not every system that touches your account. The same FAQ says task history is kept locally and that telemetry exists. Read the sentence for what it says (payloads are ephemeral) and what it does not say (that nothing about your usage is recorded). If your policy says "no vendor retention of source code, ever," ask IBM for the data-flow diagram and the contractual language, because a FAQ line is not a contract term.
+
+**No license filtering matters more than it sounds.** Bob does not screen generated code for similarity to licensed material. That makes the indemnity position (next section) the only IBM-side protection against an IP claim, and the indemnity is not available on every plan.
+
+### Protect the inputs, because the tool will not
+
+The practical way to reduce exposure on either deployment model is to control what the agent can read. A starting `.bobignore` for a Maximo repository, **illustrative and unverified against current Bob syntax** (we assume gitignore-style patterns, which DOC16 does not confirm), keeps credentials and environment files out of context:
+
+```text
+# .bobignore (illustrative; confirm syntax in current Bob docs)
+.env
+.env.*
+maximo.properties
+*.keystore
+*.jks
+*.p12
+**/secrets/**
+**/exports/**/*.csv
+```
+
+Remember IBM's own caveat: this excludes files from the agent's context but "does not create a system-level sandbox." A command the agent runs can still read a file by path. `.bobignore` reduces accidental exposure; it is not an access control.
+
+---
+
+## ⚖️ IP Indemnity: Enterprise Only
+
+IBM's FAQ answers the indemnity question precisely: "Yes, for IBM Bob Enterprise only, including premium packages purchased for Bob Enterprise." The indemnity covers **IP claims (patent and copyright)** arising from output of both IBM-developed and third-party models. It "does not extend to non-IP claims," and "No output indemnity is provided for Bob Free Trial, Bob Pro, Bob Pro Plus, or Bob Ultra" [IBM, FAQ].
+
+| Plan | Indemnity | Implication for Maximo teams |
+|---|---|---|
+| Free Trial (30 days) | No | Evaluation only; do not use on client or proprietary code |
+| Pro | No | Individual use; no IBM IP backstop |
+| Pro+ | No | Same |
+| Ultra | No | Same, despite the higher price |
+| **Enterprise** | **Yes** (IP claims only) | The only tier that supports a contractual position |
+
+### The consultancy trap
+
+If you are a Maximo partner, this is the row to read twice. A developer who buys a $20 Pro seat on a personal card and uses it on a client's automation scripts has created a situation where the client contract may assume AI-output protections that do not exist. Three practical rules:
+
+1. **Decide the seat type before the first client file is opened.** Enterprise for client work, individual tiers for internal learning only.
+2. **Check your client's AI clause.** Many MSAs now prohibit unapproved AI tools outright.
+3. **Have counsel read the Enterprise terms.** This post quotes the FAQ summary. The contract governs.
+
+---
+
+## 🌍 Regions and Data Residency
+
+SaaS Bob runs in three regions [IBM, data-residency documentation]:
+
+| Region | Location |
+|---|---|
+| US East | Washington D.C., USA |
+| Europe | Frankfurt, Germany |
+| Japan | Tokyo, Japan |
+
+Inference, data processing, and conversation storage stay in the region you select. **But account, admin, user and team, policy, and billing metadata are stored globally in US East regardless of region** [IBM]. Authentication events in the activity log are stored globally for the same reason, while admin events are stored per region (Part 3 covers the log in detail).
+
+Other connectivity facts from IBM's FAQ: Bob is not available in a list of sanctioned and restricted countries, including China, Hong Kong, Russia, and Iran, and SaaS connectivity is HTTPS on port 443 only, with no private-link option documented at the time of writing [IBM].
+
+> **Sovereignty caveat for EU and Japan Maximo programs.** Regional SaaS keeps your *content* in region. It does not keep your *identity and billing metadata* there. If your contract or regulator says all data, including user identifiers, must remain in region, regional SaaS does not satisfy it, and that points to self-hosted Bob.
+
+IBM's own Institute for Business Value research, quoted in its October 1 announcement, found that 68% of surveyed executives say meeting data residency and sovereignty requirements across geographies is challenging [IBM research]. That is the market IBM built self-hosted Bob for.
+
+---
+
+## 🚨 The PromptArmor Incident: What Happened and What Still Applies
+
+On January 7, 2026, The Register reported that PromptArmor researchers had found two problems in the **beta** release of Bob [IND].
+
+**Bob Shell, malware execution.** A malicious `README.md` told Bob to run a phishing-training exercise built from harmless `echo` commands. Once a user had chosen "always allow" for `echo`, later chained commands ran **without approval**. Bob did not check process substitution, and redirection with `>` let hidden commands ride along with an allow-listed one. The result was download and execution of a malicious script. PromptArmor's Shankar Krishnan said the approval function "only ends up validating an allow-listed safe command, when in reality more sensitive commands were being run." He also noted that "Bob can read webpages," so a prompt injection can arrive from a page the user asks Bob to review [IND].
+
+**Bob IDE, zero-click exfiltration.** The IDE was reported to have data-exfiltration vectors through markdown image rendering, a permissive Content Security Policy, and possibly pre-fetched JSON schemas [IND].
+
+**IBM's response.** IBM said it was unaware of the vulnerability and had not been notified directly, emphasized that Bob was in tech preview, and committed to "take any appropriate remediation steps prior to IBM Bob moving to general availability" [IND, The Register, quoting IBM]. We found no public confirmation from IBM or PromptArmor that each specific vector was closed before GA. A later Bob Shell changelog fix addressed a related gap in which a per-task MCP tool allowlist "could bypass the broader group approval gate" [IBM changelog, via search summary, not independently retrieved].
+
+### Why this matters to Maximo specifically
+
+The attack needs three ingredients: untrusted text the agent reads, an auto-approved command class, and a shell. A Maximo developer's day provides all three. You clone vendor sample repositories. You open a customer's exported package. You paste a stack trace from a forum. You ask the agent to "review this page." Any of these can carry an instruction.
+
+| Lesson | Control | Where it lives |
+|---|---|---|
+| Auto-approve is the attack surface | Lock `execute` and `mcp` auto-approval for machines that touch client Maximo code | `DisabledAutoApprovalGroups` group policy |
+| Untrusted repos can carry instructions | Open unfamiliar repositories in untrusted mode | Workspace trust (`~/.bob/trustedFolders.json`, `/permissions`) |
+| README and web content are input, not instructions | Review the agent's plan before approving commands | Plan mode, edit preview |
+| The agent shell is not a sandbox | Run on a workstation or container with no production credentials | Your environment |
+| Config files can widen trust | Untrusted folders disable project config and MCP servers | Workspace trust |
+
+`DisabledAutoApprovalGroups` accepts these groups: read, edit, execute, mcp, skill, todo, subtask, subagent, and mode [IBM, group policies]. An administrator can lock auto-approval off for any of them. Group policy is delivered as a macOS MDM profile (`com.ibm.bob`), a Windows policy (`Software\Policies\IBM\Bob`, ADMX/ADML via GPO or Intune), or a Linux `/etc/bob/policy.json` that is root-owned [IBM]. IBM documents group policies as **Bob IDE only** at the time of writing, so confirm Bob Shell coverage before you rely on it for CI runners.
+
+An **illustrative, unverified** Linux policy file following that pattern (the exact JSON schema is not in our sources, so treat the key shape as an assumption and check IBM's group-policies page):
+
+```json
+{
+  "DisabledAutoApprovalGroups": ["edit", "execute", "mcp", "skill"],
+  "UpdateMode": "manual"
+}
+```
+
+The control IBM added after the incident, enforced hooks, is the one that lets you apply deterministic checks regardless of what the model decides. We cover it in Part 3.
+
+<aside>
+
+💡 **Key insight:** The PromptArmor finding was against a beta, and the specific bugs were reported fixed in intent before GA. The durable lesson is architectural: whenever an agent can execute commands and read untrusted text, "approve once, trust always" converts a human-in-the-loop control into a one-time check. Configure your policy as if the next bypass exists.
+
+</aside>
+
+---
+
+## 🏗️ Self-Hosted Bob on OpenShift: What You Are Actually Deploying
+
+IBM describes self-hosted Bob as "a self-managed deployment of the Bob AI code assistant platform on Red Hat OpenShift Container Platform (OCP)… for organizations that require control over data residency, security boundaries, network access, or deployment in disconnected environments" [IBM, overview].
+
+### Deployment shape
+
+- A **Kubebuilder-based Bob Operator** with Helm charts and the **`bobctl`** admin CLI [IBM].
+- Two namespaces, one for the operator and one for the instance. **A dedicated cluster is not required** [IBM].
+- **Two-stage install**: a cluster administrator approves the cluster-wide footprint once, then the Bob-owning team installs and upgrades without cluster-admin rights [IBM].
+- **A single-node OpenShift is enough for a proof of concept** [IBM, September blog].
+- Three install modes: direct (outbound to the IBM registry), air-gapped direct mirroring, and air-gapped indirect mirroring [IBM].
+
+### SaaS versus self-hosted, side by side
+
+| | SaaS | Self-hosted |
+|---|---|---|
+| Infrastructure | IBM-hosted | Your OpenShift, on-prem or in your cloud account |
+| Operations | IBM handles upgrades and scale | You own the lifecycle; **in-place upgrades not supported** at GA |
+| Models | Auto-routed multi-model | **One** core model plus guardrail; bring your own license |
+| Identity | SAML or OIDC SSO at bob.ibm.com | Bundled **Keycloak**, federated to LDAP or AD |
+| Bobalytics | Yes (Enterprise) | **Not supported** |
+| Activity logs in Admin UI | Yes | **No**; read pod logs |
+| Developer clients | Bob IDE and Bob Shell | Same clients; endpoint distributed via group policy |
+
+### Supported versions and platform
+
+| Item | Value [IBM, system requirements] |
+|---|---|
+| Bob self-hosted / IDE / Shell | **2.0.0 / 2.2.0 / 2.0.5** |
+| Backend architecture | **amd64** only (mixed-architecture clusters are acceptable if Bob workloads are confined to amd64 nodes) |
+| OpenShift | **4.20, 4.21, 4.22** |
+| Workstation tools | `bobctl`, `oc` (minimum OCP 4.20), `helm` 3.14.0 or later, `bash` 3.2 or later, `openssl` 3.5 or later |
+| Dependencies | cert-manager; an LLM endpoint provisioned **before** install |
+| Image sources | Bundle from the IBM Bob GitHub repo; images from `cp.icr.io`; IDE extensions from Open VSX |
+
+That last row is a security-review item, not a footnote. In an air-gapped environment you must mirror the images and make the IDE extension available to developers without internet access, and the extension marketplace is Open VSX rather than the Microsoft marketplace. Your workstation hardening team needs to know that before rollout.
+
+### Sizing, with our arithmetic shown
+
+IBM publishes aggregate Bob-tenant requirements, excluding platform overhead:
+
+| Stack configuration | CPU (raw) | Memory (raw) | Storage (PVs) | Status |
+|---|---|---|---|---|
+| Bob Core | 22.1 vCPU | 35.1 GiB | ~30 GiB | Baseline available |
+| Bob Core + RAG | 38.1 vCPU | 69.1 GiB | ~62 GiB | Baseline available |
+| Bob Core + Z Understand | 30.1 vCPU | 74.1 GiB | ~2,288 GiB | Benchmarking in progress |
+| Bob Core + RAG + Z Understand | 46.1 vCPU | 108.1 GiB | ~2,320 GiB | Benchmarking in progress |
+
+The Z Understand rows belong to the IBM Z premium package and are irrelevant to a Maximo shop unless you also modernize mainframe code. The first two rows are yours.
+
+IBM's **Bob Core production footprint** is 28.1 vCPU, 41.1 GiB memory, and about 50 GiB storage raw, or about **36.5 vCPU and 53.4 GiB** with 25 to 30 percent headroom [IBM].
+
+The **minimum reference topology** for a dedicated cluster:
+
+| Node role | Count | Per node | Aggregate |
+|---|---|---|---|
+| Control plane | 3 | 4 vCPU / 16 GiB | 12 vCPU / 48 GiB |
+| Infrastructure | 3 | ~4 vCPU / ~16 GiB | 12 vCPU / 48 GiB |
+| Worker | 3 | 20 vCPU / 24 GiB / 200 GiB disk | 60 vCPU / 72 GiB / 600 GiB |
+| **Total** | **9** | | **~84 vCPU / ~168 GiB / 600 GiB** |
+
+After OpenShift overhead, IBM says the worker pool yields about 57 vCPU and 63 GiB allocatable [IBM, per DOC16].
+
+**TMG arithmetic, not an IBM statement.** Take the 63 GiB allocatable figure against the footprints above. Bob Core with headroom (53.4 GiB) fits. Bob Core + RAG at 69.1 GiB raw, or roughly 90 GiB with 30 percent headroom, does **not** fit on the minimum worker pool. If you want the RAG add-on (IBM's retrieval over its documentation), size the workers up, or plan separate workers for it. The reference topology is a floor for Bob Core, not a recommendation for everything.
+
+**What the numbers exclude: GPUs.** IBM says model resource needs "depend on model quantization, context length, serving runtime (such as vLLM or TGI), and target throughput," and publishes no GPU sizing [IBM; BERI]. If you run an open-weight model on-cluster, your largest cost line is not in IBM's table.
+
+### Storage
+
+IBM lists PostgreSQL (RWO, SSD block storage strongly recommended), OpenSearch (RWO), Redis (RWO), and shared config and certificates (RWX). Supported storage classes are managed NFS and OpenShift Data Foundation, and a separate backup target is required [IBM]. For a Maximo platform team, the point is that Bob brings its own stateful stack. Do not assume your existing MAS storage class and backup process cover it without checking.
+
+### Internals worth knowing for a security review
+
+| Component | Role |
+|---|---|
+| Keycloak | Identity; LDAP or AD federation (SCIM sync described) |
+| `bob-authn`, `bob-authz` | Authentication and authorization services |
+| OpenResty | API gateway |
+| Bob Admin | Administration UI and API |
+| Metrics Collector / Forwarder | Telemetry path |
+| Inference Service with Bifrost | The Model Gateway and router |
+| PostgreSQL, Redis | Auth, admin, and telemetry data; telemetry cache |
+| Vector audit store | Audit event store |
+| OpenSearch, Db2 | Only with the Z add-on (RAG corpus, Z Understand) |
+
+Premium packages use a **two-layer entitlement**: the cluster administrator enables workloads in `config.yaml` (for example `rag.enabled` and `zProxy.enabled`), and the Bob administrator assigns user entitlements in the Admin UI [IBM]. That separation is useful. Your platform team controls what runs, and your Bob admin controls who may use it.
+
+**Usage metering** reports a single metric, the total number of active users, with no user identities. Air-gapped clusters download a payload manually and upload it to IBM Software Central [IBM].
+
+---
+
+## ⚠️ What Self-Hosted Bob Costs You at GA
+
+IBM is unusually direct about limitations. The known-limitations page lists these [IBM]:
+
+| # | Limitation | Practical consequence |
+|---|---|---|
+| 1 | **Activity Logs are not in the Admin UI.** "The Activity Logs feature is not included in the Bob Admin UI for this release." | Read service logs through the OpenShift console or CLI |
+| 2 | **In-place upgrades not supported.** "Controlled in-place upgrades are not supported in this release." Fresh installs are recommended; hotfixes can be applied with `./bobctl install` | Plan a migration path for every version change |
+| 3 | **`unknown model: zproxy` error** if the backend lacks the required Z components | Set `rag.enabled: true` and `zProxy.enabled: true` in `config.yaml` before assigning Z entitlements |
+| 4 | **Bobalytics not supported.** It "is not available in the IBM Bob on-premises stack" | No built-in adoption or Bob-factor analytics (Part 3) |
+
+Two more items come from other IBM pages and matter just as much:
+
+5. **Audit Logs and Metering Services.** The solution-architecture page says both are "Not included in the initial release; planned for a future release." This conflicts with IBM's September release blog (see the next section).
+6. **Security event monitoring is yours.** The overview says "Security event logging and monitoring for Bob self-hosted are managed at the OpenShift platform level and are not provided by Bob."
+
+Put the SaaS and self-hosted pictures together and the trade is clear. You gain control: data residency, network boundary, model choice, air-gap capability. You lose: automatic routing, a frontier-grade default model, Bobalytics, in-place upgrades, and the convenience of IBM operating the platform. For a Maximo shop whose rule is "the code does not leave the building," that is a fair trade. For a shop whose rule is "we want the best output," it may not be.
+
+### Pod logs as an interim audit source
+
+Because the Admin UI does not show activity logs, the practical interim control is to treat the three identity and admin services as log sources. A small sketch with `oc`, using placeholder names for your own instance namespace (the pod label selectors are assumptions to adapt):
+
+```bash
+# Illustrative: collect recent auth/authz/admin service logs for review
+NS=bob-instance            # your instance namespace (placeholder)
+for svc in bob-authn bob-authz bob-admin; do
+  oc -n "$NS" logs deployment/"$svc" --since=24h > "audit-${svc}-$(date +%F).log"
+done
+```
+
+Better: forward those namespaces' logs through your existing OpenShift logging stack to your SIEM, so that retention and alerting follow your normal rules rather than a script.
+
+---
+
+## 🧾 The Audit-Logging Conflict, Stated Plainly
+
+This is the single most important unresolved item for a self-hosted Maximo buyer.
+
+| IBM source | What it says about audit logging and metering on self-hosted |
+|---|---|
+| September 2026 release blog | The backend "includes identity, the inference gateway, audit logging, and usage metering" |
+| Solution-architecture page | Audit Logs service and Metering Service: "Not included in the initial release; planned for a future release" |
+| Known-limitations page | Activity logs not in the Admin UI |
+| Self-hosted overview | Security event logging "not provided by Bob"; managed at the OpenShift level |
+| Usage-metrics page | Describes Usage Metering Service active-user reporting |
+
+These cannot all be literally true of the same GA build. One possible reading is that an audit-log *store* (the Vector component) exists while the *service and UI* around it do not, but that is our inference, not IBM's statement. **Do not tell a client that self-hosted Bob has an audit trail until IBM answers in writing**, and ask specifically: which events are recorded, where, in what format, for how long, and whether they include agent actions (prompts, tool calls, file edits) or only identity and admin events.
+
+The same question applies on SaaS. The CADF activity log covers authentication and admin events, and DOC16 could not confirm whether prompts, tool calls, and file edits reach the Splunk SIEM feed [IBM, per DOC16]. For agent-action audit you will likely rely on enforced hooks, which Part 3 covers.
+
+---
+
+## ✅ A Security Review Checklist for Bob
+
+Use this as the skeleton for your vendor review. Each line is a question to put to IBM or a control to verify yourself.
+
+### Model and data
+
+| # | Question | Where to look | Status after this post |
+|---|---|---|---|
+| 1 | Which model versions process our data on SaaS? | IBM account team | Not disclosed |
+| 2 | Is routing configurable per tenant? | IBM account team | "No" per FAQ; confirm |
+| 3 | Is payload retention contractual, not just FAQ? | Enterprise terms and DPA | Vendor statement only |
+| 4 | Which sub-processors host the third-party models? | DPA | Not covered in sources |
+| 5 | Which region will we select, and does the metadata caveat satisfy our policy? | Data-residency doc | Documented |
+| 6 | Do we hold Enterprise seats for IP indemnity? | Contract | Enterprise only |
+| 7 | Can we obtain the ISO 27001 certificate and pen-test summary? | NDA request | Available under NDA |
+
+### Agent behavior
+
+| # | Question | Control |
+|---|---|---|
+| 8 | Is auto-approval for `execute` and `mcp` disabled by policy? | `DisabledAutoApprovalGroups` |
+| 9 | Are unfamiliar repositories opened in untrusted mode? | Workspace trust |
+| 10 | Do developer machines hold production credentials? | Environment hardening |
+| 11 | Is the agent allowed to browse the web or use MCP servers that do? | MCP configuration; `web_fetch` is experimental |
+| 12 | Are secrets files excluded from context? | `.bobignore`, understanding it is not a sandbox |
+
+### Self-hosted only
+
+| # | Question | Control |
+|---|---|---|
+| 13 | Is the OpenShift version 4.20 to 4.22 on amd64? | Platform inventory |
+| 14 | Is the model endpoint provisioned and reachable before install? | Pre-install check |
+| 15 | Is a guardrail model deployed? | `security` slot |
+| 16 | Are images mirrored, and is Open VSX reachable or mirrored? | Air-gap plan |
+| 17 | Where do audit and security events go? | OpenShift logging to SIEM |
+| 18 | What is the upgrade plan given no in-place upgrades? | Runbook |
+| 19 | Who owns GPU capacity, and what is the budget? | Platform team |
+
+---
+
+## 🧭 Connecting This to a Maximo Estate
+
+All of the above is generic to any enterprise. Here is how it lands on Maximo specifically.
+
+**Maximo content is not all equal sensitivity.** Sort it before you decide on a deployment model.
+
+| Maximo asset | Sensitivity | Suggested handling |
+|---|---|---|
+| Public sample scripts, open-source templates (for example the MIT-licensed Max_autoscripts repository) | Low | Any tier, any deployment |
+| Your automation scripts and application XML | Medium to high | Enterprise seat, auto-approve locked |
+| Integration code, endpoint and queue names | High | Enterprise, consider self-hosted |
+| `maximo.properties`, keystores, API keys | Critical | Never in agent context; `.bobignore` plus no production credentials on the workstation |
+| Production data | Critical | Agent must never touch the database; use API-layer tools with a least-privilege key (Part 4) |
+
+**The agent should reach Maximo through the API layer, never the database.** This is the same boundary that governs Maximo development generally, and it carries over to agents. Part 4 covers connecting Bob to the MAS 9.2 native Maximo MCP server and to purpose-built MCP servers, using a dedicated read-only key first. The reason it belongs in a security post: an MCP tool call runs under Manage's REST and security layer, so the agent inherits Manage authorization, business rules, and validation. The inverse is also true. A key with broad permissions gives the agent broad permissions, and an agent tricked by a prompt injection will use whatever the key allows. That is why `mcp` belongs on your locked auto-approval list.
+
+**Self-hosted Bob is not the same as Maximo on-prem.** Plenty of teams assume that because MAS runs on OpenShift, Bob will slot into the same cluster. It can run as an ordinary namespaced workload and a dedicated cluster is not required, but capacity planning, storage, and backups are separate from your MAS footprint. Treat it as another platform workload with its own owner.
+
+---
+
+## ⚠️ Pitfalls and Troubleshooting
+
+| Symptom or mistake | Likely cause | What to do |
+|---|---|---|
+| "We approved Bob because it is zero-retention" | A FAQ line was treated as a contract term | Get the DPA and data-flow diagram; keep the FAQ statement labeled vendor-stated |
+| EU team assumes everything stays in Frankfurt | Account, admin, policy, and billing metadata are in US East | Document the metadata caveat in the risk register; consider self-hosted |
+| Output differs between two runs of the same prompt | SaaS routing may select a different model; versions undisclosed | Review diffs like human code; keep regression tests |
+| Consultancy developers use personal Pro seats on client code | No IP indemnity outside Enterprise | Enforce Enterprise seats for client work |
+| Developer chose "always allow" for a command | The exact pattern PromptArmor exploited | Lock `execute` and `mcp` auto-approval via policy |
+| `unknown model: zproxy` on self-hosted | Z entitlement assigned without Z components enabled | Set `rag.enabled` and `zProxy.enabled` in `config.yaml` first |
+| Bobalytics link goes nowhere on self-hosted | Bobalytics unsupported on-prem; link may redirect to SaaS or be unreachable when air-gapped | Do not promise Bobalytics reporting to self-hosted users |
+| Install fails pre-flight | LLM endpoint not provisioned before install | Stand up and test the model endpoint first |
+| Promised an audit trail, cannot find one | The docs conflict | Use pod logs and OpenShift logging; get IBM's answer in writing |
+| Air-gapped output quality disappoints | Open-weight model tier below frontier | Run your own 20-ticket test; consider a frontier model in your own cloud |
+| Plan to upgrade in place fails | Not supported at GA | Fresh install; use `./bobctl install` for hotfixes only |
+| RAG add-on pods pending | Worker pool sized to the Bob Core floor | Size workers for the RAG footprint (about 90 GiB with headroom, our arithmetic) |
+
+---
+
+## 🔎 Open Items to Close With IBM
+
+We verified what we could. These items we could not verify or where IBM's sources conflict. Put them on your vendor questionnaire.
+
+1. **Self-hosted audit logging and metering.** Conflict described above.
+2. **SaaS audit scope.** Whether prompts, tool calls, and file edits reach the Splunk SIEM feed.
+3. **Model versions and routing policy on SaaS.** Undisclosed.
+4. **Self-hosted model identifiers.** Gemini 3.7 Flash versus `gemini-3.6-flash`; Mistral 3.5 versus `mistral-medium-3-5-0`.
+5. **Compliance artifacts.** No public SOC 2, FedRAMP, or ISO 42001 statement; only ISO 27001 under NDA.
+6. **Guardrail mechanisms.** Named by IBM, not documented.
+7. **Rollback and git.** The V2 blog says rollback no longer depends on git, but the FAQ still says "The Rollback feature uses Git." Matters if your Maximo repositories live outside git.
+8. **Group policies on Bob Shell.** Documented as Bob IDE only; CI runners need confirmation.
+9. **Self-hosted GPU sizing and price.** Neither is published.
+10. **Self-hosted GA date.** Release notes say September 24, 2026; IBM's newsroom announcement is dated October 1; one fact base records September 30. Quote it as "GA per release notes September 24, 2026; announced October 1, 2026."
+11. **PromptArmor remediation.** We found IBM's pre-GA commitment but no public line-by-line confirmation of each fix.
+
+---
+
+## 🧭 What to Take Away
+
+### The Ten Commandments of Reviewing an AI Agent for Maximo
+
+1. **Label every vendor claim as vendor-stated** until you hold the contract or the audit report.
+2. **Ask which model, which version, and which region**, and write down what you could not get answered.
+3. **Treat a model you cannot pin as a reviewer-dependent tool**, and put the diff, not the prompt, in the change record.
+4. **Buy Enterprise seats for client work** because indemnity is Enterprise-only.
+5. **Document the metadata caveat** if you pick regional SaaS for a sovereignty program.
+6. **Lock auto-approval for execute and mcp** before anyone opens a customer repository.
+7. **Treat READMEs, web pages, and pasted logs as untrusted input** to an agent that can run commands.
+8. **Keep credentials off the workstation** because `.bobignore` is not a sandbox.
+9. **Size self-hosted for the add-ons you want**, and budget GPUs as a separate line.
+10. **Do not promise an audit trail** until IBM tells you in writing where it lives.
+
+### Your next steps
+
+**This week:**
+- Decide which Maximo assets (table above) may enter an agent's context, and write that down.
+- Put the eleven open items to your IBM account team.
+- If any developer already uses an individual Bob plan on client code, stop and resolve the seat type.
+
+**This month:**
+- Draft the group policy: `DisabledAutoApprovalGroups` for edit, execute, mcp, and skill on machines that touch client code.
+- Decide SaaS versus self-hosted using the decision matrix, and capture the reasoning.
+- If self-hosted is in play, hand the sizing tables to your OpenShift team and ask for a GPU estimate for the model you intend to run.
+
+**Before any pilot:**
+- Run your own 20-ticket test on the model tier you will actually deploy, and keep the results for Part 5.
+
+---
+
+## References
+
+- [Frequently Asked Questions (Bob Shell docs)](https://bob.ibm.com/docs/shell/faq)
+- [Run Bob on your own infrastructure (Bob blog, September 2026 release)](https://bob.ibm.com/blog/september-2026-release/)
+- [Known limitations: IBM Bob self-hosted](https://bob.ibm.com/docs/ide/enterprise/on-premises/known-limitations)
+- [System requirements: IBM Bob self-hosted](https://bob.ibm.com/docs/ide/enterprise/on-premises/system-requirements)
+- [Model gateway: supported models](https://bob.ibm.com/docs/ide/enterprise/on-premises/model-gateway/supported-models)
+- [Model gateway: configuration](https://bob.ibm.com/docs/ide/enterprise/on-premises/model-gateway/configuration)
+- [Data residency (Bob docs)](https://bob.ibm.com/docs/ide/security/data-residency)
+- [Group policies (Bob docs)](https://bob.ibm.com/docs/ide/security/group-policies)
+- [The Register: IBM's AI 'Bob' could be manipulated to download and execute malware (January 7, 2026)](https://www.theregister.com/2026/01/07/ibm_bob_vulnerability/)
+- [PromptArmor: IBM AI ('Bob') Downloads and Executes Malware](https://www.promptarmor.com/resources/ibm-ai-(-bob-)-downloads-and-executes-malware)
+- [BERI: IBM's Air-Gapped Bob Drops Claude for Nemotron and Laguna](https://www.beri.net/article/ibm-bob-self-hosted-air-gapped-nemotron-laguna-vs-saas-claude-model-gap-pricing-openshift)
+- [IBM Newsroom: Introducing IBM Bob (April 28, 2026)](https://newsroom.ibm.com/2026-04-28-introducing-ibm-bob-ai-development-partner-that-takes-enterprises-from-ai-assisted-coding-to-production-ready-software)
+- [IBM Newsroom: Self-hosted deployment for IBM Bob (October 1, 2026)](https://newsroom.ibm.com/2026-10-01-ibm-introduces-self-hosted-deployment-for-ibm-bob-to-help-enterprises-advance-ai-sovereignty-and-governance)
+
+---
+
+## Continue the Series
+
+**Next:** [Part 3, Governing Bob: Admin Controls, Bobalytics, Audit, Pricing, and Bobcoins](/blog/mas-bob-03-governance-pricing-bobcoins). It covers enforced hooks, SSO, the CADF activity log and SIEM scope, Bobalytics' Bob factor, and what a Bobcoin costs.
+
+**Back to:** [Part 1, What IBM Bob Is](/blog/mas-bob-01-what-is-ibm-bob) | [Series Index](/blog/mas-bob-00-series-index)
+
+---
+
+**About TheMaximoGuys:** We help Maximo developers and teams navigate the move to MAS 9 with practical, no-hype guidance grounded in how the platform actually behaves.
+
+*Published by TheMaximoGuys | October 2026*
+
+<!--
+Editorial note for human review (night-shift draft, bob-02-models-security-selfhosted):
+- Primary source: knowledge_base/DOC16_IBM_BOB_FIELD_GUIDE.md s4-s6, s16 (read in full). Per knowledge-base-wins rule, DOC16 wording used where web differed.
+- Web verified this run (fetched): bob.ibm.com self-hosted known-limitations, system-requirements, model-gateway supported-models and configuration pages; The Register PromptArmor article; BERI air-gapped article; plus web search results confirming the Sep 24 GA wording and "includes identity, the inference gateway, audit logging, and usage metering" in the Sep blog.
+- NOT retrieved: the bob.ibm.com/docs/shell/faq page rendered question headings only (no answers) in WebFetch. All FAQ answer quotes (no model choice, zero-retention, training, telemetry, indemnity, regions, license filtering, ISO 27001) come from DOC16 s4-s5 and were NOT re-verified against the live FAQ. The "can we restrict models" answer is inferred from DOC16's "No." Verify before publishing.
+- NOT retrieved: Bob Shell changelog (MCP allowlist bypass fix) is carried from DOC16 via a search summary. Data-residency and group-policies pages were not re-fetched; content from DOC16 s5.3, s7.3.
+- DISCREPANCY (audit logging, self-hosted): Sep blog says audit logging and usage metering included; solution-architecture doc says not included in initial release; known-limitations page (re-fetched) lists only Admin UI activity logs as absent and is silent on audit services. Flagged in post; unresolved.
+- DISCREPANCY (self-hosted GA date): release notes Sep 24 (confirmed in search results); newsroom Oct 1; FACTBASE Sep 30. Post uses "GA per release notes Sep 24; announced Oct 1."
+- DISCREPANCY (models): supported-models page re-fetched lists Gemini 3.7 Flash; DOC16 notes config examples use gemini-3.6-flash and gemini-3.1-pro (not re-checked). The re-fetched supported-models page does not itself say "Nemotron/Laguna only"; BERI and press do.
+- ILLUSTRATIVE, UNVERIFIED snippets: the .bobignore patterns, the policy.json key shape, and the oc log loop (deployment names and namespace are placeholders). The model-gateway router YAML and bobctl commands ARE from the live configuration doc.
+- TMG arithmetic (not IBM): RAG add-on does not fit minimum worker pool (69.1 GiB x ~1.3 = ~90 GiB vs ~63 GiB allocatable).
+- BERI GPU/benchmark figures (8x B200/H200/16x H100, DGX Spark, 70.2% vs 56.4% Terminal-Bench 2.1) are third-party and unverified by us.
+- Local SearchMaximo knowledge base has no Bob content; only generic MAS API-key/security docs. Nothing from it cited.
+- Post links to planned slugs mas-bob-03..05 which will 404 until those exist.
+-->
