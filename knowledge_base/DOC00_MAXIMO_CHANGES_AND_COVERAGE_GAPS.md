@@ -2,8 +2,8 @@
 
 **Document:** DOC00. This is a living appendix to the knowledge base (DOC1–DOC17). It tracks two things: what changed at IBM (Maximo / MAS / related AI and platform), and which topics TheMaximoGuys blog does not cover yet.
 **Created:** October 16, 2026
-**Last scan:** 2026-10-25 (weekly scan #2; prior: 2026-10-18 scan #1, 2026-10-16 initial build)
-**Next scan:** Sunday 2026-11-01, 23:10. It runs automatically every week (see "How this document is maintained").
+**Last scan:** 2026-11-01 (weekly scan #3; prior: 2026-10-25 scan #2, 2026-10-18 scan #1, 2026-10-16 initial build)
+**Next scan:** Sunday 2026-11-08, 23:10. It runs automatically every week (see "How this document is maintained").
 **Audience:** The TMG content team: choosing what to write next, what to correct, and what is time-sensitive.
 
 > **Source convention**
@@ -37,7 +37,9 @@
 
 ## 1. Snapshot
 
-**As of 2026-10-25.** Another quiet vendor week: no MAS 9.3 announcement, no Manage 9.2.5 / Core 9.2.9 and no catalog newer than v9-261007 (the 29 Oct catalog is still ahead). The ops-tooling repos moved (CLI 23.16/23.17, ansible-devops 37.22/37.23), two more Manage security bulletins surfaced, and IBM's own withdrawal notice appears to settle the 7.6.1 Sustained Support date. On our side MAS-PLATFORM-OPS and MAS-SECURITY-OPS are now fully drafted.
+**As of 2026-11-01 (scan #3).** TechXchange (26–29 Oct) has ended and searches found **no Maximo-specific or MAS 9.3 announcement**. The only vendor movement was ops tooling: catalog v9-261029 support landed in CLI 23.18.0 / ansible-devops 37.25.0 (29 Oct), and CLI 23.19.0 added Db2 database-name flags to backup/restore. No Core 9.2.9 or Manage 9.2.5 readme was found (CHG-050, CHG-051). Competitor/market items are thin (CHG-052–054). Naviam/Cohesive closing is still unconfirmed. Details of the prior week follow for context.
+
+**Prior snapshot (2026-10-25).** Another quiet vendor week: no MAS 9.3 announcement, no Manage 9.2.5 / Core 9.2.9 and no catalog newer than v9-261007 (the 29 Oct catalog is still ahead). The ops-tooling repos moved (CLI 23.16/23.17, ansible-devops 37.22/37.23), two more Manage security bulletins surfaced, and IBM's own withdrawal notice appears to settle the 7.6.1 Sustained Support date. On our side MAS-PLATFORM-OPS and MAS-SECURITY-OPS are now fully drafted.
 
 ### Top 5 headline changes
 
@@ -46,14 +48,14 @@
 | 1 | **Maximo 7.6.1.x Extended Support ended 30 Sep 2026; IBM's withdrawal notice lists Extended/Sustained completion as 30 Sep 2030** (CHG-048, upgrades CHG-001). The Dec 2026 Sustained date belongs to the separate **Control Desk 7.6.1** product (successor: Maximo IT). Dual support under MAS ends 30 Apr 2027 (CHG-041) | The open date conflict from scan #1 is largely explained; MAS-LIFECYCLE Part 1 should say so |
 | 2 | **MAS 9.0 base support ends 30 Jun 2027** (CHG-018); 8.10/8.11 are in Extended Support; 8.7–8.9 lost support 30 Apr 2026 (CHG-004) | 9.0 shops need a 9.1/9.2 plan inside 8 months |
 | 3 | **Two more Manage security bulletins:** CVE-2026-71290 (httpclient5 async TLS hostname verification, CVSS 9.1; fixed in Manage 9.0.32 / 9.1.25 / 9.2.4) and CVE-2026-25526 (JinJava sandbox bypass, CVSS 9.8; fixed in 9.0.29 / 9.1.21 / 9.2.2) (CHG-045, CHG-046). Plus CVE-2026-105052 (CHG-008) | MAS-SECURITY-OPS Part 5 predates both |
-| 4 | **Ops tooling:** CLI 23.16.0 adds GitOps Db2 v11→v12 upgrade support and CPD 5.4.0 helm changes; ansible-devops 37.22.0 adds CP4D 5.4.0 support and puts the password-policy secret in the suite backup; 37.23.0 adds COS region support (CHG-044) | Supports the PLATFORM-OPS Db2 12, backup and GitOps posts; CPD 5.4.0 moves the support-window post |
-| 5 | **TechXchange Oct 26–29 starts tomorrow.** No Maximo-specific announcement found; one IBM event-page snippet mentions an Anthropic/Claude partnership and Bob [UNVERIFIED] (CHG-047). MAS 9.2's AI bundle (AI Service, MCP server, Assistant, Condition Insight) is the current IBM message (CHG-049) | News hook; GAP-019 is now a same-week item |
+| 4 | **Ops tooling (scan #3 update):** catalog **v9-261029** support is in CLI 23.18.0 and ansible-devops 37.25.0; CLI 23.19.0 adds `--manage-db2-dbname` / `--facilities-db2-dbname` to backup/restore and a configurable full-Db2-backup weekday in GitOps; ansible-devops 37.24.0 fixes a MongoDB backup that wrongly included data and enables OCP 4.22 in rotate (CHG-050, CHG-051). Earlier: CLI 23.16.0 adds GitOps Db2 v11→v12 upgrade support and CPD 5.4.0 helm changes; ansible-devops 37.22.0 adds CP4D 5.4.0 support and puts the password-policy secret in the suite backup; 37.23.0 adds COS region support (CHG-044) | Supports the PLATFORM-OPS Db2 12, backup and GitOps posts; CPD 5.4.0 moves the support-window post |
+| 5 | **TechXchange (26–29 Oct) is over; still no Maximo-specific or 9.3 announcement found** in two more searches. The IBM event page still mentions an Anthropic/Claude partnership and Bob, but no source dates it to 2026 (the only dated hit is Oct 2025) [UNVERIFIED] (CHG-047). MAS 9.2's AI bundle (AI Service, MCP server, Assistant, Condition Insight) is the current IBM message (CHG-049) | News hook; GAP-019 is now a same-week item |
 
 ### Top gaps (open)
 
 | Rank | Gap | Coverage | Proposal |
 |---|---|---|---|
-| 1 | GAP-019 TechXchange 2026 preview/recap (event starts 26 Oct) | NOT COVERED | §5.7 quick win |
+| 1 | GAP-019 TechXchange 2026 recap (event ended 29 Oct; no Maximo news found, so a "what was not announced" angle or a skip) | NOT COVERED | §5.7 quick win, now a recap |
 | 2 | GAP-006 Agentic Maximo in practice (Supervisor ALM agent, MCP, AssetOpsBench, TSFM) | PARTIAL | §5.6 `MAS-AGENTIC` |
 | 3 | GAP-007 9.2.x patch train refresh: COR-004 (upgrade watch-list post) still stale | PARTIAL (PLATFORM-OPS Part 1 drafted) | Correction COR-004 |
 | 4 | GAP-004 / GAP-005 Data loading on MAS 9 and the autoscript cookbook (tied) | PARTIAL | §5.4 `MAS-DATA-LOADING`, §5.5 `MAS-AUTOSCRIPTS` |
@@ -72,10 +74,15 @@
 
 ## 2. Change Log (newest first)
 
-Window for the initial build: Jan–Oct 2026, with emphasis on Jun–Oct. Scan #1 (2026-10-18) added CHG-038–CHG-043; scan #2 (2026-10-25) added CHG-044–CHG-049 at the top. CHG-026 is upgraded by CHG-041 (IBM-primary); CHG-001 is upgraded by CHG-048.
+Window for the initial build: Jan–Oct 2026, with emphasis on Jun–Oct. Scan #1 (2026-10-18) added CHG-038–CHG-043; scan #2 (2026-10-25) added CHG-044–CHG-049; scan #3 (2026-11-01) added CHG-050–CHG-054 at the top. CHG-026 is upgraded by CHG-041 (IBM-primary); CHG-001 is upgraded by CHG-048.
 
 | ID | Date | Area | Change | Tag / Conf. | Source |
 |---|---|---|---|---|---|
+| CHG-054 | 2026-10-06 | Competitors | **ServiceNow "AI Workflow Factory"** reported globally available 6 Oct as a governance layer for native and third-party agents. General agent governance, **not EAM-specific**; found in one aggregator summary only. Related: ServiceNow Now Assist for EAM release notes exist (see CHG-043) | [UNVERIFIED] | https://techjacksolutions.com/ai-brief/servicenow-ibm-cxapp-enterprise-agentic-governance-48-hours/ · https://www.servicenow.com/docs/r/pt-BR/release-notes/now-assist-eam-rn.html |
+| CHG-053 | 2026-09-09 | Competitors | **Verdantis rebrands as "the AI Super Agent for MRO"**: orchestrates nine specialised agents across maintenance-materials decisions and targets AI-native EAM. Spare-parts/MRO data angle relevant to MAS-SUPPLY-CHAIN | [IND] M (press release via Business Wire syndication) | https://via.ritzau.dk/pressemeddelelse/15148038/verdantis-rebrands-as-the-ai-super-agent-for-mro-sets-sights-on-ai-native-enterprise-asset-management?publisherId=90456 |
+| CHG-052 | 2026 (date not found) | Analysts | **Octave named a Leader in an IDC MarketScape** for AI-enabled EAM (alongside IFS, CHG-043). Octave press release; date and the full vendor list not read. Alix assistant, now Octave Aria, first deployed 4Q24 | [IND] M | https://www.octave.com/newsroom/press-releases/2026/octave-named-leader-in-idc-marketscape |
+| CHG-051 | 2026-10-29 | Release | **Catalog v9-261029** is listed on the ibm-mas CLI catalogs page and wired into CLI 23.18.0 ("Support October Catalog Update") and ansible-devops 37.25.0. **No Core 9.2.9, Manage 9.2.5 or other new IBM Support readme was found**; newest readmes seen are still Core 9.2.8 (7 Oct) and 9.2.7 (Manage 9.2.4). Treat the October catalog contents as unread | [IBM] H (catalog/CLI) / L (contents) | https://ibm-mas.github.io/cli/catalogs/ · https://github.com/ibm-mas/cli/releases/tag/23.18.0 |
+| CHG-050 | 2026-10-27 → 10-30 | Ops tooling | **CLI 23.17.1 (27 Oct):** Scheduler MAXADMIN automation, base-ui-ivt Cypress test in Manage FVT. **23.18.0 / 23.18.1 (29 Oct):** October catalog support, dev-mode catalog fallback fix, S3-credential customization-archive secrets in GitOps. **23.19.0 (30 Oct):** `--manage-db2-dbname` and `--facilities-db2-dbname` for backup and restore pipelines (MASCORE-20519); GitOps can change the day of week for the full Db2 backup. **ansible-devops 37.24.0 (27 Oct):** MongoDB backup no longer wrongly includes data (MASISMIG-79375), OCP 4.22 enabled in rotate. **37.25.0 (29 Oct):** Watson OpenScale dependency and playbook references removed. **37.25.1 (30 Oct):** `db2u_image` for Db2u helm installs. No new ibm-mas/gitops release since 8.7.1 (16 Oct) and no MAF Local Configuration release after beta.6 | [IBM] H | https://github.com/ibm-mas/cli/releases · https://github.com/ibm-mas/ansible-devops/releases · https://github.com/ibm-mas/gitops/releases |
 | CHG-049 | 2026-07-13 → 10-09 | AI product | IBM Community post (13 Jul) says the **Maximo 9.2 MCP server exposes business capabilities that agents can invoke, not raw REST endpoints**. An Arrow partner article (9 Oct) lists the MAS 9.2 AI bundle as AI Service + MCP server + Maximo Assistant + Condition Insight, with Manage staying the system of record. Consistent with CHG-012; nothing newly shipped | [IBM] M (community) / [IND] M (Arrow) | https://community.ibm.com/community/user/blogs/stefan-hoffmanns/2026/07/13/ibm-maximo-92-mcp-server-ai-integration · https://www.arrow.com//globalecs/na/arrow-channel-advisor/ibm-mas-partner-opportunities/ |
 | CHG-048 | 2026-10-25 (verified; notice undated) | Lifecycle | **IBM's end-of-support notice lists Maximo Asset Management 7.6.1.x "Extended, Sustained, Extension availability" completing 30 Sep 2030**; Extended Support for 7.6.1.3 ends 30 Sep 2026; Sustained Support does not include new defect or security fixes. **IBM Control Desk 7.6.1 is a separate product**: Extended to 30 Sep 2026, Sustained to 31 Dec 2026, move to Maximo IT 9.x. This explains the scan #1 conflict (CHG-041). Read via search results, not the full page | [IBM] M | https://ibm.com/software/passportadvantage/endofsupportannouncementletters.html · https://www.ibm.com/support/pages/node/7044949 |
 | CHG-047 | 2026-10-26→29 (upcoming) | Events | TechXchange 2026 (Atlanta) event page snippet highlights **an Anthropic–IBM partnership bringing Claude into IBM software, and Bob**. A second search found no Anthropic or Maximo-specific TechXchange 2026 announcement. Treat as unconfirmed until the keynote | [UNVERIFIED] | https://www.ibm.com/events/techxchange |
@@ -138,7 +145,7 @@ Status values: **COVERED** (dedicated series or post) · **PARTIAL** (overview o
 | Support lifecycle / end-of-support | **COVERED (drafts)** | MAS-LIFECYCLE (index + 4 parts, `draft: true`; covers pending). Re-check Part 1 against the CHG-041 Control Desk date conflict | GAP-001 (CLOSED) |
 | Identity, SSO, MFA, SCIM, LDAP, CVE patching | **COVERED (drafts)** | MAS-SECURITY-OPS index + Parts 1–6 (drafts; Part 6 = securing AI agents/MCP); MAS-FEATURES "Security & Maps". Part 5 needs CHG-045/046 (COR-007) | GAP-002 (CLOSED) |
 | Db2 on OpenShift, backup/DR, performance, observability | **COVERED (drafts)** | MAS-PLATFORM-OPS index + Parts 1–8 (drafts; covers pending) | GAP-003 (CLOSED) |
-| Install/ops tooling (CLI, ansible-devops, GitOps, catalogs, OCP window) | **COVERED (drafts)** | MAS-PLATFORM-OPS Parts 1, 7, 8; THINK-MAS architecture. CLI 23.16/23.17 and CPD 5.4.0 (CHG-044) postdate the drafts | GAP-003 (CLOSED) |
+| Install/ops tooling (CLI, ansible-devops, GitOps, catalogs, OCP window) | **COVERED (drafts)** | MAS-PLATFORM-OPS Parts 1, 7, 8; THINK-MAS architecture. CLI 23.16–23.19, ansible-devops 37.22–37.25 and CPD 5.4.0 (CHG-044, CHG-050) postdate the drafts; Part 4 (backup/restore) should cite the 23.19.0 Db2 dbname flags and the 37.24.0 MongoDB backup fix | GAP-003 (CLOSED) |
 | Data loading (MxLoader, Data Import, Migration Manager) | PARTIAL | RELIABILITY "Populating the Spine", THINK-MAS "Data Migration" | GAP-004 |
 | Automation scripts | PARTIAL | MAS-FEATURES "Customization Trinity", JAVA-EXTENSIONS | GAP-005 |
 | Agentic Maximo (Assistant agents, MCP, AssetOpsBench, TSFM) | PARTIAL | MAS-9-2 Part 5, MAS-ASSIST, MAS-BOB, ENTERPRISE-VIBE-CODING | GAP-006 |
@@ -151,7 +158,7 @@ Status values: **COVERED** (dedicated series or post) · **PARTIAL** (overview o
 | Utilities vegetation management, EV fleet | PARTIAL / NOT COVERED | MAS-FEATURES Industry Solutions | GAP-014 |
 | OT cybersecurity × asset inventory | **NOT COVERED** | — | GAP-015 |
 | Envizi / sustainability connector | PARTIAL | passing mentions | GAP-016 |
-| Competitive & analyst landscape 2026 | **NOT COVERED** | — (new inputs: CHG-040 Naviam/Cohesive, CHG-043 IFS/ServiceNow) | GAP-017 |
+| Competitive & analyst landscape 2026 | **NOT COVERED** | — (new inputs: CHG-040 Naviam/Cohesive, CHG-043 IFS/ServiceNow, CHG-052 Octave IDC, CHG-053 Verdantis) | GAP-017 |
 | MAS 9.3 early signals | **NOT COVERED** | — | GAP-018 |
 | Events (TechXchange, MaximoWorld) | **NOT COVERED** | — | GAP-019 |
 | Maximo Mobile 9.2, app catalog | COVERED (drafts) | MAS-MOBILE Parts 1–3 drafted 2026-10-17 (covers pending); MANAGE Part 6 refreshed | — |
@@ -177,7 +184,7 @@ Score = demand × fit × freshness, each rated 1–5. A deadline counts as fresh
 | 4 | GAP-004 | Data loading on MAS 9: MxLoader with API keys, Data Import, Migration Manager gotchas | PARTIAL | 5 | 5 | 3 | 75 | PROPOSED §5.4 |
 | 5 | GAP-005 | Autoscript cookbook for Java 17/25, plus autoscripts as Assistant/MCP tools | PARTIAL | 5 | 5 | 3 | 75 | PROPOSED §5.5 |
 | 6 | GAP-008 | TRIRIGA → MAS Real Estate & Facilities migration | PARTIAL | 4 | 4 | 4 | 64 | Candidate |
-| 1 | GAP-019 | TechXchange 2026 preview and recap | NOT | 3 | 4 | 5 | 60 | **Quick win, same-week**: the event starts 26 Oct, so a preview is already late; do a recap after 29 Oct instead. No Maximo-specific announcement found (CHG-047 is unverified) |
+| 1 | GAP-019 | TechXchange 2026 preview and recap | NOT | 3 | 4 | 5 | 60 | **Event ended 29 Oct.** Preview window gone; a recap is only worth writing if Maximo news emerges. Two scans found none (CHG-047 unverified), so freshness is falling. Re-score next scan; likely demote |
 | 7 | GAP-009 | ISO 55001:2024 mapped onto Maximo | NOT | 3 | 4 | 4 | 48 | Candidate (executive tier) |
 | 8 | GAP-011 | Hosting & buying guide: SaaS Essentials/Standard/Premium vs ROSA vs ARO vs Dedicated | PARTIAL | 4 | 4 | 3 | 48 | Candidate |
 | 9 | GAP-010 | HSE deep dive beyond mobile: permits, LOTO, incidents in Manage | PARTIAL | 3 | 4 | 3 | 36 | Mobile side drafted (MAS-MOBILE Part 3); Manage-side deep dive still open |
@@ -291,7 +298,7 @@ All proposals are **PROPOSED — not queued**. Before queuing a series:
 
 | Post | Gap | Timing |
 |---|---|---|
-| "TechXchange 2026: The Maximo Sessions Worth Your Time" | GAP-019 | **Preview window closes 26 Oct**; prioritise a recap after Oct 29 |
+| "TechXchange 2026: The Maximo Sessions Worth Your Time" | GAP-019 | **Preview window closed 26 Oct; event ended 29 Oct.** Recap only if Maximo news appears (none found by 1 Nov) |
 | "MAS 9.3: What the Code Already Tells Us" | GAP-018 | After TechXchange, if no announcement contradicts the code signal |
 | "ISO 55001:2024 and Maximo: A Clause-by-Clause Map" | GAP-009 | Q4 2026 (deadline Jul 2027) |
 
@@ -304,6 +311,7 @@ All proposals are **PROPOSED — not queued**. Before queuing a series:
 | 2026-10-16 | Initial build (manual, 4 research agents + 224-title audit) | Created DOC00. User approved and queued §5.1–§5.3 (21 posts + 3 cover batches). Fixed MAS-FEATURES Part 5 (PWA error) and refreshed MANAGE Part 6 (9.2 section; removed the "Mobile Studio/JSON" error). Queued MAS-MOBILE (3) and MAS-MAF-DEV (10). Set up the weekly gap-scan | 37 | 20 | 0 |
 | 2026-10-18 | Weekly scan #1 (web, GitHub APIs, IBM Support pages) | Quiet IBM week. Added CHG-038–043 (CLI 23.15.0/gitops, AI Service bulletin 15687, Naviam/Cohesive, IBM-confirmed dual support, industry patch levels, IFS/ServiceNow). Updated coverage for LIFECYCLE, MOBILE, SECURITY-OPS, PLATFORM-OPS. Re-ranked gaps. No new proposals | 6 | 0 | 1 (GAP-001) |
 | 2026-10-25 | Weekly scan #2 (web search, GitHub APIs) | Quiet vendor week. Added CHG-044–049 (CLI 23.16/23.17 + ansible-devops 37.22/37.23, Manage CVE-2026-71290 and -25526, IBM 7.6.1 2030 notice resolving the Control Desk conflict, TechXchange claim [UNVERIFIED], MCP/AI bundle). GAP-002 and GAP-003 closed by drafted series. Re-ranked gaps; added COR-007. No new proposals | 6 | 0 | 2 (GAP-002, GAP-003) |
+| 2026-11-01 | Weekly scan #3 (web search, GitHub APIs) | Quiet vendor week; TechXchange ended with no Maximo or 9.3 news found. Added CHG-050–054 (CLI 23.17.1–23.19.0, ansible-devops 37.24–37.25.1, catalog v9-261029, Octave IDC, Verdantis, ServiceNow [UNVERIFIED]). Core 9.2.9 / Manage 9.2.5 readmes not found. GAP-019 demoted to recap-only; Naviam/Cohesive close still unconfirmed. No new proposals | 5 | 0 | 0 |
 
 ---
 
@@ -330,7 +338,7 @@ Things to re-check on the next scan:
 - **AI Service CVE-2026-90920:** IBM's own bulletin and fixed version. IBM's CVE-2026-15687 bulletin lists 9.1.19 / 9.2.3 (CHG-039); trackers quote the same for 90920 but this is not IBM-confirmed (CHG-020).
 - **TechXchange 2026 (26–29 Oct):** any Maximo/9.3 news, and whether the Anthropic–Claude/Bob claim (CHG-047) is real.
 - **Naviam/Cohesive close** and any Bentley–Maximo integration news (CHG-040).
-- **Manage 9.2.5 / Core 9.2.9 / catalog v9-261029** (scheduled 29 Oct): none found as of 25 Oct (newest readme is Core 9.2.8, 7 Oct).
+- **Manage 9.2.5 / Core 9.2.9 / catalog v9-261029:** the catalog is live in the CLI (CHG-051) but no readme was found as of 1 Nov (newest is Core 9.2.8, 7 Oct). Check IBM's releases page directly; next catalog v9-261126.
 - **"Automation scripts as custom tools":** shipped or still future (CHG-012).
 - **Asset-investment-planning agent:** promised by IBM Research for 2026; not shipped (CHG-012 context).
 - **Document abstraction beyond leases** (OEM manuals, inspection procedures) (CHG-011).
