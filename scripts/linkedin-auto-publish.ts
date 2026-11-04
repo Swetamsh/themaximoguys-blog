@@ -63,6 +63,61 @@ for (const envPath of ENV_PATHS) {
 }
 
 const LINKEDIN_TOKEN = process.env.LINKEDIN_ACCESS_TOKEN || "";
+
+// ─── Personal identities ─────────────────────────────────────
+// `Posted By` → env var holding that person's own LinkedIn token. Each person
+// posts with their own token and member URN; nobody falls back to Surendra.
+const PERSONAL_TOKEN_ENV: Record<string, string> = {
+  "surendra katta": "LINKEDIN_ACCESS_TOKEN",
+  krishna: "KRISHNA_LINKEDIN_ACCESS_TOKEN",
+  venkat: "VENKAT_LINKEDIN_ACCESS_TOKEN",
+  laxmi: "LAXMI_LINKEDIN_ACCESS_TOKEN",
+};
+
+interface Identity {
+  label: string;
+  urn: string;
+  token: string;
+}
+
+// Token used by the low-level LinkedIn API helpers for the current publish.
+let activeToken = LINKEDIN_TOKEN;
+const identityCache = new Map<string, Identity>();
+
+async function resolvePersonalIdentity(postedByRaw: string): Promise<Identity> {
+  // Empty Posted By keeps the historical default (Surendra's personal profile).
+  const key = postedByRaw.trim().toLowerCase() || "surendra katta";
+  const cached = identityCache.get(key);
+  if (cached) return cached;
+
+  const envName = PERSONAL_TOKEN_ENV[key];
+  if (!envName) {
+    throw new Error(`No LinkedIn identity configured for Posted By "${postedByRaw}"`);
+  }
+  const token = process.env[envName] || "";
+  if (!token) throw new Error(`${envName} is not set — cannot post as "${postedByRaw}"`);
+
+  let urn: string;
+  if (key === "surendra katta") {
+    urn = PERSON_URN;
+  } else {
+    // Look up the member URN from the person's own token.
+    const res = await fetch("https://api.linkedin.com/v2/userinfo", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      throw new Error(`userinfo failed for "${postedByRaw}": ${res.status} ${await res.text()}`);
+    }
+    const info = await res.json();
+    if (!info.sub) throw new Error(`userinfo returned no member id for "${postedByRaw}"`);
+    urn = `urn:li:person:${info.sub}`;
+  }
+
+  const identity = { label: postedByRaw.trim() || "Surendra Katta", urn, token };
+  identityCache.set(key, identity);
+  return identity;
+}
+
 const NOTION_TOKEN = process.env.NOTION_TOKEN || process.env.NOTION_API_KEY || "";
 const DRY_RUN = process.argv.includes("--dry-run");
 
@@ -223,7 +278,7 @@ async function updateNotionPage(
 
 function getLinkedInHeaders(): Record<string, string> {
   return {
-    Authorization: `Bearer ${LINKEDIN_TOKEN}`,
+    Authorization: `Bearer ${activeToken}`,
     "X-Restli-Protocol-Version": "2.0.0",
     "Linkedin-Version": LINKEDIN_API_VERSION,
     "Content-Type": "application/json",
@@ -263,7 +318,7 @@ async function uploadImageBinary(
   const res = await fetch(uploadUrl, {
     method: "PUT",
     headers: {
-      Authorization: `Bearer ${LINKEDIN_TOKEN}`,
+      Authorization: `Bearer ${activeToken}`,
       "Content-Type": "application/octet-stream",
     },
     body: imageData,
@@ -351,9 +406,8 @@ function buildCommentMessage(raw: string): { text: string; attributes: any[] } {
 async function addFirstComment(
   postUrn: string,
   commentText: string,
-  asOrg: boolean
+  actorUrn: string
 ): Promise<boolean> {
-  const actorUrn = asOrg ? ORG_URN : PERSON_URN;
   const encodedUrn = encodeURIComponent(postUrn);
   const message = buildCommentMessage(commentText);
   const post = (msg: any) => fetch(
@@ -361,7 +415,7 @@ async function addFirstComment(
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LINKEDIN_TOKEN}`,
+        Authorization: `Bearer ${activeToken}`,
         "Content-Type": "application/json",
         "X-Restli-Protocol-Version": "2.0.0",
       },
@@ -398,11 +452,23 @@ interface PublishResult {
 
 type PublishTarget = "personal" | "company";
 
+const FIRST_COMMENT_CTA = "🔗 Link to the full blog is in the first comment 👇";
+
 async function publishPost(
   post: NotionPost,
   asOrg: boolean
 ): Promise<PublishResult> {
-  const authorUrn = asOrg ? ORG_URN : PERSON_URN;
+  // Company page posts use Surendra's (admin) token; personal posts use the
+  // token of whoever is named in `Posted By`.
+  let authorUrn: string;
+  if (asOrg) {
+    authorUrn = ORG_URN;
+    activeToken = LINKEDIN_TOKEN;
+  } else {
+    const identity = await resolvePersonalIdentity(post.postedBy || "");
+    authorUrn = identity.urn;
+    activeToken = identity.token;
+  }
   const target = asOrg ? "company" : "personal";
 
   log(`  Publishing as ${target} (${authorUrn})...`);
@@ -426,9 +492,15 @@ async function publishPost(
   }
 
   // Create post — text is hashtags only (infographic + hashtags approach)
-  const text = post.hashtags || "";
+  let text = post.hashtags || "";
   if (!text) {
     throw new Error("No hashtags/text content for post");
+  }
+
+  // Every post (personal + company) ends with a pointer to the blog link,
+  // which goes in the first comment. Skip if the copy already says so.
+  if (post.firstComment && !/first comment/i.test(text)) {
+    text = `${text.trimEnd()}\n\n${FIRST_COMMENT_CTA}`;
   }
 
   log(`  Creating post...`);
@@ -443,11 +515,11 @@ async function publishPost(
     await new Promise((r) => setTimeout(r, COMMENT_WAIT_MS));
 
     log(`  Adding first comment as ${target}...`);
-    let success = await addFirstComment(postUrn, post.firstComment, asOrg);
+    let success = await addFirstComment(postUrn, post.firstComment, authorUrn);
     if (!success) {
       log(`  Retrying comment after ${COMMENT_RETRY_WAIT_MS / 1000}s...`);
       await new Promise((r) => setTimeout(r, COMMENT_RETRY_WAIT_MS));
-      success = await addFirstComment(postUrn, post.firstComment, asOrg);
+      success = await addFirstComment(postUrn, post.firstComment, authorUrn);
     }
     if (success) {
       log(`  First comment added successfully`);
@@ -475,6 +547,7 @@ function resolvePublishTargets(post: NotionPost): PublishTarget[] {
   ]);
   const personalOwners = new Set([
     "surendra katta",
+    "krishna",
     "venkat",
     "laxmi",
   ]);
