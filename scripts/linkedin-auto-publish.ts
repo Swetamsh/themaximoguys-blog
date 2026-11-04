@@ -282,7 +282,7 @@ async function createLinkedInPost(opts: {
 }): Promise<string> {
   const body: any = {
     author: opts.authorUrn,
-    commentary: opts.text,
+    commentary: escapeLittleText(opts.text),
     visibility: "PUBLIC",
     distribution: {
       feedDistribution: "MAIN_FEED",
@@ -330,6 +330,13 @@ async function addFirstComment(
       },
       body: JSON.stringify({
         actor: actorUrn,
+// LinkedIn Posts API `commentary` uses "little text" format: unescaped reserved
+// chars like ( ) [ ] { } < > @ * _ ~ | \ make LinkedIn silently TRUNCATE the post
+// at that point (lost CTA + hashtags). `#` is left alone so #hashtags still link.
+function escapeLittleText(text: string): string {
+  return text.replace(/[\\|{}@\[\]()<>*_~]/g, (c) => `\\${c}`);
+}
+
         message: { text: commentText },
       }),
     }

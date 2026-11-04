@@ -89,6 +89,11 @@ async function uploadImageBinary(uploadUrl: string, imagePath: string): Promise<
   }
 }
 
+// LinkedIn "little text": unescaped ( ) [ ] etc. truncate the post. Leave # for hashtags.
+function escapeLittleText(text: string): string {
+  return text.replace(/[\\|{}@\[\]()<>*_~]/g, (c) => `\\${c}`);
+}
+
 async function createPost(opts: {
   authorUrn: string;
   text: string;
@@ -96,7 +101,7 @@ async function createPost(opts: {
 }): Promise<{ success: boolean; postUrn: string; status: number }> {
   const body: any = {
     author: opts.authorUrn,
-    commentary: opts.text,
+    commentary: escapeLittleText(opts.text),
     visibility: "PUBLIC",
     distribution: { feedDistribution: "MAIN_FEED", targetEntities: [], thirdPartyDistributionChannels: [] },
     lifecycleState: "PUBLISHED",
