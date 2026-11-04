@@ -275,6 +275,13 @@ async function uploadImageBinary(
   }
 }
 
+// LinkedIn Posts API `commentary` uses "little text" format: unescaped reserved
+// chars like ( ) [ ] { } < > @ * _ ~ | \ make LinkedIn silently TRUNCATE the post
+// at that point (lost CTA + hashtags). `#` is left alone so #hashtags still link.
+function escapeLittleText(text: string): string {
+  return text.replace(/[\\|{}@\[\]()<>*_~]/g, (c) => `\\${c}`);
+}
+
 async function createLinkedInPost(opts: {
   authorUrn: string;
   text: string;
@@ -311,6 +318,36 @@ async function createLinkedInPost(opts: {
   return res.headers.get("x-restli-id") || "unknown";
 }
 
+// Comment @-tags: plain "@Name" text does NOT tag anyone via the API. Known orgs
+// become real mentions (attributes); names with no taggable LinkedIn page are dropped.
+const MENTION_ORGS: Record<string, string> = { IBM: "urn:li:organization:1009" };
+const DROP_MENTIONS = ["@IBM Maximo Application Suite", "@IBM Technology"];
+
+function buildCommentMessage(raw: string): { text: string; attributes: any[] } {
+  let text = raw;
+  for (const d of DROP_MENTIONS) text = text.split(d).join("");
+  text = text.replace(/[ \t]+$/gm, "").replace(/[ \t]{2,}/g, " ").trimEnd();
+
+  const attributes: any[] = [];
+  const re = new RegExp(`@(${Object.keys(MENTION_ORGS).join("|")})(?![\\w-])`, "g");
+  let out = "";
+  let last = 0;
+  for (const m of text.matchAll(re)) {
+    out += text.slice(last, m.index);
+    attributes.push({
+      start: out.length,
+      length: m[1].length,
+      value: {
+        "com.linkedin.common.CompanyAttributedEntity": { company: MENTION_ORGS[m[1]] },
+      },
+    });
+    out += m[1];
+    last = m.index! + m[0].length;
+  }
+  out += text.slice(last);
+  return { text: out, attributes };
+}
+
 async function addFirstComment(
   postUrn: string,
   commentText: string,
@@ -318,8 +355,8 @@ async function addFirstComment(
 ): Promise<boolean> {
   const actorUrn = asOrg ? ORG_URN : PERSON_URN;
   const encodedUrn = encodeURIComponent(postUrn);
-
-  const res = await fetch(
+  const message = buildCommentMessage(commentText);
+  const post = (msg: any) => fetch(
     `https://api.linkedin.com/v2/socialActions/${encodedUrn}/comments`,
     {
       method: "POST",
@@ -330,17 +367,17 @@ async function addFirstComment(
       },
       body: JSON.stringify({
         actor: actorUrn,
-// LinkedIn Posts API `commentary` uses "little text" format: unescaped reserved
-// chars like ( ) [ ] { } < > @ * _ ~ | \ make LinkedIn silently TRUNCATE the post
-// at that point (lost CTA + hashtags). `#` is left alone so #hashtags still link.
-function escapeLittleText(text: string): string {
-  return text.replace(/[\\|{}@\[\]()<>*_~]/g, (c) => `\\${c}`);
-}
-
-        message: { text: commentText },
+        message: msg,
       }),
     }
   );
+
+  let res = await post(message.attributes.length ? message : { text: message.text });
+  // If LinkedIn rejects the mention attributes, still post the link as plain text.
+  if (!res.ok && message.attributes.length && (res.status === 400 || res.status === 422)) {
+    log(`Comment with mentions rejected (${res.status}): ${await res.text()} — retrying without mentions`);
+    res = await post({ text: message.text });
+  }
 
   if (!res.ok) {
     const errText = await res.text();
