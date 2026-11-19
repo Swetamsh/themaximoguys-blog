@@ -1,0 +1,568 @@
+---
+title: "RAG Strategies for Maximo Data: Which Retrieval for Which Records"
+description: "Not every Maximo question is a RAG question. A practitioner's guide to choosing retrieval strategies for Maximo data: query structured records live, embed narrative text, use keyword and hybrid search for part numbers and asset tags, hierarchical RAG for OEM manuals and doclinks, graphs for asset, location and failure hierarchies, metadata filters for site security, and delete-before-insert when a work order changes."
+date: "2026-11-19"
+slug: "map-03-rag-strategies-maximo-data"
+tags: ["Agentic AI", "RAG", "Hybrid Search", "Knowledge Graphs", "IBM Maximo", "MAS 9.2", "OSLC", "Doclinks", "Cole Medin", "AI Agents"]
+draft: true
+tier: "developer"
+author: "Krishna Neela"
+coverImage: "./images/map-03-rag-strategies-maximo-data.png"
+authorTitle: "AI Engineer"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Should I embed Maximo work orders, assets and inventory into a vector database?"
+    answer: "Embed the narrative parts and query the rest. Work order long descriptions, worklogs, failure remarks, job plan task text, OEM manuals and SOPs attached through doclinks are unstructured prose, which is exactly what semantic search handles well. Status, inventory balances, meter readings, assignments, costs and any count or average are structured data with a schema, and Maximo already exposes them through OSLC object structures and SQL. Embedding them produces stale numbers and fragments of tables that cannot be summed. Give the agent a live query tool for those instead. A good rule: if the answer is a number, a status or a list that must be complete, it is a query, not a retrieval."
+  - question: "Why does semantic search fail on Maximo part numbers and asset tags?"
+    answer: "Embedding models are trained to capture meaning, and identifiers like 10045-778, P-2041 or HYD-SEAL-75 carry almost none. Two part numbers that differ by one digit can land close together in vector space, and the exact part you asked for may not appear in the top results at all. Keyword search guarantees that if the exact string exists, the chunk containing it is found. In Maximo the cheapest fix is to route identifier lookups to a live OSLC query (an oslc.where equality or oslc.searchTerms with searchAttributes) and to run hybrid search, keyword plus semantic merged with reciprocal rank fusion, over any text index you build."
+  - question: "How should I index OEM manuals and other attachments stored in Maximo doclinks?"
+    answer: "Treat them as a separate corpus from work order history. Pull them through the doclinks child of the owning object structure (for example mxapiasset or mxapiwodetail), branch extraction on file type because scanned PDFs, Word files and spreadsheets each need a different extractor, and chunk on the manual's own structure: chapter, section, procedure step. Store parent-child links so the agent searches small chunks but receives the whole procedure section, which is hierarchical RAG. Tag every chunk with the owner table, owner id, site, asset or item number, document type and revision, so retrieval can be scoped and answers can cite the exact attachment."
+  - question: "Do I need a knowledge graph for Maximo asset and location hierarchies?"
+    answer: "Usually not at first. Maximo already stores its hierarchies as relational data: LOCHIERARCHY for location systems, the PARENT field and ancestor tables for assets, and FAILURELIST for failure class, problem, cause and remedy. A recursive SQL query or an OSLC call answers most 'what is above or below this asset' questions exactly and cheaply. A knowledge graph earns its cost when questions cross entity types and include facts that live only in text, for example linking assets that share a vendor seal kit mentioned in worklogs, or tracking how a relationship changed over time. Graphs built by an LLM are slower and more expensive to ingest, so start with SQL and add a graph for the cross-entity questions you can name."
+  - question: "What happens to my RAG index when someone edits a Maximo work order?"
+    answer: "If the ingestion step only inserts, the old chunks stay and the agent sees both versions of the long description, which confuses it badly. Most vector stores insert rather than upsert, so the safe pattern is delete-before-insert keyed on a stable record identity: delete every chunk whose metadata matches the work order's site and number (or the doclinks id for an attachment), then insert the re-chunked text. Worklogs are child records, so a new worklog must trigger re-ingestion of the parent's chunks too. Deleted or cancelled records need a reconciliation job, because nothing in a changedate watermark tells you a record disappeared."
+keyTakeaways:
+  - "Split Maximo data first: structured records (status, balances, costs, hierarchies) are queried live through OSLC or SQL; narrative text (long descriptions, worklogs, job plans, manuals, SOPs) is retrieved"
+  - "Identifiers defeat embeddings. Route part numbers, asset tags and failure codes to keyword search or an exact OSLC filter, and use hybrid search with reciprocal rank fusion for mixed text"
+  - "Manuals and doclinks attachments need their own pipeline: type-aware extraction, structure-aware chunks, and hierarchical retrieval that searches small and returns the whole procedure"
+  - "Metadata filtering is both your security model and your precision tool. SITEID, ORGID, asset, failure class and document type on every chunk, applied before ranking"
+  - "Edits are normal in Maximo. Re-ingest with delete-before-insert keyed on the record's identity, and let an agentic router pick the right retrieval per question"
+series:
+  name: "The Agentic AI Playbook for Maximo"
+  part: 3
+  total: 8
+series_part: 3
+tldr: "Most bad Maximo RAG projects embed everything and hope. This part gives you a selection method instead. First, separate structured Maximo data (status, balances, costs, meters, hierarchies), which the agent should query live through OSLC object structures or SQL, from unstructured text (work order long descriptions, worklogs, job plan tasks, OEM manuals, SOPs, doclinks attachments), which is where retrieval belongs. Then match strategy to data: keyword and hybrid search for part numbers and asset tags, reranking to keep only the best chunks, hierarchical RAG for long manuals, contextual headers built from Maximo's own fields, recursive SQL or a knowledge graph for asset, location and failure-code hierarchies, SITEID and ORGID metadata filters for security, and delete-before-insert re-ingestion when a work order changes. Finally, put the strategies behind tools and let an agentic router choose per question. Concepts are adapted from Cole Medin's RAG videos and applied to Maximo; the pgvector build lives in agm-05."
+seoTitle: "RAG Strategies for Maximo Data: What to Retrieve"
+seoDescription: "Choose the right retrieval for Maximo data: live OSLC queries, hybrid search for part numbers, hierarchical RAG for manuals, graphs and site filters."
+targetQuestions:
+  - "Which RAG strategy should I use for IBM Maximo data?"
+  - "Should Maximo work orders and inventory be embedded in a vector database or queried live?"
+  - "How do I build retrieval over OEM manuals and doclinks attachments in Maximo?"
+  - "How do I keep a Maximo RAG index secure by site and up to date when work orders change?"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Basic understanding of embeddings and vector search"
+  - "Working knowledge of Maximo object structures and the OSLC REST API (oslc.where, oslc.select)"
+  - "Parts 1 and 2 of this series (agents, tools and context) are helpful"
+speakableSections:
+  - "First Decision: Is This Even a RAG Problem?"
+  - "Identifiers Break Semantic Search"
+  - "The Decision Table: Which Retrieval for Which Maximo Data"
+clusterSlugs:
+  - "map-00-series-index"
+  - "map-01-what-is-an-ai-agent-maximo"
+  - "map-02-prompts-tools-context-maximo"
+  - "map-04-mcp-tool-design-maximo"
+  - "map-05-agent-security-guardrails-maximo"
+  - "map-06-ai-layer-agentic-coding-maximo"
+  - "map-07-local-self-hosted-ai-maximo"
+  - "map-08-production-agents-voice-long-running"
+relatedSlugs:
+  - "agm-05-agent-memory-rag"
+  - "agm-03-pydantic-ai-maximo-agent"
+  - "agm-06-evaluating-agents"
+---
+
+# RAG Strategies for Maximo Data: Which Retrieval for Which Records
+
+> 🎯 **Who this is for:** Maximo developers, integration leads and architects who have been asked to "put RAG on Maximo" and want to choose retrieval strategies deliberately instead of embedding the whole database and hoping.
+
+**Series:** Part 3 of 8 — *The Agentic AI Playbook for Maximo* | **Read time:** 35 minutes
+
+*Concepts in this series are adapted from [Cole Medin's YouTube channel](https://www.youtube.com/@ColeMedin) and the Dynamous AI Mastery community (dynamous.ai), and applied to IBM Maximo by TheMaximoGuys.*
+
+---
+
+## 🔥 The Question That Broke the Demo
+
+The demo went well. A reliability engineer typed "why does pump P-2041 keep tripping on vibration?" and the agent came back with a tidy summary of three old work orders, a grout failure and a realignment. Everyone nodded.
+
+Then the storeroom supervisor asked the second question: "Do we have seal kit 10045-778 at CENTRAL?" The agent answered confidently with a quantity of 12. The real balance was 0. The number came from a worklog written eight months earlier ("pulled 2 of 14 seal kits"), which the embedding search had judged the most similar text. Somebody then asked "what sits below V-118 in the raw water system?" and got a paragraph about a different valve with a similar description.
+
+None of these failures was a model problem. The same agent, the same LLM, the same prompt. They were **retrieval choice** problems:
+
+- A balance is a number in `INVBALANCES`. It should have been a live query, never a similarity search.
+- `10045-778` is an identifier. Embedding models are bad at identifiers.
+- "Below V-118 in the raw water system" is a hierarchy question. It lives in `LOCHIERARCHY` and asset parent links, not in any paragraph of text.
+
+Cole Medin makes the point that there is no single correct RAG strategy. The right system usually combines "three to five" strategies chosen for the data (["Every RAG Strategy Explained in 13 Minutes"](https://www.youtube.com/watch?v=tLMViADvSNE), 0:00:54). Maximo is a good test of that idea, because a single Manage database holds almost every kind of data a retrieval system can meet: strict relational tables, deep hierarchies, short codes, long free text, rich-text HTML, and binary attachments.
+
+This part is about choosing. The deep build (a pgvector schema, incremental OSLC sync, Kafka publish channels, agent memory) is already in [agm-05: Giving Maximo Agents a Memory](/blog/agm-05-agent-memory-rag). Here we take the step before that: for each kind of Maximo data, which retrieval strategy should you use, and why?
+
+---
+
+## 📌 The Short Version
+
+| If the question is about... | Use | Not |
+|---|---|---|
+| The present (status, stock, who is assigned, open POs) | A live OSLC or SQL query tool | Vector search |
+| A specific identifier (part, asset, WO, failure code) | Exact filter or keyword search | Pure semantic search |
+| "Has this happened before?" / "what fixed it?" | Hybrid search over narrative text, filtered and reranked | Top-k semantic with no filters |
+| A procedure in an OEM manual or SOP | Hierarchical RAG over a separate document corpus | One flat index mixed with work orders |
+| Parents, children, systems, failure-code trees | Recursive SQL or OSLC; a graph for cross-entity questions | Text retrieval |
+| Counts, averages, trends | SQL or analytics tool | Any RAG at all |
+
+And three rules that apply everywhere: every chunk carries `SITEID` and `ORGID` and is filtered before ranking; every chunk carries a stable record identity so edits are re-ingested with delete-before-insert; and the agent, not a fixed pipeline, chooses which of these tools to call.
+
+---
+
+## 🧭 First Decision: Is This Even a RAG Problem?
+
+Cole's answer to the recurring "is RAG dead?" debate is a domain answer, not a yes or no: "For coding, yes. For literally everything else, definitely not." (["Why the Best AI Coding Tools Abandoned RAG"](https://www.youtube.com/watch?v=60G93MXT4DI), 0:14:33). His reasoning is the useful part. Coding agents dropped vector indexes because codebases are highly structured: file trees, symbol names and imports already form an index, so an agent can navigate with grep and file reads instead of guessing by similarity. In the same video he frames the real question as "how structured is it?" (0:01:57).
+
+Apply that test to Maximo and you get a split down the middle of the database.
+
+**Structured Maximo data is like code.** It has a schema, keys, domains and relationships that are already indexed. `WORKORDER.STATUS`, `INVBALANCES.CURBAL`, `ASSET.PARENT`, `LOCHIERARCHY`, `FAILURELIST`, `MATUSETRANS`, `WOSTATUS` history. The schema is the index, and the object structures (`mxapiwo`, `mxapiwodetail`, `mxapiasset`, `mxapiinventory` and many more) are a navigation API. An agent should "navigate" this data the way a coding agent navigates files: with exact queries.
+
+Cole is blunt about what happens when you chunk tables: RAG "usually does absolutely terribly with tables" because it pulls chunks that "might only be a part of the table" (["The ULTIMATE n8n RAG AI Agent Template - Local AI Edition"](https://www.youtube.com/watch?v=T2QWhXpnT5I), 0:08:13). His fix is to give the agent a tool that writes SQL for sums, averages and maximums. In Maximo terms: "mean time between failures for BEDFORD pumps" is not something you can retrieve. It is something you compute, from failure-reported work orders, with a query.
+
+**Unstructured Maximo data is where retrieval belongs.** The long description of a corrective work order. The worklog where a technician wrote what actually happened. The remarks on a failure report. Job plan task text. The 300-page OEM manual attached to the asset record. The SOP PDF attached to a location. The scanned inspection form from 2014. None of this has a schema beyond "some text owned by some record", and people describe the same problem in a dozen different ways ("tripping on vib", "high vibration alarm", "shaking at startup"). That ambiguity is what semantic search was built for.
+
+Here is the inventory most Manage databases actually contain:
+
+| Maximo data | Where it lives | Shape | Default access |
+|---|---|---|---|
+| WO status, priority, dates, assignments | `WORKORDER`, `ASSIGNMENT`, `WOSTATUS` | Structured, changes hourly | Live OSLC query |
+| Inventory balances, reservations, open PO lines | `INVBALANCES`, `INVRESERVE`, `POLINE` | Structured, numeric | Live OSLC or SQL |
+| Meter readings, measurements | `METERREADING`, `MEASUREMENT` | Time series | Analytics or SQL, not RAG |
+| Asset, location and system hierarchies | `ASSET.PARENT`, `LOCHIERARCHY`, ancestor tables | Graph-shaped relational | Recursive query; graph if cross-entity |
+| Failure class, problem, cause, remedy | `FAILURELIST`, `FAILURECODE`, `FAILUREREPORT` | Tree of short codes | Exact lookup; codes as metadata filters |
+| WO and SR long descriptions | `LONGDESCRIPTION` | Rich-text prose | Retrieval |
+| Worklogs | `WORKLOG` + long description | Prose, child of WO | Retrieval, grouped under parent |
+| Job plan and PM task text | `JOBPLAN`, `JOBTASK` + long descriptions | Procedural prose | Retrieval, plus exact lookup by job plan number |
+| OEM manuals, SOPs, drawings, photos | `DOCLINKS` / `DOCINFO` attachments | Files of mixed type | Extraction, then hierarchical retrieval |
+| Item and asset specifications | `ITEMSPEC`, `ASSETSPEC`, classifications | Attribute-value pairs | Filters and exact queries; text for similarity |
+
+The table is the same idea agm-05 applies to memory, which is the right place for the "what do I embed" list in depth. The point here is the next step: once you know which rows are retrieval problems, there are a dozen ways to retrieve, and each Maximo corpus wants a different mix.
+
+<aside>
+💡 **Same record, two representations.** A work order is both. Its status and dates are structured and live; its long description and worklogs are narrative. Cole notes that the same data can be stored more than one way so the agent can reason over each representation (["Introducing RAG 2.0"](https://www.youtube.com/watch?v=p0FERNkpyHE), 0:09:36). For Maximo, copy a few structured fields into chunk metadata for filtering, and fetch the live record when the agent needs a current value.
+</aside>
+
+---
+
+## 🗂️ The Retrieval Toolbox, Translated for Maximo
+
+Cole's ["Every RAG Strategy Explained in 13 Minutes"](https://www.youtube.com/watch?v=tLMViADvSNE) walks through eleven strategies across two phases, data preparation and retrieval. His tactical advice if you only pick three: reranking, agentic RAG and context-aware chunking (0:12:24). Below is the toolbox with a Maximo reading of each. Use it as a menu, not a checklist.
+
+| Strategy | What it fixes | Cost | Where it fits in Maximo |
+|---|---|---|---|
+| **Semantic search** | Finds meaning across different wording | Low | "Similar problems" over long descriptions and worklogs |
+| **Keyword search** | Guarantees exact-term matches | Low | Part numbers, asset tags, WO numbers, failure codes, error codes in PLC text |
+| **Hybrid search + RRF** | Combines both without score-scale fights | Low to medium | Any corpus mixing prose and identifiers (most of Maximo) |
+| **Reranking** | Narrows a wide candidate set to the truly relevant few | Medium (extra model call) | After hybrid search on work order history and manuals |
+| **Query expansion** | Rewrites terse questions into the corpus vocabulary | Low (one LLM call) | "pump shaking" → vibration, VIBR, misalignment, cavitation |
+| **Multi-query RAG** | Several phrasings searched in parallel for coverage | Medium | Root-cause research across years of history |
+| **Context-aware chunking** | Splits on structure, not character counts | Low | Manuals by section, WOs by long description and worklog |
+| **Contextual retrieval** | Adds document context to each chunk before embedding | Medium to high (LLM per chunk) | Manuals where a chunk says "tighten to spec" with no equipment named |
+| **Late chunking** | Embeds the whole document before splitting | Needs long-context embedder | Long SOPs with heavy cross-referencing |
+| **Hierarchical RAG** | Search small, return the parent section | Low to medium | OEM manuals, multi-task job plans, asset → WO → worklog |
+| **Knowledge graphs** | Relationships and multi-hop questions | High (LLM extraction) | Cross-entity questions that SQL hierarchies cannot answer |
+| **Temporal knowledge graphs** | Facts that change over time, kept with validity dates | High | Asset moves, changing vendor or spec facts, superseded procedures |
+| **Self-reflective RAG** | Grades retrieved chunks and retries if weak | Medium (extra LLM calls) | High-stakes answers: safety procedures, isolation steps |
+| **Agentic RAG / agentic search** | The agent picks the tool, the filter, and whether to retry | Varies | The router over everything above, plus live OSLC tools |
+
+Two observations before we go strategy by strategy. First, most of the high-value moves for Maximo sit in the cheap rows: metadata filters, keyword search for identifiers, structure-aware chunking. Second, Maximo gives you something most RAG corpora lack: **structured context for free.** A worklog chunk does not need an LLM to tell it which asset, site and failure class it belongs to. The work order already knows. We will use that repeatedly.
+
+---
+
+## 🔎 Identifiers Break Semantic Search: Keyword and Hybrid for Maximo
+
+Semantic search is a conceptual search. Cole puts the trade-off plainly: "we're able to find concepts and related ideas, but we aren't guaranteed to find exact terms" (["The Simplest RAG Stack That Actually Works"](https://www.youtube.com/watch?v=Tz2YXg61aPo), 0:05:52). In the same video he gives the failure mode that maps exactly onto Maximo: classic RAG with several years of data "might find 2023 revenue instead of 2025" (0:08:33). Substitute "WO 10431 instead of WO 10481" or "seal kit 10045-778 instead of 10045-788" and you have the most common Maximo RAG bug.
+
+Maximo is dense with identifiers that carry no meaning for an embedding model:
+
+- Item numbers and manufacturer part numbers (`10045-778`, `SKF 6205-2RS`)
+- Asset numbers and tags (`P-2041`, `11430`), often reused patterns across sites
+- Location codes (`PS-07`, `BEDFORD-BLDG2-MCC3`)
+- Work order, PM and job plan numbers (`WO 10431`, `PM-PUMP-Q`, `JP-PUMP-07`)
+- Failure codes (`VIBR`, `GROUT`, `REALIGN`) and classification ids
+- Alarm and fault codes pasted from SCADA or PLC screens
+
+**Rule one: identifiers go to exact tools first.** If the question contains something that looks like an identifier, the agent should resolve it with a live, exact lookup before any similarity search. In Maximo that is an `oslc.where` equality on the object structure, or the REST API's text search. The Maximo JSON API supports `oslc.searchTerms` together with `searchAttributes`, which names the fields to search and combines with `oslc.where`. It does wildcard (LIKE-style) matching, not relevance ranking, which is exactly what you want for identifiers:
+
+```http
+# Illustrative: exact identifier resolution, run as the requesting user
+GET /maximo/api/os/mxapiinventory?lean=1
+    &oslc.where=itemnum="10045-778" and location="CENTRAL" and siteid="BEDFORD"
+    &oslc.select=itemnum,location,curbaltotal,binnum
+
+# Illustrative: free-text lookup on a few fields, combined with a filter
+GET /maximo/api/os/mxapiasset?lean=1
+    &oslc.where=siteid="BEDFORD"
+    &oslc.searchTerms="P-2041"
+    &searchAttributes=assetnum,description,serialnum
+```
+
+**Rule two: any text index you build should be hybrid.** Worklogs and long descriptions mix prose with identifiers ("replaced 10045-778, pump P-2041 now 2.1 mm/s"). A pure vector index will match the prose and blur the identifiers. Keyword search fixes the second half: if the exact term "appears in my knowledge base, I am guaranteed to find that chunk" (["The Simplest RAG Stack"](https://www.youtube.com/watch?v=Tz2YXg61aPo), 0:05:26). Cole's memorable example is that searching "AAPL" finds the stock and not the fruit. In Maximo, searching `VIBR` finds the vibration failures and not every paragraph that mentions noise.
+
+Hybrid search runs both legs and merges them. The merge is the subtle bit. Cole explains why you cannot just average scores: "the similarity scores from our two pipelines have a completely different scale" (["The Simplest RAG Stack"](https://www.youtube.com/watch?v=Tz2YXg61aPo), 0:20:56). Vector similarity sits between zero and one; a BM25 score might be 13. Reciprocal rank fusion throws the raw scores away and uses rank positions only, so an item near the top of both lists rises.
+
+```sql
+-- Illustrative: hybrid search with reciprocal rank fusion in Postgres.
+-- Site filter applied INSIDE both legs, before ranking (see the security section).
+WITH sem AS (
+  SELECT chunk_id, ROW_NUMBER() OVER (ORDER BY embedding <=> :query_vec) AS r
+  FROM maximo_chunk
+  WHERE siteid = ANY(:allowed_sites) AND corpus = 'wo_history'
+  ORDER BY embedding <=> :query_vec
+  LIMIT 50
+),
+kw AS (
+  SELECT chunk_id, ROW_NUMBER() OVER (ORDER BY ts_rank(tsv, q) DESC) AS r
+  FROM maximo_chunk, websearch_to_tsquery('simple', :query_text) q
+  WHERE siteid = ANY(:allowed_sites) AND corpus = 'wo_history' AND tsv @@ q
+  ORDER BY ts_rank(tsv, q) DESC
+  LIMIT 50
+)
+SELECT chunk_id,
+       COALESCE(1.0 / (60 + sem.r), 0) + COALESCE(1.0 / (60 + kw.r), 0) AS rrf
+FROM sem FULL OUTER JOIN kw USING (chunk_id)
+ORDER BY rrf DESC
+LIMIT 30;   -- hand these 30 to a reranker, keep the best 5-8
+```
+
+Two Maximo details matter in the keyword leg. Use a text-search configuration that does not stem or split your identifiers (the `simple` configuration above keeps `10045-778` closer to intact than an English stemmer would), and consider indexing normalised variants of part numbers (with and without dashes) because technicians type them both ways. A simple way to do that is a separate normalised identifier column (for example `ident_norm`, holding `10045778` for `10045-778`: upper-cased, punctuation stripped) populated at ingestion, with the same normalisation applied to the query before an exact or prefix match on that column runs alongside the full-text leg.
+
+**Then rerank.** Hybrid search is a recall tool: cast a wide net. Reranking is the precision step. Cole's warning about skipping it: handing the LLM "25 chunks leads to a very high risk of hallucinating" (["Your ULTIMATE n8n RAG AI Agent Template just got a Massive Upgrade"](https://www.youtube.com/watch?v=iV5RZ_XKXBc), 0:16:14). A cross-encoder reranker reads the question and each candidate together and orders them by real relevance, cheaply, because it is a narrow model rather than a general LLM. For Maximo history, retrieving 30 to 50 candidates and keeping 5 to 8 after reranking is a sensible starting point to tune with evals ([agm-06](/blog/agm-06-evaluating-agents)).
+
+**Query expansion helps the semantic leg, not the identifier.** "Pump shaking" will never match a worklog that says "VIBR alarm, soft foot found". A single LLM call that rewrites the question into Maximo vocabulary (vibration, VIBR, misalignment, soft foot, bearing) improves recall substantially. Feed it your failure-code descriptions for the relevant failure class as context and the expansion stops guessing. Multi-query RAG, several variants in parallel, is worth it for root-cause research where coverage matters more than latency. It is wasted on "what is the torque for this flange?"
+
+---
+
+## 📚 Manuals, SOPs and Doclinks: Hierarchical RAG and Document Extraction
+
+Work order history and OEM manuals are different corpora and should be different indexes, or at least different `corpus` values that the agent filters on. History is thousands of short, similar, site-specific stories. A manual is one long, structured, authoritative document that applies to every asset of a model. Mix them in one flat index and the short work order chunks crowd out the manual, or the manual's general text crowds out the specific history.
+
+### Getting the text out is the hard part
+
+Cole is direct that extraction, not embedding, is where pipelines break: the hardest part "is really just actually extracting the text from the documents" (["Effortless RAG in n8n - Use ALL Your Files"](https://www.youtube.com/watch?v=T1ZKEmDN8AA), 0:00:00). His fix is to branch on file type rather than push every file through one extractor.
+
+Maximo attachments live in `DOCLINKS` (which record owns the attachment) and `DOCINFO` (the document itself). Through the REST API you list them from the owning resource's `doclinks` collection and fetch each one by its link; the IBM REST guide shows `GET .../mxapiasset/{id}/doclinks` to list and `GET .../doclinks/{id}` for content, and a `doclinks/meta/{id}` link for metadata. MAS 9.2 also lets users add attachments directly in the Work Orders application (IBM's MAS 9.2 What's New for Manage), so expect the volume of WO-level attachments to grow.
+
+What you find there is a mess, and the extraction plan should say so out loud:
+
+| Attachment type | Typical content | Extraction approach |
+|---|---|---|
+| Digital PDF manuals | OEM operation and maintenance manuals | Layout-aware PDF extraction to markdown; keep headings and tables |
+| Scanned PDFs and images | Old inspection forms, signed permits, nameplate photos | OCR; flag low-confidence pages; often better as metadata than as chunks |
+| Word and text SOPs | Site procedures, LOTO steps | Convert to markdown; headings become section boundaries |
+| Spreadsheets | Spare parts lists, torque tables, test results | Keep as rows the agent can query; do not chunk as prose |
+| Drawings (DWG, large PDFs) | P&IDs, wiring diagrams | Title block and revision as metadata; usually do not embed |
+| Email (.msg, .eml) | Vendor correspondence | Strip quoted chains and signatures; low priority |
+
+Cole's preferred tool for this is Docling, which handles many formats and offers hybrid chunking that keeps paragraphs and lists intact (["The Simplest RAG Stack"](https://www.youtube.com/watch?v=Tz2YXg61aPo), 0:04:02). Whatever you use, test it on your worst attachment, not your best one.
+
+### Search small, return big
+
+A manual chunk that says "torque bolts to 85 Nm in a star pattern" is a perfect search hit and a dangerous answer on its own, because the steps before and after it (isolation, cleaning, gasket replacement) are what make it safe. Hierarchical RAG solves this with parent-child links stored as chunk metadata: the search runs over small, precise chunks, and the agent receives the parent section. Cole's summary is "searching small with context, returning big" (["Every RAG Strategy Explained"](https://www.youtube.com/watch?v=tLMViADvSNE), 0:09:25).
+
+Maximo hierarchies to use:
+
+- **Manual:** document → chapter → section/procedure → step chunk. Return the whole procedure.
+- **Job plan:** job plan → task → task long description. Return all tasks, in sequence, when any task matches.
+- **History:** asset → work order → long description and worklogs. Return the assembled work order when a worklog matches. (agm-05 shows the assembled-document format, so we will not repeat it here.)
+
+### Context for free, and when to pay for it
+
+Contextual retrieval, published by Anthropic and covered by Cole, prepends a short description of where a chunk sits in its document before embedding. Cole notes that even "one or two sentences" added at the start of each chunk improves results significantly. Anthropic's own write-up reports that contextual embeddings cut top-20 retrieval failures by 35%, combining them with contextual BM25 by 49%, and adding reranking by 67%, on their internal benchmarks. Treat those as directional, not as a promise for your data.
+
+For Maximo there are two tiers:
+
+1. **Free context from Maximo fields.** Every chunk from a work order or worklog can start with a header built from structured fields: site, asset, location, failure class and problem code, work type, date. That is contextual retrieval without an LLM call, and it is the default for history.
+2. **Paid context for manuals.** A manual chunk has no Maximo fields beyond its owner. "Replace the seal as shown in Figure 12" means nothing without knowing it is section 7.3 of the Flowserve model X maintenance manual, for the mechanical seal. That is where an LLM-generated context line per chunk earns its cost, with prompt caching of the full manual to keep the bill down. Cheaper middle ground: prepend the chapter and section headings, which Cole also describes as a light form of contextualisation.
+
+Late chunking (embed the whole document with a long-context embedding model, then split the token embeddings) is an alternative for long SOPs with lots of "as above" references. It is newer and depends on the embedding model, so try contextual headings first.
+
+```yaml
+# Illustrative: metadata stamped on every manual chunk
+corpus: oem_manual
+doclinks_id: 28417          # stable identity for re-ingestion
+owner_table: ASSET          # or ITEM, LOCATIONS, JOBPLAN
+owner_key: "P-2041"         # assetnum; or itemnum for item-level manuals (site is the separate siteid field)
+applies_to_model: "Flowserve-X"   # from asset or item spec, enables reuse across sites
+doc_type: MANUAL            # MANUAL | SOP | DRAWING | PHOTO | FORM
+revision: "Rev C 2021-04"
+section_path: "7 Maintenance > 7.3 Mechanical seal > Step 4"
+parent_section_id: "28417:7.3"
+siteid: BEDFORD
+orgid: EAGLENA
+```
+
+---
+
+## 🕸️ Hierarchies Are Graphs: Asset, Location and Failure Codes
+
+Vector databases, Cole points out, "don't do a good job storing relationships between the different entities that we have in our data" (["Knowledge Graphs in n8n are FINALLY Here!"](https://www.youtube.com/watch?v=NQ3vJ8iZPaQ), 0:01:33). His rule for when to reach for a graph is a good one: a question about a single entity goes to the vector store; a question about how two entities relate goes to the graph (same video, 0:03:11).
+
+Maximo is full of relational questions:
+
+- "Which locations and assets sit below V-118 in the RAWWATER system hierarchy?"
+- "What else is fed from MCC-3?"
+- "For failure class PUMPS, which causes have we recorded under problem VIBR, and what remedies?"
+- "Which child assets of this conveyor have open corrective work?"
+
+Here is the part most AI vendors skip: **Maximo already stores these as graphs.** Location systems live in `LOCHIERARCHY` (location, parent, system). Asset parent-child relationships live on `ASSET.PARENT`, with ancestor tables for fast lookups. The failure hierarchy lives in `FAILURELIST`, where each row has a `TYPE` of problem, cause or remedy and a `PARENT` pointing to the row above, rooted at the failure class. These are relational graphs with exact edges, maintained by the people who own the data.
+
+One caution about what those edges mean. `LOCHIERARCHY` is containment ("this location is part of that system position"), not flow. A parent-child link does not tell you which way water runs or what is fed from what, and a valve is usually an asset installed at a location rather than a location itself. Feed and flow connectivity is usually not in `LOCHIERARCHY` at all: it needs asset or location relationships configured for it, linear asset data, or a network model in GIS or a hydraulic tool. The hierarchy tool below answers "what is below this position in the system", which is a useful first cut, not an isolation or impact analysis.
+
+So the first answer for hierarchy questions is a tool, not an index:
+
+```sql
+-- Illustrative: everything below a location in one system hierarchy, exact and cheap
+-- (containment, not hydraulic flow; V-118 here is the location position the valve occupies)
+WITH RECURSIVE below AS (
+  SELECT location, parent, 1 AS depth
+  FROM lochierarchy
+  WHERE parent = 'V-118' AND systemid = 'RAWWATER' AND siteid = 'BEDFORD'
+  UNION ALL
+  SELECT h.location, h.parent, d.depth + 1
+  FROM lochierarchy h JOIN below d ON h.parent = d.location
+  WHERE h.systemid = 'RAWWATER' AND h.siteid = 'BEDFORD'
+)
+SELECT * FROM below;
+```
+
+Expose that as a read-only tool (or the OSLC equivalent, or an MCP tool, which is the subject of [Part 4](/blog/map-04-mcp-tool-design-maximo)) and the agent answers hierarchy questions exactly, with no extraction cost and no drift from Maximo.
+
+The failure hierarchy deserves a special mention because it doubles as a **retrieval vocabulary.** Before searching history for "shaking", the agent can call a tool that lists the problem codes under the asset's failure class, map "shaking" to `VIBR`, and then filter the history search on `problemcode = 'VIBR'`. Exact codes as filters, descriptions as query expansion. That one move fixes more Maximo RAG accuracy problems than any embedding model upgrade.
+
+### When a knowledge graph does earn its cost
+
+A graph built with an LLM extractor (Cole uses Graphiti over Neo4j) is worth it when the relationships you need are **not** in Maximo's tables, but in the text:
+
+- "Assets that share the seal kit the vendor recalled": the link between seal kit and assets may live only in worklogs and vendor emails.
+- "Which contractors worked on assets that later failed with the same cause?": a multi-hop across labour, work orders and failure reports that is painful in SQL and natural in a graph.
+- Relationships between sites that Maximo does not model, such as a shared spares pool agreed informally.
+
+Cole is candid about the trade-off: graphs are "fantastic for interconnected data" but "a lot slower and more expensive" because an LLM does the extraction (["Every RAG Strategy Explained"](https://www.youtube.com/watch?v=tLMViADvSNE), 0:05:14). Start with SQL hierarchies, write down the cross-entity questions SQL cannot answer, and build a graph for those only.
+
+### Temporal graphs and Maximo history
+
+Temporal knowledge graphs store a changed fact as a new fact with `valid_at` and `invalidated_at`, so an agent knows what is true now and what used to be true (["Make RAG 100x Better with Real-Time Knowledge Graphs"](https://www.youtube.com/watch?v=PxcOIINgiaA), 0:00:51). This maps onto real Maximo questions: an asset that moved between locations, a job plan revision that superseded the old procedure, a vendor that changed a recommended interval.
+
+Before building one, check what Maximo already records. Asset moves have their own transaction history; status changes are in status history tables; job plans have revisions. Often the "temporal" layer is a query against history tables plus metadata on chunks (`revision`, `valid_from`) so that superseded manual revisions are filtered out by default. A temporal graph is the right tool when the changing facts are buried in narrative text, not when Maximo already stamps them.
+
+---
+
+## 🔐 Metadata Filtering Is Your Security Model
+
+Metadata filtering is usually taught as a precision tool. Cole's examples are about scoping a search to one documentation source, or to records ingested in the last day, and about carrying file id and title so the model can cite its source (["The Future of RAG is Agentic"](https://www.youtube.com/watch?v=_R-ff4ZMLC8), 0:17:23 and 0:17:39). In Maximo, it is also the security model, because your ingestion job almost certainly ran as an integration user who can see every site.
+
+Maximo enforces access through security groups, site authorisation and data restrictions. A REST call made with a user's API key runs in that user's security context. Your vector store knows none of that. If the BEDFORD technician's question can retrieve a NASHUA chunk, the index has leaked a record Maximo would never have shown them.
+
+The minimum metadata on every chunk, and what each field is for:
+
+| Field | Purpose | Filter type |
+|---|---|---|
+| `orgid`, `siteid` | Site authorisation | **Mandatory pre-filter**, from the user's authorised sites |
+| `corpus` | Separate history, manuals, SOPs, job plans | Agent-chosen |
+| `owner_table`, `owner_key` | Stable identity, citation, re-ingestion | Exact |
+| `assetnum`, `location`, `itemnum` | Narrow to the equipment in question | Agent-chosen, exact |
+| `failurecode`, `problemcode`, `causecode` | Narrow history by failure mode | Agent-chosen, exact |
+| `worktype`, `reportdate` | CM vs PM, recency | Agent-chosen, range |
+| `doc_type`, `revision`, `valid_from` | Exclude superseded procedures | Default filter |
+| `security_tag` | Data restrictions you mirror (confidential locations, HR-sensitive WOs) | Mandatory pre-filter |
+
+Three rules make it work:
+
+1. **The site filter is not the agent's choice.** The agent may choose `assetnum` and `failurecode`. It must never choose `siteid`. Inject the allowed sites from the authenticated user into the retrieval tool in code, the way agm-05 does with row-level security in Postgres. Prompt instructions are not access control; [Part 5](/blog/map-05-agent-security-guardrails-maximo) covers why.
+2. **Filter before ranking, not after.** Filtering after a top-k search can return zero results for a user at a small site, because the top 50 were all from the big site. Apply the filter inside each search leg (as in the SQL above), and check that your vector index honours filters during the scan.
+3. **Re-check what you cite.** Before quoting a work order, the agent fetches it live through the API as the requesting user. If the fetch fails, the citation is dropped. This catches data restrictions you did not mirror into metadata.
+
+---
+
+## 🔄 When a Work Order Changes: Re-ingestion Without Ghosts
+
+Maximo records are edited constantly. A planner fixes the long description after a call with the technician. A worklog is added a week after completion. A failure code is corrected during review. An attachment gets a new revision. A demo ingests once; a production system ingests forever. Cole names freshness as one of the three axes on which toy RAG fails, alongside scale and unexpected questions (["This RAG AI Agent with n8n + Supabase is the Real Deal"](https://www.youtube.com/watch?v=PEI_ePNNfJQ), 0:00:15).
+
+The trap is in the write step. Most vector-store inserts are not upserts. Cole: "it is not an upsert it is just an insert" (["Run ALL Your AI Locally in Minutes"](https://www.youtube.com/watch?v=V_0dNE-H2gw), 0:14:18). Re-ingest a changed work order and you now have both the old and the new long description in the index, and the agent may quote the version the planner deliberately corrected.
+
+The fix is delete-before-insert keyed on a stable identity in metadata:
+
+| Change in Maximo | Identity to delete by | Re-ingest |
+|---|---|---|
+| WO long description edited | `owner_table=WORKORDER`, `siteid`, `wonum` | All chunks for that WO, header rebuilt |
+| Worklog added or edited | Parent WO identity (not the worklog alone) | Parent WO's assembled chunks |
+| Failure codes corrected | Parent WO identity | Header and metadata change, so re-chunk |
+| WO status only | None | Nothing to re-embed; status is live data |
+| Attachment replaced or new revision | `doclinks_id`, plus `revision` | That document's chunks; mark old revision invalid or delete |
+| WO or attachment deleted | Identity from reconciliation | Delete only |
+| Job plan revised | Job plan number + revision | New revision chunks; old ones filtered by `valid_from` |
+
+Two Maximo specifics. Worklogs are children, so a changedate on the work order may not move when only a worklog changes; agm-05's freshness section covers watermarks, Kafka publish channels and the reconciliation job in detail, so this part only states the rule. And status changes should **not** trigger re-embedding at all. If status-only changes are churning your embedding bill, you have put live data in the index.
+
+```python
+# Illustrative: delete-before-insert for one work order, in one transaction
+def reingest_work_order(db, wo):           # wo fetched live from mxapiwodetail
+    key = {"owner_table": "WORKORDER", "siteid": wo["siteid"], "owner_key": wo["wonum"]}
+    chunks = build_chunks(wo)               # header from Maximo fields + long description + worklogs
+    with db.transaction():
+        db.delete_chunks(where=key)         # remove every old version first
+        db.insert_chunks(chunks, metadata=key | {"content_hash": hash_of(chunks)})
+```
+
+---
+
+## 🧮 The Decision Table: Which Retrieval for Which Maximo Data
+
+This is the table to print. It assumes metadata filtering (site, org, security tag) on every row with a text index, and an agentic router that chooses between rows.
+
+| Maximo data | Typical question | Primary retrieval | Add when needed | Avoid |
+|---|---|---|---|---|
+| WO / SR status, dates, assignments | "Is WO 10431 approved?" | Live OSLC query (`mxapiwo`) | MCP tool for the same | Any embedding |
+| Inventory balances, reservations | "Seal kits at CENTRAL?" | Live OSLC or SQL (`mxapiinventory`) | Alternate-item lookup | Similarity on worklogs mentioning quantities |
+| Counts, MTBF, costs, trends | "Average repair time on BEDFORD pumps?" | SQL or analytics tool | Read-only reporting views | RAG of any kind |
+| Part numbers, asset tags, WO numbers | "What is 10045-778?" | Exact filter or `oslc.searchTerms` | Keyword leg of hybrid | Pure semantic search |
+| WO long descriptions + worklogs | "Has P-2041 seized before? What fixed it?" | Hybrid (BM25 + vector) with RRF, Maximo-field headers | Rerank; query expansion via failure codes; multi-query for RCA | Unfiltered top-k |
+| Failure reports | "Common causes of VIBR on PUMPS?" | Exact codes via `FAILURELIST` + SQL counts | Remarks text in hybrid search | Embedding the codes as prose |
+| Job plans and PM tasks | "Which job plan covers seal replacement?" | Exact lookup by number; hybrid search on task text | Hierarchical return of all tasks | Returning one task out of sequence |
+| OEM manuals (doclinks) | "Torque spec for the seal gland?" | Hierarchical RAG on a separate corpus, structure-aware chunks | Contextual headers or LLM context; rerank; self-reflective grading | Mixing into the WO history index |
+| SOPs, LOTO procedures | "Isolation steps for PS-07?" | Hierarchical RAG, revision-filtered | Self-reflective grading; human confirmation | Answering from a superseded revision |
+| Scanned forms, photos, drawings | "Last nameplate photo of P-2041?" | Metadata search on doclinks (owner, type, date) | OCR text when quality allows | Embedding low-quality OCR |
+| Asset / location hierarchies | "What sits below V-118 in RAWWATER?" | Recursive SQL or OSLC tool | Knowledge graph for cross-entity, text-derived links | Text retrieval |
+| Facts that change over time in text | "What interval does the vendor recommend now?" | Revision and validity metadata | Temporal knowledge graph | Overwriting without history |
+| Specifications and classifications | "150 HP vertical turbine pumps at BEDFORD" | Attribute filters (classification search) | Spec text in hybrid for similarity | Semantic search on numeric specs |
+
+---
+
+## 🤖 Putting It Together: An Agentic Retrieval Router
+
+Everything above becomes useful only when the agent can choose. Cole's definition of agentic RAG is short: "giving agents the ability to reason about how they explore the knowledge base instead of just giving it a single tool" (["I Built the ULTIMATE n8n RAG AI Agent Template"](https://www.youtube.com/watch?v=mQt1hOjBH9o), 0:03:14). One common pattern he describes is several stores serving different purposes, each behind its own tool (["All the BEST RAG Strategies in ONE MCP"](https://www.youtube.com/watch?v=BdZ_GOaaz7M), 0:13:30). He is also clear about the price: flexibility comes with less predictability (["Every RAG Strategy Explained"](https://www.youtube.com/watch?v=tLMViADvSNE), 0:04:22).
+
+IBM's own direction points the same way. In its Think article "Working smarter with agentic workflows in Maximo Assistant", IBM describes an agentic Maximo Assistant built around a Supervisor ALM agent that orchestrates tools including knowledge search, product-guidance RAG, data retrieval and condition insights, with write actions going through the Maximo MCP server. Treat that as IBM's announced direction (parts of the article are in the future tense), not as a documented, shipped feature set; what IBM does document for 9.2 is the MCP server itself and automation scripts as custom MCP tools. Either way, the shape is a retrieval router: some tools search text, some query live data, and the agent decides. If you build your own agent, or extend IBM's through custom MCP tools, the same design applies.
+
+A playbook-level tool set (agm-05 has a memory-oriented version; this one is organised by retrieval strategy):
+
+```text
+# Illustrative tool catalogue for a Maximo retrieval router
+
+resolve_identifier(text)            -> exact OSLC lookups for items, assets, locations, WOs, job plans
+query_live(object, where, select)   -> read-only OSLC query as the user (status, balances, assignments)
+run_report(name, params)            -> approved SQL views for counts, MTBF, costs (no free-form SQL)
+list_failure_codes(failureclass)    -> FAILURELIST problems/causes/remedies with descriptions
+get_hierarchy(location|asset, dir)  -> recursive parents/children within a system
+search_history(query, filters)      -> hybrid + RRF + rerank over WO long descriptions and worklogs
+search_documents(query, filters)    -> hierarchical RAG over manuals/SOPs, returns whole sections
+get_record(owner_table, key)        -> live fetch for citation checks
+```
+
+And a decision policy in the system prompt, short enough to follow:
+
+```text
+- If the question contains an identifier, call resolve_identifier first.
+- Questions about now (status, stock, assignments): query_live. Never answer from search tools.
+- Questions with numbers over many records (averages, counts, trends): run_report.
+- "Has this happened before / what fixed it": list_failure_codes to get codes, then search_history filtered by asset and codes.
+- Procedures, specs, torque values, isolation steps: search_documents, then quote the whole section with document and revision.
+- Before citing any work order, call get_record. Drop citations that fail.
+- If retrieved text does not answer the question, say so, refine once, then stop.
+```
+
+The last line is a lightweight version of **self-reflective RAG**: grade what came back, retry with a better query if it is weak, and stop rather than loop. Cole describes the full form as an LLM grading the chunks on a 1 to 5 scale and re-searching when the grade is low (["Every RAG Strategy Explained"](https://www.youtube.com/watch?v=tLMViADvSNE), 0:10:14). For Maximo, spend that extra call where wrong answers are dangerous (isolation steps, torque values, confined space procedures) and skip it for "similar work orders" panels, where a fixed filter-search-rerank pipeline is faster and easier to test.
+
+<aside>
+💡 **Agentic search over Maximo is real, but bounded.** Coding agents navigate codebases without an index because the structure is the index. An agent with `query_live` and `get_hierarchy` can navigate structured Maximo data the same way. It cannot navigate 40,000 worklogs one record at a time; that is what the text index is for. Cole's own caveat: for large knowledge bases with thousands of documents, semantic search is still "more accurate and way way cheaper" (["Everything You Thought About Building AI Agents is Wrong"](https://www.youtube.com/watch?v=gmaHRwijOXs), 0:14:15).
+</aside>
+
+---
+
+## 🔬 Worked Scenarios
+
+**1. The storeroom question.** "Do we have seal kit 10045-778 at CENTRAL, and what can substitute?" The router sees an identifier and calls `resolve_identifier`, which returns the item and its alternates. It then calls `query_live` on inventory for the item and its alternates at CENTRAL, as the user. Balance 0 for the item, 3 for an alternate. No vector search runs at all. The demo failure from the opening is gone because the answer was never a retrieval problem.
+
+**2. Repeat vibration on P-2041.** "Why does P-2041 keep tripping on vibration?" `list_failure_codes(PUMPS)` maps "vibration" to `VIBR`. `search_history` runs hybrid search filtered to site BEDFORD, asset P-2041 and its siblings of the same model, problem code `VIBR`, last five years. Fifty candidates, reranked to six. Two hits mention cracked baseplate grout; one mentions soft foot. The agent calls `get_record` on each before quoting, then calls `query_live` to confirm today's work order is in `WAPPR`. The answer cites three work orders by number and site, and recommends checking grout and soft foot, with "needs planner review" set.
+
+**3. The torque value.** A technician on mobile asks for the seal gland torque on P-2041. `resolve_identifier` returns the asset's item and manufacturer model. `search_documents` filters to `corpus=oem_manual`, the model, `doc_type=MANUAL`, current revision. The best small chunk is step 4 of section 7.3; hierarchical retrieval returns all of section 7.3, including isolation and gasket steps. A self-reflective grade confirms the section names the right seal type. The answer quotes the procedure with manual title, revision and page, and says plainly that the value is from the OEM manual, not site practice.
+
+**4. Below V-118.** "If we close V-118 for the PM, what might be affected?" `get_hierarchy(V-118, down)` in the RAWWATER system hierarchy returns eleven locations below that position; `query_live` lists the operating assets at those locations and their open work orders. No text index touched. Treat the list as a candidate set for operations to confirm, not as the answer to "what loses supply": the hierarchy is containment, and true feed impact needs relationship or network data (see the hierarchies section). If the operations team later asks "which of those had complaints from the plant about low pressure last winter?", that is a history search filtered to those eleven locations: structured narrowing first, retrieval second.
+
+**5. The corrected long description.** A planner rewrites WO 10431's long description after learning the root cause was cavitation, not bearing wear. The publish event (or the next changedate pull) triggers `reingest_work_order`: delete every chunk keyed to BEDFORD/10431, rebuild the header with the corrected cause code, insert. An hour later the agent's answer about P-2041 cites cavitation. Without the delete step it would have cited both causes from the same work order and hedged between them.
+
+**6. Choosing a job plan for a new PM.** A reliability engineer asks which existing job plan best fits quarterly inspection of a new pump model. `search_documents` with `corpus=job_plan` runs hybrid search over task text and returns whole job plans, not single tasks, ranked. The agent lists the top three by number and revision, notes which tasks reference the old model's manual, and suggests the engineer review task 30 against section 6 of the new model's manual. It proposes; the engineer decides, and any creation of the PM goes through approved write tools covered in Parts 4 and 5.
+
+---
+
+## ⚠️ Pitfalls
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Agent quotes stock quantities or statuses from old worklogs | Live data answered by similarity search | Route present-tense questions to live query tools; say so in tool descriptions |
+| Right topic, wrong part or asset number | Pure semantic search on identifiers | Exact resolution first; hybrid search with a non-stemming keyword leg |
+| Answers mix sites or show records the user cannot open | Index built by an all-sites integration user, no pre-filter | Mandatory `siteid`/`orgid` filter injected in code; re-fetch citations as the user |
+| Small sites get no results | Filtering after top-k | Filter inside each search leg, before ranking |
+| Manual answers miss the safety steps around a value | Flat chunks, no parent return | Hierarchical RAG; return whole procedure sections |
+| Agent quotes a superseded SOP | No revision or validity metadata | Stamp revision and `valid_from`; filter current by default |
+| Contradictory answers about one work order | Re-ingestion inserted without deleting | Delete-before-insert keyed on site and WO number |
+| Embedding bill spikes daily | Status-only changes trigger re-embedding | Re-embed on text or code changes only; status is live |
+| "Average" or "how many" answers are wrong | Aggregates computed from retrieved chunks | Approved SQL or report tool for anything aggregate |
+| Scanned attachments return garbage | One extractor for every file type | Branch extraction by type; keep low-quality OCR as metadata only |
+| Knowledge graph project stalls | Graph built for questions SQL already answers | Use `LOCHIERARCHY`, asset parents and `FAILURELIST` first; graph only for named cross-entity questions |
+| Agent loops on retries | Self-reflection without a stop rule | One refinement, then report "not found" |
+
+---
+
+## Key Takeaways
+
+- **Split before you embed.** Structured Maximo data (status, balances, costs, meters, hierarchies) is a query. Narrative text (long descriptions, worklogs, job plans, manuals, SOPs) is a retrieval. Most failed Maximo RAG projects blurred that line.
+- **Identifiers need exact tools.** Part numbers, asset tags, WO numbers and failure codes go to `oslc.where`, `oslc.searchTerms` or a keyword leg. Hybrid search with reciprocal rank fusion, then reranking, is the default for Maximo text.
+- **Manuals are their own corpus.** Type-aware extraction from doclinks, structure-aware chunks, hierarchical return of whole procedures, revision filters, and LLM context only where Maximo fields cannot supply it.
+- **Maximo already has graphs.** Use `LOCHIERARCHY`, asset parents and `FAILURELIST` through tools first; build a knowledge graph for cross-entity relationships that only exist in text.
+- **Metadata is security and precision.** Site and org filters injected in code, applied before ranking, and citations re-checked live as the user.
+- **Edits are normal.** Delete-before-insert keyed on record identity, worklogs re-ingest the parent, status never re-embeds.
+- **Let the agent choose.** Put each strategy behind a tool, give the agent a short decision policy, and spend self-reflection only where a wrong answer is dangerous.
+
+---
+
+## References
+
+- Cole Medin — [Every RAG Strategy Explained in 13 Minutes (No Fluff)](https://www.youtube.com/watch?v=tLMViADvSNE)
+- Cole Medin — [Why the Best AI Coding Tools Abandoned RAG (And What They Use Instead)](https://www.youtube.com/watch?v=60G93MXT4DI)
+- Cole Medin — [The Simplest RAG Stack That Actually Works (Complete Guide)](https://www.youtube.com/watch?v=Tz2YXg61aPo)
+- Cole Medin — [Knowledge Graphs in n8n are FINALLY Here!](https://www.youtube.com/watch?v=NQ3vJ8iZPaQ)
+- Cole Medin — [Make RAG 100x Better with Real-Time Knowledge Graphs](https://www.youtube.com/watch?v=PxcOIINgiaA)
+- Cole Medin — [The ULTIMATE n8n RAG AI Agent Template - Local AI Edition](https://www.youtube.com/watch?v=T2QWhXpnT5I)
+- Cole Medin — [Run ALL Your AI Locally in Minutes (LLMs, RAG, and more)](https://www.youtube.com/watch?v=V_0dNE-H2gw)
+- Cole Medin — [Effortless RAG in n8n - Use ALL Your Files (PDFs, Excel, and More)](https://www.youtube.com/watch?v=T1ZKEmDN8AA)
+- Cole Medin — [This RAG AI Agent with n8n + Supabase is the Real Deal](https://www.youtube.com/watch?v=PEI_ePNNfJQ)
+- Cole Medin — [The Future of RAG is Agentic - Learn this Strategy NOW](https://www.youtube.com/watch?v=_R-ff4ZMLC8)
+- Cole Medin — [I Built the ULTIMATE n8n RAG AI Agent Template](https://www.youtube.com/watch?v=mQt1hOjBH9o)
+- Cole Medin — [Your ULTIMATE n8n RAG AI Agent Template just got a Massive Upgrade](https://www.youtube.com/watch?v=iV5RZ_XKXBc)
+- Cole Medin — [All the BEST RAG Strategies in ONE MCP for AI Coding Assistants](https://www.youtube.com/watch?v=BdZ_GOaaz7M)
+- Cole Medin — [Everything You Thought About Building AI Agents is Wrong](https://www.youtube.com/watch?v=gmaHRwijOXs)
+- Cole Medin — [Introducing RAG 2.0: Agentic RAG + Knowledge Graphs (FREE Template)](https://www.youtube.com/watch?v=p0FERNkpyHE)
+- [Anthropic — Contextual Retrieval (contextual embeddings, contextual BM25, reranking results)](https://www.anthropic.com/engineering/contextual-retrieval)
+- [IBM Maximo REST API Guide — Attachments (doclinks)](https://ibm-maximo-dev.github.io/maximo-restapi-documentation/attachment/attachment/)
+- [IBM Maximo REST API Guide — Filtering (oslc.where)](https://ibm-maximo-dev.github.io/maximo-restapi-documentation/query/filtering)
+- [IBM Maximo REST client (ResourceSet searchTerms / searchAttributes)](https://github.com/ibmmaximorestjsonapis/maximorestclient/blob/master/src/com/ibm/maximo/oslc/ResourceSet.java)
+- [MaximoDev — How to extract failure codes, problems, causes and remedies (FAILURELIST hierarchy)](https://bportaluri.com/2013/01/extract-failure-code-problem-cause-remedy.html)
+- [IBM — Working smarter with agentic workflows in Maximo Assistant](https://www.ibm.com/think/perspectives/working-smarter-agentic-workflows-maximo-assistant)
+- Concepts on combining RAG strategies and hierarchical retrieval are also informed by the Dynamous AI Mastery community ([dynamous.ai](https://dynamous.ai)), re-expressed here for Maximo.
+
+---
+
+🧰 **From TheMaximoGuys toolbox:** [Max_Interfaces](https://github.com/themaximoguys/Max_Interfaces) (open source, MIT) catalogues 2,439+ Maximo endpoints, useful when you are deciding which object structure backs each live-query tool in your router. **Max_mcp** (`@themaximoguys/maximo-mcp` on npm, 175 tools, proprietary) gives any MCP-capable agent the live, structured side of retrieval across Maximo versions, alongside IBM's native MAS 9.2 MCP server.
+
+---
+
+## Series Navigation
+
+**The Agentic AI Playbook for Maximo**
+
+- [Part 0: Series Index: The Agentic AI Playbook for Maximo](/blog/map-00-series-index)
+- [Part 1: What Is an AI Agent, Really? A Field Guide for Maximo Teams](/blog/map-01-what-is-an-ai-agent-maximo)
+- [Part 2: Prompts, Tools and Context for Maximo Agents: Designing What the Model Actually Sees](/blog/map-02-prompts-tools-context-maximo)
+- **Part 3: RAG Strategies for Maximo Data: Which Retrieval for Which Records** (you are here)
+- [Part 4: MCP and Tool Design for Maximo: Fewer, Sharper Tools Beat a 175-Tool Buffet](/blog/map-04-mcp-tool-design-maximo)
+- [Part 5: Securing Maximo Agents: The Lethal Trifecta, Prompt Injection and Guardrails That Hold](/blog/map-05-agent-security-guardrails-maximo)
+- [Part 6: The AI Layer for Maximo Development: Rules, Commands, Hooks and Validation for Agentic Coding](/blog/map-06-ai-layer-agentic-coding-maximo)
+- [Part 7: Local and Self-Hosted AI for Maximo: A Playbook for Regulated Shops](/blog/map-07-local-self-hosted-ai-maximo)
+- [Part 8: Maximo Agents in Production: Deployment, Voice in the Field, and Agents That Run While You Sleep](/blog/map-08-production-agents-voice-long-running)
+
+| | |
+|---|---|
+| **Previous:** | [Part 2 — Prompts, Tools and Context for Maximo Agents](/blog/map-02-prompts-tools-context-maximo) |
+| **Next:** | [Part 4 — MCP and Tool Design for Maximo: Fewer, Sharper Tools Beat a 175-Tool Buffet](/blog/map-04-mcp-tool-design-maximo) |
+| **Deep dive:** | [agm-05 — Giving Maximo Agents a Memory (pgvector build, sync, agent memory)](/blog/agm-05-agent-memory-rag) |

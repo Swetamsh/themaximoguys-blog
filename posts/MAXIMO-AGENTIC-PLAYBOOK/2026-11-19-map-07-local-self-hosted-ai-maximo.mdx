@@ -1,0 +1,490 @@
+---
+title: "Local and Self-Hosted AI for Maximo: A Playbook for Regulated Shops"
+description: "How utilities, nuclear operators, defence and public-sector Maximo teams decide what to run on their own hardware: privacy tiers mapped to Maximo data, a per-component local-vs-cloud decision tree, GPU sizing next to MAS on OpenShift, the context window trap with long work order histories, a cost crossover table, and multi-model routing with a small local classifier and a larger reasoning model."
+date: "2026-11-19"
+slug: "map-07-local-self-hosted-ai-maximo"
+tags: ["Local AI", "Self-Hosted LLM", "IBM Maximo", "MAS 9.2", "Ollama", "vLLM", "OpenShift AI", "watsonx.ai", "Granite", "Air-Gapped", "Data Privacy", "Agentic AI"]
+draft: true
+tier: "admin"
+author: "Krishna Neela"
+coverImage: "./images/map-07-local-self-hosted-ai-maximo.png"
+authorTitle: "AI Engineer"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Can I run AI for Maximo without sending any data to a cloud model provider?"
+    answer: "Yes, and IBM already supports two routes for it. The first is IBM's own: Maximo AI Service can run on premises with watsonx.ai deployed on Cloud Pak for Data on your OpenShift cluster, and IBM's on-prem deployment documentation states that AI Service uses gpt-oss-120b for most features plus a small embedding model for similarity. The second is your own inference layer for custom agents: an open-weight model served by vLLM (Red Hat OpenShift AI or Red Hat AI Inference Server in production, Ollama for a lab) behind an OpenAI-compatible endpoint, with your agent calling Maximo through a read-only API key or the MAS 9.2 MCP server. Both keep the model and the prompts inside your network. What they do not do on their own is stop data leaving through other paths, such as a chat front end, a Slack digest, an MCP server that can browse the web, or logs shipped to a SaaS observability tool, so the whole data flow has to be checked, not just the model."
+  - question: "How big a GPU do I need for a Maximo agent running on a local model?"
+    answer: "Size by the job, then by the model. Cole Medin's VRAM ladder is a good first cut: a 7B model at Q4 quantization needs roughly 4 to 5 GB of VRAM and is fine for classifying service requests into categories but unreliable at tool calling; around 14B is where models start following tool and system-prompt instructions well; 32B on a 24 GB card is the first tier that feels close to cloud quality; 70B needs about 48 GB. A Maximo triage agent with three to five OSLC tools wants the 32B tier or better. gpt-oss-120b, which IBM uses for Maximo AI Service, is a mixture-of-experts model that IBM says runs on a single NVIDIA H100 (80 GB). Then add headroom for context: the KV cache grows with the context window and with every parallel request slot, so a model that fits with a 4K window may not fit at 32K with four users."
+  - question: "Why does my local model ignore tools or make things up when I give it a long work order history?"
+    answer: "Check the context window before you blame the model. Ollama silently truncates anything beyond its configured context length. Older releases defaulted to 2,048 tokens, the current FAQ says 4,096, and newer servers pick 4K, 32K or 256K based on available VRAM. A single work order with a long description, a year of work logs and the asset's related work orders can easily reach 10,000 to 15,000 tokens before you add the system prompt and tool definitions. When that overflows, the first thing to fall off is often the system prompt and the tool list, which produces exactly the missed tool calls and confident invention Cole Medin describes. Raise the window deliberately with OLLAMA_CONTEXT_LENGTH, a Modelfile PARAMETER num_ctx, or num_ctx in the native API request (the OpenAI-compatible endpoint has no field for it), confirm with ollama ps, and summarise long histories in your tool instead of dumping them raw."
+  - question: "When does self-hosting an LLM become cheaper than paying per token for a Maximo use case?"
+    answer: "Cole Medin's napkin math is the right method: annualise the fixed GPU cost to a month, convert the per-token provider price into prompts per dollar using your real average tokens per request, and multiply. In his 2024 example a rented 48 GB A40 at 0.39 dollars an hour costs about 280 dollars a month, which equals roughly 94,000 prompts of 5,000 tokens on Groq's Llama 3.1 70B price, or about 3,000 a day. For most Maximo use cases (triage of a few hundred work orders a day) per-token pricing on a hosted open model is far cheaper than owning GPUs, so cost alone rarely justifies self-hosting. What changes the answer is either data sensitivity, which can force self-hosting at any volume, or token-heavy jobs such as summarising long work order histories across a large fleet, where volume can cross the line. Re-run the numbers with your own quotes; the prices in the example are from 2024."
+  - question: "Should I fine-tune a model on our Maximo work order history?"
+    answer: "Usually not first. Fine-tuning bakes your data into model weights, which raises the stakes on data classification (personnel names and free-text safety notes in work logs become part of the model) and creates a model you must retrain and re-validate as your data changes. For most Maximo tasks, retrieval over your own records, good tool design and a clear system prompt with your site's failure-class and priority conventions get you most of the way. Fine-tuning becomes worth considering for a narrow, stable, high-volume task such as mapping free-text descriptions to your failure hierarchy, where a small tuned model could replace a larger general one. If you do it, use scrubbed training data, keep an evaluation set, and on IBM's stack note that watsonx.ai Tuning Studio offers LoRA and prompt tuning, including on premises."
+keyTakeaways:
+  - "Local means you control the weights and the data path, not that the GPU is in your basement; a cloud account you administer counts, and so does watsonx.ai on your own OpenShift"
+  - "Classify Maximo data before choosing a model: asset and work order text, commercial inventory data, personnel records and regulated information (safeguards, export-controlled, critical infrastructure) belong on different privacy tiers"
+  - "Apply the four-question local-vs-cloud test per component, not per company; most regulated Maximo estates land on a hybrid"
+  - "Size GPUs by job and by context: a 32B model or gpt-oss-120b on an 80 GB card for agent work, a small model for classification, and headroom for the KV cache that long work order histories demand"
+  - "Route by difficulty: a small local model classifies and dispatches, a larger model reasons only when needed, and the endpoint stays swappable through an OpenAI-compatible base URL"
+series:
+  name: "The Agentic AI Playbook for Maximo"
+  part: 7
+  total: 8
+series_part: 7
+tldr: "Regulated Maximo shops (utilities, nuclear, defence, public sector) often cannot send work order text, asset data or personnel records to a cloud model. This part adapts Cole Medin's local-AI teaching to that reality. Local means control of the weights and data, not physical location. Map Maximo data to three privacy tiers (closed API, hosted open model, self-hosted) and use mock data until you reach the tier the workload needs. Apply a four-question test per component: proof of concept or production, sensitive data, frontier capability needed, and scale. Size GPUs on the VRAM ladder (14B is the agent floor, 32B the sweet spot, gpt-oss-120b on one 80 GB card is what IBM runs for Maximo AI Service) and leave room for context. Watch Ollama's context window: a long work order history overflows the default and the model silently loses its tools. Run the cost crossover math before buying hardware; privacy, not cost, usually decides. Route by difficulty with a small local classifier and a larger reasoning model behind swappable OpenAI-compatible endpoints. The lab stack build lives in agm-04."
+seoTitle: "Local and Self-Hosted AI for IBM Maximo Teams"
+seoDescription: "Run AI for Maximo on your own hardware: data privacy tiers, GPU sizing next to MAS on OpenShift, Ollama context limits, cost crossover and model routing."
+targetQuestions:
+  - "How do I run AI agents for IBM Maximo on premises or air-gapped?"
+  - "What GPU do I need to self-host an LLM for Maximo work orders?"
+  - "When is self-hosting an LLM cheaper than a cloud API for Maximo?"
+  - "Which Maximo data can be sent to a cloud LLM and which must stay local?"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Working knowledge of MAS 9.x deployment on Red Hat OpenShift"
+  - "Familiarity with Maximo data: work orders, assets, labor, inventory"
+  - "Part 1 of this series (what an AI agent is) is helpful"
+  - "agm-04 (n8n and the local AI stack) for the hands-on lab build"
+speakableSections:
+  - "What Local Actually Means"
+  - "Privacy Tiers for Maximo Data"
+  - "The Context Window Trap"
+clusterSlugs:
+  - "map-00-series-index"
+  - "map-01-what-is-an-ai-agent-maximo"
+  - "map-02-prompts-tools-context-maximo"
+  - "map-03-rag-strategies-maximo-data"
+  - "map-04-mcp-tool-design-maximo"
+  - "map-05-agent-security-guardrails-maximo"
+  - "map-06-ai-layer-agentic-coding-maximo"
+  - "map-08-production-agents-voice-long-running"
+relatedSlugs:
+  - "agm-04-n8n-local-ai-prototyping"
+  - "agm-03-pydantic-ai-maximo-agent"
+  - "agm-07-multi-agent-a2a-orchestrate"
+---
+
+# Local and Self-Hosted AI for Maximo: A Playbook for Regulated Shops
+
+> 📺 **Source credit:** The concepts in this series are adapted from Cole Medin's YouTube channel ([youtube.com/@ColeMedin](https://www.youtube.com/@ColeMedin)) and the Dynamous AI Mastery community (dynamous.ai), and applied to IBM Maximo by TheMaximoGuys.
+
+> 🎯 **Who this is for:** Maximo administrators, platform owners and technical leads at utilities, nuclear plants, defence contractors and public-sector agencies who have been told "no cloud LLMs" and still need a credible plan for AI agents.
+
+**Series:** Part 7 of 8 — *The Agentic AI Playbook for Maximo* | **Read time:** 36 minutes
+
+---
+
+## 🔥 The Meeting Where the Pilot Dies
+
+Every regulated Maximo AI pilot reaches the same meeting. The planners love the demo: a triage agent that reads incoming work orders, pulls the asset's recent history and suggests a priority and failure class. Then the cybersecurity lead asks one question. "Where does the work order text go?"
+
+At a nuclear plant, a work log can mention a safety-related component, a radiological area and a named technician in the same sentence. At an electric utility, the asset hierarchy itself can describe critical infrastructure. At a defence depot, the job plan for a weapons-system support asset may be export-controlled. At a city, the service request carries a resident's name and address. If the demo sent that text to a public model API, the pilot ends in that meeting.
+
+It does not have to. The open-weight models you can run yourself have closed much of the gap with frontier cloud models, IBM now runs its own Maximo AI features on an open-weight model you can host on your own OpenShift cluster, and the tooling to serve models in a disconnected cluster is mature. What regulated shops lack is not technology. It is a way to decide, component by component, what has to run locally and what does not, and a realistic picture of what that costs in GPUs, operations and quality.
+
+That is what this part provides. The hands-on lab build (n8n, Ollama, Supabase and friends in Docker) is already covered in [agm-04: Prototype Before You Code](/blog/agm-04-n8n-local-ai-prototyping). Here we take the wider view: the decisions, the sizing, the traps and the economics.
+
+---
+
+## 📌 The Short Version
+
+- **Local is about control, not location.** Cole Medin's definition: local AI "is still considered local as long as it's running on a machine in the cloud that you control." A GPU node in your OpenShift cluster, in your data centre or in your own cloud account counts.
+- **Classify the data first.** Maximo holds very different data classes. Asset and work order text, commercially sensitive inventory and vendor pricing, personnel and HR records, and regulated information each belong on a different privacy tier.
+- **Decide per component.** Proof of concept or production? Sensitive data? Frontier capability needed? Large scale? Ask these four questions for each piece of the system. The answer is usually a hybrid.
+- **Size by job, then by context.** About 14B parameters is the floor for reliable tool calling, 32B is the sweet spot, and gpt-oss-120b on one 80 GB GPU is what IBM uses for Maximo AI Service. Context costs VRAM too.
+- **Raise the context window deliberately.** Long work order histories overflow default local context windows, and the model silently loses its system prompt and tools.
+- **Run the cost math, then let privacy decide.** At typical Maximo volumes, per-token pricing beats owning GPUs. Self-hosting is usually a privacy decision, not a cost one.
+- **Route by difficulty.** A small local model classifies; a larger model reasons only when needed.
+
+---
+
+## 🧭 What "Local" Actually Means for a Maximo Estate
+
+Cole Medin starts from a strict definition: "local AI is running your own large language models and infrastructure like your database and your UI entirely on your own machine 100% offline." He then widens it in a way that matters for enterprises. A cloud box you administer still counts as local, because what matters is who controls the data and the weights, not where the server sits. For a Maximo shop that already runs MAS on Red Hat OpenShift, this is good news. You already operate exactly the kind of platform that hosts self-managed inference.
+
+The reasons Cole gives for going local map directly to regulated Maximo concerns. **Privacy**: everything stays inside your own infrastructure. **Cost control**: an always-on agent on your own hardware has no per-token bill. **Provider independence**: you are not tied to the API of one vendor. He is also honest about the trade-off: closed frontier models are still better, and if you need advanced tool calling or very specific structured output that local models fail at, you are pushed toward managed services. His "Local vs. Cloud" video argues against the absolutist "go local or it's bust" position and lands on hybrid as the common business answer.
+
+In Maximo terms there are five realistic deployment shapes. They are not mutually exclusive; many estates run two of them at once.
+
+| Shape | Where Maximo runs | Where inference runs | Who controls the model | Typical fit |
+|---|---|---|---|---|
+| **All SaaS** | MAS as a Service | IBM-hosted AI Service and watsonx.ai | IBM | Commercial estates with no residency constraint |
+| **Hybrid IBM** | Customer-managed MAS | AI Service as SaaS (URL, API key, tenant ID set in Manage system properties) | IBM | MAS on premises, AI data flow acceptable to IBM SaaS |
+| **IBM on premises** | Customer-managed MAS on OpenShift | AI Service plus watsonx.ai on Cloud Pak for Data on your cluster | You (IBM-supplied models) | Regulated shops that want IBM's built-in AI features locally |
+| **Bring your own inference** | Any MAS deployment | Your vLLM, Red Hat OpenShift AI or Ollama endpoint | You | Custom agents over Maximo data, coding assistants, RAG over manuals |
+| **Air-gapped** | Disconnected MAS cluster | Mirrored model images and weights on the same disconnected network | You | Nuclear, defence, some transmission operators |
+
+The first three shapes are about IBM's built-in features: Maximo Assistant, field-value recommendations, similarity, FMEA content generation. IBM documents three deployment options for Maximo AI Service: all-SaaS, on premises (AI Service with MAS 9.0 or later, installed via the MAS CLI or Ansible), or hybrid. Per IBM's on-premises watsonx deployment documentation for Maximo, AI Service uses **gpt-oss-120b** for most AI features and a small Watson NLP embedding model (`embedding_transformer_en_slate.125m`) for similarity. The model change came before 9.2: IBM's Feature Channel what's-new for January 2026 says you can now use gpt-oss-120b for the `mcc` (cause classification), `pcc` (cause-effect correlation), `fmea` and `nl2oslc` (AI assistant) model templates, with a documented migration path for teams already on a Granite model, and that IBM Granite 3.2 8B Instruct was deprecated as of 25 November 2025. SaaS customers could use it in production from January; for customer-managed MAS it was Feature Channel preview content until 9.2 GA on 25 June 2026.
+
+The last two shapes are about the agents you build yourself, which is what the rest of this series covers. You can mix shapes. Plenty of utilities will run IBM's Assistant through on-premises watsonx.ai while building a custom triage agent against a separate vLLM endpoint on the same cluster.
+
+---
+
+## 🔐 Privacy Tiers for Maximo Data
+
+Cole frames LLM data privacy as a ladder with three rungs, not a binary.
+
+- **Tier 1, closed-model APIs.** You send prompts to a vendor whose terms may permit training on them. Cole's worry is absorption, not interception: a provider "that's going to train the model on your data and eventually theoretically regurgitate it back out."
+- **Tier 2, hosted open-weight providers.** Serverless platforms that run open models for you and generally do not train on your traffic. Still a third party, but in Cole's words "a lot better than sending your data to a close Source model."
+- **Tier 3, self-hosting.** Weights and data stay on infrastructure you control. The only tier that removes the third party, and the only one that costs you hardware and operations.
+
+Two refinements matter for enterprise Maximo work. First, Tier 1 is broader than Cole's framing suggests: enterprise agreements with the big providers often exclude training on your data and offer regional processing. That moves the question from "will they train on it" to "is a third party allowed to see it at all," which for regulated data is often still no. Second, Cole's practical bridge across the tiers is **mock data**: prototype on the cheap, capable rung, but do not feed it the sensitive rows. Prove the architecture with synthetic records and move up the ladder only once the system is real.
+
+Maximo does not hold one kind of data. It holds several, and they belong on different rungs. The table below is a starting point for a conversation with your compliance team, not a ruling; your own classifications win.
+
+| Maximo data class | Examples (objects, fields) | Typical sensitivity | Lowest sensible tier |
+|---|---|---|---|
+| Reference and catalogue data | Failure classes, problem codes, item master descriptions, job plan task text (non-restricted) | Low | Tier 1 with an enterprise agreement, or Tier 2 |
+| Operational asset and work data | `WORKORDER` descriptions, `WORKLOG` entries, `ASSET` and `LOCATIONS` hierarchy, meter readings | Moderate; may reveal site layout and vulnerabilities | Tier 2 for most, Tier 3 for critical infrastructure |
+| Commercial data | Vendor prices on POs and contracts, inventory costs, invoice lines | Commercially confidential | Tier 2 under contract, or Tier 3 |
+| Personnel data | `PERSON`, `LABOR`, labor transactions, qualifications, worklog text naming individuals | Personal data under privacy law | Tier 3, or redact before any lower tier |
+| Safety and permit data | Lockout records, permit-to-work notes, incident and HSE records | Safety-significant; often legally discoverable | Tier 3 |
+| Regulated information | Nuclear safeguards and security-related equipment data, export-controlled technical data, critical infrastructure information, classified or controlled defence data | Legally restricted | Tier 3 only, often air-gapped |
+
+Two patterns fall out of this table.
+
+The first is that **the same agent can touch several rows**. A work order triage agent reads the description (operational), the asset history (operational), and possibly the worklog text, which names technicians (personnel). If any row it touches is Tier 3, the agent's model is Tier 3, unless your tools strip that data before it reaches the model. This is a strong argument for designing narrow tools (Part 4 of this series covers MCP tool design) that select only the attributes the model needs through `oslc.select`, and leave out personnel fields entirely.
+
+The second is that **redaction moves data down the ladder**. A tool that replaces person IDs with role labels ("TECH-A", "SUPERVISOR") and strips free-text names from worklog entries before they reach the model can turn a Tier 3 payload into a Tier 2 one. That is real engineering work, and it can fail on unexpected free text. For regulated information, do not rely on it; keep the model local.
+
+One more thing: privacy tiers apply to everything around the model, not just the model. A local model whose output is posted into a SaaS chat tool, whose traces go to a hosted observability platform, or whose MCP server can fetch web pages has not kept the data local. The agm-04 post makes the same point about n8n execution history: local inference removes one data flow, not all of them.
+
+---
+
+## 🌳 The Four-Question Test, Applied Per Component
+
+Cole's "Local vs. Cloud" video reduces the debate to four questions, asked in order.
+
+1. **Proof of concept or production?** For a proof of concept, use managed services. Speed of iteration is all that matters before the idea is validated.
+2. **Is the data genuinely sensitive?** This can override every other answer.
+3. **Do you need frontier capability?** If the workload needs the reasoning, long context or reliable structured output that only top closed models offer today, local is off the table for that workload.
+4. **Are you scaling past roughly a thousand users?** Below that, per-token pricing usually wins; above it, fixed-cost inference starts to pay.
+
+The point the knowledge base stresses, and the one regulated Maximo teams most often miss, is that the framework is applied **per component, not per company**. A Maximo AI programme has many components, and they rarely all point the same way.
+
+| Component | POC or prod | Sensitive data? | Frontier needed? | Scale | Likely answer |
+|---|---|---|---|---|---|
+| Coding assistant writing automation scripts against a sandbox | Both | Low (code, no records) | Often yes for complex Java or Jython | Tens of developers | Cloud, or self-hosted IBM Bob with a frontier model in your own cloud account |
+| Work order triage agent | Production | Moderate to high | No; a 32B-class model handles it | Hundreds of WOs a day | Local or Tier 2, depending on the data table above |
+| Long work order history summarisation for reliability reviews | Production | High (worklogs name people) | Helpful, not essential | Bursty | Local, with a larger model on a schedule |
+| RAG over OEM manuals and procedures | Production | Low to moderate (vendor documents) | No | Moderate | Tier 2 or local; embeddings local is cheap |
+| SR intake classification at a city 311 desk | Production | High (residents' names and addresses) | No; a small model suffices | Thousands a day | Local small model |
+| Executive "ask Maximo anything" chat | POC | Depends on scope | Yes for open-ended questions | Few users | Cloud on mock or de-identified data until scope is fixed |
+
+Notice what happens to the "no cloud" rule. It rarely holds for the coding assistant, which touches code, not records. It almost always holds for intake classification of resident or personnel data. Treating the whole programme as one decision either blocks useful low-risk work or exposes high-risk data. IBM's own product line follows the same split. Self-hosted IBM Bob (generally available for self-hosted deployment from September 2026) runs on your OpenShift with one core model that you bring: a self-hosted open-weight model in air-gapped mode, or a frontier model through your own cloud account. IBM's guidance says frontier models such as Claude Sonnet deliver the best results on complex IBM Z tasks (deep COBOL refactoring, PL/I analysis, multi-file transformations). That statement is about mainframe code, not Maximo scripts, but IBM has published no evaluations of Bob on the local models, so treat an air-gapped Bob as a different quality tier from SaaS Bob until your own tests say otherwise. That is the per-component trade-off made explicit. The [MAS-BOB series, Part 2](/blog/mas-bob-02-models-security-self-hosted) covers it in depth.
+
+---
+
+## 🖥️ Sizing GPUs: The VRAM Ladder Meets Maximo Workloads
+
+Running open weights yourself is gated by one number: GPU memory. Cole's rule of thumb from his local AI guide is roughly two-thirds of a gigabyte per billion parameters at Q4 quantization ("a 7 billion parameter model will need about four to 5 GB of VRAM"), and he reads the ladder as capability tiers rather than sizes. Here it is with Maximo jobs mapped onto each rung.
+
+| Tier | Approx. VRAM (Q4, short context) | What Cole observes | Maximo jobs it can carry |
+|---|---|---|---|
+| **~7B** | 4–5 GB | Good for chat, summarisation, simple classification; unreliable at structured output and tool calls | Classify SR text into categories, normalise free-text descriptions, detect language |
+| **~14B** | 8–10 GB | "That's when I see agents being able to really accept instructions well around tools and system prompts" | Single-tool lookups: "fetch asset history, summarise" |
+| **~32B** | 20–24 GB (one 24 GB card) | "Pretty close to the performance of some of the best cloud AI" | Triage agent with 3–5 OSLC tools, job plan review, reorder exception explanation |
+| **~70B** | ~48 GB (one 48 GB card or two smaller) | Closest to frontier among dense open models | Multi-step investigations, longer reasoning over histories |
+| **gpt-oss-120b (MoE)** | One 80 GB card, per IBM | 116.8B total parameters, about 5.1B active per token | What IBM runs for Maximo AI Service; a strong general agent model |
+
+Several adjustments make this table more useful in practice.
+
+**Quantization is the first lever.** Cole's standing advice is "pick the largest large language model that can work with your hardware with a Q4 quantization" rather than run a smaller model at full precision. Q4 shrinks weights to about a quarter of their 16-bit size with a small quality loss. For Maximo work, test the quantized model on your own data. A small drop in general benchmarks can show up as a larger drop in a specific skill such as producing valid OSLC `where` clauses.
+
+**Mixture-of-experts changes the maths.** An MoE model holds every expert in memory but computes with only a slice of them per token. The knowledge base summarises it as cheap to run but expensive to host. gpt-oss-120b is the example that matters for Maximo shops: IBM's watsonx.ai announcement describes it as 116.8 billion parameters in an MoE design that can run on a single NVIDIA H100. All 116.8B still have to fit in GPU memory, which is why it needs an 80 GB-class card. The IBM Granite 4 family on Ollama includes MoE variants too, for example `granite4:small-h` (32B total, 9B active, about 19 GB at the default Q4_K_M quantization) and the 3B `micro` models aimed at fast function calling.
+
+**Context costs VRAM.** The table assumes a short context. The KV cache (the model's working memory for the current conversation) grows linearly with the context window and with every parallel request slot. Ollama's FAQ is explicit: required memory scales with `OLLAMA_NUM_PARALLEL` multiplied by the context length. Quantizing the KV cache to `q8_0` roughly halves its memory, at some precision cost. A 32B model that fits on a 24 GB card with a 4K window may not fit with a 32K window and four concurrent users. We come back to this in the next section, because long work order histories are exactly what drives the context up.
+
+**Offloading lets you run models that do not fit, slowly.** Cole describes offloading as splitting the model's layers between GPU and CPU/RAM. It is fine for a lab experiment. It is not fine for a planner waiting on a triage suggestion at 7 a.m.
+
+### What this means on a MAS OpenShift cluster
+
+If you run MAS customer-managed, the GPU usually joins the same OpenShift estate, either in the MAS cluster or a neighbouring one. A few facts from our MAS knowledge base are worth knowing before you order hardware:
+
+- **IBM's on-premises watsonx path** for Maximo runs on Cloud Pak for Data on OpenShift, with the Node Feature Discovery and NVIDIA GPU Operators installed and models deployed by patching the `watsonxaiifm` custom resource. Cloud Pak for Data does not support odd-numbered OpenShift versions, so your cluster version choice is constrained.
+- **MAS tooling is moving with the GPU stack.** Recent MAS CLI releases (November 2026) added Red Hat OpenShift AI v3 update logic for AI Service and moved the NVIDIA GPU Operator default channel to v26.3.
+- **Old GPUs are being dropped.** NVIDIA Pascal GPUs, including the P100, are no longer supported for Maximo Visual Inspection 9.2 and later. If you planned to reuse an old MVI card for an LLM, check it first; modern inference runtimes favour recent architectures anyway.
+- **IBM publishes no GPU sizing for self-hosted Bob.** The Bob docs say model resource needs depend on quantization, context length, serving runtime and target throughput. You will size it yourself, which is what the ladder above is for.
+
+**For production, use a production runtime.** Ollama is excellent for a laptop or lab VM, and Cole's local AI package is built around it. On an OpenShift cluster serving several teams, the standard choice is vLLM, either through Red Hat OpenShift AI's vLLM serving runtimes or Red Hat AI Inference Server, which Red Hat describes as its supported vLLM distribution. Both expose an OpenAI-compatible API, so the agent code does not change. Both are documented for disconnected clusters: mirror the runtime image and the model weights (for example as an OCI "modelcar" image), then apply a ServingRuntime and InferenceService. One air-gap gotcha documented by the community: gpt-oss models try to download tokenizer encoding files from the internet at startup, so you have to stage them on a volume and point the runtime at them.
+
+---
+
+## 🪤 The Context Window Trap with Long Work Order Histories
+
+This is the local-AI failure that most often makes a Maximo pilot look worse than it is.
+
+Cole's warning, recorded in his Flowise and n8n video, is that Ollama models default to a small context window, and "anything that is past that is going to be cut off." He recommends raising it ("something like 32,000 is what I typically do"), because otherwise the models "will miss out on tool calls and hallucinate stuff." Nothing crashes. The system prompt, the history and the tool definitions simply fall off, and the model answers from whatever survived.
+
+The default has moved over time, which is why teams get confused. At the time of Cole's video it was 2,048 tokens. Ollama's current FAQ says 4,096. Newer server releases choose 4K, 32K or 256K depending on available VRAM, capped at what the model was trained with. Do not assume; check. `ollama ps` shows the context actually allocated for each loaded model.
+
+Now look at a typical Maximo payload. IBM's own watsonx.ai rule of thumb is about 750 words per 1,000 tokens. Here is an illustrative triage request for a pump with a busy history:
+
+| Component | Illustrative size | Approx. tokens |
+|---|---|---|
+| System prompt with site priority matrix and failure hierarchy conventions | 900 words | ~1,200 |
+| Tool definitions (5 OSLC tools with descriptions and schemas) | — | ~1,500–2,500 |
+| The new work order and its long description | 250 words | ~330 |
+| 25 worklog entries on the asset's open and recent WOs | 2,000 words | ~2,700 |
+| 40 related work orders from the last 12 months (description, status, failure code, dates) | 6,000 words | ~8,000 |
+| **Total before the model writes anything** | | **~14,000–15,000** |
+
+Against a 4,096-token window, more than two-thirds of that request is gone. Which part depends on how the runtime truncates, but agents routinely lose the instructions and tool definitions, which are exactly the parts that make the model an agent. The planner sees a model that ignores the priority matrix and invents a failure code, and concludes local models are not good enough.
+
+### The fixes, in order of preference
+
+**1. Do not send what the model does not need.** This is context engineering (Part 2 of this series). A tool that returns 40 raw work orders is a bad tool. Return a summary: counts by failure code, the last three corrective WOs with dates, and the open WOs. Use `oslc.select` to pick only the attributes you need. A history tool that returns 1,500 tokens instead of 8,000 helps every model, local or cloud.
+
+**2. Raise the window deliberately, where it actually applies.** Ollama gives you three places to set it: the `OLLAMA_CONTEXT_LENGTH` server variable, a Modelfile parameter, or `num_ctx` in a native API request. Cole's recipe, from his Bolt.new local-LLM video, is a two-line Modelfile that creates a variant of an existing model with a larger context:
+
+```text
+# Illustrative Modelfile: a 32K-context variant for a Maximo triage agent
+FROM granite4:small-h
+PARAMETER num_ctx 32768
+```
+
+```bash
+# Illustrative: register the variant and confirm the context in use
+ollama create granite4-maximo-32k -f Modelfile
+ollama run granite4-maximo-32k "ping"
+ollama ps    # check the CONTEXT column
+```
+
+There is a trap inside the trap. Most agent frameworks talk to Ollama through its OpenAI-compatible endpoint, and the OpenAI protocol has no field for context length. A `num_ctx` you set in your agent's request options may never reach the server. Set it server-side or in a Modelfile variant, then verify with `ollama ps`.
+
+**3. Budget the memory.** A bigger window costs VRAM, multiplied by parallel slots. Ollama's FAQ gives the knobs: Flash Attention (used automatically where supported) and KV cache quantization via `OLLAMA_KV_CACHE_TYPE` (`q8_0` uses about half the memory of the `f16` default). Note it is a global setting for all models on that server.
+
+**4. In production, set it in the serving runtime.** On vLLM, the maximum model length is a server argument. Choose it from your measured payloads plus headroom, not from the model's advertised maximum, because the advertised maximum reserves KV cache memory you may never use.
+
+---
+
+## 💰 The Cost Crossover, With Maximo Numbers
+
+Cole's "The HARD Truth About Hosting Your Own LLMs" makes a point that disarms a lot of internal debate: "there is an exact calculable time when it makes sense to make the switch." The method is napkin maths. Take the hourly rate of the GPU you would rent, turn it into a monthly bill, turn the per-token price into prompts per dollar, and multiply.
+
+His worked example, with 2024 prices:
+
+| Step | Value in Cole's example |
+|---|---|
+| GPU | RunPod A40, 48 GB VRAM, enough for Llama 3.1 70B |
+| Hourly rate | $0.39 |
+| Monthly fixed cost (× 24 × 30) | ~$280 |
+| Per-token alternative | Groq, Llama 3.1 70B, ~$0.59 per million tokens (~1.69M tokens per dollar) |
+| Assumed tokens per prompt | 5,000 |
+| Prompts per dollar | ~338 |
+| Break-even | ~94,000 prompts a month, about 3,000 a day |
+
+His strategy follows from it. Start on a cheap hosted provider running **the exact open-weight model you would eventually host**, so that moving to self-hosting later is an endpoint change, not a model change. While you are there, use mock data for anything truly private.
+
+Now apply the method to Maximo workloads. The volumes below are illustrative, and the prices are Cole's 2024 numbers, used only to show the shape of the answer. Rerun with your own quotes.
+
+| Maximo workload (illustrative) | Requests/day | Tokens per request | Tokens/month | Per-token cost/month at $0.59/M | vs ~$280/month GPU |
+|---|---|---|---|---|---|
+| WO triage at a mid-size utility | 600 | 6,000 | ~108M | ~$64 | Per-token far cheaper |
+| SR intake classification at a city 311 desk (small model) | 3,000 | 1,500 | ~135M | ~$80 (less on a small model) | Per-token far cheaper |
+| Nightly history summaries for every critical asset, large fleet | 2,000 | 40,000 | ~2.4B | ~$1,400 | Self-hosting wins on cost |
+| Agentic investigations with many tool turns | 300 | 60,000 | ~540M | ~$320 | Near the crossover |
+
+Three lessons for Maximo programmes come out of this.
+
+**Cost rarely forces self-hosting for routine triage.** A few hundred work orders a day is a small workload by LLM standards. If your data can sit on Tier 2, a hosted open model is the cheapest way to run it. Teams that buy GPUs "to save money" on triage often do not.
+
+**Token-heavy batch jobs are where the crossover is real.** Summarising long histories across thousands of assets, or running multi-turn investigations, multiplies tokens per request. Those jobs also tend to be scheduled overnight, which helps the other side of the equation: a GPU you already own is idle at night.
+
+**The fixed side is only fixed if the GPU is busy.** Cole's adjustment: bursty traffic pushes the crossover much higher, because an hourly rental bills whether or not you are inferencing. On premises, the equivalent is amortised hardware, power, cooling, and the platform team's time, all of which the napkin maths leaves out. Utilisation is the number to watch.
+
+Two Maximo-specific notes. First, if your need is IBM's built-in features, you are not paying per token to a model provider at all; you are consuming AppPoints. IBM's MAS 9.1 licensing guidance maps Maximo AI Service to 1 billion content tokens per month for 10 AppPoints, and MAS 9.2 added AppPoint consumption tracking for AI Service. That is a different cost model and belongs in the same spreadsheet. Second, Cole's **usage-based pricing trap**, his regret about a no-code platform that billed per internal operation, has a Maximo echo: an agent that runs an LLM call on every work order save will scale its bill with every edit your planners make. Meter by business event, not by save.
+
+And always remember the knowledge base's caveat: cost is one axis. Data sensitivity or a hard requirement for a frontier model can override the arithmetic in either direction.
+
+---
+
+## 🔀 Multi-Model Routing: Small Local Model to Classify, Larger Model to Reason
+
+If you remember one architecture from this part, make it this one. Cole's model selection guidance reduces to "just make sure you're using the right model for the right task." His cost video describes the router pattern: a cheap first-pass model decides how complex a request is, then sends easy work to a cheap model and hard work to an expensive one. As he puts it, "it is Pennies on the dollar if most of the requests can go to the cheaper model even if you have to pay for this first step."
+
+For a regulated Maximo shop the pattern does double duty. It saves money, and it saves scarce GPU capacity on the large local model for the requests that need it.
+
+A related pattern from Cole's DeepSeek R1 agentic RAG video is the **reasoning model as a tool**: a fast, light model runs the conversation and calls a slower reasoning model only for the step that needs deep thinking, "these models having R1 as one of their tools." The heavy model's long reasoning stays inside the tool boundary and does not fill the driver's context window, which matters even more when that window is a local one.
+
+Here is how that maps to a work order flow.
+
+| Step | Model | Where it runs | Why |
+|---|---|---|---|
+| Classify incoming SR or WO: routine, needs triage, safety-flag, duplicate candidate | Small (about 3B–8B), e.g. the 3B `granite4:micro` from the Ollama library | Local, CPU or a small GPU slice | High volume, simple task, sensitive text never leaves |
+| Triage routine items: suggest priority and failure class from 3–5 tool calls | Mid (~32B) or gpt-oss-120b | Local GPU | Needs reliable tool calling |
+| Deep investigation: recurring failures, contradictory history, root-cause hypotheses | Reasoning-capable model, called as a tool | Local GPU on a schedule, or Tier 2 on de-identified data | Expensive, rare, benefits from thinking |
+| Safety-flagged items | No model decision | Straight to a human queue | Some routes should not be automated at all |
+
+The last row is a design choice, not a model choice. Part 5 of this series covers guardrails in depth; here it is enough to say that the router can send work to a person as easily as to a model.
+
+The practical enabler is **provider independence**. Ollama, vLLM, Red Hat OpenShift AI and most hosted providers all speak the OpenAI chat-completions protocol. Cole's summary: "the only thing we have to do to connect to Ollama instead of OpenAI is change this base URL." Write your agent so each model role is configuration, not code:
+
+```yaml
+# Illustrative model routing config for a Maximo triage agent
+models:
+  classifier:
+    base_url: http://ollama.ai-lab.svc:11434/v1        # lab: Ollama
+    model: granite4:micro                              # small classifier, not the 32B triage model
+  triage:
+    base_url: https://llm-gateway.apps.mas.example.internal/v1   # prod: vLLM on OpenShift AI
+    model: gpt-oss-120b
+  investigator:
+    base_url: https://llm-gateway.apps.mas.example.internal/v1
+    model: gpt-oss-120b
+    reasoning_effort: high
+routing:
+  safety_flag_terms_file: config/safety-terms.txt   # deterministic pre-check, no model
+  default_route: triage
+```
+
+```python
+# Illustrative: the same client code for every role; only config changes
+from openai import OpenAI
+
+def client_for(role: str, cfg: dict) -> tuple[OpenAI, str]:
+    m = cfg["models"][role]
+    return OpenAI(base_url=m["base_url"], api_key=load_secret(role)), m["model"]
+```
+
+Two warnings come with routing, both from the knowledge base. First, Cole notes that swapping models "can actually be pretty dangerous even if you are swapping to an LLM that is supposed to be better," because different models need different prompts. Keep a prompt per model role and run your evaluation set (agm-06 covers evals) whenever a role's model changes. Second, a multi-model system is more moving parts. Make it a deliberate choice once you know where the volume and the difficulty are, not a day-one design.
+
+---
+
+## 🏗️ Three Reference Patterns
+
+### Pattern A: The lab stack
+
+A single GPU workstation or VM running Cole's `coleam00/local-ai-packaged` Docker Compose stack: n8n, Supabase, Ollama, Open WebUI, Flowise, Qdrant, Neo4j, Langfuse, SearXNG and Caddy, started with a GPU profile. It is the fastest way to prove a Maximo agent idea on synthetic or test-instance data with nothing leaving the box. [agm-04](/blog/agm-04-n8n-local-ai-prototyping) walks through it, including the security baseline (Ollama binds to localhost by default and has no authentication; Docker-published ports bypass ufw; never put production Maximo keys on a prototype stack).
+
+### Pattern B: Production inference alongside MAS on OpenShift
+
+A GPU worker pool in, or next to, the MAS cluster. Red Hat OpenShift AI or Red Hat AI Inference Server serves one or two models with vLLM. Your agents run as ordinary workloads, call Maximo through a read-only API key or the MAS 9.2 Maximo MCP server, and call the model through an internal route. If you also want IBM's built-in features locally, AI Service and watsonx.ai on Cloud Pak for Data share the same platform skills and GPU operator, though they remain IBM-managed components with their own lifecycle. Self-hosted IBM Bob, if you adopt it for automation script and Java customisation work, is deployed by its own operator in its own namespaces and points at a model endpoint you provide.
+
+The things that make this pattern production-grade are the same things that make MAS production-grade: GitOps for the serving manifests, monitoring of GPU utilisation and queue depth, patching discipline for the runtime images, and capacity plans that include KV cache, not just weights.
+
+### Pattern C: The air-gapped site
+
+Everything in Pattern B, with no outbound path. Model weights, runtime images and tokenizer files are mirrored through your normal disconnected-install process, exactly like MAS catalog images. MAS itself supports air-gapped installs, as does self-hosted Bob (direct and indirect mirroring modes). Model updates become a change-controlled media transfer. For a nuclear or defence site that is a feature: the model in production is exactly the one that passed your evaluation set, and it cannot change underneath you. Remember the side channels. An MCP server with web search, an observability exporter or a licence-metering callback can all assume connectivity. Self-hosted Bob's metering, for example, is handled in disconnected clusters by downloading a payload and uploading it to IBM manually.
+
+---
+
+## 🧪 Fine-Tuning: Usually Not Yet
+
+Cole is enthusiastic about fine-tuning's ceiling: you can "take any open-source large language model and add additional training on top with your own data. Basically making it a domain expert on your business." He also highlights distillation, the technique behind DeepSeek's smaller R1 models, where a small model is trained on a larger model's outputs.
+
+For a regulated Maximo shop, three cautions apply before anyone starts a training run.
+
+- **Fine-tuning changes the privacy question.** The knowledge base notes that training on proprietary data raises the stakes, because the data is now in the weights rather than passing through a prompt. A model tuned on raw work logs has absorbed technician names and safety notes. Scrub training data as carefully as you would for any data release.
+- **Most Maximo problems are retrieval and tool problems.** If the model does not know your failure hierarchy, put it in the system prompt or retrieve it. If it does not know an asset's history, give it a better tool. Part 3 of this series covers retrieval strategies.
+- **A tuned model is a maintained asset.** Your failure classes, job plans and site conventions change. Every change is a retrain and a re-evaluation.
+
+Fine-tuning earns its place for narrow, stable, high-volume tasks, such as mapping free-text problem descriptions to your failure class hierarchy, where a small tuned model could replace a larger general one and free GPU capacity. On IBM's stack, watsonx.ai Tuning Studio supports LoRA and prompt tuning, including on premises. One licensing note from IBM's watsonx documentation: Granite models are Apache 2.0, and IBM indemnifies Granite models accessed through watsonx.ai, but not the same weights pulled from a third-party hub such as Hugging Face. For a regulated buyer, that difference can matter more than a benchmark.
+
+---
+
+## 🔬 Worked Scenarios
+
+### Scenario 1: Nuclear plant, work order history summaries for the system engineer
+
+A system engineer prepares quarterly health reports for 60 safety-related pumps and valves. Today that means reading every corrective and preventive work order, worklog and condition report for each component. The plant's policy is unambiguous: no Maximo data leaves the site network.
+
+**Decisions:** Tier 3, Pattern C (air-gapped). A summarisation job, not a chat agent, scheduled overnight. **Design:** a read-only tool pulls each asset's work orders and worklogs through `mxapiwodetail` (or `mxapiwo` if `WORKLOG` is a child object in your release) with `oslc.select` limited to number, status, dates, failure code, description and worklog text. A pre-processing step replaces person IDs with roles. The model is gpt-oss-120b on one 80 GB GPU, served by vLLM with a maximum model length chosen from measured payloads, about 24K tokens for the busiest component after summarising the history tool output. **The trap they hit:** the first lab test on Ollama produced summaries that ignored the report template. `ollama ps` showed a 4,096-token context. A Modelfile variant at 32K fixed it, and they set the production limit in vLLM from day one. **Outcome:** draft summaries ready at 6 a.m. that cite work order numbers; the engineer edits and signs. Nothing writes to Maximo.
+
+### Scenario 2: Electric utility, service request triage across three regions
+
+A utility receives about 2,500 customer and field service requests a day across three operating regions. The descriptions mention addresses and sometimes customer names; the asset hierarchy includes transmission substations the utility treats as critical infrastructure information.
+
+**Decisions:** per component. Classification of every SR (routine, outage-related, safety, duplicate candidate) runs on a small Granite 4 model on CPU-plus-small-GPU nodes in the MAS cluster: Tier 3, high volume, simple. Triage of routine distribution SRs runs on a 32B-class local model with three tools (open SRs by location, open WOs by asset, asset criticality). Anything classified as safety goes straight to the dispatcher with no model suggestion. **Cost check:** at 2,500 requests and about 1,500 tokens each for classification, per-token pricing would have been cheaper, as the crossover table predicts. They self-host because of the data, and say so in the business case rather than claiming cost savings they would not achieve.
+
+### Scenario 3: Defence depot, job plan review in an air-gapped enclave
+
+A defence maintenance depot keeps job plans for weapons-system support equipment that include export-controlled technical data. The reliability team wants an agent to flag job plans missing torque values, lubrication steps or references to the technical manual revision.
+
+**Decisions:** Tier 3, Pattern C, and a deliberately short agent chain. **Design:** the agent reads job plans through the job plan object structure and compares them against indexed technical manuals in a local vector store (embeddings computed locally). The model is a 32B-class open model on a single 48 GB card, which their evaluation set showed was enough for this reviewing task. They considered fine-tuning on past review findings and rejected it: too few examples, and the manuals change with every revision. **Pitfall avoided:** the first architecture included a web search tool for "manufacturer bulletins." In an air-gapped enclave it would simply fail, and on a connected network it would have been an exfiltration path. It was removed.
+
+### Scenario 4: City public works, the business case that changed
+
+A city's public works department wanted to buy two GPU servers to run AI on its Maximo 311 and work order data, justified on cost savings versus cloud AI.
+
+**Decisions:** the four questions. Proof of concept first, so the team prototyped on mock data with a hosted open model (Tier 2), using the exact open-weight model they would later self-host, as Cole recommends. The prototype proved the value of SR deduplication and work log summaries. The crossover maths showed their volume (about 800 requests a day) would cost tens of dollars a month per-token. **What actually decided it:** the city's privacy officer classified resident names and addresses in SR text as personal data that may not go to an external processor without a new data processing agreement. That pushed SR intake to Tier 3. Work log summaries, after a redaction tool removed employee names, were approved for Tier 2. The city bought one GPU server, not two, and wrote "privacy" in the business case instead of "savings."
+
+### Scenario 5: Automation script development with self-hosted Bob
+
+A transmission operator's Maximo team writes and maintains about 400 automation scripts and wants an AI coding assistant. Its security office will not allow source code containing internal hostnames and integration logic to go to a SaaS assistant.
+
+**Decisions:** this component is code, not records, so it is a different row in the four-question table. Frontier capability helps with complex script refactoring. **Design:** self-hosted IBM Bob on the operator's OpenShift, with its core model pointed at a frontier model through the operator's own cloud account in its approved region, rather than a local open-weight model. That keeps the IDE, identity and audit inside their perimeter while getting frontier code quality. The sandbox Maximo instance that Bob's MCP connection reads contains only synthetic data. **Lesson:** "self-hosted" and "local model" are different decisions. Self-hosting the platform answered the control question; the model choice answered the quality question.
+
+---
+
+## ⚠️ Pitfalls
+
+- **Judging local models with the default context window.** The most common false negative. Check `ollama ps`, raise the window server-side or in a Modelfile, and shrink tool output.
+- **Setting `num_ctx` in a request that never reaches the server.** The OpenAI-compatible endpoint has no field for it. Set it where the runtime will honour it.
+- **Sizing GPUs for weights only.** KV cache scales with context and with concurrency. Size for your busiest payload multiplied by your concurrent users, then add headroom.
+- **Using a 7B model for agent work.** Small models classify well and call tools badly. Cole puts the agent floor around 14B; test on 50 real work orders before you decide.
+- **Calling the whole programme "local" or "cloud".** Apply the four questions per component. A blanket rule either blocks safe work or exposes regulated data.
+- **Forgetting the side channels.** Chat front ends, SaaS observability, digests posted to collaboration tools, MCP servers with web access, and execution logs all move data. Local inference removes one flow.
+- **Exposing Ollama on the network.** It has no built-in authentication. Bind to localhost or an internal service, put authentication in front, and read the security section of agm-04.
+- **Justifying self-hosting on cost without the maths.** At typical triage volumes, per-token pricing wins. If the real reason is privacy, say so; your business case will survive review.
+- **Swapping models without re-running evals.** Each model needs its own prompt tuning. Keep the model behind configuration and the evaluation set in CI.
+- **Assuming the IBM model will stay the same.** IBM made gpt-oss-120b available for the Maximo AI Service templates in January 2026 (Feature Channel, ahead of 9.2 GA) and deprecated Granite 3.2 8B Instruct on 25 November 2025. If you built custom prompts or evaluations around IBM's features, re-check them when AI Service changes.
+- **Treating air-gapped model updates as routine.** A new model version is a change to a production system. Run the evaluation set, record the result, and transfer the weights through change control.
+
+---
+
+## Key Takeaways
+
+- **Local means control.** You own the weights and the data path; a cloud account you administer counts, and so does watsonx.ai running on your own OpenShift cluster.
+- **Classify Maximo data before you choose a model.** Operational asset and work order text, commercial data, personnel records and regulated information belong on different privacy tiers. Narrow tools and redaction can move data down a tier; regulated data stays local.
+- **Decide per component.** POC or production, sensitivity, frontier need and scale give different answers for the coding assistant, the triage agent and the 311 intake classifier.
+- **Size by job and by context.** About 14B parameters for reliable tool calling, 32B as the sweet spot, gpt-oss-120b on one 80 GB card as IBM's own choice, and real headroom for the KV cache long work order histories demand.
+- **Route by difficulty, keep endpoints swappable.** A small local model classifies, a larger one reasons when needed, safety items go to people, and every model sits behind an OpenAI-compatible base URL you can change.
+
+---
+
+## References
+
+1. Cole Medin, *The Ultimate Guide to Local AI and AI Agents (The Future is Here)* — https://www.youtube.com/watch?v=mNcXue7X8H0 (local AI definition 0:02:00; VRAM tiers 0:14:00–0:18:00; quantization and Q4 0:25:00–0:31:00; offloading 0:32:00; Ollama environment variables 0:35:00; OpenAI-compatible base URL 0:42:00–0:44:00; fine-tuning 0:09:00)
+2. Cole Medin, *The HARD Truth About Hosting Your Own LLMs* — https://www.youtube.com/watch?v=EMuBqcO048E (privacy tiers and mock data 0:07:07–0:07:38; cloud GPU vs home rig 0:08:47; $280/month napkin maths 0:10:01; break-even ~94,000 prompts 0:12:38)
+3. Cole Medin, *Local vs. Cloud LLMs/RAG - Let's FINALLY End this Debate* — https://www.youtube.com/watch?v=W5X34-QmdEQ (hybrid 0:03:34; four-question decision tree 0:04:19–0:07:37)
+4. Cole Medin, *Flowise + n8n - The BEST No Code + Local AI Agent Combo* — https://www.youtube.com/watch?v=23s2N3ug8B8 (Ollama context window truncation 0:12:42; raise to ~32,000 0:13:12)
+5. Cole Medin, *How to Use Bolt.new for FREE with Local LLMs (And NO Rate Limits)* — https://www.youtube.com/watch?v=8ommGcs_-VU (Modelfile num_ctx variant 0:04:26–0:04:54)
+6. Cole Medin, *Llama 3.2 is INSANE - But Does it Beat GPT as an AI Agent?* — https://www.youtube.com/watch?v=E3jO8YLc_CI (function calling as the local-agent gate 0:01:14)
+7. Cole Medin, *AI is TOO EXPENSIVE if You Don't Do This* — https://www.youtube.com/watch?v=ZzRCrhA3JUQ (router pattern 0:01:32; "Pennies on the dollar" 0:02:19)
+8. Cole Medin, *My Top 20 Lessons from Building 100s of AI Agents (Super Actionable)* — https://www.youtube.com/watch?v=OFfwN23hR8U (swapping models is risky 0:30:10)
+9. Cole Medin, *You HAVE to Try Agentic RAG with DeepSeek R1 (Insane Results)* — https://www.youtube.com/watch?v=uWDocIoiaXE (reasoning model as a tool 0:00:51–0:01:08)
+10. Cole Medin, *DeepSeek R1 Just Revolutionized AI Forever* — https://www.youtube.com/watch?v=-GmEIqi0yNE (provider independence 0:20:30; distilled R1 models 0:03:42; 671B Q4 file size 0:06:34)
+11. Cole Medin, *coleam00/local-ai-packaged* (Self-hosted AI Package README) — https://github.com/coleam00/local-ai-packaged
+12. Ollama, *FAQ* (context length, OLLAMA_NUM_PARALLEL memory, OLLAMA_HOST binding, Flash Attention, KV cache quantization) — https://docs.ollama.com/faq
+13. Ollama library, *granite4* — https://ollama.com/library/granite4
+14. IBM, *OpenAI's open-source models available on IBM watsonx.ai* — https://www.ibm.com/new/announcements/openai-s-open-source-models-available-on-ibm-watsonx-ai
+15. IBM Documentation, *Deploying watsonx on premises* (Maximo Application Suite) — https://www.ibm.com/docs/en/masv-and-l/cd?topic=premises-deploying-watsonx
+16. IBM Documentation, *AI Service* (Maximo Application Suite) — https://www.ibm.com/docs/en/masv-and-l/cd?topic=ons-ai-service
+17. AI on OpenShift, *Deploying a Red Hat Validated Model in a Disconnected OpenShift AI Environment* — https://ai-on-openshift.io/odh-rhoai/deploy-validated-models-on-disconnected/
+18. Red Hat Developer, *Benchmarking with GuideLLM in air-gapped OpenShift clusters* — https://developers.redhat.com/articles/2025/09/15/benchmarking-guidellm-air-gapped-openshift-clusters
+19. IBM Documentation, *What's new in Maximo Application Suite Feature Channel* (January 2026: gpt-oss-120b for mcc, pcc, fmea and nl2oslc templates; Granite 3.2 8B Instruct deprecation) — https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-in-maximo-application-suite-feature-channel
+
+---
+
+🧰 **From TheMaximoGuys toolbox:** [Max_Interfaces](https://github.com/themaximoguys/Max_Interfaces) (open source, MIT) catalogues 2,439 Maximo endpoints with OpenAPI files, useful when you design narrow tools that send a local model only the attributes it needs. [Max_mcp](https://github.com/themaximoguys/Max_mcp) (npm `@themaximoguys/maximo-mcp`, 175 tools, proprietary) gives any agent, local model or cloud, a ready-made Maximo tool layer alongside IBM's native MAS 9.2 MCP server.
+
+---
+
+## Series Navigation
+
+**The Agentic AI Playbook for Maximo**
+
+- [Part 0: Series Index: The Agentic AI Playbook for Maximo](/blog/map-00-series-index)
+- [Part 1: What Is an AI Agent, Really? A Field Guide for Maximo Teams](/blog/map-01-what-is-an-ai-agent-maximo)
+- [Part 2: Prompts, Tools and Context for Maximo Agents: Designing What the Model Actually Sees](/blog/map-02-prompts-tools-context-maximo)
+- [Part 3: RAG Strategies for Maximo Data: Which Retrieval for Which Records](/blog/map-03-rag-strategies-maximo-data)
+- [Part 4: MCP and Tool Design for Maximo: Fewer, Sharper Tools Beat a 175-Tool Buffet](/blog/map-04-mcp-tool-design-maximo)
+- [Part 5: Securing Maximo Agents: The Lethal Trifecta, Prompt Injection and Guardrails That Hold](/blog/map-05-agent-security-guardrails-maximo)
+- [Part 6: The AI Layer for Maximo Development: Rules, Commands, Hooks and Validation for Agentic Coding](/blog/map-06-ai-layer-agentic-coding-maximo)
+- **Part 7: Local and Self-Hosted AI for Maximo: A Playbook for Regulated Shops** (you are here)
+- [Part 8: Maximo Agents in Production: Deployment, Voice in the Field, and Agents That Run While You Sleep](/blog/map-08-production-agents-voice-long-running)
+
+**Companion builds:** [agm-04: Prototype Before You Code: Maximo Agents in n8n on a Local AI Stack](/blog/agm-04-n8n-local-ai-prototyping) · [agm-03: Building a Typed Maximo Agent with Pydantic AI](/blog/agm-03-pydantic-ai-maximo-agent) · [agm-07: Multi-Agent Maximo: A2A, MCP Gateways, watsonx Orchestrate](/blog/agm-07-multi-agent-a2a-orchestrate)

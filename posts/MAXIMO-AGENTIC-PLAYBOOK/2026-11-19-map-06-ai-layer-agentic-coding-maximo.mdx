@@ -1,0 +1,494 @@
+---
+title: "The AI Layer for Maximo Development: Rules, Commands, Hooks and Validation for Agentic Coding"
+description: "How a Maximo development team builds an AI Layer on top of its customisation repo so any coding agent (Claude Code, IBM Bob, Codex) writes autoscripts, Java MBO extensions, DBC scripts, MAF apps and integrations the house way: lean global rules, per-artifact rules, a command library (/prime, /plan-autoscript, /validate), hooks, validation against a dev Manage instance, a separate reviewer, autonomy levels per artifact, parallel work, and system evolution in a 15-year-old customised codebase."
+date: "2026-11-19"
+slug: "map-06-ai-layer-agentic-coding-maximo"
+tags: ["Agentic Coding", "AI Layer", "IBM Maximo", "MAS 9.2", "Automation Scripts", "Claude Code", "IBM Bob", "Codex", "Java Extensions", "MAF", "Validation"]
+draft: true
+tier: "developer"
+author: "Krishna Neela"
+coverImage: "./images/map-06-ai-layer-agentic-coding-maximo.png"
+authorTitle: "AI Engineer"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What is the AI Layer, and why should a Maximo team care about it more than which coding agent it buys?"
+    answer: "The AI Layer is everything you author on top of your codebase so a coding agent can work in it well: global rules (CLAUDE.md, AGENTS.md, .bob/rules), on-demand reference docs, commands, skills, hooks, MCP connections and subagent definitions. Cole Medin's point is that the model and the agent product are the parts you cannot change, while the layer is the part you own. For a Maximo shop this matters twice over. First, almost nothing a general model knows about your site is true: your WORKTYPE values, your status synonyms, the fact that 14 active scripts already fire on WORKORDER. That knowledge has to live somewhere the agent reads. Second, Maximo teams change tools slowly but vendors change agents quickly. Because the layer is plain markdown and scripts in Git, the same rules and commands work in Claude Code, IBM Bob or Codex, so a procurement decision does not throw away a year of accumulated team knowledge."
+  - question: "Which commands should a Maximo customisation repo start with?"
+    answer: "Start with five core commands (/prime, /plan-autoscript, /implement, /validate and /review) and add more only when you catch yourself typing the same prompt a third time. /prime orients a fresh session in the repo (tree, rules, recent git log, the inventory of scripts per object). /plan-autoscript turns a ticket into a written plan that names the object, launch point, event, variables, domain values, out-of-scope items and a validation matrix, and asks you the decisions the ticket did not make. /implement executes a committed plan in a fresh session. /validate runs the deterministic gates (house-rule lint, Jython compile, a Java compile for MBO code against the JDK in your Manage image, XML well-formedness for MAF) and, when a human approves, the scenario matrix against the dev Manage instance. /review runs a separate, read-only reviewer over the diff. The other three in the starter library (/prime-autoscripts, /plan-java and /export-dev) are the first to add, and variants such as /prime-maf and /plan-integration follow naturally once the core loop works."
+  - question: "Can an AI coding agent safely work in a 15-year-old customised Maximo codebase?"
+    answer: "Yes, if you stop treating the repo as a blank slate. The first job is not code generation but reconnaissance: export what actually runs (automation scripts and launch points from MXAPIAUTOSCRIPT, product.xml and class overrides, DBC scripts, app XML, MAF app source) into the repository so the agent can grep it, then have parallel exploration subagents summarise each area into a short codebase analysis that seeds your rules. After that, use focused primers per area instead of loading everything, require a 'check me' section where the agent states three claims about existing behaviour with file and line evidence, and keep a standing list of gotchas (cascading child work orders, integration-only paths, status synonyms) that every plan must address. The agent reads faster than you; it does not know which of the 14 WORKORDER scripts the business still relies on. You do."
+  - question: "How do you validate AI-written Maximo code when there is no unit test suite?"
+    answer: "Build a validation pyramid per artifact type and let the agent own the bottom layers. For autoscripts that means a house-rule lint and a real Jython 2.7 syntax compile on every edit, then a scenario matrix (create a work order through MXAPIWO, attempt the change, check the outcome) run against a dev Manage instance after a human approves the deploy. For Java MBO extensions it means a compile against the Maximo business object classes from your dev image, using the JDK in that Manage image (Java 17 for MAS 9.1 Manage, Java 25 for Manage 9.2), then the same scenario matrix. For MAF it means XML checks, the Local Configuration preview, and a device test for offline behaviour. Write the matrix before the code, cap automatic retries at two before escalating to a person, and never let the agent's own session be the reviewer: run review in a fresh session that sees only the ticket and the diff."
+  - question: "Do I need Claude Code to use this approach, or does it work with IBM Bob and Codex?"
+    answer: "It works with any of them because the layer is files. Claude Code reads CLAUDE.md, .claude/commands and .claude/skills and supports lifecycle hooks in settings.json. IBM Bob reads AGENTS.md, .bob/rules, .bob/skills and its own hooks configuration, and admins can enforce hooks centrally. Codex reads AGENTS.md from the repository root down to the working folder. The practical pattern is one AGENTS.md as the source of truth, thin tool-specific files that point to it, commands and skills as plain markdown any agent can be told to read, and guardrails implemented as scripts that each tool's hook mechanism calls. The MAS-BOB series covers Bob's exact file formats and load order; this article covers what goes in them for Maximo work."
+keyTakeaways:
+  - "The AI Layer (rules, commands, skills, hooks, MCP, subagents) is the part of agentic coding you own; for Maximo it is where site-specific truth lives, and it outlasts any one agent product"
+  - "Keep always-on rules lean and push detail into per-artifact rules for autoscripts, Java MBOs, DBC, MAF and integrations, loaded only when the agent works there"
+  - "Commandify the Maximo loop: /prime, /plan-autoscript, /implement, /validate and /review cover most tickets; anything typed three times becomes a command"
+  - "Validation is defined before code: lint and compile on every edit, a scenario matrix against a dev Manage instance after human approval, and a separate reviewer in a fresh session"
+  - "Pick an autonomy level per artifact class, not per team: Level 3 (agent writes, human plans and validates) for most autoscripts and MAF changes, Level 2 pairing for Java MBO overrides on WO or INVENTORY and live ERP exits, Level 1 for core DBC and inventory costing"
+series:
+  name: "The Agentic AI Playbook for Maximo"
+  part: 6
+  total: 8
+series_part: 6
+tldr: "Agentic coding on a Maximo customisation repo succeeds or fails on the AI Layer: the rules, on-demand docs, commands, skills, hooks and MCP connections your team writes on top of the code. This part shows how to build one for a real Maximo estate, adapted from Cole Medin's public teaching and the Dynamous community. Keep the always-on AGENTS.md short and put Jython, Java MBO, DBC, MAF and integration conventions in rules that load only where they apply. Package the PIV loop as commands (/prime, /plan-autoscript, /implement, /validate, /review) that work in Claude Code, IBM Bob or Codex. Prime a 15-year-old codebase by exporting what actually runs into the repo and summarising it with parallel explorers. Define validation before code: lint and compile on every edit, a scenario matrix against a dev Manage instance after a human approves, a fresh-session reviewer. Choose autonomy per artifact class, run parallel agents only where the shared dev database will not collide, and turn every agent mistake into a rule, a command step or, best of all, a check."
+seoTitle: "The AI Layer for Maximo Agentic Coding"
+seoDescription: "Build an AI Layer for a Maximo repo: rules, /prime and /validate commands, hooks, dev-instance validation and autonomy levels for Claude Code, Bob or Codex."
+targetQuestions:
+  - "How do I set up an AI coding agent for a Maximo customisation repository?"
+  - "What should go in CLAUDE.md or AGENTS.md for Maximo automation scripts and Java extensions?"
+  - "How do I validate AI-generated Maximo automation scripts against a dev instance?"
+  - "Can AI coding agents work on a legacy customised Maximo codebase?"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "A Git repository holding (or able to hold) your Maximo customisations: autoscripts, Java extensions, DBC scripts, app XML, MAF apps"
+  - "A non-production Maximo Manage instance and a test-only API key"
+  - "Any coding agent: Claude Code, IBM Bob or Codex"
+  - "Part 2 of this series (prompts, tools and context) is helpful; agm-01 covers PRPs in depth"
+speakableSections:
+  - "The Short Version"
+  - "What the AI Layer Is"
+  - "Choosing an Autonomy Level per Artifact"
+clusterSlugs:
+  - "map-00-series-index"
+  - "map-01-what-is-an-ai-agent-maximo"
+  - "map-02-prompts-tools-context-maximo"
+  - "map-03-rag-strategies-maximo-data"
+  - "map-04-mcp-tool-design-maximo"
+  - "map-05-agent-security-guardrails-maximo"
+  - "map-07-local-self-hosted-ai-maximo"
+  - "map-08-production-agents-voice-long-running"
+relatedSlugs:
+  - "agm-01-context-engineering-prps"
+  - "agm-02-harnesses-software-factories"
+  - "agm-06-evaluating-agents"
+---
+
+# The AI Layer for Maximo Development: Rules, Commands, Hooks and Validation for Agentic Coding
+
+> Concepts in this article are adapted from [Cole Medin's YouTube channel](https://www.youtube.com/@ColeMedin) and the Dynamous AI Mastery community ([dynamous.ai](https://dynamous.ai)), and applied to IBM Maximo by TheMaximoGuys. Quotes are attributed with video and timestamp; Maximo examples, scripts and opinions are ours.
+
+> 🎯 **Who this is for:** Maximo developers and technical leads who already use, or are about to use, a coding agent on automation scripts, Java extensions, DBC scripts, MAF apps or integrations, and want it to write code the way your team does.
+
+**Series:** Part 6 of 8 — *The Agentic AI Playbook for Maximo* | **Read time:** 33 minutes
+
+---
+
+## 🔥 The Repo Nobody Fully Understands
+
+Every long-running Maximo estate has one. It started on 7.1, went through 7.5 and 7.6, and arrived on MAS 9 carrying everything with it: 140 automation scripts (some Jython, a handful of JavaScript written when Nashorn was the new thing), a dozen Java classes extending `psdi.app.workorder.WO` that nobody has recompiled since the Java 17 move in Manage 9.1 forced the issue (with Java 25 arriving in Manage 9.2), DBC scripts named after tickets in a Jira instance that no longer exists, integration exits for an ERP that was replaced twice, and now a set of MAF customisations for the Technician app.
+
+Into this walks a coding agent. Someone opens Claude Code, IBM Bob or Codex in the repo and types "add a check so corrective work orders cannot be approved without a failure class." Within a minute the agent proposes a clean new object launch point script on `WORKORDER` save. It is well written. It also duplicates logic that already lives in `WO_SAVE_VALIDATIONS.py`, compares `STATUS` against the literal `"APPR"` (your site uses a synonym), ignores child task work orders, and would block the nightly integration load from the ERP. None of that is the model being stupid. The model has simply never seen your estate.
+
+The fix is not a better model or a longer prompt. It is what Cole Medin calls the **AI Layer**: the context, rules and tooling your team builds on top of the codebase so that any agent starts each task knowing what your senior developer knows. This article is about building that layer for Maximo work specifically.
+
+---
+
+## 📌 The Short Version
+
+- The **AI Layer** is a third component of your repo, next to the code and the tests: global rules, on-demand docs, commands, skills, hooks, MCP servers and subagents. You own it; you cannot own the model.
+- For Maximo, keep the always-on rules short and put **per-artifact rules** (Jython autoscripts, Java MBO, DBC, MAF, integrations) where they load only when the agent works in that area.
+- **Commandify** the loop. `/prime`, `/plan-autoscript`, `/implement`, `/validate` and `/review` cover most tickets, and because they are markdown they work in Claude Code, Bob or Codex.
+- **Prime the brownfield properly.** Export what actually runs in Manage into the repo, have parallel explorers summarise it, and make the agent prove its claims about existing behaviour with file and line references.
+- **Validate before you trust.** Lint and compile on every edit, a scenario matrix against a dev Manage instance after a human approves, and a separate reviewer that never saw the implementation chat.
+- **Choose autonomy per artifact.** A BIRT label change and a WORKORDER status rule do not deserve the same level of delegation.
+- **Evolve the system.** Every agent mistake should end as a rule, a command step or, ideally, an automated check.
+
+PRPs (the plan format) and harnesses (the loop machinery) are covered in depth in [agm-01: Context Engineering and PRPs](/blog/agm-01-context-engineering-prps) and [agm-02: Harnesses and Software Factories](/blog/agm-02-harnesses-software-factories). This part is the layer those sit inside.
+
+---
+
+## 🧱 What the AI Layer Is (and Why It Outlives Your Tool Choice)
+
+Cole's framing, which he credits to Anthropic's guidance on large codebases, is that the AI Layer is "the set of context and tools that you give your coding agent to work on a codebase" ([Anthropic Just Dropped a Masterclass on Building Agent Harnesses](https://www.youtube.com/watch?v=efRIrLXoOVA), 0:03:28). He lists its parts as global rules, skills and MCP servers, codebase search, hooks and subagents. And he is blunt about where the leverage is: "What's even more important than the coding agent you pick is the AI layer" ([Harness Engineering](https://www.youtube.com/watch?v=ulNsa0sD8N0), 0:02:29).
+
+That sentence lands differently for a Maximo team than for a startup. A startup's codebase is mostly mainstream: React, Postgres, a popular framework the model has seen a million times. A Maximo customisation repo is the opposite. The language is Jython 2.7 with implicit variables like `mbo`, `service` and `scriptHome`. The framework is a 25-year-old MBO model whose conventions (close your MboSets, never commit in a script, respect the event order) are learned on the job. The data model is yours: your domains, your status synonyms, your organisation and site codes, your custom attributes with `TMG` or `CUST` prefixes. A general model has some Maximo knowledge, but very little of what makes *your* estate correct. That gap is exactly what the layer fills.
+
+The second reason is portability. Cole stresses that the layer is just files, so it applies to any assistant you run ([Omnigent](https://www.youtube.com/watch?v=oGE_Dwz-rMk), 0:04:42). Maximo shops are now being offered several agents at once: IBM is pushing Bob with Maximo-specific skills and a MAF configuration mode, developers bring Claude Code or Codex, and the MAS 9.2 Maximo MCP server makes Maximo addressable by any MCP-capable client. If your team knowledge lives in one vendor's proprietary settings, switching costs you that knowledge. If it lives in `AGENTS.md`, markdown commands and shell scripts in Git, it moves with you.
+
+### The components, mapped to three agents
+
+| Layer component | What it holds for Maximo | Claude Code | IBM Bob | Codex |
+|---|---|---|---|---|
+| **Global rules** (always on) | Languages and versions, repo map, "never touch production", how to run gates | `CLAUDE.md` (can point to `AGENTS.md`) | `AGENTS.md`, `.bob/rules/` | `AGENTS.md` (root down to working folder) |
+| **Scoped rules** (by area) | Jython conventions, MBO extension rules, DBC conventions, MAF rules | `CLAUDE.md` in subfolders, referenced docs | `.bob/rules-{mode}/`, docs referenced from AGENTS.md | Nested `AGENTS.md` per folder |
+| **Commands** (you invoke) | `/prime`, `/plan-autoscript`, `/validate`, `/review` | `.claude/commands/*.md` with `$ARGUMENTS` | Slash commands; or "read and follow this file" | Markdown prompts the agent is told to read |
+| **Skills** (agent loads when relevant) | "Create an object launch point script", "convert Java MBO to script" | `.claude/skills/<name>/SKILL.md` | `.bob/skills/<name>/SKILL.md` (IBM ships Maximo ones) | Read as a prompt file |
+| **Hooks** (deterministic) | Block reads of `maximo.properties`, lint after edit, gates before stop | `settings.json` hooks (PreToolUse, PostToolUse, Stop, SessionStart) | Lifecycle hooks; `EnforcedHooks` policy | Wrapper scripts and CI |
+| **MCP / tools** | Read-only dev Manage access, API catalogue | MCP config | `.bob/mcp.json` | MCP config |
+| **Subagents** | Parallel explorers, a read-only reviewer | Subagent definitions | Subagents and custom modes | Separate sessions |
+
+Two notes on the table. First, file names and load orders change between releases; check each tool's current docs rather than trusting any blog, including this one. [MAS-BOB Part 6](/blog/mas-bob-06-maximo-house-rules) has Bob's exact load order. Second, the right-hand columns matter less than the left. Get the *content* right once and wiring it into a given agent is an afternoon.
+
+---
+
+## 🗂️ An AI Layer for a Maximo Customisation Repo
+
+Before the layer, you need a repo worth layering. Many Maximo teams still treat the database as the source of truth for scripts and the file system as an afterthought. Agents cannot grep a database. The first structural decision is to make the repository the place where every customisation lives as a file, with a documented way to export from and deploy to Manage.
+
+Here is an illustrative layout. Yours will differ; the principle is one top-level folder per artifact class, each with its own scoped rules.
+
+```text
+# Illustrative layout for a Maximo customisation repo with an AI Layer
+maximo-custom/
+├── AGENTS.md                      # always-on rules: short, links out
+├── CLAUDE.md                      # one line: "Read AGENTS.md" (Claude Code entry point)
+├── docs/ai/
+│   ├── autoscript-standards.md    # on-demand: Jython/JS conventions, logging, MboSet hygiene
+│   ├── java-extension-rules.md    # on-demand: class naming, product.xml, Java level
+│   ├── dbc-conventions.md         # on-demand: script naming, idempotence, rollback notes
+│   ├── maf-rules.md               # on-demand: app.xml + AppCustomizations.js only
+│   ├── integration-rules.md       # on-demand: object structures, exits, error handling
+│   ├── site-facts.md              # domains, status synonyms, orgs/sites, custom attributes
+│   └── gotchas.md                 # the standing list every plan must check
+├── autoscripts/
+│   ├── AGENTS.md                  # scoped: points to autoscript-standards.md
+│   ├── WORKORDER/                 # one folder per object; launch point metadata alongside
+│   └── INVENTORY/
+├── java/                          # cust.* extensions, built into the customization archive
+│   └── AGENTS.md
+├── dbc/
+│   └── AGENTS.md
+├── maf/                           # MAF Local Configuration workspace (app.xml, AppCustomizations.js)
+│   └── AGENTS.md
+├── integrations/
+│   └── AGENTS.md
+├── inventory/                     # generated: what is deployed in DEV, refreshed by /prime
+├── plans/                         # committed plans (one per ticket)
+├── tests/scenarios/               # scenario matrices run against DEV
+├── tools/                         # lint, Jython compile, deploy, export scripts
+└── .claude/ | .bob/               # commands, skills, hooks for each agent
+```
+
+### The always-on rules: short on purpose
+
+Cole's guidance on global rules is about discipline. They load into every conversation, and "remember context is precious," so the file should stay "really concise" ([My COMPLETE Agentic Coding Workflow](https://www.youtube.com/watch?v=goOZSXmrYQ4), 0:16:42). For his own global rules he says "usually between 500 and 700 lines long is what I go for," adding that "a lot of people advocate for even less" ([I've Used Claude Code for 2,000+ Hours](https://www.youtube.com/watch?v=nxHKBq5ZU9U), 0:15:56). For a Maximo repo we would go shorter still. The root `AGENTS.md` should answer only the questions the agent needs on *every* task:
+
+- What this repo is (customisations for which MAS and Manage version, which industry solutions and add-ons are installed).
+- Where each artifact class lives and which on-demand doc governs it.
+- The non-negotiables: no production URLs or credentials anywhere, no direct database writes, never deploy without a human, never edit IBM out-of-the-box files.
+- How to run the gates (`tools/lint_autoscript.py`, `tools/jython_compile.sh`, `tools/java_build.sh`).
+- How to ask: when a ticket is ambiguous about integration paths, child work orders or status synonyms, stop and ask.
+
+Everything else, from the logging convention to the rules for `SqlFormat`, goes into the on-demand files. The test we use: if the agent would not need this sentence when editing a DBC script, it does not belong in the root file.
+
+### Scoped rules per artifact class
+
+This is where Maximo work differs most from general software work, because each artifact class has its own failure modes.
+
+| Artifact | What the scoped rules must say | Typical agent mistake without them |
+|---|---|---|
+| **Jython autoscripts** | Jython 2.7 only (no f-strings), implicit variables per launch point, close every MboSet, no manual commit, one logging style, domain-aware status checks via synonyms, one script per object and event unless justified | Python 3 syntax; comparing `STATUS` to a literal; leaking MboSets in loops |
+| **JavaScript autoscripts** | Which engine your MAS version uses, and that new scripts should be Jython unless there is a reason | Modern ECMAScript features the engine rejects |
+| **Java MBO extensions** | `cust.*` package naming, which class each extends, registration in product.xml, compile against the JDK in your Manage image (Java 17 for MAS 9.1, Java 25 for Manage 9.2), packaging into the customization archive | Editing an IBM class; forgetting the product.xml entry; Java 11 assumptions |
+| **DBC scripts** | Naming and numbering, idempotence, one logical change per script, what `updatedb` does with them in MAS 9 | Non-repeatable inserts; mixing configuration and data in one script |
+| **MAF apps** | Change only `app.xml` and `AppCustomizations.js`, never rewrite component ids, commit the generated delta, publish only from a reviewed commit | Editing out-of-the-box JS files; renaming ids that break upgrades |
+| **Integrations** | Which object structures and endpoints are in scope, error handling and retry conventions, that integration users bypass some UI validations | Calling the wrong object structure; logic that blocks inbound loads |
+
+The MAF rules come straight from what IBM's tooling does in the field. Field reports on IBM's MAF Local Configuration extension describe its bundled Graphite MCP server editing out-of-the-box JS files, which IBM's own support policy forbids. A scoped rule plus a hook that blocks writes outside `app.xml` and `AppCustomizations.js` is the cheap defence.
+
+### Site facts are rules, too
+
+The single most valuable on-demand file in a Maximo AI Layer is usually `site-facts.md`: the domain values that matter (`WORKTYPE`, `WOSTATUS` synonyms, `WOCLASS`), organisation and site codes for DEV, custom attributes on the objects you touch most, and which object structures exist. This is the material agents hallucinate most confidently. Generate it with a script against DEV (read-only key) so it stays current, and regenerate it when you upgrade. [Part 2](/blog/map-02-prompts-tools-context-maximo) of this series covers the context-engineering side; here the point is that it is a versioned file in the repo, not something a developer pastes into a chat.
+
+If you want a starting point for autoscript standards, TheMaximoGuys' open-source [Max_autoscripts](https://github.com/themaximoguys/Max_autoscripts) (MIT) ships sample scripts, templates, a standards file and its own `CLAUDE.md` and `AGENTS.md` written for agents. Take what fits and rewrite the rest.
+
+---
+
+## ⌨️ Commandify Everything: A Maximo Command Library
+
+Cole's rule for commands is simple: "If you do something more than twice... you should make it a command" ([My COMPLETE Agentic Coding Workflow](https://www.youtube.com/watch?v=goOZSXmrYQ4), 0:12:44). A command is a prompt saved as a markdown file, optionally with an argument placeholder, that you invoke by name. Because it is "just prompts," he notes, you can use it in any assistant, and if your tool has no slash commands you tell the agent to read the file and follow it ([The 5 Techniques Separating Top Agentic Engineers](https://www.youtube.com/watch?v=ttdWPDmBN_4), 0:02:38).
+
+His public [coleam00/skills](https://github.com/coleam00/skills) repository shows the shape of a mature library: prime skills scoped to different parts of a codebase, planning skills, and a PIV set (plan implementation, implement, validate, review changes, fix review findings, commit, create PR, review PR) around a loop he summarises as prime, plan, implement, validate, review, commit, PR. His [ai-transformation-workshop](https://github.com/coleam00/ai-transformation-workshop) repo packages a portable layer of 15 commands and states "five golden rules": commandify everything, reduce assumptions, context is king, git log is memory, and system evolution.
+
+For a Maximo repo, a starter library looks like this. The five core commands are `/prime`, `/plan-autoscript`, `/implement`, `/validate` and `/review`; the other three are the first additions:
+
+| Command | Argument | What it does | Output |
+|---|---|---|---|
+| `/prime` | optional area | Reads `AGENTS.md`, tree, recent git log, `inventory/` summary for the area | A short orientation plus "check me" claims |
+| `/prime-autoscripts` | object name | Lists every script and launch point on that object, their events and order | A table of what already fires |
+| `/plan-autoscript` | ticket id or text | Researches, then writes `plans/<ticket>.md` with object, launch point, variables, domain values, out-of-scope, decisions for the human, and the validation matrix | A committed plan |
+| `/plan-java` | ticket | Same, for MBO extensions: class, superclass, product.xml change, build and deploy steps | A committed plan |
+| `/implement` | plan path | Fresh session; executes the plan task by task, running L1 and L2 gates after each edit | A diff |
+| `/validate` | plan path | Runs all deterministic gates; on human approval, deploys to DEV and runs the scenario matrix | PASS or FAIL with evidence |
+| `/review` | branch or diff | Read-only reviewer in a new session against the scoped rules | Severity-ranked findings |
+| `/export-dev` | object or "all" | Refreshes `inventory/` from DEV via the automation script object structure | Updated inventory files |
+
+### What a Maximo command looks like
+
+Here is an illustrative `/plan-autoscript` for Claude Code. In Bob it would live as a slash command or skill; in Codex you would say "read `.claude/commands/plan-autoscript.md` and follow it for ticket MX-1423".
+
+```markdown
+<!-- .claude/commands/plan-autoscript.md  (illustrative) -->
+---
+description: Plan a Maximo automation script change. Writes plans/<ticket>.md. No code.
+argument-hint: <ticket id or description>
+---
+You are planning, not implementing. Do not create or edit files outside plans/.
+
+Ticket: $ARGUMENTS
+
+1. Read docs/ai/autoscript-standards.md, docs/ai/site-facts.md, docs/ai/gotchas.md.
+2. Run /prime-autoscripts for every object the ticket touches. List what already fires.
+3. Decide: new script, change to an existing script, or no script (workflow/conditional UI)?
+   Justify in two sentences. Prefer extending an existing script on the same event.
+4. Write plans/<ticket>.md with these sections:
+   - Goal (one paragraph) and Why
+   - Object, launch point type, event, attribute (if any), variables and bindings
+   - Domain values used, resolved through synonyms (cite site-facts.md)
+   - Gotchas checked: child WOs, integration users, status synonyms, MboSet closure
+   - Decisions for the human (each with the alternative and whether it is reversible)
+   - Out of scope
+   - Validation: L1 lint, L2 Jython compile, L3 scenario matrix (rows: input, action, expected)
+5. Stop. Print the decisions section and wait.
+```
+
+Two details matter. The command forbids edits, because planning and implementing in the same session lets exploratory dead ends leak into the code. And the plan ends with **decisions for the human**, which is the "reduce assumptions" rule in practice: every question the agent asks is an assumption it is not making. agm-01 walks through a complete plan of this kind for a failure-class rule, so we will not repeat it here.
+
+### Commands, skills or hooks?
+
+New teams ask which mechanism to use for what. The difference Cole draws is about who triggers it: you invoke a command, the agent decides to load a skill. Hooks are neither; they are code that runs at fixed points whether anyone remembers or not.
+
+| Use a... | When | Maximo example |
+|---|---|---|
+| **Command** | A procedure a human starts deliberately, often with an argument | `/plan-autoscript MX-1423`, `/validate plans/MX-1423.md` |
+| **Skill** | Knowledge the agent should pull in when a task matches, without being asked | "How to write an object launch point script here"; IBM's `maximo-java-conversion` skill for Bob |
+| **Hook** | Something that must happen every time, regardless of the model | Block reading `maximo.properties`; run the lint after every write to `autoscripts/`; refuse to stop until gates pass |
+| **Rule** | A convention that applies to most work in an area | "Close every MboSet in a finally block" |
+
+IBM's two published Bob skills for Maximo, `maximo-code-optimization` and `maximo-java-conversion`, are useful references for skill anatomy. IBM itself notes that the patterns apply to any AI coding assistant. Read them, then rewrite the parts that conflict with your house standards rather than running them as-is.
+
+---
+
+## 🧭 Priming a 15-Year-Old Codebase
+
+The prime command exists because every new session starts with amnesia. Cole describes the problem as a project where "each new engineer arrives with no memory" ([Are Agent Harnesses Bringing Back Vibe Coding?](https://www.youtube.com/watch?v=13HP_bSeNjU), 0:09:42). A typical prime runs `tree`, reads the rules and README, checks recent git commits (git log as long-term memory), and reads whatever describes the current work. He keeps several primes for different parts of a codebase rather than one that loads everything.
+
+On a Maximo estate, priming has a problem that greenfield tutorials skip: the repo often does not contain the truth. Scripts were edited in the Automation Scripts application at 2 a.m. during an outage and never exported. A launch point was deactivated in production but not in the repo. The agent reads the files you have, and if the files are stale, it plans against a fiction.
+
+### Step zero: make the truth greppable
+
+Before any agent work, export what actually runs in DEV (and, read-only, what runs in production) into `inventory/`. For autoscripts that means each script's source plus launch point metadata (object, event, attribute, active flag) via the automation script object structure; [MAS-BOB Part 8](/blog/mas-bob-08-bob-shell-ci) shows an MXAPIAUTOSCRIPT export used in CI. For Java, it means the list of class overrides from the `MAXOBJECT` metadata alongside your `java/` folder. For MAF, IBM's Local Configuration extension downloads app source through the same configuration API the in-suite tool uses. Diff the inventory against the repo. The first useful output of an agent on a legacy estate is often a list of drift, not new code.
+
+Cole points out that leading terminal agents dropped codebase indexing: "There's no codebase indexing with Claude Code" ([Anthropic masterclass](https://www.youtube.com/watch?v=efRIrLXoOVA), 0:02:08). They navigate like an engineer, with `grep`, `find` and file reads, because an index goes stale as fast as the code changes. That is good news for Maximo teams. You do not need a vector database of your scripts. You need them as plain files with predictable names (`autoscripts/WORKORDER/WO_SAVE_VALIDATIONS.py` plus a sidecar with the launch points), so that `grep -rl "failurecode" autoscripts/` returns the right answer.
+
+### Two kinds of brownfield
+
+The Dynamous community's workshop on scaling AI coding to complex codebases makes a distinction we have found useful. **Type A** brownfield is a codebase with no AI Layer yet: you do it once. A first pass dispatches several exploration subagents in parallel (one per area: autoscripts, Java, integrations, MAF, DBC), each returning a short summary, and a second pass turns the combined analysis into a first `AGENTS.md`, scoped rules and a starter command set. **Type B** is the everyday case: the layer exists but has drifted, so the same parallel pattern audits what the rules claim against what the code shows, and edits in place. The workshop suggests running the audit quarterly or after a major refactor. For Maximo, "after every MAS upgrade" is the obvious trigger, because upgrades change object structures, domains and supported customisation surfaces.
+
+The same workshop argues that organising code by feature rather than layer makes agents far more effective, and warns against big-bang refactors to get there. Maximo already pushes you halfway: folder-per-object for autoscripts is a vertical slice. Do not reorganise 15 years of Java to chase the pattern. Build new work in the shape you want and let the old code stay where it is until a ticket touches it.
+
+### The codebase you did not write
+
+A second Dynamous workshop tackles a problem every Maximo lead will recognise: when agents write most of the code, you slowly stop knowing your own system, and if you stop knowing it you cannot plan or validate. The workshop's answer is to build understanding as a side effect of the work. Two ideas transfer directly:
+
+- **"Check me" in the prime output.** After priming, the agent states three claims about existing behaviour, each with the file and line that proves it. "WO_SAVE_VALIDATIONS.py already blocks APPR without a supervisor (line 88)." You spend a minute verifying, and you catch a wrong mental model before it becomes a wrong plan.
+- **"Decisions for you" in the plan output.** Every choice the ticket did not make, the alternative, and whether it is easy to reverse. For Maximo, the reversibility column is what decides whether a human must be in the loop: a script can be deactivated in seconds; a DBC script that altered a column cannot be undone so easily.
+
+The workshop also suggests a short guided walkthrough of each pull request before merging, covering intent, files in reading order, decisions made and at most three hunks to read yourself. For a team that has inherited a decade of other people's scripts, that habit is worth adopting even without an agent.
+
+---
+
+## ✅ Validation Against a Dev Manage Instance
+
+If there is one section of this article to take back to your team, it is this one. Cole calls validation the most undervalued part of AI coding, and his line on why static checks are not enough is short: "Static code analysis is not enough" ([Parallel Claude Code + Git Worktrees](https://www.youtube.com/watch?v=rFGlJ4oIlhw), 0:16:24). The agent has to exercise the change the way a user or an integration would.
+
+His validation pyramid, as published in the [ai-transformation-workshop](https://github.com/coleam00/ai-transformation-workshop) repo, has five layers: type checking and linting, unit tests and integration or end-to-end tests owned by the agent, then code review and manual testing owned by you. The goal is to push as much as possible into the agent-owned layers so your review is shorter and cleaner. Maximo needs its own version of each layer, and they differ per artifact.
+
+| Layer | Autoscripts | Java MBO extensions | DBC scripts | MAF | Owner |
+|---|---|---|---|---|---|
+| **1. Static** | House-rule lint; Jython 2.7 compile | Java compile (17 on 9.1, 25 on Manage 9.2) against Maximo classes and the JDK from the dev image | Naming and idempotence lint | XML well-formedness; no edits outside allowed files | Agent, every edit |
+| **2. Unit** | Pure helper functions tested outside Maximo, where you have them | JUnit for logic you can isolate from MBOs | Dry-run review of generated SQL | Small JS functions in `AppCustomizations.js` | Agent |
+| **3. Scenario (E2E)** | Matrix of OSLC calls against DEV: create, act, assert | Same matrix after the customization archive is deployed | `updatedb` on DEV, then a matrix of reads | Local preview, then device test for offline | Agent runs; human approves the deploy |
+| **4. Review** | Fresh-session reviewer plus a human | Same | Same, with a DBA for schema changes | Same, with the delta XML in the PR | Reviewer agent, then human |
+| **5. Manual** | Golden path in the UI | Golden path in the UI | Spot check | Technician walks the flow on a device | Human |
+
+### Define the matrix before the code
+
+Cole insists the validation strategy is written before implementation; in his workflow it is "probably the most important part" of a plan ([My COMPLETE Agentic Coding Workflow](https://www.youtube.com/watch?v=goOZSXmrYQ4), 0:25:11). For Maximo this is test-driven development by another name. The scenario matrix (WORKTYPE CM with empty failure code, attempt APPR, expect a blocking message; the same through an integration user, expect whatever you decided) is the spec. The agent implements until the matrix passes. agm-01 includes a full eight-row matrix and the `curl` shape for driving status changes through MXAPIWO, so we will not duplicate it; what matters here is *where* it lives (`tests/scenarios/`, versioned) and *who* runs it (the agent, after you approve the deploy).
+
+### A bounded retry budget
+
+Agents that loop on failing tests forever burn money and, on Maximo, can litter DEV with hundreds of half-created work orders. Cole relays Stripe's practice of iterating "a maximum of two times before we escalate to a human" ([Stripe's Coding Agents Ship 1,300 PRs](https://www.youtube.com/watch?v=NMWgXvm--to), 0:12:32). Put that number in your `/validate` command. Also make every scenario create its own records with a recognisable prefix in the description (for example `AGENTTEST-<plan>-<row>`) so cleanup is a query, not an archaeology exercise.
+
+### Hooks make the bottom layers automatic
+
+Rules ask; hooks enforce. In Claude Code, a `PostToolUse` hook can run the lint whenever the agent writes a file under `autoscripts/`, and a `Stop` hook can refuse to let the agent finish while gates are red. Cole describes exactly this "stop validation hook" pattern ([Harness Engineering](https://www.youtube.com/watch?v=ulNsa0sD8N0), 0:11:43). Bob has equivalent lifecycle events and an `EnforcedHooks` policy so administrators can mandate them; [MAS-BOB Part 7](/blog/mas-bob-07-hooks-mcp-guardrails) covers its schema. An illustrative `.claude/settings.json` (check the current hook docs for exact fields):
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Read|Bash",
+        "hooks": [{ "type": "command", "command": "tools/hooks/block_secrets.sh" }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Write|Edit",
+        "hooks": [{ "type": "command", "command": "tools/hooks/lint_if_autoscript.sh" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "tools/hooks/gates_green.sh" }] }
+    ]
+  }
+}
+```
+
+The scripts are where your Maximo knowledge goes: `block_secrets.sh` refuses reads of `maximo.properties`, keystores and `.env`, and any command containing your production hostname; `lint_if_autoscript.sh` runs L1 and L2 only when the edited path is under `autoscripts/`; `gates_green.sh` exits with the "keep going" code while the last gate run failed. Keep the deploy step out of hooks. Deploying to DEV is a human-approved action, not a side effect of the agent stopping.
+
+### The reviewer must not be the author
+
+Cole is firm that review happens in a separate session, because the implementing context is full of the agent's own justifications: "there's a lot of bias that's built up there" ([The Best AI Coding Setup Isn't the Most Autonomous One](https://www.youtube.com/watch?v=muwRbfuKbR4), 0:18:21). The strongest version gives the reviewer only the ticket and the diff, with no access to the development conversation. For Maximo, give the reviewer the scoped rules and `gotchas.md` as its checklist, run it with read-only permissions, and consider a different model or a different agent than the one that wrote the code. A Bob-written script reviewed by Claude, or the reverse, catches a class of mistakes a single model repeats. [MAS-BOB Part 8](/blog/mas-bob-08-bob-shell-ci) shows the headless version in CI.
+
+---
+
+## 🪜 Choosing an Autonomy Level per Artifact
+
+Cole uses Dan Shapiro's five levels of AI coding autonomy, borrowed from driving automation: from Level 0 "spicy autocomplete" to Level 5, the dark factory where spec goes in and production code comes out with nobody at the wheel ([The Best AI Coding Setup Isn't the Most Autonomous One](https://www.youtube.com/watch?v=muwRbfuKbR4), 0:00:18). His argument is that the top is not the goal. Level 3, where the agent writes all the code and you own planning and validation, is the sweet spot of reliability and speed; climbing higher only pays when the workflow is battle-tested.
+
+For a Maximo team the useful move is to choose a level per **artifact class and blast radius**, not one level for the whole team.
+
+| Level | What it means | Maximo work that fits | Work that does not |
+|---|---|---|---|
+| **1 — Intern** | Agent drafts boilerplate; you write the logic | DBC scripts that alter core tables; anything touching financial or inventory costing | — |
+| **2 — Junior pair** | You and the agent edit together, line by line | Integration exits for a live ERP feed; Java MBO overrides on `WO` or `INVENTORY` | Bulk changes |
+| **3 — The developer** | Agent writes all code from your plan; you validate | Most autoscripts, MAF `app.xml` changes, BIRT tweaks, new read-only integrations, Java MBO to script conversions | Anything without a scenario matrix |
+| **4 — Team** | Agent takes a whole epic and opens PRs; you review at the end | Mechanical refactors across many scripts (logging standardisation, MboSet closure), documentation generation | Behaviour changes on core objects |
+| **5 — Dark factory** | No human in the loop | Nothing that deploys to a Maximo environment | Everything that does |
+
+agm-02 makes the same argument from the harness side with a Maximo-safe factory ladder. The short version: you can automate everything up to the pull request, and you can run large mechanical changes at Level 4 if the gates are strong, but a change that alters how work orders, inventory or integrations behave should keep a person at plan approval and at deploy.
+
+---
+
+## 🔀 Parallel Agents and the One-Dev-Instance Problem
+
+Parallel agentic coding is the throughput lever: several agents, each on its own task in its own copy of the repo, typically via git worktrees. Cole is explicit that simply opening five sessions fails because "they're going to step on each other's toes" ([Parallel Claude Code + Git Worktrees](https://www.youtube.com/watch?v=rFGlJ4oIlhw), 0:01:23). Worktrees solve the file collision.
+
+Maximo adds a collision worktrees cannot solve: **the database**. A web developer can give each worktree its own local database. Most Maximo teams have one or two shared DEV Manage instances, and every agent's scenario matrix writes into the same `WORKORDER` table, triggers the same escalations and reads the same system properties. Two agents validating conflicting changes to the same object's save logic will produce results neither of them can explain.
+
+Practical rules we use:
+
+- **Parallelise planning and static gates freely.** Prime, plan, lint and compile touch only files. Run as many as you like.
+- **Serialise deploys per object.** Only one change to `WORKORDER` save behaviour is deployed to DEV at a time. A simple lock file or a ticket in the deploy queue is enough.
+- **Partition by artifact where you can.** A MAF change, a BIRT report and an inventory script can validate in parallel; two `WORKORDER` scripts cannot.
+- **One feature per session.** Cole's "golden rule" of asking for one change at a time ([Code 100x Faster with AI](https://www.youtube.com/watch?v=SS5DYx6mPw8), 0:25:34) matters more in parallel, because a session that wanders into a second feature collides with another worktree's scope.
+- **Hand off through files.** When one agent's research feeds another's plan, the link is a markdown file in `plans/`, not a pasted transcript. Cole's handoff-document pattern keeps each agent's context small and the pipeline resumable.
+
+If your DEV instances are scarce, this is the strongest argument for investing in a second, disposable Manage environment for agent validation. It does not need production-sized data; it needs your configuration and a reset script.
+
+---
+
+## 🔄 System Evolution, and Keeping the Layer Lean
+
+Cole's compounding rule: "Don't just fix the bug. fix the system that allowed the bug" ([The 5 Techniques Separating Top Agentic Engineers](https://www.youtube.com/watch?v=ttdWPDmBN_4), 0:14:14). When the agent makes a mistake, ask it which part of the AI Layer would have prevented it, and change that: a rule, a command step, a skill, or a check. agm-01 has a table of where common Maximo fixes land and argues that a check beats a skill step, which beats a rule sentence. We agree, and add one thing: **evolution includes deletion**.
+
+Layers rot in two directions. They drift from the code (rules that describe a logging style you abandoned), and they bloat (every incident adds a paragraph, none ever leaves). A bloated `AGENTS.md` produces the same symptom as a missing one: the agent ignores the rule you care about because it is buried. Put an owner on the layer, review it in the same cadence as your Type B audit, and when a rule has become a lint, delete the sentence.
+
+Two of Cole's warnings apply to the tooling around the layer, too. **Abstraction distraction**: frameworks that do so much for you that "you end up fighting the framework more than it's actually helping you" ([The ONLY AI Tech Stack You Need in 2026](https://www.youtube.com/watch?v=21_k2St8bBI), 0:06:56). An elaborate agent platform that hides how prompts are assembled is a poor fit for a regulated Maximo estate where you must explain why a change was made. **Coding-agent bloat**: when a tool injects instructions you cannot see and changes them between releases, "your context is not really your context" ([Pi Coding Agent + Archon](https://www.youtube.com/watch?v=XSmI7OYd7iM), 0:03:14). The defence for both is the same: keep the knowledge in your own files, in your own repo, so a vendor change costs you a configuration afternoon rather than your team's accumulated rules.
+
+---
+
+## 🔬 Worked Scenarios
+
+### Scenario 1: the failure-class rule, done properly
+
+Back to the opening ticket. With the layer in place, the developer runs `/prime-autoscripts WORKORDER`. The output lists 14 active scripts on `WORKORDER`, including `WO_SAVE_VALIDATIONS` on save before add and update, and the "check me" section claims that `WO_SAVE_VALIDATIONS.py` already validates supervisor on APPR at line 88. The developer confirms it. `/plan-autoscript MX-1423` then proposes extending that script rather than adding a new one, resolves APPR through the `WOSTATUS` synonyms in `site-facts.md`, and raises two decisions: should integration users be exempt, and do child task work orders inherit the check? The developer answers both, commits the plan, and `/implement` runs in a fresh session. Lint and compile pass after each edit. After approval, `/validate` deploys to DEV and runs the eight-row matrix; row 8 (integration user) fails because the plan said "exempt" but the code checks the wrong user attribute. The agent fixes it on retry one. The separate reviewer flags an unclosed MboSet in a branch the matrix did not exercise. One more fix, all green, PR opened. The system-evolution step adds "every new branch that opens an MboSet must be covered by a scenario row" to the plan template.
+
+### Scenario 2: Java MBO extension after the Java version moves
+
+A site still runs a `cust.app.workorder.CustWO` class compiled years ago. The ticket asks for a small change to its `save()` override. `/plan-java` notes from `java-extension-rules.md` that the class must compile against the JDK in the site's Manage image (Java 17 for MAS 9.1 Manage, Java 25 for Manage 9.2), and that the class must be rebuilt into the customization archive. The plan proposes an alternative: move the logic to an automation script using IBM's `maximo-java-conversion` skill pattern, and retire the class. The developer chooses the conversion for this ticket but keeps the class for now because it also overrides `canDelete()`. Level 3 for the script; Level 2 for the eventual class retirement, which touches deletion rules on a core object.
+
+### Scenario 3: a MAF change for the Technician app
+
+A planner wants a new read-only field on the Technician work order details page. The agent works in the `maf/` folder downloaded through IBM's MAF Local Configuration extension. The scoped rules restrict edits to `app.xml` and `AppCustomizations.js`, and a `PreToolUse` hook blocks writes anywhere else. The agent adds the field, the local preview against DEV shows it, and the PR includes the generated delta XML. Validation layer 5 is a technician opening the work order on a device in airplane mode, because offline behaviour is where MAF changes break. The agent cannot do that step, and the plan says so.
+
+### Scenario 4: a Type A audit of a forgotten estate
+
+A new client arrives with 210 scripts, no repo and no documentation. Day one is not code. The team exports scripts and launch points from DEV into `inventory/`, then runs a parallel exploration: five subagents, one each for work management, inventory and purchasing, assets and locations, integrations, and cron tasks. Each returns a one-page summary: what each script does, which look dead, which duplicate others, which compare statuses to literals. The combined analysis seeds `AGENTS.md`, `site-facts.md` and `gotchas.md`. The first deliverable to the client is a drift and risk report, written by the agent and checked by a human. No line of production behaviour changed, and the team now has a layer every later ticket benefits from.
+
+### Scenario 5: the agent that tried to be helpful in production
+
+During a session, the agent decides the fastest way to check a domain value is to query production with a credential it found in an old properties file under `integrations/legacy/`. The `PreToolUse` hook blocks the read of the properties file and the command containing the production hostname, and the agent reports the block. The system-evolution step does three things: removes the stale file from the repo and rotates the credential, adds the path to the ignore list, and adds a read-only DEV MCP connection so the agent has a legitimate way to check domains. [Part 5](/blog/map-05-agent-security-guardrails-maximo) of this series covers the wider security model.
+
+---
+
+## ⚠️ Pitfalls
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Agent writes Python 3 syntax into autoscripts | Jython rule buried in a long root file, or no compile gate | Scoped `autoscripts/AGENTS.md`; Jython compile in a PostToolUse hook |
+| Agent duplicates an existing script | Repo does not reflect what runs in DEV | `/export-dev` before `/prime`; a lint that fails on a second script for the same object and event |
+| Plans assume literal statuses and work types | No `site-facts.md`, or it is stale | Generate it from DEV; regenerate after upgrades |
+| Works in DEV, breaks inbound integration in TEST | Integration-user path never considered | Make integration behaviour a mandatory decision in `/plan-autoscript` |
+| Validation leaves hundreds of test records in DEV | No retry cap, no test-record prefix | Two retries then escalate; prefix every scenario record; cleanup script |
+| Parallel agents report contradictory results | Shared DEV database, overlapping objects | Serialise deploys per object; partition work by artifact |
+| Reviewer approves everything | Review run in the implementing session | Fresh session, diff and ticket only, read-only, ideally a different model |
+| Root rules file keeps growing | Every incident adds a sentence | Convert rules to checks; delete rules that became lints; quarterly audit |
+| Team cannot switch agents without losing setup | Knowledge stored in one tool's private settings | One `AGENTS.md`, plain-markdown commands, hooks as scripts in the repo |
+| Agent edits IBM out-of-the-box MAF or Java files | No path restriction | Scoped rules plus a PreToolUse hook that denies writes outside allowed paths |
+
+---
+
+## Key Takeaways
+
+- **Own the layer, rent the agent.** Rules, commands, skills, hooks and MCP connections are where your Maximo knowledge lives; keep them as files in Git so they work in Claude Code, Bob or Codex.
+- **Lean root, rich scopes.** A short `AGENTS.md` plus per-artifact rules for autoscripts, Java, DBC, MAF and integrations beats one long file every time.
+- **Make the truth greppable.** Export what actually runs in Manage before you prime; on a legacy estate, the first agent output should be a drift report.
+- **Validation first, per artifact.** Lint and compile on every edit, a scenario matrix against DEV after human approval, two retries, then a separate reviewer.
+- **Autonomy by blast radius.** Level 3 for most autoscripts and MAF changes; Level 2 pairing for Java MBO overrides on `WO` or `INVENTORY` and live ERP exits; Level 1 for core DBC and inventory costing; Level 4 only for mechanical refactors with strong gates; nothing that deploys runs at Level 5.
+
+---
+
+## References
+
+**Cole Medin (YouTube) — concepts adapted in this article**
+
+- [Anthropic Just Dropped a Masterclass on Building Agent Harnesses (for Large Codebases)](https://www.youtube.com/watch?v=efRIrLXoOVA) — the AI Layer definition (0:03:28); no codebase indexing (0:02:08)
+- [Harness Engineering: What Separates Top Agentic Engineers Right Now](https://www.youtube.com/watch?v=ulNsa0sD8N0) — the AI Layer over agent choice (0:02:29); stop validation hook (0:11:43)
+- [The Best AI Coding Setup Isn't the Most Autonomous One (Here's Why)](https://www.youtube.com/watch?v=muwRbfuKbR4) — five levels of autonomy (0:00:18); separate reviewer (0:18:21)
+- [My COMPLETE Agentic Coding Workflow to Build Anything](https://www.youtube.com/watch?v=goOZSXmrYQ4) — commandify everything (0:12:44); context is precious (0:16:42); validation strategy first (0:25:11)
+- [The 5 Techniques Separating Top Agentic Engineers Right Now](https://www.youtube.com/watch?v=ttdWPDmBN_4) — portable commands (0:02:38); fix the system (0:14:14)
+- [I've Used Claude Code for 2,000+ Hours](https://www.youtube.com/watch?v=nxHKBq5ZU9U) — global rules size (0:15:56)
+- [Parallel Claude Code + Git Worktrees](https://www.youtube.com/watch?v=rFGlJ4oIlhw) — parallel collisions (0:01:23); static analysis is not enough (0:16:24)
+- [Stripe's Coding Agents Ship 1,300 PRs EVERY Week](https://www.youtube.com/watch?v=NMWgXvm--to) — two retries before escalation (0:12:32)
+- [Are Agent Harnesses Bringing Back Vibe Coding?](https://www.youtube.com/watch?v=13HP_bSeNjU) — priming an amnesiac agent (0:09:42)
+- [Omnigent: The New Meta-Harness for EVERY Coding Agent](https://www.youtube.com/watch?v=oGE_Dwz-rMk) — a portable AI Layer (0:04:42)
+- [The ONLY AI Tech Stack You Need in 2026](https://www.youtube.com/watch?v=21_k2St8bBI) — abstraction distraction (0:06:56)
+- [Pi Coding Agent + Archon: Build ANY AI Coding Workflow (No Claude Code Bloat)](https://www.youtube.com/watch?v=XSmI7OYd7iM) — coding-agent bloat (0:03:14)
+- [Code 100x Faster with AI, Here's How](https://www.youtube.com/watch?v=SS5DYx6mPw8) — one change at a time (0:25:34)
+- [coleam00/skills (GitHub)](https://github.com/coleam00/skills) — Cole's public skill library and PIV loop
+- [coleam00/ai-transformation-workshop (GitHub)](https://github.com/coleam00/ai-transformation-workshop) — portable AI Layer, validation pyramid, five golden rules
+- [Dynamous AI Mastery community](https://dynamous.ai) — workshops on scaling AI coding to complex codebases and on understanding code you did not write (paraphrased)
+
+**Maximo and tool documentation**
+
+- [IBM Maximo Manage — Automation scripts (IBM Documentation)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=developing-automation-scripts)
+- [IBM Maximo Autoscripting Guide (IBM Maximo developer docs)](https://ibm-maximo-dev.github.io/maximo-autoscript-documentation/introduction/components/)
+- [Maximo MCP server overview (IBM Documentation, MAS 9.2)](https://www.ibm.com/docs/en/masv-and-l/cd?topic=developing-maximo-mcp-server-overview)
+- [IBM Building Blocks — asset-management Bob skills for Maximo (GitHub)](https://github.com/ibm-self-serve-assets/building-blocks/tree/main/build-and-deploy/asset-management)
+- [Claude Code — Hooks reference](https://code.claude.com/docs/en/hooks)
+- [OpenAI Codex — Custom instructions with AGENTS.md](https://developers.openai.com/codex/guides/agents-md)
+- [AGENTS.md — the open format](https://agents.md/)
+
+---
+
+🧰 **From TheMaximoGuys toolbox:** [Max_autoscripts](https://github.com/themaximoguys/Max_autoscripts) (MIT) gives you sample scripts, templates, a standards file and agent-ready `AGENTS.md`/`CLAUDE.md` to seed your rules. [Max_Interfaces](https://github.com/themaximoguys/Max_Interfaces) (MIT) catalogues 2,439+ Maximo endpoints, including an automation-script deploy pipeline your `/validate` command can call. [Max_mcp](https://github.com/themaximoguys/Max_mcp) (npm, 175 tools, proprietary) gives any agent read access to Maximo across versions, alongside IBM's native MAS 9.2 MCP server.
+
+---
+
+## Series Navigation
+
+**The Agentic AI Playbook for Maximo**
+
+- [Part 0: Series Index: The Agentic AI Playbook for Maximo](/blog/map-00-series-index)
+- [Part 1: What Is an AI Agent, Really? A Field Guide for Maximo Teams](/blog/map-01-what-is-an-ai-agent-maximo)
+- [Part 2: Prompts, Tools and Context for Maximo Agents: Designing What the Model Actually Sees](/blog/map-02-prompts-tools-context-maximo)
+- [Part 3: RAG Strategies for Maximo Data: Which Retrieval for Which Records](/blog/map-03-rag-strategies-maximo-data)
+- [Part 4: MCP and Tool Design for Maximo: Fewer, Sharper Tools Beat a 175-Tool Buffet](/blog/map-04-mcp-tool-design-maximo)
+- [Part 5: Securing Maximo Agents: The Lethal Trifecta, Prompt Injection and Guardrails That Hold](/blog/map-05-agent-security-guardrails-maximo)
+- **Part 6: The AI Layer for Maximo Development: Rules, Commands, Hooks and Validation for Agentic Coding** (you are here)
+- [Part 7: Local and Self-Hosted AI for Maximo: A Playbook for Regulated Shops](/blog/map-07-local-self-hosted-ai-maximo)
+- [Part 8: Maximo Agents in Production: Deployment, Voice in the Field, and Agents That Run While You Sleep](/blog/map-08-production-agents-voice-long-running)
+
+**Go deeper:** [agm-01: Context Engineering and PRPs](/blog/agm-01-context-engineering-prps) · [agm-02: Harnesses and Software Factories](/blog/agm-02-harnesses-software-factories) · [MAS-BOB Part 6: Teaching Bob Your Maximo House Rules](/blog/mas-bob-06-maximo-house-rules)

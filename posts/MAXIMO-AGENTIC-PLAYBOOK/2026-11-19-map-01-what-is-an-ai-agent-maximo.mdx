@@ -1,0 +1,390 @@
+---
+title: "What Is an AI Agent, Really? A Field Guide for Maximo Teams"
+description: "A plain-language definition of an AI agent for IBM Maximo teams: the four core components, the reason-act-observe loop, how an agent differs from a Maximo workflow, an escalation and an automation script, which Maximo jobs are agent-shaped and which must stay deterministic, where the MAS 9.2 Maximo Assistant and MCP server fit, and a decision table for choosing between agent, workflow and autoscript."
+date: "2026-11-19"
+slug: "map-01-what-is-an-ai-agent-maximo"
+tags: ["AI Agents", "IBM Maximo", "MAS 9.2", "Maximo Assistant", "MCP", "Automation Scripts", "Workflow", "Escalations", "Agentic AI"]
+draft: true
+tier: "beginner"
+author: "Krishna Neela"
+coverImage: "./images/map-01-what-is-an-ai-agent-maximo.png"
+authorTitle: "AI Engineer"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What is the difference between an AI agent and a Maximo workflow?"
+    answer: "A Maximo workflow is a process you draw in the Workflow Designer: nodes, conditions, task assignments and actions, all fixed in advance. Given the same record in the same state, it takes the same path every time. An AI agent is a large language model that has been given tools (for example, OSLC queries against mxapiwo or mxapiasset) and is allowed to decide which tools to call, in what order and how many times, before it answers. The workflow is deterministic and auditable by design; the agent is flexible but non-deterministic. In practice the two work together: the workflow owns approvals and status changes, and the agent does the fuzzy reading-and-summarising work that a workflow condition cannot express, then hands a proposal back to a person or a workflow step."
+  - question: "Is the MAS 9.2 Maximo Assistant an AI agent?"
+    answer: "By the definition in this post, yes. IBM's MAS 9.2 what's-new documentation says the Assistant 'can now act as a single agent that analyzes requests and works across a defined set of AI tools', and IBM's own write-up on agentic workflows describes a Supervisor ALM agent that plans a request and calls tools such as knowledge search, product guidance, data retrieval and condition insights, with write actions routed through the Maximo MCP server. That is an LLM choosing tools in a loop, which is the definition of an agent. What it is not is an unbounded autonomous system: it works over a defined tool set inside Maximo's security model, and you should still decide which actions need human confirmation."
+  - question: "Should I replace my escalations and automation scripts with AI agents?"
+    answer: "No. Escalations and automation scripts are deterministic: the same record and the same condition always produce the same result, they run cheaply on every save or every cron cycle, and they are easy to test and audit. That is exactly what you want for status rules, field defaults, SLA timers, PM generation, reorder calculations and anything a regulator or auditor will ask about. Use an agent only where the input is unstructured or the decision genuinely varies case by case, such as reading free-text work order descriptions, summarising long work logs, or explaining why a reorder exception happened. A good rule: if you can write the rule as a SQL where clause, it should not be an agent."
+  - question: "Which Maximo tasks are the best first candidates for an AI agent?"
+    answer: "Start with read-only, high-volume, text-heavy tasks where a person already reviews the result: triaging incoming work orders and service requests (suggesting priority, failure class and possible duplicates), summarising service requests and long work logs for a planner, reviewing PM and job plan descriptions for gaps, and explaining inventory reorder exceptions. These are agent-shaped because the input is free text and the right next query depends on what the last one returned, and they are safe because the agent proposes and a human decides. Leave creating, approving, closing and costing records to people and deterministic Maximo logic until you have evaluations that prove the agent is reliable."
+  - question: "Do I need to be a developer to build a Maximo agent?"
+    answer: "Not to start. Cole Medin's learning roadmap recommends prototyping in a no-code tool first, then rebuilding in code once you know what the agent needs to do. For Maximo teams that means an n8n or similar prototype against a read-only API key in a non-production environment (covered in agm-04), followed by a typed build in a framework such as Pydantic AI (covered in agm-03). Administrators and functional consultants contribute the most valuable part, which is knowing which jobs are worth automating, what a correct answer looks like, and where the human approval must sit. The code is the smaller half of the work."
+keyTakeaways:
+  - "An AI agent is an LLM plus tools, instructions and memory, running a reason-act-observe loop that decides for itself how many tool calls a job needs"
+  - "Maximo already has excellent deterministic automation: workflows, escalations and automation scripts. Agents add judgment over unstructured data; they do not replace rules"
+  - "Agent-shaped Maximo jobs are text-heavy and variable: work order and SR triage, work log summaries, PM and job plan review, reorder exception explanations"
+  - "Reliability multiplies across steps, so keep agent chains short, push known steps into deterministic Maximo logic, and put a person at the point where records change"
+  - "MAS 9.2's Maximo Assistant is itself an agent over a defined tool set, and the Maximo MCP server lets your own agents use governed Maximo tools"
+series:
+  name: "The Agentic AI Playbook for Maximo"
+  part: 1
+  total: 8
+series_part: 1
+tldr: "An AI agent is a large language model that has been given tools, instructions and memory and is allowed to decide, in a loop, which tools to call before it answers. For Maximo teams that makes it a new kind of automation, not a replacement for the old kinds. Workflows, escalations and automation scripts stay the backbone because they are deterministic, cheap and auditable. Agents earn their place where the input is free text and the right next step depends on what the last query returned: work order and service request triage, work log summaries, PM and job plan review, and explaining inventory reorder exceptions. Because per-step reliability multiplies, keep agent chains short, start read-only, and keep a person at the point where records change. MAS 9.2's Maximo Assistant is an agent over a defined tool set and the Maximo MCP server exposes governed tools to your own agents. This part gives you the vocabulary, a decision table, and worked scenarios; agm-03 and agm-04 show the builds."
+seoTitle: "What Is an AI Agent? A Guide for IBM Maximo Teams"
+seoDescription: "What an AI agent is for IBM Maximo teams: the agent loop, agents vs workflows, escalations and autoscripts, and which Maximo jobs suit an agent."
+targetQuestions:
+  - "What is an AI agent in IBM Maximo?"
+  - "What is the difference between an AI agent and a Maximo workflow or escalation?"
+  - "Which Maximo tasks should use an AI agent and which should stay as automation scripts?"
+  - "Is the MAS 9.2 Maximo Assistant an AI agent?"
+proficiencyLevel: "beginner"
+dependencies:
+  - "Working familiarity with Maximo Manage (work orders, assets, PMs, inventory)"
+  - "Basic awareness of Maximo workflows, escalations and automation scripts"
+  - "No programming required for this part"
+speakableSections:
+  - "The One-Sentence Definition"
+  - "Agent, Workflow or Autoscript?"
+  - "Why Reliability Multiplies"
+clusterSlugs:
+  - "map-00-series-index"
+  - "map-02-prompts-tools-context-maximo"
+  - "map-03-rag-strategies-maximo-data"
+  - "map-04-mcp-tool-design-maximo"
+  - "map-05-agent-security-guardrails-maximo"
+  - "map-06-ai-layer-agentic-coding-maximo"
+  - "map-07-local-self-hosted-ai-maximo"
+  - "map-08-production-agents-voice-long-running"
+relatedSlugs:
+  - "agm-03-pydantic-ai-maximo-agent"
+  - "agm-04-n8n-local-ai-prototyping"
+  - "agm-07-multi-agent-a2a-orchestrate"
+---
+
+# What Is an AI Agent, Really? A Field Guide for Maximo Teams
+
+> 📺 **Source credit:** The concepts in this series are adapted from Cole Medin's YouTube channel ([youtube.com/@ColeMedin](https://www.youtube.com/@ColeMedin)) and the Dynamous AI Mastery community (dynamous.ai), and applied to IBM Maximo by TheMaximoGuys.
+
+> 🎯 **Who this is for:** Maximo administrators, functional consultants, reliability engineers and technical leads who keep hearing "agent" in every IBM briefing and vendor demo and want a definition they can actually use when deciding what to build.
+
+**Series:** Part 1 of 8 — *The Agentic AI Playbook for Maximo* | **Read time:** 28 minutes
+
+---
+
+## 🔥 The Word Everyone Uses and Nobody Defines
+
+Sit in on any Maximo roadmap conversation in late 2026 and count how often you hear "agent." MaximoWorld 2026 ran under the theme "Agentic AI." IBM's [MAS 9.2 announcement](https://www.ibm.com/new/announcements/introducing-maximo-application-suite-9-2) talks about "agentic workflows." Partners sell agentic platforms for Maximo, and competitors in EAM ship agents with names. Meanwhile, the people who actually run Maximo already have a mature toolbox for automation: workflow processes with approvals and task assignments, escalations that fire on a schedule, automation scripts on object and attribute launch points, cron tasks, and the integration framework. So the honest first question from a Maximo team is not "how do we build an agent?" It is "what is an agent, and is it different from what we already have?"
+
+It is different, and the difference is precise enough to be useful. Get the definition right and you can answer three practical questions that otherwise turn into arguments: which jobs in your Maximo estate should an agent do, which should stay as rules, and where does a human have to sign off. Get it wrong and you end up with one of two failure modes. Either you wrap an LLM call inside an escalation, call it an agent, and wonder why it is no smarter than the rule it replaced. Or you hand a model write access to work orders because the demo looked good, and spend the next month cleaning up duplicate follow-ups.
+
+This part is the foundation for the rest of the series. It defines an agent, breaks it into components you can reason about, places it next to Maximo's existing automation, and finishes with a decision table and worked scenarios. It does not build anything; the builds live in the companion series. [agm-03](/blog/agm-03-pydantic-ai-maximo-agent) builds a typed, read-only work order triage agent in Pydantic AI, and [agm-04](/blog/agm-04-n8n-local-ai-prototyping) prototypes the same idea in n8n with local models.
+
+---
+
+## 📌 The One-Sentence Definition
+
+Cole Medin's definition has been consistent across years of videos: an AI agent is "any large language model that is given the ability to interact with the outside world on your behalf through tools" ([Learn 90% of Building AI Agents in 30 Minutes](https://www.youtube.com/watch?v=i5kwX7jeWL8), 0:01:44). The dividing line is the tool. Without at least one tool, he points out, what you have is "really just a regular large language model, not an agent" (0:03:05).
+
+Translate that to Maximo. A chatbot that answers "how do I create a job plan?" from its training data is not an agent. It is a language model with a chat window. The moment you give that model a tool that runs a query against `/maximo/api/os/mxapiwo`, reads the result, and decides whether it needs to query `mxapiasset` next, it becomes an agent. It can now find the open work orders on pump P-1041, notice that three of them describe the same seal leak, and tell you so, using live data rather than guesses.
+
+A fuller version of the definition adds state: agents "maintain persistent state to accomplish infinitely more than just an isolated chat bot" ([AI Agents: The Future of AI or a Passing Fad?](https://www.youtube.com/watch?v=gp452XlJSb4), 0:00:47). In Maximo terms, state is the difference between an agent that forgets which work order you were discussing two messages ago and one that remembers the asset, the site and the failure class you already established.
+
+Notice what the definition does not say. It does not say "autonomous." It does not say "makes decisions without people." It does not require multiple models talking to each other. An agent can be small, read-only and supervised, and for a first Maximo agent it should be all three.
+
+---
+
+## 🧱 Four Components, Seven Nodes: An Agent Taken Apart
+
+### The four core components
+
+Cole reduces every agent to four parts: "our large language model... the tools... the instructions, usually known as the system prompt... And then last we have our memory" ([Google, Anthropic, and OpenAI's Guides to AI Agents ALL in 18 Minutes](https://www.youtube.com/watch?v=TlbcAphLGSc), 0:05:04–0:05:19). The useful part of the framing is diagnostic. He argues that "whenever you have an issue with your agent in general, it's always going to be one of these four things" (same video, 0:06:06).
+
+Here is how those four map onto a Maximo agent.
+
+| Component | What it is | Maximo example | When it is the problem |
+|---|---|---|---|
+| **LLM (brain)** | The model that reasons and picks the next step | A hosted frontier model, an IBM-hosted model behind the AI Service, or a self-hosted model for air-gapped sites | Weak reasoning on multi-step questions, poor tool selection, invents values |
+| **Tools (hands)** | Functions the agent can call | OSLC GET on `mxapiwo`, `mxapiasset`, `mxapipm`, `mxapiinventory`; a doclinks search; an MCP tool built from an automation script | Agent "cannot find" data that exists; wrong fields returned; tool errors |
+| **Instructions (system prompt)** | Standing rules, role, output format | "You are a read-only planner's assistant for site BEDFORD. Never propose a status change. Cite every work order number you use." | Agent ignores your conventions, answers in the wrong shape, oversteps |
+| **Memory (context)** | Conversation history and retrieved knowledge | The current asset and site, prior turns, retrieved job plan text, failure hierarchy | Agent forgets the asset, repeats queries, contradicts earlier answers |
+
+When a pilot goes wrong, walk this table before touching anything else. An agent that confidently quotes a failure code your organisation does not use is usually an instruction or tool problem (it was never given the failure hierarchy), not a model problem. An agent that keeps re-querying the same work order is often a memory problem. Swapping the model is the most expensive fix and frequently the wrong one.
+
+### The seven-node blueprint
+
+The four components describe what an agent is made of. Cole's "seven node blueprint" describes how agent systems are assembled, on the claim that "any AI agent that you could possibly dream of making can be broken down into components that are going to fall into one of seven categories" ([Give Me 28 Minutes and I'll Completely Change the Way You Build AI Agents](https://www.youtube.com/watch?v=TV8SyEuSMIA), 0:01:08). The seven are LLM, tool, control, memory, guardrail, fallback and user input. The control node is the one Maximo people should notice: it is deterministic routing and conditions, the places where you do not want the agent reasoning at all. Maximo has spent twenty years building control nodes. That is what a workflow condition, an escalation where clause and a conditional expression are.
+
+| Node | Job in an agent system | The Maximo thing that already plays this role (or should) |
+|---|---|---|
+| LLM | Reason, choose next step | Nothing in classic Maximo. This is the new part |
+| Tool | Act on the world | REST/OSLC object structures, MCP tools, automation scripts exposed as tools |
+| Control | Deterministic routing and filters | Workflow conditions, escalation conditions, conditional expressions, security groups |
+| Memory | Short- and long-term context | Work logs, long descriptions, failure reporting history, a vector index of job plans and manuals |
+| Guardrail | Validate inputs and outputs | Domain and field validation, required fields, an output check that every cited WO actually exists |
+| Fallback | Graceful failure | Route to a person or a default queue instead of a half-finished answer |
+| User input | Human approval | A workflow task assignment, an inbox item, a "confirm before write" step in the MCP client |
+
+The blueprint turns "build an agent" into seven smaller questions. Does this triage agent need long-term memory, or just the current SR? Which steps are control, not reasoning? What is the guardrail? Where does a planner approve? Answer those before anyone writes a prompt.
+
+---
+
+## 🔁 The Agent Loop, Walked Through on a Work Order
+
+What makes an agent an agent at runtime is the loop. Cole calls the pattern ReAct: "reason, then act, then observe" ([Google, Anthropic, and OpenAI's Guides](https://www.youtube.com/watch?v=TlbcAphLGSc), 0:06:35). The model reasons about what to do, calls a tool, reads the result, and goes round again until it decides it is finished. The defining property is that the number of laps is not fixed: "Sometimes it might take zero actions and just answer our question right away. Other times it'll take two. Sometimes it'll take five" (0:01:49).
+
+Here is that loop on a realistic question a maintenance planner might type: "Is WO 1048820 a duplicate of anything already open?"
+
+```text
+# Illustrative trace, not real output
+REASON  I need the WO's asset, site, location and description first.
+ACT     GET /maximo/api/os/mxapiwo?oslc.where=wonum="1048820"
+          &oslc.select=wonum,siteid,assetnum,location,description,status,reportdate
+OBSERVE site BEDFORD, asset P-1041, location PUMPHSE-2,
+        "Mech seal leaking, drive end"
+REASON  Look for other open WOs on the same asset and site in the last
+        30 days, excluding 1048820 itself.
+ACT     GET /maximo/api/os/mxapiwo?oslc.where=siteid="BEDFORD"
+          and assetnum="P-1041" and wonum!="1048820"
+          and status in ["WAPPR","APPR","WSCH","WMATL","INPRG"]
+          and reportdate>="2026-10-20T00:00:00"
+          &oslc.select=wonum,description,status,reportdate,worktype
+OBSERVE 2 hits: 1048611 "Seal leak P-1041" (APPR), 1048702 "PM - lube" (INPRG)
+REASON  1048611 looks like the same fault; 1048702 is a PM, not a duplicate.
+        No further calls needed.
+ANSWER  Likely duplicate of 1048611 (same asset, same seal-leak description,
+        approved 6 days ago). 1048702 is an unrelated PM. Suggest a planner
+        review before cancelling either. Evidence: 1048611, 1048702.
+```
+
+Three things to notice. First, the agent chose its second query based on what the first one returned. A fixed workflow cannot do that without someone writing every branch in advance. Second, it stopped after two tool calls because it judged it had enough. On a different work order with no asset number, it might have searched by location instead, or asked a clarifying question. Third, it did not cancel anything. The final step is a proposal with evidence, and the decision stays with a planner.
+
+Mechanically, Cole describes the loop as a router plus recursion: a router checks whether the model asked for a tool, the tool runs, its result is appended to the conversation, and the model is called again "so it might choose to make another tool call or maybe now it's going to actually produce the final response" ([Don't Sleep on the ULTIMATE AI Agent Combo](https://www.youtube.com/watch?v=8hAMASB-RpM), 0:20:10). Every agent framework you will meet (Pydantic AI, LangGraph, n8n's agent node, IBM's own Supervisor ALM agent) implements some version of this loop. You do not need to write it yourself, but you do need to know it is there, because it is the source of both the flexibility and the unpredictability.
+
+---
+
+## ⚖️ Agent, Workflow, Escalation or Autoscript?
+
+### What separates them
+
+Cole draws the line between agents and workflows on one question: who controls the flow. In an Anthropic clip he plays to make the point, workflows are where "you have a few llm calls chained together," while an agent is "where you're letting the llm decide sort of how many times to run" ([Are You Building REAL AI Agents or Just Using LLMs?](https://www.youtube.com/watch?v=GYFTQU2iV4A), 0:03:04–0:03:18). The key word he applies is non-deterministic: "we don't actually know exactly what is going to happen in a workflow when an agent is controlling it" (same video, 0:01:44). Anthropic's own engineering guide makes the same split: workflows orchestrate LLMs and tools "through predefined code paths," agents "dynamically direct their own processes and tool usage" ([Building effective agents](https://www.anthropic.com/engineering/building-effective-agents)).
+
+He adds a subtlety that matters a great deal in Maximo: "there is a big difference between actual AI agents and a workflow that just happens to have an llm inside of it" (Are You Building REAL AI Agents, 0:00:17). If you write an automation script that sends a work order description to a model, gets back a suggested priority and writes it to a field, you have built a deterministic process with one LLM step in it. That can be a perfectly good design. It is just not an agent, and it should be tested and governed like the script it is. The same goes for a script a workflow or escalation calls through an [action launch point](https://www.ibm.com/docs/SSLPL8_cd/com.ibm.mbs.doc/autoscript/c_action_launch_point.html): adding an LLM call inside it does not change who decides the path.
+
+Here is how the four kinds of Maximo automation line up.
+
+| | Workflow process | Escalation | Automation script | AI agent |
+|---|---|---|---|---|
+| **Trigger** | Record routed into the process, or a status change | Cron schedule plus a where-clause condition | Launch point: object event, attribute change, action, condition, integration | A user question, an event, or a scheduled run |
+| **Who decides the path** | You, at design time, in the Workflow Designer | You, in the condition and actions | You, in code | The model, at run time |
+| **Same input, same output?** | Yes | Yes | Yes (unless it calls an LLM) | No, not guaranteed |
+| **Handles free text well** | No | No | Only with hand-written parsing | Yes |
+| **Cost per run** | Negligible | Negligible | Negligible | Model tokens on every run, several calls per job |
+| **Auditability** | Workflow history, assignments | Escalation log, actions taken | Script logs you write | Only what you trace and log yourself |
+| **Best at** | Approvals, routing, status lifecycle | SLA timers, reminders, batch rule application | Validation, defaulting, derived fields, integrations | Reading, summarising, comparing, explaining, proposing |
+
+### Cole's rule of thumb, applied
+
+When should you build an agent? Cole's answer: "when you need that complex decision-making around the tools... you also want to build agents when brittle logic is present" ([Google, Anthropic, and OpenAI's Guides](https://www.youtube.com/watch?v=TlbcAphLGSc), 0:04:29). When should you not? "If your automations are very predictable and stable logic is enough, like just regular code or regular workflow automation, then you don't want to overengineer for an agent" (0:05:04).
+
+"Brittle logic" is the phrase to hold onto. Every Maximo shop has some: the automation script with 40 `if "LEAK" in desc` branches to guess a failure class, the escalation that tries to detect duplicate SRs by matching the first 20 characters of the description, the saved query that someone runs by hand every Monday because the logic does not fit in a where clause. Those are the places where reasoning over text beats rules. Everything else, the predictable and stable logic, should stay exactly where it is.
+
+### The decision table
+
+Use this as a first-pass filter for any proposed "AI" item on your Maximo backlog.
+
+| Question about the job | If yes, lean toward | Why |
+|---|---|---|
+| Can the rule be written as a where clause or a conditional expression? | Escalation or conditional expression | Deterministic, cheap, auditable |
+| Does it need approvals, routing to roles, or status lifecycle control? | Workflow process | Built-in assignments, history and delegation |
+| Does it set, default or validate fields on save? | Automation script (object or attribute launch point) | Runs every time, inside the transaction |
+| Is the input mostly free text (descriptions, work logs, SR details, manuals)? | Agent, or a workflow with one LLM step | Rules break on text; models do not |
+| Does the right next query depend on what the last one returned? | Agent | That is the loop; a fixed path cannot express it |
+| Will a regulator, auditor or permit system ask why it happened? | Deterministic path, agent only proposes | You need the same answer every time, with a trail |
+| Does it change financial, safety or compliance records (costs, LOTO, permits, PO approvals)? | Deterministic path plus human approval; agent never writes | Wrong answers are expensive and hard to reverse |
+| Is the output a suggestion a person already reviews? | Agent is a good fit | Human review absorbs non-determinism |
+
+A pattern that falls out of the table: in most real Maximo designs the answer is "both." The workflow or escalation owns the record and the status change. The agent sits beside it, reads, summarises and proposes, and the deterministic step consumes the proposal only after a person has accepted it. Cole describes this hybrid as "the system is controlling the agent," and notes that "putting LLMs in contained boxes... compounds into systemwide reliability upside" ([Stripe's Coding Agents Ship 1,300 PRs EVERY Week](https://www.youtube.com/watch?v=NMWgXvm--to), 0:14:02).
+
+---
+
+## 📉 Why Reliability Multiplies (and What That Means for Work Orders)
+
+The strongest argument for keeping agents small in Maximo is arithmetic. Cole puts it bluntly: "a lot of times AI agents will have something like a 95% reliability. Seems pretty good on paper, but the problem is this is reduced to a 36% reliability for the entire system if we are running 20 steps because the errors compound" ([Are Agent Harnesses Bringing Back Vibe Coding?](https://www.youtube.com/watch?v=13HP_bSeNjU), 0:21:29). At smaller scale: "if you have three agents that each individually work well 95% of the time... your whole system is only actually going to work 86% of the time" ([My Top 20 Lessons from Building 100s of AI Agents](https://www.youtube.com/watch?v=OFfwN23hR8U), 0:12:36).
+
+Run that against a Maximo scenario people love to pitch: "the agent reads the SR, finds the asset, picks the job plan, creates the work order, reserves the parts, assigns the crew and schedules it." That is at least six steps, each with its own chance of being wrong. At 95% per step the chain is right about 74% of the time. One in four work orders would have something wrong: the wrong asset in a location hierarchy with similar names, a job plan for the wrong revision, a reservation against a storeroom at the wrong site. Each of those errors lands in a live system of record, where it touches costs, inventory balances and crew time.
+
+Cole identifies three levers, all of which fall out of the formula:
+
+1. **Shorten the chain.** Fewer agent steps, fewer multiplications. In Maximo, the agent proposes the asset and the job plan; it does not also reserve and schedule.
+2. **Move known steps into deterministic code.** Once a planner accepts "asset P-1041, job plan JP-SEAL-02," Maximo's own logic (job plan application, reservations, the workflow) handles the rest. Those steps succeed by construction.
+3. **Reset the product with a human checkpoint.** A person accepting the proposal turns a 74% chain into two short chains, each checked.
+
+This is also why the MAS 9.2 Assistant design is worth studying. IBM's write-up on agentic workflows in Maximo Assistant describes write actions such as changing work order status, creating follow-up work orders and creating service requests going through the Maximo MCP server ([IBM Think: Agentic workflows in Maximo Assistant](https://www.ibm.com/think/perspectives/working-smarter-agentic-workflows-maximo-assistant)). Those are short, bounded actions on a governed tool surface, not a twenty-step autonomous plan.
+
+---
+
+## 🗺️ Which Maximo Jobs Are Agent-Shaped?
+
+With the definition, the decision table and the reliability maths in hand, you can sort a Maximo backlog. The test for "agent-shaped" is three questions: is the input mostly text, does the path vary per case, and does a person already review the output?
+
+| Maximo job | Agent-shaped? | Why | Where the human sits |
+|---|---|---|---|
+| Work order triage: suggest priority, work type, failure class, duplicates | **Yes** | Free-text descriptions; duplicate search depends on what the first lookup found | Planner accepts or edits before the WO is approved |
+| Service request summarisation for the planner or dispatcher | **Yes** | Long, messy SR text and attachments; summary varies per SR | Dispatcher reads summary, decides routing |
+| Work log and long description summary for handover or RCA | **Yes** | Dozens of entries from several crafts; needs judgement about what matters | Reliability engineer uses it as a starting point |
+| PM and job plan review: missing steps, stale tasks, safety gaps | **Yes, as a reviewer** | Comparing task text against manuals, failure history and standards | Engineer approves any job plan revision |
+| Explaining inventory reorder exceptions | **Yes, as an explainer** | Needs to read issue history, open reservations and PO lead times and tell a story | Storeroom supervisor decides whether to order |
+| Running the reorder calculation itself | **No** | Deterministic maths on min/max, EOQ, lead time; Maximo already does it | Not applicable |
+| PM work order generation from frequency or meter | **No** | Fixed schedule logic; must be identical every cycle | Not applicable |
+| SLA timers, escalation notifications | **No** | A where clause and a schedule; an LLM adds cost and variance | Not applicable |
+| Status transitions, approvals, financial approvals | **No (agent may propose)** | Lifecycle and audit belong to workflow and security | Approver, through the workflow |
+| Safety-critical steps: LOTO, permits, isolation | **No** | Must be deterministic and traceable; wrong answer is a hazard | Authorised person, always |
+| "How do I do X in Maximo?" questions | **Yes, and IBM ships one** | Product guidance RAG is a core Maximo Assistant capability | User |
+
+The pattern is clear. Agents are readers, summarisers, comparers and explainers. Maximo's existing automation is the doer. The interesting design work is at the seam, where the agent's proposal becomes an input to a deterministic step.
+
+### Single agent first
+
+A natural reaction to that table is "build one agent per row." Resist it. Cole's default is "you want to use a single agent system as much as possible because it is the simplest," and his signal to split is tool overload: "usually you don't want more than 10 to 15 tools for one agent" ([Google, Anthropic, and OpenAI's Guides](https://www.youtube.com/watch?v=TlbcAphLGSc), 0:10:38 and 0:10:52). A single planner's assistant with six read tools (WO search, asset lookup, PM lookup, job plan text, failure hierarchy, inventory balance) covers the top five rows. Split into specialists only when tool choice measurably degrades. [agm-07](/blog/agm-07-multi-agent-a2a-orchestrate) covers what to do when you get there.
+
+---
+
+## 🏢 Where IBM's Own Agents Fit
+
+Maximo teams do not have to build every agent themselves, and Cole's buy-versus-build advice applies directly. His heuristic: when the use case is classic and well solved, "it doesn't really make sense to reinvent the wheel especially when you have platforms out there that make it so easy" ([This Slack AI Personal Assistant is Better than a Real Person](https://www.youtube.com/watch?v=oMwipO6cmPQ), 0:01:04). Building is real, ongoing work, and being able to build something is not a reason to.
+
+Here is what IBM ships in MAS 9.2, limited to what IBM's documentation and posts state:
+
+- **Maximo Assistant as an agent.** The MAS 9.2 what's-new documentation says the Assistant "can now act as a single agent that analyzes requests and works across a defined set of AI tools," with example prompts such as "What assets need my attention?", "How is asset [number] doing?" and "How do I do [task] in Maximo Manage?" ([IBM: What's new in MAS 9.2](https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-whats-in-maximo-application-suite-92)).
+- **A Supervisor ALM agent (announced).** IBM's Think article describes a supervisor that understands intent, breaks a request into steps and completes them with the Assistant's tools: knowledge search, product guidance, data retrieval and condition insights. IBM describes write actions through the Maximo MCP server and says the Assistant "will also be able to use any of your automation scripts as custom tools," partly in the future tense, so treat the write actions and the Assistant's use of script tools as announced direction rather than something to plan around today ([IBM Think](https://www.ibm.com/think/perspectives/working-smarter-agentic-workflows-maximo-assistant)).
+- **The Maximo MCP server (documented).** IBM's 9.2 documentation states that customers can create custom AI tools from Manage automation scripts, object structures and workflows, and connect their own tools and agents ([IBM: What's new in MAS 9.2](https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-whats-in-maximo-application-suite-92)). So exposing an automation script as a custom MCP tool for your own agents is a documented 9.2 capability; it is the Assistant's own use of those tools that IBM has announced. An [IBM Community post](https://community.ibm.com/community/user/blogs/stefan-hoffmanns/2026/07/13/ibm-maximo-92-mcp-server-ai-integration) frames the server as exposing business capabilities that agents invoke, not raw REST endpoints.
+- **The model under the Assistant.** IBM's Feature Channel notes say you can now use gpt-oss-120b for the `nl2oslc` model template, which is the template behind the AI assistant (natural language to OSLC).
+
+Read the Assistant's design through the lens of this post and it is a textbook single agent: one LLM, a defined tool set, instructions IBM maintains, and a governed path for writes. That shapes buy versus build:
+
+| Need | Buy (IBM-native) | Build (your agent) |
+|---|---|---|
+| Product how-to questions | Maximo Assistant product guidance | Rarely worth it |
+| "How is this asset doing?" | Assistant plus asset and alert insights | Only if you need sources IBM does not cover |
+| Triage with your own rules, failure hierarchy and SLAs | Possibly, via custom tools on the MCP server | Often, starting read-only (agm-03) |
+| Cross-system jobs (Maximo plus SCADA historian, ERP, document control) | Limited | Yes, with Maximo exposed through the MCP server or OSLC |
+| Air-gapped or sovereign estates | Depends on your AI Service deployment | Self-hosted models (Part 7) |
+
+The two routes are not exclusive. The MCP server is precisely what lets a custom agent and IBM's agent share the same governed tools. TMG's own Max_mcp (a proprietary MCP server with 175 Maximo tools, distributed on npm) and the MIT-licensed Max_Interfaces catalogue of 2,439 Maximo endpoints exist for teams who want to prototype against a wider tool surface before settling on what to expose in production. Whichever route you choose, give each agent its own Maximo user, API key and security group rather than reusing an integration superuser. [Part 5](/blog/map-05-agent-security-guardrails-maximo) covers that in depth.
+
+### SDK or framework, if you build
+
+If you do build, Cole frames the next fork with two questions: "Who is going to use your agent? And what is your tolerance for things like speed and scale?" ([Everything You Thought About Building AI Agents is Wrong](https://www.youtube.com/watch?v=gmaHRwijOXs), 0:11:52). A planner's assistant used by three people can sit on a batteries-included agent SDK. A triage agent run against every incoming work order across twenty sites needs a framework like Pydantic AI or LangGraph, where you control cost, latency and determinism. [agm-03](/blog/agm-03-pydantic-ai-maximo-agent) takes the framework route; [agm-04](/blog/agm-04-n8n-local-ai-prototyping) takes the no-code prototyping route that Cole's roadmap recommends doing first.
+
+---
+
+## 🔬 Worked Scenarios
+
+### Scenario 1: The duplicate-detection escalation that kept missing
+
+A water utility had an escalation that ran every 15 minutes, looking for new SRs whose first 25 characters of description matched an open SR at the same location. It caught "Main break at" twice and missed "Water main burst on Elm" versus "Main broken, Elm St near 4th." Planners still found most duplicates by eye.
+
+**Decision:** agent-shaped. The input is free text, and a good duplicate check needs to try location, then asset, then nearby addresses depending on what each lookup returns. **Design:** keep the escalation for what it is good at (flagging new SRs older than 10 minutes with no owner). Add a read-only agent with three tools: search open SRs by location, search open work orders by asset or location, and fetch SR details. It writes nothing to Maximo. It posts a summary ("probable duplicate of SR 77812, same street segment, reported 40 minutes earlier") to the dispatcher's queue. The dispatcher links or closes with one click in Maximo, so the status change stays in the normal lifecycle.
+
+### Scenario 2: PM review before a reliability audit
+
+A reliability engineer has 340 PMs on rotating equipment and wants to know which job plans are thin: missing torque values, no lubrication step, no reference to the OEM manual. Writing a rule for "thin" is hopeless.
+
+**Decision:** agent as reviewer. **Design:** the agent pulls each PM and its job plan through `mxapipm` and the job plan object structure, reads the task descriptions, and, if a manual is indexed, compares against it (Part 3 covers retrieval). Output is a ranked list with reasons. Every finding cites the PM and job plan numbers it read, and a guardrail rejects any finding that cites a number the tools did not return. The engineer revises job plans through the normal revision process. The agent never edits a job plan.
+
+### Scenario 3: The reorder exception nobody could explain
+
+A storeroom supervisor sees a part that hit reorder three times in a month. The reorder calculation is correct; that is not the question. The question is why: a new PM consuming it, an issue to the wrong work order, a lead time that changed?
+
+**Decision:** split. The reorder itself stays deterministic. The explanation is agent-shaped, because the right next query (issue transactions, then the WOs they were issued to, then the PMs behind those WOs, then PO lead times) depends on each answer. **Design:** a read-only agent with inventory balance, material transaction, work order and PO lookup tools. It returns "Three issues to WOs generated by PM-0442, created 14 days ago with quantity 4 per cycle; lead time on the last PO was 21 days against 10 in the item record." The supervisor decides whether to change the reorder point. A storeroom agent that places orders by itself fails every row of the decision table.
+
+### Scenario 4: "Just have the AI set the priority"
+
+A team proposes an automation script on the work order save event that sends the description to a model and writes the returned priority into `WOPRIORITY`. That is a workflow with an LLM step, not an agent, and as designed it has a problem: a non-deterministic value written silently, on every save, with no review.
+
+**Decision:** if you keep the LLM step, treat it like any other integration. Write to a separate attribute (a suggested priority), show it to the planner, and let the planner set the real priority. Log the input and output. Better still, wait for a triage agent that can also look up the asset's criticality and recent history before suggesting, which is where reasoning actually adds value over a lookup table.
+
+### Scenario 5: Using the Assistant before building anything
+
+A plant manager asks for "an agent that tells me which assets need attention this week." Before anyone opens an IDE, check whether the MAS 9.2 Assistant's own asset-attention prompts and asset insights already answer it on your data. If they cover 80% of the need, the remaining 20% (your site's specific criteria) may be a custom tool on the MCP server rather than a new agent. That is buy versus build in practice.
+
+---
+
+## 🧭 How to Start: The Lifecycle, Scaled to a Maximo Pilot
+
+Cole's agent development lifecycle opens with the step everyone skips: planning. Planning "can save you hours and hours of going down the wrong rabbit holes" ([Revealing my COMPLETE AI Agent Blueprint](https://www.youtube.com/watch?v=FGeB9w1ZeHE), 0:02:43). It then builds a minimal proof of concept on the four components and adds infrastructure, monitoring and scale only after the agent works: "you need to keep things simple when you're first creating any agent" ([Learn 90% of Building AI Agents in 30 Minutes](https://www.youtube.com/watch?v=i5kwX7jeWL8), 0:08:12). His learning roadmap adds an ordering: prototype in a no-code tool, then rebuild in code, then add memory, guardrails and multi-agent structure, and remember that evaluation is most of the work, roughly a quarter coding and three quarters evaluating and improving.
+
+For a Maximo team, that becomes a four-step pilot plan:
+
+1. **Plan on one page.** Which job (one row of the table above), which object structures, which site, what a correct answer looks like, who reviews it, and what the agent must never do. Write down 20 real examples with the answer a good planner would give. Those become your first evaluation set ([agm-06](/blog/agm-06-evaluating-agents) goes deeper).
+2. **Prototype read-only.** A non-production environment, a dedicated Maximo user with a read-only security group and its own API key, and a no-code or minimal-code agent ([agm-04](/blog/agm-04-n8n-local-ai-prototyping)).
+3. **Rebuild typed and tested.** Structured output, an evidence check on every cited record, and tests that prove the agent never writes ([agm-03](/blog/agm-03-pydantic-ai-maximo-agent)).
+4. **Put it beside the workflow, not inside it.** The agent's output lands where a human already works: a queue, a work order field marked as suggested, a report. Only after weeks of measured accuracy do you consider letting an accepted proposal trigger a deterministic step.
+
+There is also the question of how much autonomy to aim for at all. Cole borrows Dan Shapiro's five levels of AI coding autonomy, from "spicy autocomplete" to the "dark factory," and argues that the middle level, where you delegate the work but take part in planning and validation, is the sweet spot ([The Best AI Coding Setup Isn't the Most Autonomous One](https://www.youtube.com/watch?v=muwRbfuKbR4), 0:00:18). The ladder is about coding agents, but the lesson carries straight over to operational agents in Maximo. The goal is not maximum autonomy. It is the level of delegation your validation can actually back, and for most Maximo jobs today that means "agent proposes, person disposes."
+
+---
+
+## ⚠️ Pitfalls
+
+- **Calling an LLM-in-a-script an agent.** If the model cannot choose tools or loop, it is a deterministic process with a non-deterministic step. Govern and test it as such, and do not expect agent-like flexibility from it.
+- **Replacing rules that work.** An escalation that sends SLA reminders is cheap, exact and auditable. Swapping it for an agent adds cost, latency and variance for no gain. Cole's warning about over-engineering applies.
+- **Write access on day one.** Every write tool multiplies the cost of a wrong answer. Start with GET-only tools and a read-only security group, and add writes one at a time, behind confirmation.
+- **Long autonomous chains.** "Read SR, create WO, reserve parts, schedule crew" is a reliability calculation you will lose. Break it at the human checkpoint.
+- **Trusting cited record numbers.** Models invent plausible-looking work order numbers and failure codes. Check every cited ID against what the tools actually returned, and reject the answer if it does not match.
+- **Too many tools on one agent.** Exposing every object structure, or a 175-tool MCP catalogue, to a single agent degrades tool choice. Keep it under 10 tools to start, and split into specialised agents once you pass 10 to 15, which is where Cole sees tool choice start to degrade.
+- **Sharing the integration superuser.** Agents need their own identity so their actions are attributable and their permissions are minimal. MAXADMIN credentials in an agent config is an audit finding waiting to happen.
+- **Skipping evaluation.** A demo on five hand-picked work orders proves nothing. Twenty to fifty real cases with known answers, rerun on every change, is the minimum.
+- **Ignoring what IBM already ships.** Check the 9.2 Assistant and MCP server before you build. You may only need a custom tool, not a custom agent.
+- **Assuming announced equals shipped.** Some agentic capabilities in IBM's posts are written in the future tense. Confirm against the documentation for your MAS version and channel before you plan around them.
+
+---
+
+## Key Takeaways
+
+- An AI agent is an LLM plus tools, instructions and memory, running a reason-act-observe loop that decides for itself how many tool calls a job needs. No tool, no agent.
+- Maximo already has excellent deterministic automation in workflows, escalations and automation scripts. Agents add judgement over unstructured data; they do not replace rules, and an LLM call inside a script is not an agent.
+- Agent-shaped Maximo jobs are text-heavy, variable and already human-reviewed: work order and SR triage, work log summaries, PM and job plan review, and explaining reorder exceptions.
+- Reliability multiplies across steps. Keep agent chains short, push known steps into deterministic Maximo logic, and put a person where records change.
+- MAS 9.2's Maximo Assistant is itself a single agent over a defined tool set, and the Maximo MCP server lets your own agents use the same governed tools. Check what you can buy before you build.
+
+---
+
+## References
+
+1. Cole Medin, *Learn 90% of Building AI Agents in 30 Minutes* — https://www.youtube.com/watch?v=i5kwX7jeWL8 (agent definition 0:01:44; no tool means no agent 0:03:05; keep it simple 0:08:12)
+2. Cole Medin, *Google, Anthropic, and OpenAI's Guides to AI Agents ALL in 18 Minutes* — https://www.youtube.com/watch?v=TlbcAphLGSc (agent decides how many actions 0:01:49; when to build an agent 0:04:29, 0:05:04; four components 0:05:04–0:05:19; diagnosing by component 0:06:06; ReAct 0:06:35; single agent first 0:10:38; 10 to 15 tools 0:10:52)
+3. Cole Medin, *Are You Building REAL AI Agents or Just Using LLMs?* — https://www.youtube.com/watch?v=GYFTQU2iV4A (workflow that just happens to have an LLM inside 0:00:17; non-determinism 0:01:44; workflows vs agents, Anthropic clip 0:03:04–0:03:18)
+4. Cole Medin, *Give Me 28 Minutes and I'll Completely Change the Way You Build AI Agents* — https://www.youtube.com/watch?v=TV8SyEuSMIA (seven node blueprint 0:01:08)
+5. Cole Medin, *Are Agent Harnesses Bringing Back Vibe Coding?* — https://www.youtube.com/watch?v=13HP_bSeNjU (95% per step to 36% over 20 steps 0:21:29)
+6. Cole Medin, *My Top 20 Lessons from Building 100s of AI Agents (Super Actionable)* — https://www.youtube.com/watch?v=OFfwN23hR8U (compounding non-determinism 0:12:00, 0:12:36)
+7. Cole Medin, *Everything You Thought About Building AI Agents is Wrong* — https://www.youtube.com/watch?v=gmaHRwijOXs (SDK vs framework 0:11:52)
+8. Cole Medin, *The Best AI Coding Setup Isn't the Most Autonomous One (Here's Why)* — https://www.youtube.com/watch?v=muwRbfuKbR4 (five levels of autonomy 0:00:18)
+9. Cole Medin, *Revealing my COMPLETE AI Agent Blueprint* — https://www.youtube.com/watch?v=FGeB9w1ZeHE (planning first 0:02:43)
+10. Anthropic, *Building effective agents* — https://www.anthropic.com/engineering/building-effective-agents
+11. IBM, *Working smarter with agentic workflows in Maximo Assistant* — https://www.ibm.com/think/perspectives/working-smarter-agentic-workflows-maximo-assistant
+12. IBM, *Introducing Maximo Application Suite 9.2* — https://www.ibm.com/new/announcements/introducing-maximo-application-suite-9-2
+13. IBM Documentation, *What's new in Maximo Application Suite 9.2* — https://www.ibm.com/docs/en/masv-and-l/cd?topic=new-whats-in-maximo-application-suite-92
+14. IBM Documentation, *Action launch point* (automation scripts run from workflows and escalations) — https://www.ibm.com/docs/SSLPL8_cd/com.ibm.mbs.doc/autoscript/c_action_launch_point.html
+
+---
+
+## Series Navigation
+
+**The Agentic AI Playbook for Maximo**
+
+- [Part 0: Series Index: The Agentic AI Playbook for Maximo](/blog/map-00-series-index)
+- **Part 1: What Is an AI Agent, Really? A Field Guide for Maximo Teams** (you are here)
+- [Part 2: Prompts, Tools and Context for Maximo Agents: Designing What the Model Actually Sees](/blog/map-02-prompts-tools-context-maximo)
+- [Part 3: RAG Strategies for Maximo Data: Which Retrieval for Which Records](/blog/map-03-rag-strategies-maximo-data)
+- [Part 4: MCP and Tool Design for Maximo: Fewer, Sharper Tools Beat a 175-Tool Buffet](/blog/map-04-mcp-tool-design-maximo)
+- [Part 5: Securing Maximo Agents: The Lethal Trifecta, Prompt Injection and Guardrails That Hold](/blog/map-05-agent-security-guardrails-maximo)
+- [Part 6: The AI Layer for Maximo Development: Rules, Commands, Hooks and Validation for Agentic Coding](/blog/map-06-ai-layer-agentic-coding-maximo)
+- [Part 7: Local and Self-Hosted AI for Maximo: A Playbook for Regulated Shops](/blog/map-07-local-self-hosted-ai-maximo)
+- [Part 8: Maximo Agents in Production: Deployment, Voice in the Field, and Agents That Run While You Sleep](/blog/map-08-production-agents-voice-long-running)
+
+**Companion builds:** [agm-03: Building a Typed Maximo Agent with Pydantic AI](/blog/agm-03-pydantic-ai-maximo-agent) · [agm-04: n8n and Local AI Prototyping](/blog/agm-04-n8n-local-ai-prototyping)

@@ -1,0 +1,560 @@
+---
+title: "Maximo Agents in Production: Deployment, Voice in the Field, and Agents That Run While You Sleep"
+description: "The last mile of the Agentic AI Playbook for Maximo: packaging an agent as a container and API endpoint next to MAS, per-user API keys and multi-tenancy, observability and cost per run, a hands-free voice agent for technicians reading job plans and safety plans, heartbeat and event-driven agents fed by publish channels and Kafka, long-running loops with a human gate, and a production readiness checklist."
+date: "2026-11-19"
+slug: "map-08-production-agents-voice-long-running"
+tags: ["Maximo", "MAS 9.2", "AI Agents", "Production AI", "Voice Agents", "LiveKit", "OpenShift", "Observability", "Kafka", "Agent Deployment", "Cole Medin"]
+draft: true
+tier: "developer"
+author: "Krishna Neela"
+coverImage: "./images/map-08-production-agents-voice-long-running.png"
+authorTitle: "AI Engineer"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "Where should a custom Maximo agent run in production?"
+    answer: "Put it in a container and run it as close to Manage as your security model allows. For customer-managed MAS that usually means a separate namespace on the same Red Hat OpenShift cluster, reaching Manage through its route or internal service, with secrets in OpenShift Secrets or a vault and outbound egress limited to Manage, your model provider and your trace backend. For MAS SaaS, run it in your own cloud account and call the Manage REST API over HTTPS. Either way, wrap the agent in an HTTP API (FastAPI is the common choice) so the same agent can serve a chat panel, a Maximo Mobile companion, a scheduled job and a webhook without four codebases."
+  - question: "Should a production Maximo agent use one shared API key?"
+    answer: "No. A Manage API key belongs to a Maximo user, and every call made with it runs with that user's security groups, sites and data restrictions. One shared key on an agent that serves fifty planners means every planner sees what the service account sees. For interactive agents, propagate the requesting user's identity, either by exchanging their session for their own key or by passing a token Manage can validate, so Maximo's existing security decides what they can read. Reserve a narrowly scoped service-account key for unattended jobs such as an overnight PM sweep, and give that account read-only object structures unless a write is explicitly designed and approved."
+  - question: "Can a voice agent work for technicians wearing hearing protection in a noisy plant?"
+    answer: "Partly, and you should design for the limits. A cascaded pipeline of speech-to-text, LLM and text-to-speech lets you pick an STT model that copes with noise and add noise suppression or voice isolation before voice activity detection, which LiveKit documents for exactly this case. But a push-to-talk button on a ruggedised headset beats always-on listening near compressors, and every safety-critical step (isolation points, permit numbers, torque values) should be read back verbatim from the Maximo record, confirmed by the technician, and logged. Where hearing protection or a respirator makes speech unreliable, fall back to the Maximo Mobile screen rather than forcing voice."
+  - question: "How do I trigger a Maximo agent from events instead of a chat window?"
+    answer: "Use what Manage already emits. A publish channel with its event listener enabled can push a work order, asset or PM change to an external system, and that external system's endpoint can be an HTTP handler in front of your agent or a Kafka queue the agent consumes. IBM's integration framework supports Kafka as a message provider for publish channels and enterprise services. For time-based work, a scheduler (an OpenShift CronJob, or a Manage cron task that calls out) wakes the agent on a heartbeat. Keep the expensive context gathering deterministic: query Manage in code first, then hand the agent a compact, pre-filtered payload."
+  - question: "What does a Maximo agent cost to run, and how do I keep it under control?"
+    answer: "Measure it per run, not per month. Your trace backend should record tokens in and out, model, latency and tool calls for every run, tagged with the agent, the trigger and the Maximo site, so you can say an overnight PM compliance sweep for one site costs a known amount. Then cut cost where the traces show waste: route classification and summarisation to a small model and reserve the large model for reasoning steps, pre-filter Maximo data in code so the model never reads 3,000 work orders, cache stable context such as job plan text, and put hard caps on iterations and tokens per run. If you use IBM's own AI features, MAS 9.2 also shows AI Service AppPoint consumption on the licensing dashboards."
+keyTakeaways:
+  - "Shipping an agent to other people is a re-architecture, not a deploy step: concurrency, live Maximo data and per-user access control arrive the day the second user logs in"
+  - "Containerise the agent, expose it as one HTTP API, and run it beside MAS with per-user Manage identity for interactive work and a narrow service key for unattended jobs"
+  - "Voice in the field is a cascaded STT, LLM, TTS pipeline with noise handling, push-to-talk and verbatim read-back of safety-critical steps; Maximo Mobile stays the system of record on the device"
+  - "Proactive agents are where Maximo value compounds: heartbeats and publish-channel or Kafka events trigger agents that gather context deterministically, then reason over a small payload"
+  - "No agent goes live without traces, cost per run, iteration caps, a human approval gate for writes, and the evals from agm-06 running as a deploy gate"
+series:
+  name: "The Agentic AI Playbook for Maximo"
+  part: 8
+  total: 8
+series_part: 8
+tldr: "Part 8 closes the Agentic AI Playbook for Maximo by taking agents from a laptop to production and to the field. It adapts Cole Medin's teaching on production-grade agents, deployment, observability, voice pipelines, heartbeats, webhooks and long-running loops to MAS 9.x Manage. You get: a reference architecture for running an agent as a container and API endpoint beside MAS on OpenShift (or beside MAS SaaS), how Manage API keys and per-user identity shape multi-tenancy, what to trace and how to compute cost per run, a hands-free voice agent design for technicians reading job plans and safety plans under noise and PPE constraints and how it sits next to Maximo Mobile, proactive agents triggered by heartbeats, publish channels and Kafka (with an overnight PM compliance sweep as the worked example), long-running loops with a human gate, a production readiness checklist, and a learning path for where to go next."
+seoTitle: "Maximo AI Agents in Production: Deploy, Voice, Events"
+seoDescription: "Deploy Maximo AI agents beside MAS, add voice for field technicians, trigger agents from publish channels and Kafka, and track cost per run."
+targetQuestions:
+  - "How do I deploy an AI agent next to IBM Maximo Application Suite?"
+  - "Can I build a voice agent for Maximo technicians in the field?"
+  - "How do I trigger an AI agent from Maximo events or on a schedule?"
+  - "What should a production readiness checklist for a Maximo AI agent include?"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Parts 1-7 of this series, especially Part 4 (MCP tool design) and Part 5 (security and guardrails)"
+  - "A non-production MAS 9.x Manage environment and an API key for a test user"
+  - "Basic familiarity with containers and Red Hat OpenShift or another container platform"
+  - "Working knowledge of Maximo publish channels, external systems and cron tasks"
+speakableSections:
+  - "From Demo to Duty Roster"
+  - "A Voice Agent for the Field"
+  - "Agents That Wake Themselves Up"
+clusterSlugs:
+  - "map-00-series-index"
+  - "map-01-what-is-an-ai-agent-maximo"
+  - "map-02-prompts-tools-context-maximo"
+  - "map-03-rag-strategies-maximo-data"
+  - "map-04-mcp-tool-design-maximo"
+  - "map-05-agent-security-guardrails-maximo"
+  - "map-06-ai-layer-agentic-coding-maximo"
+  - "map-07-local-self-hosted-ai-maximo"
+relatedSlugs:
+  - "agm-06-evaluating-agents"
+  - "agm-03-pydantic-ai-maximo-agent"
+  - "agm-02-harnesses-software-factories"
+---
+
+# Maximo Agents in Production: Deployment, Voice in the Field, and Agents That Run While You Sleep
+
+> Concepts in this series are adapted from [Cole Medin's YouTube channel](https://www.youtube.com/@ColeMedin) and the Dynamous AI Mastery community (dynamous.ai), and applied to IBM Maximo by TheMaximoGuys.
+
+> 🎯 **Who this is for:** Maximo technical leads, integration developers and platform engineers who have a working agent prototype and now have to put it in front of planners, technicians and auditors without it becoming the next incident.
+
+**Series:** Part 8 of 8 — *The Agentic AI Playbook for Maximo* | **Read time:** 37 minutes
+
+---
+
+## 🚚 From Demo to Duty Roster
+
+Every Maximo agent project hits the same wall. The prototype works on the developer's laptop. It answers "what is overdue at site BEDFORD?" with real work orders, it summarises a failure history, it drafts a follow-up work order for review. The demo lands well. Then someone asks the questions that decide whether it ships: who is it running as, where does it run, what happens when forty planners use it at 7:30 on a Monday, how much did last night cost, and how will we know when it gets something wrong?
+
+Cole Medin draws this line sharply. In his video on why personal knowledge agents stop scaling, he says that "when you want to ship an agent to other people, you no longer can use the... locally running agent setup" (0:00:32), because "as soon as other people are using your agent... you have live data, you need to care about things like access control and retrieval at scale" (0:02:11). His conclusion is the one Maximo teams need to hear: shipping to other people is a re-architecture, not a deployment step.
+
+Maximo makes that line sharper than most domains. The data is live and regulated. Security is enforced per user, per site and per security group. Work orders become legal records once they are approved. Technicians work in places with no signal, high noise and gloves on. And the most valuable agent behaviour is often not conversational at all: it is the agent that notices, overnight, that a compliance PM is about to slip.
+
+This final part of the series covers the last mile. We will deploy the agent as a container and an API endpoint beside MAS, give it a sane identity model, make it observable down to the cost of each run, take it into the field with voice, wake it up with heartbeats and Maximo events, let it run long jobs under a human gate, and finish with a production readiness checklist and a learning path. Evaluation is the one production topic we only summarise here, because [Part 6 of the Agentic Engineering series, Evals for Maximo Agents](/blog/agm-06-evaluating-agents), covers it in depth.
+
+---
+
+## 📌 The Short Version
+
+| Production concern | What Cole teaches | What it means on MAS 9.x |
+|---|---|---|
+| Packaging | Containerise with Docker so the environment is deterministic and portable | Build an OCI image, run it in its own OpenShift namespace beside Manage (or in your cloud next to MAS SaaS) |
+| Interface | Wrap the agent in an API endpoint so any front end can use it | One FastAPI service serves the chat panel, the field companion, webhooks and scheduled jobs |
+| Identity | Multi-tenant agents need per-user authorization, not one baked-in account | Requests run as the requesting Maximo user; unattended jobs use a narrow service key |
+| Observability | "You cannot skip this step"; trace tool calls, tokens, latency and cost | Every run traced and tagged with agent, trigger, site and Maximo record IDs |
+| Cost | Route easy work to cheap models; measure before optimising | Cost per run per site, small models for classification, deterministic pre-filtering of Manage data |
+| Voice | STT, LLM, TTS pipeline; latency and audio hygiene are the traps | Push-to-talk, noise suppression, verbatim read-back of safety steps, Maximo Mobile as fallback |
+| Proactivity | Heartbeats and webhooks turn reactive assistants into proactive ones | Cron heartbeats, publish channels with event listeners, Kafka queues |
+| Long-running work | Fresh context per round, state on disk or in a database, a human gate | Overnight sweeps and data-quality loops recorded per run, parked for approval at the cap |
+| Evaluation | Evals as a deploy gate | The golden datasets and graders from agm-06 run on every change |
+
+---
+
+## 🧱 What Production-Grade Means for a Maximo Agent
+
+Cole's definition of a production-grade agent is refreshingly unglamorous. It is the scaffolding that keeps an agent reliable under real traffic: validation, error handling, testing, structured output, logging, observability and monitoring, not merely an LLM wired to a few tools. He is emphatic that testing is load-bearing: "you do not want to skimp out on testing your agents extensively because this is the way that you make sure you cover all your edge cases" (Revealing my COMPLETE AI Agent Blueprint, 0:09:43).
+
+For a Maximo agent, translate each of those into something an auditor or a Maximo administrator would recognise.
+
+**Validation** means the agent's inputs and outputs are typed and checked against Manage, not just against a schema. A proposed follow-up work order must reference an asset that exists at the site the user is authorised for, a failure class that exists in the failure hierarchy, and a job plan whose status is ACTIVE. Part 3 of the Agentic Engineering series showed the cheapest version of this: an output validator that rejects any work order number or failure code the tools did not actually return ([agm-03](/blog/agm-03-pydantic-ai-maximo-agent)).
+
+**Error handling** means the agent degrades predictably when Manage is slow or down. A Manage pod restart during a rolling update should produce "Maximo is unavailable, try again in a few minutes," not a hallucinated answer built from the model's memory of what work orders usually look like. Timeouts, retries with backoff and a clear failure message belong in the tool layer, not in the prompt.
+
+**Structured output** means anything that may become a Maximo record is a typed object, not prose. A draft service request, a suggested priority, a list of overdue PMs: each has a shape a reviewer can approve field by field.
+
+**Logging and observability** we cover in its own section below. **Monitoring** means someone is alerted when the error rate, latency or cost per run moves, before a planner complains.
+
+The Maximo-specific additions are the ones generic agent guides miss:
+
+- **Site and organisation scoping.** Every query carries the site context of the person or job it serves. An agent that answers across all sites because its service account can is a data leak, even if nobody notices for months.
+- **Status discipline.** Agents propose; workflows and people approve. An agent should never move a work order from WAPPR to APPR on its own unless that exact transition has been designed, reviewed and logged. Part 5 of this series covers the guardrails in detail ([map-05](/blog/map-05-agent-security-guardrails-maximo)).
+- **Record provenance.** Anything the agent writes is marked as agent-originated, for example through a dedicated person ID on the created-by field and a long-description note, so reports can separate human and agent work.
+- **Upgrade resilience.** MAS ships on a fast cadence. IBM's Manage patch levels moved roughly monthly through late 2026. An agent that depends on screen scraping or undocumented fields breaks on upgrade; one that depends on object structures and documented APIs usually does not.
+
+---
+
+## 🐳 Deploying the Agent Next to MAS
+
+Cole's deployment advice is consistent across years of videos. "The key for me for deploying my AI agents to production is to use a tool called Docker," he says in his learning roadmap (How I'd Learn AI Agents FAST if I Had to Start Over, 0:12:36), because a container gives "this deterministic set of steps to get everything set up for your agent... this perfect little isolated environment that you can put anywhere" (Deploying Billions of AI Agents is Easier than You Think, 0:05:11). The resource needs are modest: in Learn 90% of Building AI Agents in 30 Minutes (0:28:15) he says "a couple of vCPUs and a few gigabytes of RAM is all you need to run an AI agent," as long as the model itself is a third-party API. The runtime shape follows the workload: a background agent that runs periodically suits a scheduled or serverless job, while a conversational agent runs as a long-lived container with a front end.
+
+MAS adds one advantage most agent builders do not have: a container platform already exists. Customer-managed MAS runs on Red Hat OpenShift. That cluster already has routes, secrets, network policies, image registries and monitoring. Use them.
+
+### Reference shape
+
+| Component | Where it runs | Notes |
+|---|---|---|
+| Agent API (FastAPI or equivalent) | Own namespace on the MAS OpenShift cluster, or your cloud for MAS SaaS | Stateless pods; scale horizontally; health and readiness probes |
+| Scheduler for heartbeats | OpenShift CronJob in the same namespace | One CronJob per proactive agent; concurrency policy Forbid |
+| Event consumer | Deployment reading a Kafka topic, or an HTTP route receiving publish-channel messages | Idempotent handlers keyed on the Maximo record ID and change timestamp |
+| Session and run store | Postgres (or the database your platform team supports) | Conversation state, run history, approval queue |
+| Trace backend | Langfuse, Logfire, or any OpenTelemetry-compatible collector | Self-hosted if traces may contain Maximo data you cannot send out |
+| Model endpoint | Provider API, watsonx.ai, or a self-hosted model (see [map-07](/blog/map-07-local-self-hosted-ai-maximo)) | Egress allow-listed; keys in a secret store |
+| Maximo tools | Manage REST API (`/maximo/api/os/mxapi*`), the MAS 9.2 Maximo MCP server, or Max_mcp | Read-only object structures by default |
+
+Cole's most common container mistake also applies here: "this whole like localhost versus host.docker.internal versus using the service name, that's the thing I see people get tripped up on the most" (The Ultimate Guide to Local AI and AI Agents, 1:35:00). On OpenShift the equivalent trap is calling Manage through its public route from inside the cluster when an internal service name would avoid a hairpin through the ingress, or the reverse, calling an internal service name your network policies block. Decide once, write it into the deployment manifest, and test it from a pod, not from your laptop.
+
+### The agent as an API endpoint
+
+Cole's argument for wrapping an agent in an API is reuse: "you turn it into an API endpoint and then you can hook it into really any front end" (The GLOW-UP Every AI Agent Needs, 0:05:28). For Maximo this is decisive. The same triage agent should serve a side panel in a role-based application, a field companion on a tablet, a Teams or Slack bot for supervisors, a webhook from a publish channel and a nightly CronJob. Five front ends, one agent, one set of tests, one trace stream.
+
+A minimal, illustrative endpoint contract looks like this:
+
+```python
+# Illustrative only: the shape of a Maximo agent API, not a complete service.
+from fastapi import FastAPI, Depends, Header, HTTPException
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class AskRequest(BaseModel):
+    question: str
+    siteid: str                 # the site the user is working in
+    session_id: str | None = None
+    channel: str = "chat"       # chat | mobile | webhook | heartbeat
+
+class AskResponse(BaseModel):
+    answer: str
+    cited_records: list[str]    # WONUMs, ASSETNUMs, JPNUMs the answer relied on
+    proposed_actions: list[dict] = []  # never executed here; routed to approval
+    run_id: str                 # joins this response to its trace
+
+async def maximo_identity(authorization: str = Header(...)):
+    # Validate the caller's token against your IdP and resolve the Maximo user.
+    # Return a per-user Manage credential, never a shared admin key.
+    ...
+
+@app.post("/v1/ask", response_model=AskResponse)
+async def ask(req: AskRequest, who=Depends(maximo_identity)):
+    if req.siteid not in who.authorised_sites:
+        raise HTTPException(403, "Site not authorised for this user")
+    return await run_agent(req, who)   # traced, capped, and logged
+```
+
+The four fields that matter more than the framework are `siteid`, `cited_records`, `proposed_actions` and `run_id`. They make the agent's answers auditable, keep writes out of the request path, and let support staff jump from a user complaint straight to the trace.
+
+### Streaming
+
+Users expect to see the answer forming. Cole calls streaming table stakes: "it's definitely an expectation at this point that your AI agent will produce the output in real time" (AG-UI Just Released, 0:02:26). For a Maximo agent, stream two things: the text, and progress events for tool calls ("Looking up open work orders for pump P-1042..."). A planner who sees that the agent is querying the right asset trusts the wait. One caveat from Cole's material is worth keeping: when the output is a structured object that the app must act on, such as a draft work order, stream the narrative but deliver the object only when it is complete and validated.
+
+### Where the agent lives in the UI
+
+Cole's work on generative UI and agentic experiences describes a spectrum from a plain chat box to an agent that reads and manipulates the whole interface. For Maximo the pragmatic middle is an embedded panel: the agent sees the record the user has open (the work order, its asset, its job plan) and renders answers as components (a table of related work orders, a card for a suggested failure code) rather than walls of text. An embeddable widget, which Cole describes as "a script tag if you want to have it as a chat widget or an iframe" (Turn ANY AI Agent into a Live Person, 0:10:34), is the fastest way to pilot this on an internal portal. Inside MAS itself, check what your version supports for extending role-based applications before promising a panel in the Work Order screen; IBM's own Maximo Assistant already occupies that surface in 9.1 and later.
+
+---
+
+## 🔐 Identity, API Keys and Multi-Tenancy
+
+Cole's warning about multi-tenant agents is that "most agents are built with a single Gmail account in mind or a single Slack account or a single rag knowledge base and that my friend will not scale" (Why is Everyone Missing This with AI Agents?!, 0:00:29). The Maximo version of the single Gmail account is the single admin API key in an environment variable.
+
+Here is how Manage API keys actually behave. A Manage API key is created for a specific Maximo user in the API Keys application (under Integration in Manage), or scripted through the `MXAPIAPIKEY` object structure using a tightly held admin key, and every request made with it runs as that user. Do not reach for the 7.6-era `apitoken/create` call with a `maxauth` header: on MAS 9.1 it is reported to fail with HTTP 403 and BMXAA7901E, because `maxauth` is not supported for Manage authentication in MAS. Our [LDAP, service accounts and API keys article](/blog/mas-secops-ldap-api-keys) documents the failure and the `MXAPIAPIKEY` create, list and delete calls that replace it. IBM recommends sending the key as an `apikey` request header rather than a query parameter, and setting the system property `mxe.apikeyforloggedinuser` restricts key creation to the logged-in user. MAS suite-level admin API keys are a different mechanism with a different header and should never be used for Manage data access by an agent.
+
+That "runs as that user" property is the whole design. Maximo already knows which sites, organisations, security groups and data restrictions apply to each person. If the agent calls Manage as the person asking, Maximo enforces all of it for free. If the agent calls Manage as a super-user, you have rebuilt Maximo security inside a prompt, and prompts are not security.
+
+| Agent mode | Identity to use | Why |
+|---|---|---|
+| Interactive chat for planners and supervisors | The requesting user's own Manage identity | Site, org and data restrictions apply automatically |
+| Field companion (voice or tablet) | The technician's identity, same as their Maximo Mobile login | Labor, crew and assignment filters match what they already see |
+| Overnight heartbeat sweep | Dedicated service user, read-only object structures, scoped sites | No human present; blast radius must be small and known |
+| Event-driven handler (publish channel, Kafka) | Dedicated service user per integration | Auditable; can be disabled without touching people |
+| Agent that proposes writes | Proposals stored in the agent's own queue; a human approves in Maximo or a reviewed tool executes under their identity | Status changes and record creation stay attributable to a person |
+
+Two practical notes. First, key lifecycle: service keys need an owner, an expiry and a rotation runbook, exactly like any other integration credential. Second, the MAS 9.2 Maximo MCP server changes where tools come from but not who they run as. IBM's 9.2 documentation says customers can create custom AI tools from Manage automation scripts, object structures and workflows and connect their own agents, and an IBM Community post describes the server as exposing business capabilities rather than raw REST endpoints. A tool built on an object structure still inherits the permissions of the identity the call runs as. Part 4 covers tool design for that server ([map-04](/blog/map-04-mcp-tool-design-maximo)), and our [securing AI agents and MCP article](/blog/mas-secops-securing-ai-agents-mcp) builds the least-privilege service-identity pattern for agents that connect through it.
+
+---
+
+## 🔭 Observability and Cost per Run
+
+Cole does not soften this one. "The last thing that is core to all of my AI agents is Langfuse. This is for agent observability. And you cannot skip this step" (The ONLY AI Tech Stack You Need in 2026, 0:10:58). Without it, "you're flying completely blind when your agent is out there running in the wild. When it fails, you'll have no idea why" (If You're Serious About Building AI Agents, This is Your Secret Weapon, 0:01:08). He goes further: "I would highly recommend against deploying any AI agent into production without having a platform like Langfuse backing you up" (same video, 0:27:11).
+
+The tool matters less than the discipline. Langfuse, Logfire, Sentry or a plain OpenTelemetry collector all work. What matters is what you record and how you tag it.
+
+### What to capture on every run
+
+| Field | Example | Why it matters for Maximo |
+|---|---|---|
+| `run_id` | `run_7f3a...` | Joins a planner's complaint to the exact trace |
+| Trigger | `chat`, `voice`, `heartbeat:pm-sweep`, `event:MXWOInterface` | Separates interactive cost from automation cost |
+| Maximo identity | `PLANNER_J`, `SVC_AGENT_PM` | Who the agent acted as; essential for audit |
+| Site and org | `BEDFORD`, `EAGLENA` | Cost and quality per site; catches cross-site leakage |
+| Tool calls | `mxapiwo` query with `oslc.where`, row count, latency | Shows whether the agent asked Manage the right question |
+| Records cited | WONUMs, ASSETNUMs, PMNUMs | Proves grounding; feeds evals |
+| Model and tokens | model ID, input tokens, output tokens | Cost per run |
+| Outcome | answered, refused, escalated, proposal created, error | Quality trend over time |
+| Human verdict | approved, edited, rejected | The best eval data you will ever get |
+
+A warning specific to Maximo: traces contain data. Long descriptions, worklogs and asset locations may be commercially sensitive or, in utilities and nuclear, regulated. Self-host the trace backend inside the same boundary as MAS, or configure content capture off and record only IDs and metrics. Decide this with your security team before go-live, not after the first trace export.
+
+### Cost per run, not cost per month
+
+Cole's cost advice starts from the uncomfortable truth that "when you have a full production application with a lot of users you are quickly going to get a bill for thousands of dollars" (AI is TOO EXPENSIVE if You Don't Do This, 0:00:00). His core move is routing: "it is Pennies on the dollar if most of the requests can go to the cheaper model even if you have to pay for this first step of using the AI router" (0:02:19).
+
+For Maximo agents, four levers usually dominate, and traces tell you which one to pull first:
+
+1. **Deterministic pre-filtering.** The biggest waste is letting the model read data code could have filtered. If the question is "which compliance PMs at BEDFORD are due in the next 7 days and have no open work order," that is an `oslc.where` query and a join in Python, not a model task. Hand the model 14 rows, not 3,000.
+2. **Model routing.** Classifying a service request, extracting an asset number from free text, or summarising a worklog are small-model jobs. Reasoning across failure history to propose a root cause may need a larger one.
+3. **Caching stable context.** Job plan text, safety plan hazards and precautions, and classification hierarchies change rarely. Cache them by ID and revision, and use your provider's prompt caching for the system prompt and tool definitions.
+4. **Hard caps.** Every run gets a maximum number of tool calls, a token budget and a wall-clock limit. A loop that hits the cap stops and reports, it does not keep going.
+
+If you also use IBM's native AI features, IBM's 9.2 documentation says MAS 9.2 makes AI Service AppPoint consumption visible on the licensing dashboards (AI configuration, Actions, Check AppPoints). Put that number next to your own cost per run when you compare build versus buy.
+
+---
+
+## 🎙️ A Voice Agent for the Field
+
+This is the section most Maximo teams want to skip to, so let us be honest about it first. A voice agent for technicians is genuinely useful and genuinely hard. The value is obvious: a technician halfway up a ladder with gloves on cannot scroll a job plan. The difficulty is everything around the model.
+
+### The pipeline
+
+Cole describes the standard architecture in one sentence: "you have your speech-to-text model that sits at the front and then it goes to the large language model... and then the response goes through a text-to-speech model so that we have the voice come out" (Build Your First Voice AI Agent in 20 Minutes with LiveKit, 0:03:45). He also notes the alternative, a single voice-to-voice model, such as OpenAI's realtime API (0:04:15). The three-stage pipeline wins for Maximo because each stage is swappable and inspectable: you can choose an STT model that copes with industrial noise, keep the LLM you already evaluated, and choose a TTS voice that is intelligible through ear defenders, and the text between stages is loggable.
+
+The Dynamous AI Mastery community has a workshop that builds a LiveKit voice agent over a Postgres and pgvector knowledge base, using a separate speech-to-text provider, a fast and inexpensive LLM, a text-to-speech voice and a voice-activity detector, with interruption handling and spoken source citations. It was built from a requirements document through a generated PRP, the same context-engineering method covered in [agm-01](/blog/agm-01-context-engineering-prps). The design lesson that transfers to Maximo is the citation habit: a voice answer that names its source ("from job plan JP-PUMP-07, task 30") is one a technician can check on the screen.
+
+### The Maximo voice agent, task by task
+
+A useful first scope is narrow: read-only assistance for executing an assigned work order.
+
+| Technician says | Agent does | Source of truth |
+|---|---|---|
+| "Next task." | Reads the next job plan task description, and its long description on request | Work order tasks (`WOACTIVITY`, copied from the job plan) via `mxapiwodetail` / `woactivity` |
+| "What are the hazards?" | Reads the safety plan hazards and precautions for this work order, verbatim | Work order safety plan records |
+| "What are the isolation points?" | Reads lock-out/tag-out points in order and asks for confirmation of each | Safety plan tag-out and lock-out data |
+| "What torque for the coupling bolts?" | Quotes the value from the task text or attached procedure, with the source named | Task long description or linked document |
+| "Last time this pump failed?" | Summarises recent failure history for the asset | Asset work history, failure reporting |
+| "Log thirty minutes on task 20." | Drafts a labor entry and reads it back; the technician confirms on screen | Proposal only; saved through Maximo Mobile |
+
+Notice what is not on the list: changing statuses, approving permits, completing the work order. Those stay on the device in Maximo Mobile, with the technician's thumb on the button.
+
+### Noise, PPE and turn-taking
+
+Cole flags the two practical traps of voice: latency compounding across stages, and audio hygiene. His own example is the agent hearing its own reply through a speaker: "it actually picked it up and thought I was talking" (Use Open WebUI with Your N8N AI Agents, 0:25:03). On a plant floor that problem is multiplied by compressors, pumps, radios and other people.
+
+LiveKit's documentation addresses this directly. Its agent sessions support configurable turn detection (a turn-detector model, VAD, STT endpointing or manual), and its tuning guide recommends voice isolation for single-speaker scenarios or background noise suppression for multi-speaker ones, both applied before VAD and STT so every downstream signal improves. Even with that, design rules for the field are stricter than for an office:
+
+- **Push-to-talk over always-listening.** A button on a headset or the tablet removes most false triggers and makes the interaction deliberate. Manual turn detection exists for exactly this.
+- **Verbatim for safety-critical content.** Hazards, precautions, isolation points, permit numbers and torque values are read exactly as stored, never paraphrased by the model. Generate the speech from the record text, not from a summary.
+- **Read back and confirm.** Anything the agent would record (a labor entry, a meter reading, a failure remark) is read back and confirmed before it becomes a proposal.
+- **Respect PPE.** Respirators and hearing protection degrade speech in both directions. Offer a large-text screen mode and accept that voice is an assist, not the interface.
+- **Plan for no signal.** Maximo Mobile is designed to work offline; a cloud voice pipeline is not. If the job site is a basement plant room or a remote substation, voice may only work in the van. Do not promise otherwise.
+- **Short answers.** A technician needs one task at a time. Cap spoken answers at two or three sentences and offer "more" rather than reading a page.
+
+### How this relates to Maximo Mobile
+
+Maximo Mobile is the field system of record. It downloads assigned work orders, job plans and safety information, works offline, and lets the technician review the work order and report labor and materials against it. IBM's 9.2 announcement material also lists Maximo Assistant on Mobile, but that appears in announcement material rather than in the product documentation, so verify what your release actually ships before building around it.
+
+The right relationship is companion, not replacement. The voice agent reads from Manage through the technician's identity and proposes; Maximo Mobile records and syncs. If IBM's on-device assistant covers your read-only questions, use it and save the build. Build a custom voice agent when you need something IBM does not offer: a different language, a procedure library outside Maximo, a headset form factor, or integration with your own permit-to-work system. Either way, test it with real technicians at a real site before rollout. Ten minutes beside a running compressor will teach you more than any spec.
+
+---
+
+## ⏰ Agents That Wake Themselves Up
+
+The most valuable Maximo agents are often not conversational. They watch.
+
+Cole calls the mechanism a heartbeat: "a scheduled job that runs every 30 minutes for me right now... look at my memory, look at recent emails... and then give me notifications for anything that need my attention" (I Built a Safer OpenClaw Alternative Using Claude Code, 0:10:34). The design choice he highlights is the important part: the expensive context gathering happens deterministically, in code, before the model is invoked, and each tick the agent consults a checklist of what would be useful right now. The Dynamous community has a matching workshop that builds a proactive agent on the Claude Agent SDK and runs it from cron or Windows Task Scheduler, writing a report each time; the lesson is that "proactive" is mostly scheduling and plumbing, and the agent is the last step.
+
+The second trigger is an event. In Cole's webhook-driven agents, the source platform posts to the agent's endpoint whenever a watched thing happens: "anytime that there is an inbound message... it'll send a request to this endpoint right here" (The MOST Profitable AI Niche NO ONE is Talking About, 0:06:33). Maximo has had this for twenty years. It is called a publish channel.
+
+### Maximo trigger options
+
+| Trigger | Mechanism in Manage | Good for | Watch out for |
+|---|---|---|---|
+| Time-based heartbeat | OpenShift CronJob calling the agent API; or a Manage cron task that calls out | PM compliance sweeps, backlog health, data-quality checks | Overlapping runs; time zones across sites |
+| Record change, push | Publish channel with event listener enabled, routed through an external system to an HTTP endpoint | Triage on new SRs, enrichment of new work orders | Event storms during data loads; disable or filter during migrations |
+| Record change, queued | Publish channel routed to a Kafka queue (Kafka as MIF message provider) | High volume, replay, decoupling the agent from Manage availability | Sequential queues stop on the first failed message |
+| Threshold or rule | Escalation or automation script that creates a record or calls out | Meter-based alerts, SLA breaches | Keep logic in Maximo; agent explains, does not decide |
+| Human request | Chat, voice, Teams or Slack | Ad hoc questions | Covered earlier |
+
+On Kafka, be precise. IBM's integration documentation describes Kafka as a message provider for the existing integration framework: Kafka topics hold messages for outbound publish channels and inbound enterprise services, consumption is handled by cron tasks rather than message-driven beans, and you cannot delete Kafka messages from Manage. Kafka is a transport under publish channels, not a replacement for them. Configure it through External Systems (Add/Modify Message Providers, then Add/Modify Queues), and remember the publish channel only fires when its event listener is enabled.
+
+Whatever the trigger, three rules keep event-driven agents sane:
+
+1. **Idempotency.** The same work order change may arrive twice. Key processing on record ID plus change timestamp and skip duplicates.
+2. **Filter before the model.** Use publish-channel processing rules or a cheap code filter so the agent only sees events it can act on. A data load of 40,000 assets should not produce 40,000 model calls.
+3. **Output to a queue a human reads.** Event-driven agents write proposals, comments or notifications, not status changes.
+
+### The overnight PM compliance sweep
+
+This is the canonical first proactive Maximo agent, and it shows the deterministic-first pattern clearly.
+
+```yaml
+# Illustrative only: an OpenShift CronJob that wakes the PM sweep agent nightly.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pm-compliance-sweep
+  namespace: maximo-agents
+spec:
+  schedule: "30 1 * * *"          # 01:30 cluster time; align with site time zones
+  concurrencyPolicy: Forbid        # never two sweeps at once
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: sweep
+              image: registry.example.internal/maximo-agents/pm-sweep:1.4.2
+              env:
+                - name: MAXIMO_BASE_URL
+                  valueFrom: { secretKeyRef: { name: maximo-svc, key: base_url } }
+                - name: MAXIMO_APIKEY            # read-only service user
+                  valueFrom: { secretKeyRef: { name: maximo-svc, key: apikey } }
+                - name: SWEEP_SITES
+                  value: "BEDFORD,NASHUA"
+                - name: MAX_TOOL_CALLS
+                  value: "40"
+```
+
+Inside the job, the steps are:
+
+1. **Gather deterministically.** Query PMs flagged as compliance-relevant for the configured sites, compute their next due dates against the PM frequency, and join to open work orders generated from those PMs. Pull related asset status (for example, assets marked DECOMMISSIONED or NOT READY) and any open work orders on the same asset. All of this is code against `mxapipm`-style and `mxapiwodetail` object structures (tasks via the `woactivity` relationship), not model reasoning.
+2. **Shrink.** Reduce the result to PMs at risk: due within the window with no open work order, generated work orders still in WAPPR close to their target date, or PMs on assets in a status that will block execution.
+3. **Reason.** Only now call the model, with a compact payload, to explain each risk in plain language, group them by planner or crew, and suggest a next action ("WO 1043221 generated from PM 1120 is still WAPPR with target start tomorrow; it needs approval").
+4. **Publish.** Write a morning digest to the planners' channel and, optionally, a proposal queue. The agent creates nothing in Maximo by itself.
+5. **Record.** Store the run with tokens, cost, PMs examined, PMs flagged and the digest delivered, so next week you can ask whether the sweep is earning its keep.
+
+Pitfall: be careful with Manage's own PM generation. If a cron task generates PM work orders overnight, schedule the sweep after it, or the agent will dutifully flag fifty PMs that are about to get work orders anyway.
+
+---
+
+## 🔁 Long-Running Agents and Loops
+
+Long-running agents are the most hyped and the least understood production topic. Cole's 24-hour experiment is the clearest illustration. He chained dozens of fresh sessions into one build, with an initializer that wrote a feature list of 200-plus test cases, and every subsequent session primed itself from the spec, the feature list, a progress file and the git log, implemented the next feature, committed and handed off. By session 54 it had passed 54% of the tests, and his verdict was measured: the goal is a head start, "Build auto proof of concept and then we come in and keep building on top of it" (I Forced Claude to Code for 24 Hours NONSTOP, 0:00:49).
+
+His later work on loop engineering adds the costs. Loops optimise for continuing rather than quality, they are extremely token-hungry, and a single session that loops on itself bloats its context until quality decays. The fix is an explicit workflow: plan, implement and review as separate nodes in fresh sessions, a small model where a small model is enough, and durable state in a database so a crashed run resumes. His own summary is that loop engineering "doesn't quite deserve its own buzzword" and belongs inside harness engineering (The Creators of Claude Code and OpenClaw don't Prompt Their Agents Anymore?!, 0:24:23). [agm-02](/blog/agm-02-harnesses-software-factories) covers harnesses in depth.
+
+Cole's public `agent-control-plane` repository (MIT) is a compact reference for the operational side. It runs goal-driven loops in two modes, an orchestrator agent that inspects progress with read-only tools and dispatches worker agents, or a single-agent loop that ends on a sentinel. State lives on disk and in Postgres, never in a model's context, so every round starts fresh. Every run lands in the database with its role, output, tokens and status, and a dashboard shows the live loop and the history. The detail worth copying is the human gate: a loop that reaches its iteration cap parks in an awaiting-approval state until a person approves more rounds, and the README suggests putting that resume action behind a confirm dialog and a manager-only permission with an audit log.
+
+Where does this belong in a Maximo programme? Mostly in development and data work, not in live operations:
+
+- **Agentic coding against Maximo.** Long-running and remote coding agents building automation scripts, MAF customisations or integration code in a branch, ending in a pull request a human reviews. Cole's remote agentic coding pattern, a disposable container that clones the repo and opens a PR, is a good fit for a Maximo DevOps pipeline. Part 6 of this series covers the coding side ([map-06](/blog/map-06-ai-layer-agentic-coding-maximo)).
+- **Data-quality campaigns.** An orchestrated loop that works through a classification cleanup site by site, proposing corrections in batches that a data steward approves, with every batch recorded.
+- **Migration rehearsals.** Comparing a 7.6 extract to a MAS 9 environment object by object and writing discrepancies to a report.
+
+What it should not be is an unattended loop with write access to production Manage. The control-plane pattern of fresh context, durable state, run history and a human gate at the cap is the minimum.
+
+---
+
+## 🧪 Evals as the Deploy Gate (Summary)
+
+Cole's line that building agents is "25% coding or automating and then 75% evaluating" (Google, Anthropic, and OpenAI's Guides to AI Agents ALL in 18 Minutes, 0:14:10) is the reason this section is short: it deserves its own article, and it has one. [agm-06, Evals for Maximo Agents](/blog/agm-06-evaluating-agents), builds a golden dataset from closed work orders, mixes code, model and human graders, measures wrong-site leakage and unsafe-write refusal, and explains pass@k versus pass^k.
+
+What matters for production is where evals sit: as a deploy gate, the pattern Cole describes as "making sure that you get green check marks across the board before you deploy that update" (This Completely Changes the Way We Build Production AI Agents, 0:04:27). Every prompt change, model swap, tool change and MAS upgrade runs the suite in CI before the new image is promoted. And the human verdicts captured in your traces (approved, edited, rejected) flow back into the golden dataset every month.
+
+---
+
+## 🔬 Worked Scenarios
+
+### Scenario 1: the planner chat that saw too much
+
+A utility deploys a planning assistant using one service API key with access to all sites. In week three a planner at one site asks "what's open on the transformers?" and gets work orders from a site she has no access to in Maximo. Nothing malicious happened, but the agent bypassed the data restrictions Maximo enforces on her. The fix is the identity model above: resolve her Maximo user from the IdP token and call Manage as her. The eval that would have caught it is the wrong-site leakage test in agm-06. The trace that proved it was the `siteid` tag on the tool call.
+
+### Scenario 2: the voice agent and the compressor house
+
+A pilot voice assistant reads job plan tasks for compressor maintenance. In the office demo it is flawless. In the compressor house, always-on listening triggers every few seconds and the STT transcribes machinery as words. The team switches to push-to-talk on a headset, adds noise suppression before VAD, and changes safety content to verbatim read-back with explicit confirmation of each isolation point. Technicians use it for task sequencing and failure history; they continue to complete and sign off the work order in Maximo Mobile. Adoption is real but narrower than the demo suggested, which is the honest outcome.
+
+### Scenario 3: the event storm during a data load
+
+A triage agent subscribed to the work order publish channel works well until a weekend data migration loads 60,000 historical work orders. Each save fires the event listener, the Kafka queue fills, and the agent spends a weekend's budget summarising closed work orders from 2014. The fixes: a processing rule on the publish channel that only passes new records in specific statuses, a code filter in the consumer that skips anything not created in the last day, a per-hour cost alarm from the trace backend, and a runbook step to disable the listener during loads.
+
+### Scenario 4: the PM sweep that cried wolf
+
+The first version of the overnight PM sweep runs at 00:30 and flags dozens of compliance PMs as having no work order. The PM work order generation cron task runs at 02:00. Planners stop reading the digest by Thursday. The team moves the sweep after generation, adds a check for generated work orders in WAPPR, and limits the digest to items needing a human decision. Read rate recovers, and the trace history shows cost per run dropped because the model now reasons over a dozen rows instead of a hundred.
+
+### Scenario 5: the upgrade that changed a field
+
+After a Manage patch, a custom object structure used by the agent returns an attribute under a different name in one response because an administrator rebuilt the structure during the upgrade. The agent's output validator rejects the malformed record rather than guessing, the error rate alarm fires, and the eval gate in CI fails on the next build. Because the agent depended on a versioned, validated object structure and validated its inputs, the fix is a one-line mapping, not an incident review.
+
+---
+
+## ⚠️ Pitfalls
+
+- **Shipping the laptop architecture.** Local files for memory, one API key, no concurrency handling. Cole's line between personal and production agents is real; cross it deliberately.
+- **A shared admin key.** It turns Maximo security into prompt security. Use per-user identity for interactive work and a narrow service user for automation.
+- **Traces that leak.** Full content capture sent to a SaaS trace backend may export regulated Maximo data. Self-host or capture IDs and metrics only.
+- **No cost owner.** If nobody can say what last night's sweep cost, nobody will notice when it costs ten times more. Tag every run and alert on cost per hour.
+- **Letting the model filter data.** Asking a model to find the overdue PMs among thousands of rows is slow, expensive and unreliable. Filter in code with `oslc.where`; let the model explain.
+- **Paraphrased safety content.** A voice or chat agent that summarises a lock-out procedure has changed a controlled document. Read safety content verbatim and name the source.
+- **Always-on voice in noisy areas.** Use push-to-talk, noise suppression and confirmations, and keep Maximo Mobile as the system of record.
+- **Event storms.** Publish channels fire on every qualifying save, including bulk loads. Filter at the channel, filter in the consumer, and have a disable runbook.
+- **Overlapping heartbeats.** Two sweeps at once double cost and duplicate notifications. Use a Forbid concurrency policy or a lock.
+- **Unattended loops with write access.** Long-running loops belong in branches, sandboxes and proposal queues, with an iteration cap and a human gate.
+- **Treating announced features as shipped.** IBM's 9.2 documentation covers automation scripts as custom tools on the Maximo MCP server, but some agent capabilities are only announced: Maximo Assistant on Mobile, and Maximo Assistant write actions and use of script tools, which IBM describes in partly future-tense announcement material. Build plans on what your installed release documents.
+- **Skipping evals because the demo worked.** The demo is the first 90%. The deploy gate is what keeps it there.
+
+---
+
+## ✅ Production Readiness Checklist
+
+Use this as the go-live gate. Each line has an owner and evidence, not a tick.
+
+| # | Area | Check | Evidence |
+|---|---|---|---|
+| 1 | Packaging | Agent runs from a versioned container image; no laptop dependencies | Image tag in the deployment manifest; reproducible build |
+| 2 | Interface | One API serves all channels; contract includes `siteid`, cited records, proposed actions, `run_id` | API spec reviewed |
+| 3 | Identity | Interactive requests run as the requesting Maximo user | Test: user without site access gets nothing from that site |
+| 4 | Service keys | Unattended jobs use a dedicated user with read-only object structures, an owner and an expiry | Key register entry; rotation runbook |
+| 5 | Writes | No status change or record creation without human approval or a reviewed, logged tool | Approval queue design; audit sample |
+| 6 | Validation | Outputs typed; cited records checked against tool results | Validator tests passing |
+| 7 | Failure modes | Manage timeouts and outages return a clear message, never a guessed answer | Chaos test: Manage pod restarted during a run |
+| 8 | Observability | Every run traced with trigger, identity, site, tool calls, tokens, outcome | Sample traces reviewed by security |
+| 9 | Data handling | Trace content policy agreed; backend inside the required boundary | Security sign-off |
+| 10 | Cost | Cost per run reported per agent and site; hourly cost alarm; caps on tool calls, tokens and time | Dashboard and alert config |
+| 11 | Triggers | Heartbeats cannot overlap; event handlers idempotent and filtered | Concurrency policy; duplicate-event test |
+| 12 | Voice (if used) | Push-to-talk, noise handling, verbatim safety read-back, field-tested at a real site | Pilot report with technician feedback |
+| 13 | Evals | Golden dataset and graders from agm-06 run in CI as a deploy gate | Green run on the release candidate |
+| 14 | Upgrades | Agent depends only on documented object structures and APIs; eval suite rerun after each MAS patch | Upgrade runbook includes agent regression |
+| 15 | Ownership | Named product owner, on-call contact and kill switch | Runbook with the disable procedure tested |
+
+---
+
+## 🧭 Where to Go Next: A Learning Path
+
+You have reached the end of the Agentic AI Playbook for Maximo. Here is how to turn eight articles into a working capability, in order.
+
+**Step 1: get the fundamentals solid.** If any part of the agent loop still feels like magic, reread [Part 1](/blog/map-01-what-is-an-ai-agent-maximo) and [Part 2](/blog/map-02-prompts-tools-context-maximo). Then build one tiny, read-only agent that answers one question about one object structure, end to end, in a non-production environment.
+
+**Step 2: ground it in your data.** Use [Part 3](/blog/map-03-rag-strategies-maximo-data) to decide what belongs in retrieval (job plans, procedures, failure history narratives) and what belongs in live tool calls (status, dates, quantities). Then design the tools properly with [Part 4](/blog/map-04-mcp-tool-design-maximo), including whether the MAS 9.2 Maximo MCP server, Max_mcp or hand-written OSLC tools fit your estate.
+
+**Step 3: make it safe before making it big.** Apply [Part 5](/blog/map-05-agent-security-guardrails-maximo) and decide your hosting and model strategy with [Part 7](/blog/map-07-local-self-hosted-ai-maximo). Use [Part 6](/blog/map-06-ai-layer-agentic-coding-maximo) to let coding agents do the heavy lifting on scripts and integration code.
+
+**Step 4: build it properly.** The companion series *Agentic Engineering for Maximo* is the hands-on track: context engineering and PRPs ([agm-01](/blog/agm-01-context-engineering-prps)), harnesses ([agm-02](/blog/agm-02-harnesses-software-factories)), a typed Pydantic AI agent ([agm-03](/blog/agm-03-pydantic-ai-maximo-agent)), n8n and local prototyping ([agm-04](/blog/agm-04-n8n-local-ai-prototyping)), memory and RAG ([agm-05](/blog/agm-05-agent-memory-rag)), evals ([agm-06](/blog/agm-06-evaluating-agents)) and multi-agent systems with A2A and watsonx Orchestrate ([agm-07](/blog/agm-07-multi-agent-a2a-orchestrate)).
+
+**Step 5: ship one proactive agent.** The overnight PM compliance sweep in this article is a good first production agent: read-only, scheduled, measurable, and it produces something planners can judge every morning. Ship it with the checklist above, measure read rate and cost per run for a month, and only then add a conversational or voice front end.
+
+**Step 6: keep learning from the source.** Cole Medin's channel ([youtube.com/@ColeMedin](https://www.youtube.com/@ColeMedin)) covers each of these patterns as they evolve, and the Dynamous AI Mastery community (dynamous.ai) runs courses and workshops that go deeper on agent building, agentic coding and deployment. On the Maximo side, track IBM's MAS what's-new pages each release; agentic features are moving quickly and the difference between announced and documented matters.
+
+**Step 7: use the tools that already exist.** TheMaximoGuys' [Max_Interfaces](https://github.com/themaximoguys/Max_Interfaces) (open source, MIT) catalogues 2,439 Maximo endpoints with OpenAPI files, which is exactly what a coding agent needs to write correct OSLC tools. [Max_mcp](https://github.com/themaximoguys/Max_mcp) (npm, 175 tools, proprietary) gives any MCP-capable agent a ready-made Maximo tool layer alongside IBM's native 9.2 server, and Max_autoscripts collects automation script patterns you can expose as governed tools.
+
+---
+
+## Key Takeaways
+
+- Shipping an agent to other people is a re-architecture: concurrency, live Maximo data and per-user access control arrive with the second user.
+- Package the agent as a container, expose one API for every channel, and run it beside MAS with per-user Manage identity for interactive work and a narrow, read-only service user for automation.
+- Trace every run with trigger, identity, site, tool calls, tokens and outcome; report cost per run and cut it with deterministic pre-filtering, model routing, caching and hard caps.
+- Voice in the field is a cascaded STT, LLM, TTS pipeline with push-to-talk, noise handling and verbatim read-back of safety content; Maximo Mobile remains the system of record on the device.
+- Heartbeats and publish-channel or Kafka events turn Maximo agents proactive; gather context in code, reason over a small payload, and write proposals rather than status changes. Run the agm-06 evals as the deploy gate.
+
+---
+
+## References
+
+**Cole Medin (YouTube)**
+
+- [Build Your First Voice AI Agent in 20 Minutes with LiveKit (Open Source)](https://www.youtube.com/watch?v=TXVyxJdlzQs)
+- [If You're Serious About Building AI Agents, This is Your Secret Weapon](https://www.youtube.com/watch?v=DpPVEw4dd0w)
+- [I Built a Safer OpenClaw Alternative Using Claude Code](https://www.youtube.com/watch?v=XmweZ4fLkcI)
+- [Deploying Billions of AI Agents is Easier than You Think](https://www.youtube.com/watch?v=2Ai7_5G70xY)
+- [AI is TOO EXPENSIVE if You Don't Do This](https://www.youtube.com/watch?v=ZzRCrhA3JUQ)
+- [I Love the Karpathy LLM Wiki but it Doesn't Scale. Here's What Does.](https://www.youtube.com/watch?v=R-5_2nsF_ZM)
+- [I Forced Claude to Code for 24 Hours NONSTOP, Here's What Happened](https://www.youtube.com/watch?v=usQ2HBTTWxs)
+- [The Creators of Claude Code and OpenClaw don't Prompt Their Agents Anymore?!](https://www.youtube.com/watch?v=UztrFXaSWv0)
+- [The MOST Profitable AI Niche NO ONE is Talking About](https://www.youtube.com/watch?v=1lvAvLXXA10)
+- [Turn ANY AI Agent into a Live Person - Voice Chat Setup in Minutes](https://www.youtube.com/watch?v=L9JqdwdCiyE)
+- [Revealing my COMPLETE AI Agent Blueprint](https://www.youtube.com/watch?v=FGeB9w1ZeHE)
+- [The GLOW-UP Every AI Agent Needs](https://www.youtube.com/watch?v=7XZbI_ez8_U)
+- [How I'd Learn AI Agents FAST if I Had to Start Over (Full Roadmap)](https://www.youtube.com/watch?v=k-Cj6H6Zwos)
+- [Learn 90% of Building AI Agents in 30 Minutes](https://www.youtube.com/watch?v=i5kwX7jeWL8)
+- [The Ultimate Guide to Local AI and AI Agents (The Future is Here)](https://www.youtube.com/watch?v=mNcXue7X8H0)
+- [AG-UI Just Released: The NEW WAVE of AI Agent Apps](https://www.youtube.com/watch?v=BFWviieMyGw)
+- [Why is Everyone Missing This with AI Agents?! (Memory + Tools that Scale)](https://www.youtube.com/watch?v=F1I9JN0z0w0)
+- [The ONLY AI Tech Stack You Need in 2026](https://www.youtube.com/watch?v=21_k2St8bBI)
+- [Use Open WebUI with Your N8N AI Agents - Voice Chat Included!](https://www.youtube.com/watch?v=E2GIZrsDvuM)
+- [Google, Anthropic, and OpenAI's Guides to AI Agents ALL in 18 Minutes](https://www.youtube.com/watch?v=TlbcAphLGSc)
+- [This Completely Changes the Way We Build Production AI Agents (Vercel Eve)](https://www.youtube.com/watch?v=m8VC2SV2igM)
+- [coleam00/agent-control-plane (GitHub, MIT)](https://github.com/coleam00/agent-control-plane)
+
+**TheMaximoGuys related reading**
+
+- [MAS Security Ops: LDAP, service accounts and API keys](/blog/mas-secops-ldap-api-keys) (Manage API keys, `MXAPIAPIKEY`, the `apitoken/create` 403)
+- [MAS Security Ops: securing AI agents and MCP](/blog/mas-secops-securing-ai-agents-mcp)
+
+**Community**
+
+- Dynamous AI Mastery community: LiveKit RAG voice agent and Claude Agent SDK proactive agent workshops (concepts paraphrased; [dynamous.ai](https://dynamous.ai))
+
+**IBM and vendor documentation**
+
+- [IBM — Integration by using Apache Kafka (Maximo integration framework)](https://www.ibm.com/docs/SSLPL8_latest/com.ibm.mif.doc/kafka/c_kafka_overview.html)
+- [IBM — API keys application (Maximo integration framework)](https://www.ibm.com/docs/SSLPL8_cd/com.ibm.mif.doc/gp_intfrmwk/c_api_keys_comp.html)
+- [IBM Maximo REST API Guide — API key authentication](https://ibm-maximo-dev.github.io/maximo-restapi-documentation/authentication/apikey/)
+- [IBM — Maximo MCP server overview (MAS 9.2)](https://www.ibm.com/docs/en/masv-and-l/cd?topic=developing-maximo-mcp-server-overview)
+- [IBM Think — Working smarter with agentic workflows in Maximo Assistant](https://www.ibm.com/think/perspectives/working-smarter-agentic-workflows-maximo-assistant)
+- [LiveKit — Pipeline types (STT, LLM, TTS and realtime)](https://docs.livekit.io/agents/models/pipelines/)
+- [LiveKit — Turn-taking tuning (noise suppression, voice isolation)](https://docs.livekit.io/agents/logic/turns/tuning/)
+
+---
+
+## Series Navigation
+
+**The Agentic AI Playbook for Maximo**
+
+- [Part 0: Series Index: The Agentic AI Playbook for Maximo](/blog/map-00-series-index)
+- [Part 1: What Is an AI Agent, Really? A Field Guide for Maximo Teams](/blog/map-01-what-is-an-ai-agent-maximo)
+- [Part 2: Prompts, Tools and Context for Maximo Agents: Designing What the Model Actually Sees](/blog/map-02-prompts-tools-context-maximo)
+- [Part 3: RAG Strategies for Maximo Data: Which Retrieval for Which Records](/blog/map-03-rag-strategies-maximo-data)
+- [Part 4: MCP and Tool Design for Maximo: Fewer, Sharper Tools Beat a 175-Tool Buffet](/blog/map-04-mcp-tool-design-maximo)
+- [Part 5: Securing Maximo Agents: The Lethal Trifecta, Prompt Injection and Guardrails That Hold](/blog/map-05-agent-security-guardrails-maximo)
+- [Part 6: The AI Layer for Maximo Development: Rules, Commands, Hooks and Validation for Agentic Coding](/blog/map-06-ai-layer-agentic-coding-maximo)
+- [Part 7: Local and Self-Hosted AI for Maximo: A Playbook for Regulated Shops](/blog/map-07-local-self-hosted-ai-maximo)
+- **Part 8: Maximo Agents in Production: Deployment, Voice in the Field, and Agents That Run While You Sleep** (you are here)
+
+| | |
+|---|---|
+| **Previous:** | [Part 7 — Local and Self-Hosted AI for Maximo](/blog/map-07-local-self-hosted-ai-maximo) |
+| **Series Index:** | [The Agentic AI Playbook for Maximo](/blog/map-00-series-index) |

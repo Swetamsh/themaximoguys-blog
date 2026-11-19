@@ -1,0 +1,557 @@
+---
+title: "MCP and Tool Design for Maximo: Fewer, Sharper Tools Beat a 175-Tool Buffet"
+description: "A practitioner's playbook for exposing IBM Maximo to AI agents through the Model Context Protocol: what MCP really is, the too-many-tools problem, the MAS 9.2 native MCP server, TMG's Max_mcp and Max_Interfaces, how to design a Maximo tool (names, descriptions, input schemas, oslc.where safety, pagination, idempotent writes), stdio versus streamable HTTP, API keys versus OAuth, and when skills or code execution beat MCP."
+date: "2026-11-19"
+slug: "map-04-mcp-tool-design-maximo"
+tags: ["MCP", "Model Context Protocol", "IBM Maximo", "MAS 9.2", "Tool Design", "AI Agents", "OSLC", "Max_mcp", "Agentic Engineering", "Cole Medin"]
+draft: true
+tier: "developer"
+author: "Krishna Neela"
+coverImage: "./images/map-04-mcp-tool-design-maximo.png"
+authorTitle: "AI Engineer"
+authorBio: "Technical practitioners with decades of combined experience implementing IBM Maximo across asset-intensive industries."
+authorCredentials: ["IBM Certified Maximo Consultants", "MAS 9 Implementation Specialists"]
+faqs:
+  - question: "What is MCP, and is it actually new capability for a Maximo agent?"
+    answer: "The Model Context Protocol is an open standard for packaging tools, data and prompts as a server that any compatible AI client can discover and call. Cole Medin's framing is the useful one: it is 'just APIs, but repackaged in a standard for AI agents.' Under the hood the tool definitions still end up in the model's prompt, exactly as hand-written function tools do. For Maximo, MCP adds no capability that the OSLC REST API did not already have. What it adds is reuse: one server that Claude, IBM Bob, Copilot, a Pydantic AI agent and the MAS 9.2 Maximo Assistant can all call the same way, governed in one place."
+  - question: "Should we use the MAS 9.2 native Maximo MCP server or TMG's Max_mcp?"
+    answer: "They answer different questions. The native server ships with MAS 9.2, runs as an instance_ID-mcp pod beside Manage, and publishes only the tools that are enabled or created: IBM-provided AI configuration tools allow-listed in MAXAICFGTOOL, plus custom tools your administrators create from object structures, automation scripts, non-interactive workflows and API routes. Every call is a Manage REST call under the caller's identity, so security groups and business rules apply. Max_mcp is TMG's proprietary TypeScript server (npm @themaximoguys/maximo-mcp, 175 tools across 20 modules) that you run yourself; it is useful on estates not yet on 9.2 and for broad developer and admin work. For a production business agent on 9.2, start with a handful of curated native tools. For a developer's coding assistant, Max_mcp with an allow-list and a non-production key is a fast start."
+  - question: "How many tools should a Maximo agent see at once?"
+    answer: "Start under ten. Cole Medin's rule of thumb is to keep tools 'under 10 for your AI agents, at least when starting out' and make each purpose distinct, because every tool definition is prompt text the model must read on every turn. He measured MCP tool definitions alone consuming 97,000 tokens, 48% of a Claude Sonnet 4.5 context window, in one coding setup. A work order triage agent needs perhaps four read tools. If one agent genuinely needs fifty capabilities, that is a signal to split into specialist agents, load tools on demand through skills, or let the agent write code against a typed client instead of exposing fifty tool definitions."
+  - question: "How do I stop an agent from writing a dangerous oslc.where clause?"
+    answer: "Do not let it write one. Expose typed parameters (site, status list, asset number, date window) and build the oslc.where string inside the tool from an allow-list of attributes and operators, quoting values and rejecting anything outside a strict pattern. Always force a site filter and a page size, select only the fields the model needs with oslc.select, and cap the number of pages. If you truly need free-form queries, use the native server's natural-language-to-OSLC AI configuration tool or a reviewed saved query, run it under a read-only key, and still cap results. The key's security group is the real enforcement; tool-side validation is what keeps a valid but huge or wrong query from flooding the model."
+  - question: "Are MCP tools the only way to give a Maximo agent capabilities?"
+    answer: "No. Three alternatives matter. Skills package instructions and scripts that load only when relevant, which Cole measured at roughly 2 to 3% of MCP's up-front token cost. Code execution lets the agent write and run code against a typed Maximo client inside a sandbox, so large result sets are filtered in code rather than passed through the model; Anthropic reported a 98.7% token reduction for one workflow using this pattern. And workflow-as-a-tool wraps a deterministic multi-step automation, such as an n8n flow or a Maximo automation script, as one callable tool. MCP is the right choice when many different clients need the same governed tools; the alternatives win when one agent needs many capabilities or must process large data."
+keyTakeaways:
+  - "MCP is standardization, not new capability: it repackages Maximo's REST and OSLC APIs so any agent client can call the same governed tools"
+  - "Tool count is a context budget: start under ten distinct tools per agent and treat 175-tool servers as catalogues to allow-list from, never to load whole"
+  - "Design each Maximo tool as a narrow verb with typed inputs: build oslc.where inside the tool, force site and page size, select only needed fields, and return compact summaries"
+  - "Writes need idempotency and a human gate: use Maximo's transactionid header to block quick duplicate creates plus a business-key check for late retries, mark destructive tools honestly, and treat annotations as hints, not enforcement"
+  - "Choose the transport and auth by audience: stdio with a non-production key for one developer, HTTP behind API keys or OAuth with per-agent identities for anything shared"
+series:
+  name: "The Agentic AI Playbook for Maximo"
+  part: 4
+  total: 8
+series_part: 4
+tldr: "MCP is a standard wrapper around APIs, and for Maximo that means OSLC and REST calls made under some identity. The hard part is not the protocol but tool design. Every tool definition costs context on every turn, so a Maximo agent should see a small, distinct, mostly read-only set: under ten tools to start. MAS 9.2 ships a native Maximo MCP server whose tools come from object structures, automation scripts, workflows, API routes and AI configurations and run as Manage REST calls; TMG's proprietary Max_mcp (175 tools) and MIT-licensed Max_Interfaces (2,439+ endpoints) are catalogues to curate from. Good Maximo tools have verb-first names, descriptions that say when not to use them, typed inputs, server-built oslc.where clauses, forced site filters and page sizes, compact outputs, and idempotent writes via the transactionid header. Use stdio for a single developer, HTTP with API keys or OAuth for shared servers, and reach for skills or code execution when one agent needs many capabilities."
+seoTitle: "MCP and Tool Design for IBM Maximo Agents"
+seoDescription: "Design MCP tools for IBM Maximo: the too-many-tools problem, MAS 9.2 MCP server, Max_mcp, safe oslc.where, pagination, idempotent writes, auth."
+targetQuestions:
+  - "How do I design MCP tools for IBM Maximo agents?"
+  - "What is the MAS 9.2 Maximo MCP server and how does it compare to Max_mcp?"
+  - "How many MCP tools should an AI agent have?"
+  - "Should a Maximo MCP server use stdio or streamable HTTP, API keys or OAuth?"
+proficiencyLevel: "intermediate"
+dependencies:
+  - "Part 2 of this series (prompts, tools and context) is helpful"
+  - "Working knowledge of Maximo OSLC queries (oslc.select, oslc.where, object structures such as mxapiwo and mxapiasset)"
+  - "A non-production Maximo Manage environment and permission to create API keys"
+  - "Basic familiarity with Python or TypeScript for the illustrative snippets"
+speakableSections:
+  - "MCP in One Paragraph"
+  - "The Too-Many-Tools Problem"
+  - "Anatomy of a Good Maximo Tool"
+clusterSlugs:
+  - "map-00-series-index"
+  - "map-01-what-is-an-ai-agent-maximo"
+  - "map-02-prompts-tools-context-maximo"
+  - "map-03-rag-strategies-maximo-data"
+  - "map-05-agent-security-guardrails-maximo"
+  - "map-06-ai-layer-agentic-coding-maximo"
+  - "map-07-local-self-hosted-ai-maximo"
+  - "map-08-production-agents-voice-long-running"
+relatedSlugs:
+  - "agm-03-pydantic-ai-maximo-agent"
+  - "agm-07-multi-agent-a2a-orchestrate"
+---
+
+# MCP and Tool Design for Maximo: Fewer, Sharper Tools Beat a 175-Tool Buffet
+
+> Concepts in this series are adapted from [Cole Medin's YouTube channel](https://www.youtube.com/@ColeMedin) and the Dynamous AI Mastery community (dynamous.ai), and applied to IBM Maximo by TheMaximoGuys.
+
+> 🎯 **Who this is for:** Maximo developers, integration leads and architects who are about to put an MCP server between an AI agent and Manage, and want to get the tool surface right before anyone points a model at production.
+
+**Series:** Part 4 of 8 — *The Agentic AI Playbook for Maximo* | **Read time:** 32 minutes
+
+---
+
+## 🔥 The Day Someone Connected Everything
+
+Here is a pattern we have now seen at more than one Maximo shop. A capable developer installs an MCP server for Maximo in their coding assistant on Monday. By Tuesday they have connected it to a shared development environment. By Wednesday a business analyst asks whether "the AI" can tell them which pumps at the north plant have open corrective work orders older than thirty days. The developer types the question. The agent sees well over a hundred tools: work orders, assets, locations, inventory, purchasing, automation scripts, cron tasks, security groups. It picks a generic query tool, writes its own `oslc.where`, forgets the site filter, pulls several thousand work orders, runs out of context halfway through summarising them, and confidently reports a number that is wrong.
+
+Nothing in that story is a protocol failure. MCP did exactly what it was asked. The failure is **tool design**: too many tools, overlapping purposes, a free-form query parameter, no forced filter, no page limit, and an output shape that dumped raw records into the model.
+
+This part of the playbook is about the boring, decisive half of agent engineering: deciding which Maximo capabilities become tools, what each one is called, what it accepts, what it returns, how it is reached, and who it runs as. Part 2 covered tools and context in general. Here we go specifically into MCP, the native MAS 9.2 server, TMG's own servers, and the design rules that keep a Maximo agent accurate and safe. If you want the hands-on agent build that consumes these tools, that lives in [agm-03: Building a Typed Maximo Agent with Pydantic AI](/blog/agm-03-pydantic-ai-maximo-agent). If you want multiple agents sharing tools through gateways, see [agm-07: Multi-Agent Maximo](/blog/agm-07-multi-agent-a2a-orchestrate).
+
+---
+
+## 📌 The Short Version
+
+| Question | Short answer |
+|---|---|
+| What is MCP? | An open standard for packaging tools so any compatible agent client can discover and call them. For Maximo, the tools are OSLC and REST calls |
+| Does it add capability? | No. It adds reuse and governance. The tool definitions still end up in the model's prompt |
+| Biggest risk | Too many tools. Each definition costs context on every turn and confuses tool selection |
+| Starting tool budget | Under ten distinct tools per agent, mostly read-only |
+| IBM's option | MAS 9.2 native Maximo MCP server: tools from object structures, automation scripts, workflows, API routes, AI configurations |
+| TMG's options | Max_mcp (175 tools, proprietary, npm) and Max_Interfaces (2,439+ endpoint catalogue, MIT) |
+| Transport | stdio for one developer on one machine; HTTP for anything shared |
+| Auth | Per-agent Maximo API keys at minimum; OAuth or JWT when the agent acts for different people |
+| Alternatives | Skills, code execution, workflow-as-a-tool |
+
+Every code block in this post is **illustrative**. It shows a shape to adapt, not a tested drop-in. Field names, statuses and site codes vary by implementation.
+
+---
+
+## 🧩 MCP in One Paragraph
+
+The Model Context Protocol is the standard Anthropic released in November 2024 for connecting language models to external tools and data. Cole Medin is refreshingly unhyped about it. In *Build and Ship Any MCP Server in MINUTES*, he says MCP is "all just APIs, but repackaged in a standard for AI agents specifically" [0:06:26]. In *Claude MCP has Changed AI Forever*, he points out that under the hood the tools "are just given as a part of the prompt to the llm" [0:07:31], the same as any hand-coded function tool. The value is standardization: you write the tool once as a server, and any MCP-compatible client can use it. His analogy is the USB-C port: one connector shape, many devices.
+
+For a Maximo team, that translates into something concrete. Maximo already has an excellent API: the OSLC/JSON REST layer under `/maximo/api/os/`, with object structures such as `mxapiwo`, `mxapiasset`, `mxapisr` and `mxapiinventory`. MCP does not replace that API. It puts a self-describing catalogue in front of it, so that IBM Bob, Claude, Copilot, a Pydantic AI agent you build, and IBM's own Maximo Assistant can discover the same tools, read the same descriptions, and call them the same way.
+
+### The three edges of an agent
+
+MCP is one of several protocols, and knowing which edge each one covers stops a lot of architecture arguments.
+
+| Protocol | Connects | Maximo example | Where we cover it |
+|---|---|---|---|
+| MCP | Agent to tools and data | Agent calls "get open work orders for asset P-1023" | This post |
+| A2A (Agent2Agent) | Agent to another agent | A reliability agent hands a finding to a planning agent owned by another team | [agm-07](/blog/agm-07-multi-agent-a2a-orchestrate) |
+| ACP (Agent Client Protocol) | Editor to coding agent | IBM Bob running inside Zed or IntelliJ while you edit autoscripts | Briefly below; Cole's [ACP video](https://www.youtube.com/watch?v=5gUR55_gbzc) |
+| llms.txt | Documentation to agent | A single LLM-ready file of your Maximo integration standards | Briefly below |
+
+Cole frames these as a family. In *AG-UI Just Released: The NEW WAVE of AI Agent Apps* he calls 2025 "the year of agent protocols", with MCP connecting tools to agents and A2A connecting agents to other agents [0:00:00], and AG-UI as the missing link to front ends. In *This New Protocol Will Change AI Coding Forever (ACP)* he describes ACP as "a standard just like MCP, but for connecting any coding assistant to any code editor" [0:00:00]. For Maximo, ACP matters only to developers choosing an editor for autoscript and Java work; it changes nothing about how Maximo data is reached. llms.txt is not a wire protocol at all: it is a convention for publishing a single plain-text, LLM-friendly summary of documentation at a known path, so a coding agent can load your integration standards (object structures, naming rules, approved endpoints) in one read instead of crawling a wiki. They are complementary, not competing. Most Maximo use cases today need only the first one, done well.
+
+### Servers, clients and lifespan
+
+An MCP deployment has two halves. The **server** exposes tools (and optionally resources and prompts). The **client** sits inside the agent application, lists the server's tools, and passes them to the model. You can build either half. In *The ULTIMATE Guide to Building Your Own MCP Servers*, Cole flags one detail most homemade servers miss: "We want to define the lifespan for our MCP server" [0:15:53]. For Maximo, the lifespan is where you create the HTTP client with its base URL, TLS settings and API key once, and reuse it for every tool call, rather than reconnecting per call. It is also where you load the small reference data your tools validate against (valid site IDs, status values, the attribute allow-list).
+
+On the client side, *The MCP Integration EVERYONE is Sleeping On* makes the point that owning the client means you "can even pick and choose the different tools that we pull from these servers" [0:00:39]. That single capability, client-side filtering, is your first defence against the next section's problem.
+
+---
+
+## 🧠 The Too-Many-Tools Problem
+
+Cole's most-cited MCP warning comes from *The BIG Problem with MCP Servers (and the Solution!)*. In one Claude Code setup, he found "the MCP tools alone are taking 97,000 tokens" [0:02:23], which he notes was 48% of the context available to Claude Sonnet 4.5. Tools are paid for twice: once for the definition, which sits in the prompt on every turn whether or not it is used, and again for every result that comes back.
+
+The second cost is quality. In *Learn 90% of Building AI Agents in 30 Minutes* his rule of thumb is to "keep your tools to under 10 for your AI agents, at least when starting out" [0:12:21] and to make each tool's purpose distinct. In *Build and Ship Any MCP Server in MINUTES* he puts it as wanting "modular singlepurpose tools so the LLM doesn't get confused" [0:15:10].
+
+### Why Maximo makes this worse
+
+Maximo is a wide system. A realistic Manage tenant has hundreds of object structures, thousands of attributes, and a long tail of custom fields. A comprehensive Maximo MCP server reflects that width. TMG's own Max_mcp has 175 tools across 20 modules, and we built it that way deliberately: it is a toolbox for developers and administrators, covering everything from work orders to cron tasks. Max_Interfaces, our MIT-licensed API library, catalogues 2,439+ endpoints across 14 modules. Those numbers are a strength for a catalogue and a liability if loaded wholesale into one agent.
+
+Three Maximo-specific failure modes follow from tool overload:
+
+1. **Overlapping tools.** If an agent sees `query_workorders`, `search_records`, `oslc_query` and `get_wo_details`, it will pick inconsistently, and you will see the same question answered through different paths on different days.
+2. **Admin tools in a business agent's view.** A tool that can activate an automation script or change a cron task has no place in the tool list of an agent answering a planner's question, even if the key would refuse the call. The model still reads it, still considers it, and can still be talked into trying it.
+3. **Generic query tools.** A tool that accepts an arbitrary `where` string is one tool on paper and an unbounded number of behaviours in practice.
+
+### The budget, made concrete
+
+The numbers below are rough orders of magnitude to reason with, not measurements of any specific server. A well-described tool with a typed input schema tends to cost a few hundred tokens of definition.
+
+| Tool surface | Approx. definitions in context | Selection quality | Typical use |
+|---|---|---|---|
+| 4–8 curated read tools | Small | High, purposes are distinct | One production business agent (triage, asset health Q&amp;A) |
+| 15–25 tools, mixed read/write | Moderate | Acceptable with very clear names | A power-user assistant with a human approving writes |
+| 100+ tools (full catalogue) | Very large, can rival the conversation itself | Poor, overlapping purposes | Never loaded whole; allow-list from it |
+
+The response to that table is not "MCP is bad". Stripe, as Cole describes in *Stripe's Coding Agents Ship 1,300 PRs EVERY Week*, runs a single internal MCP server with around 500 tools, but uses many of them "deterministically here. So, not giving it to an agent, but right within code" [0:07:43]. A large catalogue is fine. Handing the whole catalogue to one model is the mistake.
+
+---
+
+## 🏭 The Maximo MCP Landscape: Native, TMG and DIY
+
+There are three realistic sources of MCP tools for Maximo in late 2026. They are complementary.
+
+### The MAS 9.2 native Maximo MCP server
+
+IBM's MAS 9.2 release (generally available 25 June 2026) includes a Maximo MCP server. Our MAS 9.2 fact base records IBM's statement that customers can create custom AI tools using Manage automation scripts, object structures and workflows, and connect their own tools and agents. IBM's "Maximo MCP server overview" documentation and practitioner write-ups from Naviam and Interloc add the following, which we have cross-checked in [Bob Meets Maximo](/blog/mas-bob-04-bob-and-maximo):
+
+- It runs as an `instance_ID-mcp` pod on OpenShift beside Manage, reached externally through a route with an `apikey` header or a JSON Web Token.
+- Tools come from five sources: **AI configurations** (such as natural-language-to-OSLC data retrieval, similarity, classification, condition insights and documentation search), **object structures**, **automation scripts**, **non-interactive workflows**, and IBM-provided **API routes** such as schema retrieval.
+- All Manage-based tools are Maximo REST API calls, so a call runs through Manage security, business rules and validation as whatever identity made it.
+- The server refreshes its tool list on startup and then on a polling interval (IBM documents a default of 10 minutes).
+- Tools carry descriptions and MCP annotations such as read-only and destructive hints, which administrators can set.
+
+Interloc's write-up describes how custom tools are authored: object structure tools through **More Actions, Add/Modify Object Structure Tools** in the Object Structures application, and script tools by writing an active automation script whose variables become the tool's input form, then using **More Actions, Add/Modify MCP Tool**. Verify those menu labels in your own 9.2 patch level before you write training material around them.
+
+The design consequence is important: **with the native server, tool design happens inside Maximo.** Your administrators decide which object structure operations and scripts become tools, what they are called and how they are described. That is excellent for governance and dangerous if nobody owns it, because a new active script tool appears to every connected agent on the next poll.
+
+IBM is also the server's first customer. IBM describes the agentic Maximo Assistant's Supervisor ALM agent orchestrating knowledge search, data retrieval and condition insights, and making write actions such as work order status changes, follow-up work orders and service requests, through the Maximo MCP server. Treat any IBM statement phrased in future tense as announced rather than shipped.
+
+### TMG's Max_mcp and Max_Interfaces
+
+**Max_mcp** (npm `@themaximoguys/maximo-mcp`, TypeScript, Docker-ready) is our own server: 175 tools across 20 modules. It is **proprietary software, available on npm, not open source**. It is useful where the native server is not: estates still on 9.0 or 9.1, developer workflows that need admin-level tools in a non-production environment, and teams who want a ready tool layer for Claude, Bob, Copilot or their own agents without first authoring tools in Manage.
+
+**Max_Interfaces** ([github.com/themaximoguys/Max_Interfaces](https://github.com/themaximoguys/Max_Interfaces), MIT) is not an MCP server at all. It is a catalogue: Postman and OpenAPI collections covering 2,439+ Maximo endpoints. In MCP terms, it is the menu you pick from when you design your own narrow tools, and excellent context to hand a coding agent that is writing those tools.
+
+### DIY: your own narrow server
+
+The third option is the one Cole teaches most: build your own small server. In *The ULTIMATE Guide to Building Your Own MCP Servers* he frames it as the route for when you need "the full level of customization and control" [0:04:16]. For Maximo that usually means a server with five to fifteen tools for one domain (say, inventory reservations or PM compliance), written in Python with FastMCP or in TypeScript, calling OSLC under a dedicated API key.
+
+| Dimension | MAS 9.2 native server | TMG Max_mcp | Your own narrow server |
+|---|---|---|---|
+| Requires MAS 9.2 | Yes | No | No |
+| Where tools are defined | In Manage (object structures, scripts, workflows) | In the package version | In your repo, in code review |
+| Tool count | What you expose (small by default) | 175; allow-list per agent | What you write (5–15 typical) |
+| Licence | Part of MAS | Proprietary, available on npm | Yours |
+| Who runs it | OpenShift, beside Manage | You (stdio or container) | You |
+| Can change without a deploy | Yes, on the next poll | No | No |
+| Best for | Governed business agents, Maximo Assistant | Developer and admin assistants, pre-9.2 estates | One high-value use case you will test hard |
+
+Our default recommendation: business agents on 9.2 use a small, curated set of native tools; developers use Max_mcp or the native server through an allow-list against non-production; and anything with unusual validation or performance needs gets its own narrow server.
+
+---
+
+## 🛠️ Anatomy of a Good Maximo Tool
+
+This is the core of the post. Whether a tool lives in Manage as a script tool, in Max_mcp, or in your own FastMCP server, the same design rules apply. Cole's guidance in *Learn 90% of Building AI Agents in 30 Minutes* is to "keep your tools to under 10 for your AI agents, at least when starting out" and to make sure "each tool's purpose is very distinct" [0:12:21]; add a good description to each, and you have the three rules: keep the set small, keep each tool single-purpose, describe each one well. Here is what that means for Maximo.
+
+### 1. Names: verb first, object second, no synonyms
+
+The name is the first thing the model reads. Make it a verb and a Maximo noun, and make sure no two tools in the same agent could plausibly answer the same question.
+
+| Good | Why | Bad | Why |
+|---|---|---|---|
+| `wo_list_open_for_asset` | One verb, one object, one scope | `query_maximo` | Says nothing about what or when |
+| `asset_get_health_summary` | Returns a compact summary | `get_asset` | Invites dumping every attribute |
+| `inv_get_balance_by_item_site` | Explicit keys | `search_inventory` | Overlaps with every other search |
+| `sr_create_draft` | States the outcome (a draft) | `create_record` | Hides that it writes, and what |
+
+Prefix by object (`wo_`, `asset_`, `inv_`, `pm_`, `sr_`) so tools group visually in the prompt. If you use Max_mcp alongside the native server in one client, prefix by server too, so names cannot collide.
+
+### 2. Descriptions: when to use, when not to, and what comes back
+
+The description is the tool's real interface, because, as Cole says in *My Top 20 Lessons from Building 100s of AI Agents*, everything in it is included in the prompt to tell the model when and how to use the tool. A Maximo tool description should answer four questions in plain language:
+
+1. What does it return, and in what shape?
+2. When should the agent use it?
+3. When should it **not** use it, and what should it use instead?
+4. What are the format constraints on each input (site ID casing, date format, status codes)?
+
+The third question is the one people skip, and it is the one that resolves overlap. "Do not use this for preventive maintenance history; use `pm_list_recent_for_asset`" is worth more than a paragraph of praise for the tool.
+
+### 3. Inputs: typed parameters, never a query string
+
+A Maximo tool should accept typed, enumerated parameters, and construct the OSLC query itself. This is the single most important rule for Maximo specifically, because `oslc.where` is powerful enough to make an agent dangerous in two ways: it can return far too much, and it can quietly answer a different question from the one asked.
+
+Here is an illustrative read tool in Python with FastMCP showing the shape. The point is the guard rails, not the exact library calls.
+
+```python
+# ILLUSTRATIVE — wo_tools.py. Adapt attribute names, statuses and sites to your Manage.
+import re
+from typing import Literal
+from fastmcp import FastMCP
+
+mcp = FastMCP("maximo-wo-readonly")
+
+ALLOWED_STATUS = {"WAPPR", "APPR", "WSCH", "WMATL", "INPRG"}
+ASSET_RE = re.compile(r"^[A-Z0-9\-_.]{1,30}$")
+
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False})
+async def wo_list_open_for_asset(
+    siteid: str,
+    assetnum: str,
+    statuses: list[Literal["WAPPR", "APPR", "WSCH", "WMATL", "INPRG"]] | None = None,  # None -> APPR, INPRG
+    older_than_days: int = 0,
+    page: int = 1,
+) -> dict:
+    """List OPEN work orders for ONE asset at ONE site, newest first, 20 per page.
+
+    Use when the user asks what work is outstanding on a specific asset.
+    Do NOT use for PM history (use pm_list_recent_for_asset) or for closed work
+    (use wo_list_history_for_asset). siteid and assetnum are uppercase codes, e.g.
+    siteid="BEDFORD", assetnum="P-1023". Returns a compact summary, not full records.
+    """
+    if siteid not in ctx_valid_sites():            # loaded once in the server lifespan
+        return {"error": f"Unknown siteid '{siteid}'. Ask the user which site."}
+    if not ASSET_RE.match(assetnum.upper()):
+        return {"error": "assetnum has unexpected characters; ask the user to confirm it."}
+    if page < 1 or page > 5:
+        return {"error": "page must be 1-5. Narrow the question instead of paging further."}
+
+    wanted = [s for s in (statuses or ["APPR", "INPRG"]) if s in ALLOWED_STATUS]
+    if not wanted:                                   # never send `status in []`
+        return {"error": "No valid open statuses given. Use WAPPR, APPR, WSCH, WMATL or INPRG."}
+    status_list = ",".join(f'"{s}"' for s in wanted)
+    where = f'siteid="{siteid}" and assetnum="{assetnum.upper()}" and status in [{status_list}]'
+    if older_than_days > 0:
+        where += f' and reportdate<"{iso_days_ago(older_than_days)}"'
+
+    data = await maximo_get("mxapiwo", {
+        "lean": 1,
+        "oslc.select": "wonum,description,status,wopriority,reportdate,worktype",
+        "oslc.where": where,
+        "oslc.orderBy": "-reportdate",
+        "oslc.pageSize": 20,
+        "pageno": page,
+    })
+    rows = data.get("member", [])
+    return {
+        "siteid": siteid, "assetnum": assetnum.upper(), "page": page,
+        "count_on_page": len(rows),
+        "has_more": "nextPage" in data.get("responseInfo", {}),
+        "work_orders": [{k: r.get(k) for k in
+                         ("wonum", "status", "wopriority", "worktype", "reportdate", "description")}
+                        for r in rows],
+    }
+```
+
+Notice what the model never touches: the `oslc.where` string, the page size, the selected fields, and the object structure. It supplies a site, an asset, a status list from an enumeration, and a page number with a hard ceiling. Every value is validated against a pattern or a reference list loaded once in the server's lifespan. Errors come back as plain instructions the model can act on ("ask the user which site") rather than stack traces.
+
+### 4. oslc.where safety rules
+
+If you remember nothing else from this section, remember these:
+
+| Rule | Why it matters in Maximo |
+|---|---|
+| Build `oslc.where` server-side from typed inputs | Prevents injected clauses and silent scope changes |
+| Allow-list attributes and operators | The model cannot filter on fields you never reviewed |
+| Always force a site (or org) filter | Multi-site tenants otherwise return cross-site data the user may not be entitled to discuss |
+| Quote and pattern-check every value | Asset numbers and descriptions contain quotes, percent signs and spaces |
+| Always set `oslc.select` | Default responses carry far more fields than the model needs |
+| Always set a page size and a page ceiling | A "show me all open work" question on a large site can return tens of thousands of rows |
+| Prefer saved queries for complex filters | A reviewed saved query is a stable, testable contract |
+
+If an agent genuinely needs flexible querying, there are two safer routes than a raw `where` parameter. One is the native server's natural-language-to-OSLC AI configuration tool, which IBM maintains and which runs under the caller's identity. The other is the "fewer, more powerful tools" idea Cole describes in *Your AI Coding Workflow NEEDS This New Agent Browser CLI*: Vercel's text-to-SQL agent d0 started with 17 specialised tools and an 80% success rate, then was cut back to two tools, primarily one that writes whatever SQL the agent wants given the schema, and Vercel reported reaching "a 100% success rate" [0:05:42]. Cole himself adds that Vercel must have built a lot of guard rails around it, and that he is not sure he believes the number. The lesson is about tool count and flexibility, not a licence for open queries. For Maximo, the equivalent is a flexible query tool **only** on a read-only key, with a forced site filter and a page ceiling. Never on a key that can write.
+
+### 5. Outputs: compact, labelled, honest about truncation
+
+Return what the model needs to answer, not what Maximo returned. A work order summary with six fields is far better than a full `mxapiwo` record with its child tables. Always include whether there is more data (`has_more`) so the model can say "showing 20 of more than 20" instead of implying completeness. For long text such as work logs, truncate and say so. For numbers the user will act on, such as inventory balances, include the units and the as-of time.
+
+### 6. Pagination: the model should rarely page
+
+Paging is a tool-design decision, not a model decision. Give the agent a small page and a hard ceiling. If a question needs more than a few pages, the right answer is usually a different tool: an aggregate ("count of open corrective work orders by asset at this site") or a saved query that returns the top N. Agents that page through hundreds of records burn context and still summarise badly. Where aggregation is needed and no tool exists, code execution, covered below, is the better pattern.
+
+### 7. Writes: narrow verbs, idempotency and honest annotations
+
+Write tools deserve their own rules.
+
+- **One write, one verb.** `wo_add_worklog`, `wo_set_status_to_wappr`, `sr_create_draft`. Never `wo_update(field, value)`.
+- **Create in a safe state.** A work order created by an agent should land in `WAPPR` or a site-specific draft status, so the normal approval workflow catches it.
+- **Make creates idempotent.** Agents retry. Networks drop responses. Maximo's REST API supports a `transactionid` request header on create, update and delete requests: if the ID has already been committed, Manage rejects the duplicate with HTTP 409 (message BMXAA9524E). Derive the ID deterministically from the agent run and the intent (for example, a hash of run ID, asset and problem code) so a quick retry of the same intent is rejected instead of creating a second work order. The protection has a window: IBM's duplicate-requests documentation describes committed transaction IDs being cleared by the `OSLCTXN` escalation, by default after about five minutes, so a retry that arrives later is treated as new. For retries outside that window (a queued job resumed next morning, a human re-running the agent), add a business-key existence check before creating: for example, look for an open follow-up work order whose `origrecordid` (or parent) is the source work order with the same problem code, and return it instead of creating another.
+- **Annotate honestly.** MCP defines optional tool annotations: `readOnlyHint` (default false), `destructiveHint` (default true), `idempotentHint` (default false) and `openWorldHint` (default true). The specification says clients must treat annotations as untrusted hints unless the server is trusted. Our advice: if a tool changes any data, do not mark it read-only. Clients use these hints to decide when to ask for confirmation, so a generous hint removes a human from the loop.
+- **Enforce in Maximo, not in the hint.** The key's security group, Manage business rules and status-change rules are the enforcement. The annotation is a courtesy to the client.
+
+Illustrative only: the shape of a write tool definition as a client would list it.
+
+```json
+{
+  "name": "wo_create_followup_draft",
+  "description": "Create ONE follow-up work order in WAPPR status from an existing work order. Use only after the user has explicitly confirmed the follow-up. Do NOT use to change the original work order. Returns the new wonum. Safe to retry: same-intent duplicates are rejected via transactionid within the dedupe window (default about 5 minutes) and, after that, by an existing open follow-up check that returns the original wonum.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "siteid":      { "type": "string", "pattern": "^[A-Z0-9]{1,8}$" },
+      "origwonum":   { "type": "string", "pattern": "^[A-Z0-9-]{1,12}$" },
+      "description": { "type": "string", "maxLength": 100 },
+      "worktype":    { "type": "string", "enum": ["CM", "EM"] }
+    },
+    "required": ["siteid", "origwonum", "description", "worktype"],
+    "additionalProperties": false
+  },
+  "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true }
+}
+```
+
+---
+
+## 🔌 Transports and Auth: stdio, Streamable HTTP, API Keys and OAuth
+
+### stdio versus HTTP
+
+In *The ULTIMATE Guide to Building Your Own MCP Servers*, Cole describes the two transport families. With stdio, the client "is actually going to start an instance of the server kind of as a subprocess... It's very fast" [0:22:10]. The remote family runs the server elsewhere and speaks HTTP: originally HTTP with Server-Sent Events, now streamable HTTP, which *Build and Ship Any MCP Server in MINUTES* calls "a new transport for the protocol that actually scales" [0:01:08]. His observation that "Most MCP servers don't understand this very well" [0:21:05] is about servers that only support one transport. A good server supports both and toggles with an environment variable.
+
+| | stdio | Streamable HTTP (remote) |
+|---|---|---|
+| Who starts the server | The client, as a subprocess | You, as a service (container, OpenShift pod, cloud) |
+| Network surface | None | A URL that needs TLS, auth, rate limits, logging |
+| Maximo credential lives | On the developer's machine, in the client config | In the server's secret store |
+| Who can use it | One person, one machine | Every authorised client |
+| Maximo fit | Developer running Max_mcp against non-production | Shared team servers, the MAS 9.2 native server, production agents |
+
+The MAS 9.2 native server is a remote server by design: an OpenShift route in front of a pod. IBM Bob's release notes moved its MCP client to the 2026-07-28 specification and note that HTTP+SSE servers need to move to streamable HTTP, so if you build your own remote Maximo server today, build it on streamable HTTP and keep SSE only for clients that still need it.
+
+### API keys versus OAuth
+
+Cole's *Build and Ship Any MCP Server in MINUTES* puts an OAuth provider in front of a remote server so that a client must complete a real login before any tool is reachable, and then uses the authenticated identity inside the server for role-based access: read tools open to any authenticated user, the destructive tool restricted to an allow-list. That build is the right mental model for Maximo too: an authenticated caller is still an untrusted one.
+
+For Maximo, identity has two layers, and it pays to keep them separate:
+
+1. **Who may reach the MCP server.** For a stdio server, the operating system user. For a remote server, an API key, an OAuth login, or a JWT validated against your identity provider.
+2. **Who Maximo thinks is calling.** This is the identity behind the Maximo API key or token the server uses to call Manage. It determines what Manage security groups allow.
+
+| Pattern | How it works | Good for | Watch out for |
+|---|---|---|---|
+| One Maximo API key per agent | Server calls Manage with a key owned by a dedicated user and narrow security group | A single-purpose agent (triage bot, PM compliance checker) | Every action is logged under the agent's user, not the person who asked |
+| Per-user JWT or OAuth passthrough | The agent acts as the signed-in person; Manage applies their security groups | Assistants used by many people with different rights | Token handling and expiry; IBM's native server supports JWT for this case |
+| Shared integration superuser | One powerful key for everything | Nothing. Do not do this | Unattributable changes, maximal blast radius |
+
+Interloc's guidance matches ours: give each external agent its own user, API key and security group, never the integration superuser. Part 5 of this series goes deep on identity, approval gates and audit.
+
+---
+
+## 🧪 When Not to Use MCP: Skills, Code Execution and Workflows
+
+Capabilities over tools is Cole's standing mantra, and it applies here: MCP is one way to deliver a capability, not the goal. Three alternatives matter for Maximo.
+
+### Skills and progressive disclosure
+
+A skill is a folder with a `SKILL.md` file of instructions, optionally pointing to scripts and reference documents. Only the skill's name and one-line description sit in the prompt; the body loads when the agent decides it is relevant. Cole calls this progressive disclosure, and in *The BIG Problem with MCP Servers* he measures the up-front cost as "very very token efficient like 2 to 3% of the token usage compared to MCP" [0:06:46]. His heuristic from *I've Used Claude Code for 2,000+ Hours* is to "Load your context just in time, not just in case" [0:15:35].
+
+For Maximo, skills are a natural fit for procedural knowledge that a developer agent needs occasionally: "how we write automation scripts here", "how to add an attribute and publish it through an object structure", "how to build a PM with a job plan and route". IBM itself ships Maximo skills for Bob (for automation-script optimisation and Java-to-script conversion), and TMG's Max_autoscripts repository ships an `AGENTS.md` and standards file for the same reason.
+
+### Code execution
+
+The second alternative is to give the agent a sandbox and a typed Maximo client, and let it write code. Cole argues in *The Way We Use AI Will Completely Change in 2026* that code execution "is a massive token reduction" [0:08:10] because the agent creates capabilities at runtime instead of reading dozens of tool definitions up front. Anthropic's engineering post on code execution with MCP reports one workflow dropping from about 150,000 tokens to 2,000, a 98.7% reduction, by presenting MCP tools as code APIs and filtering data in code before it reaches the model.
+
+Maximo has exactly the workloads where this shines: "find every asset at site BEDFORD whose last three corrective work orders share a failure code" requires pulling hundreds of rows and joining them. Through tools, that data flows through the model. Through code, the agent writes a loop against a read-only client, aggregates in the sandbox, and passes a twenty-line result to the model. The cost is a real sandbox, which Cole stresses is hard to make reliable in production. Run it with no network access except the Maximo read endpoint, a read-only key, and time and memory limits.
+
+### Workflow as a tool
+
+The third alternative is to wrap a deterministic multi-step process as one tool. Cole's n8n pattern exposes a whole workflow, triggered by a webhook and ending with a webhook response, as a single callable tool. In Maximo the native equivalent is already there: an automation script or non-interactive workflow exposed through the native MCP server is one tool whose internals are deterministic Maximo logic. "Create a follow-up work order, copy the asset and location, attach the original's failure report, and set it to WAPPR" should be one tool backed by one script, not four tools the model must sequence correctly.
+
+| Approach | Up-front context cost | Best Maximo fit | Main risk |
+|---|---|---|---|
+| MCP tools (curated) | Moderate, grows with tool count | Shared, governed read and write actions across many clients | Tool overload, overlapping purposes |
+| Skills | Very low until loaded | Procedural know-how for developer agents (autoscripts, object structures) | Stale instructions if not maintained |
+| Code execution | Low | Analysis across many records, aggregation, reporting | Sandbox security and reliability |
+| Workflow or script as a tool | One tool definition | Multi-step deterministic business actions | Hidden side effects if poorly described |
+
+---
+
+## 🔬 Worked Scenarios
+
+### Scenario 1: the asset health question, done right
+
+**Situation.** A reliability engineer asks: "How is pump P-1023 at BEDFORD doing, and is there anything open on it?"
+
+**Tool set.** Four native 9.2 tools, curated by the Maximo admin: an object structure tool over `mxapiasset` returning a compact asset summary, an object structure tool listing open work orders for one asset (fixed `oslc.select`, site required), the condition insights AI configuration tool, and a script tool returning the last three meter readings. All marked read-only. The agent's key belongs to a user in a read-only reliability security group.
+
+**What happens.** The agent calls the asset summary, the open work order list and the insights tool, and answers in three short paragraphs with work order numbers it actually retrieved. Total tool definitions in context: four. No generic query tool was available, so it could not wander.
+
+**Lesson.** The quality came from what the agent could not do.
+
+### Scenario 2: the inventory reservation that ran twice
+
+**Situation.** A storeroom assistant agent creates material reservations for a planned job. The first call times out at the proxy after Manage has committed it. The agent retries.
+
+**Without idempotency.** Two reservations, double-counted demand, and a storekeeper chasing a phantom shortage on Monday.
+
+**With idempotency.** The write tool sends a `transactionid` derived from the agent run, the work order and the item. The retry, seconds later, is rejected with HTTP 409, the tool translates that into "already created; here is the original", and the agent moves on. Had the retry come an hour later, after the transaction ID was cleared, the tool's own check for an existing reservation for that work order and item would have caught it instead.
+
+**Lesson.** Every write tool an agent can call will eventually be called twice. Design for it.
+
+### Scenario 3: Max_mcp in a developer's coding assistant
+
+**Situation.** A developer modernising automation scripts for a 9.1 estate wants their coding agent to read script source, check launch points and query object structure definitions in the development environment.
+
+**Tool set.** Max_mcp over stdio, pinned to a version, with a non-production key. The client config allow-lists about a dozen tools from the admin and integration modules and prefixes them `tmg_`. Max_Interfaces and the TMG autoscript standards file are given to the agent as reference documents.
+
+**What happens.** The agent reads the existing script, compares its variables to the object structure, proposes a rewrite, and checks the launch point configuration through the read tools. It does not see, and therefore does not consider, the tools that activate scripts or modify cron tasks.
+
+**Lesson.** A 175-tool server is a catalogue. Ship an allow-list per job.
+
+### Scenario 4: the PM compliance report that broke the context window
+
+**Situation.** A maintenance manager asks for PM compliance across all assets at two sites for the last quarter.
+
+**First attempt.** The agent pages through PMs and their generated work orders with a list tool, 20 at a time. After a dozen pages it loses track of earlier totals and produces percentages that do not add up.
+
+**Redesign.** Two options. Either add a single aggregate tool, backed by a reviewed saved query or an automation script, returning compliance by site and PM frequency; or let the agent use code execution with a read-only client to pull and aggregate in a sandbox, passing only the summary table to the model.
+
+**Lesson.** When the answer needs hundreds of rows, the fix is a different tool shape, not a bigger model.
+
+### Scenario 5: the generic update tool that passed every test
+
+**Situation.** A team exposes an automation script as a tool called `wo_update` that accepts any attribute name and value, because it was quick and the agent's key "only" belongs to a planner group.
+
+**What goes wrong.** A work log entry from a contractor contains text asking that all related work orders be closed. The agent, reading that log during a summary task, treats it as an instruction and calls `wo_update` to change statuses. Manage allows it, because a planner may do exactly that.
+
+**Redesign.** Replace `wo_update` with three narrow verbs, none of which closes work orders; remove write tools entirely from the summary agent; mark remaining write tools destructive so the client asks for approval.
+
+**Lesson.** Manage enforces permissions, not intent. Narrow tools and separate read and write agents are what stop a legal but harmful action.
+
+---
+
+## ⚠️ Pitfalls
+
+| Pitfall | Symptom | Fix |
+|---|---|---|
+| Loading a full catalogue into one agent | Slow, expensive turns; inconsistent tool choice | Allow-list per agent; under ten tools to start |
+| Free-form `where` parameters | Wrong scope, cross-site data, huge results | Typed inputs; build `oslc.where` server-side |
+| No `oslc.select` | Responses full of fields and child objects the model ignores | Fixed select lists per tool |
+| Unbounded paging | Context exhaustion, partial answers presented as complete | Page size plus ceiling; `has_more` in the output |
+| Read-only hint on a write | Client skips confirmation | Mark any data change as not read-only |
+| Shared integration superuser key | Unattributable changes, maximal blast radius | One user, key and security group per agent |
+| Non-idempotent creates | Duplicate work orders, reservations and SRs after retries | `transactionid` header with a deterministic ID, plus a business-key existence check for retries after the dedupe window |
+| Unowned native tool catalogue | New script tools appear to every agent after the next poll | Name an owner; review tool additions like code changes |
+| Overlapping tool names | The same question routed through different tools | Verb-object names; "do not use for" lines in descriptions |
+| Calling Max_mcp open source | Licence confusion in procurement | It is proprietary and available on npm; Max_Interfaces and Max_autoscripts are MIT |
+| Stdio servers with production keys on laptops | Credentials scattered across developer machines | stdio against non-production only; remote server for production |
+| Treating MCP as the security boundary | Assuming client-side filtering prevents writes | The Maximo key's security group is the enforcement |
+
+---
+
+## Key Takeaways
+
+- **MCP is a standard wrapper, not new power.** It repackages Maximo's OSLC and REST APIs so many clients can share governed tools.
+- **Tool count is a context budget.** Start under ten distinct, mostly read-only tools per agent and allow-list from large catalogues like Max_mcp.
+- **Design tools as narrow verbs with typed inputs.** Build `oslc.where` inside the tool, force site and page size, select only needed fields and return compact summaries.
+- **Writes need idempotency and a human gate.** Use the `transactionid` header (a short dedupe window) plus a business-key existence check, create in safe statuses, and annotate honestly, remembering that annotations are hints.
+- **Match transport and auth to the audience.** stdio and non-production keys for one developer; HTTP with per-agent keys, OAuth or JWT for anything shared. Reach for skills, code execution or a script-as-tool when MCP is the wrong shape.
+
+---
+
+## References
+
+**Cole Medin (YouTube)**
+
+- [The BIG Problem with MCP Servers (and the Solution!)](https://www.youtube.com/watch?v=1_z3h2r93OY)
+- [Build and Ship Any MCP Server in MINUTES (Full Guide)](https://www.youtube.com/watch?v=Zw3sfAIpeH8)
+- [The ULTIMATE Guide to Building Your Own MCP Servers (Free Template)](https://www.youtube.com/watch?v=lbyPJqCI-tw)
+- [Learn 90% of Building AI Agents in 30 Minutes](https://www.youtube.com/watch?v=i5kwX7jeWL8)
+- [The MCP Integration EVERYONE is Sleeping On (MCP + Custom AI Agents)](https://www.youtube.com/watch?v=soC4n-nKWF8)
+- [Your AI Coding Workflow NEEDS This New Agent Browser CLI](https://www.youtube.com/watch?v=7aEQnTsI6zs)
+- [The Way We Use AI Will Completely Change in 2026 (Hot Takes)](https://www.youtube.com/watch?v=nz8VjAtY_Mc)
+- [Stripe's Coding Agents Ship 1,300 PRs EVERY Week - Here's How They Do It](https://www.youtube.com/watch?v=NMWgXvm--to)
+- [I've Used Claude Code for 2,000+ Hours - Here's How I Build Anything With It](https://www.youtube.com/watch?v=nxHKBq5ZU9U)
+- [My Top 20 Lessons from Building 100s of AI Agents (Super Actionable)](https://www.youtube.com/watch?v=OFfwN23hR8U)
+- [Claude Skills Aren't Just for Claude - Here's How to Build Them for ANY Agent](https://www.youtube.com/watch?v=-iTNOaCmLcw)
+- [Google is Quietly Revolutionizing AI Agents (This is HUGE)](https://www.youtube.com/watch?v=ywMWpmOOaSo)
+- [AG-UI Just Released: The NEW WAVE of AI Agent Apps](https://www.youtube.com/watch?v=BFWviieMyGw)
+- [This New Protocol Will Change AI Coding Forever (ACP)](https://www.youtube.com/watch?v=5gUR55_gbzc)
+
+**IBM, vendors and specifications**
+
+- [Maximo MCP server overview (IBM Documentation, MAS 9.2)](https://www.ibm.com/docs/en/masv-and-l/cd?topic=developing-maximo-mcp-server-overview)
+- [Maximo Manage REST API Guide: Duplicate requests (transactionid)](https://www.ibm.com/docs/en/masv-and-l/maximo-manage/cd?topic=apis-duplicate-requests)
+- [Working smarter with agentic workflows in Maximo Assistant (IBM Think)](https://www.ibm.com/think/perspectives/working-smarter-agentic-workflows-maximo-assistant)
+- [Bring Your Own AI Agent: Exploring the IBM Maximo MCP Server (Interloc Solutions)](https://www.interlocsolutions.com/blog/bring-your-own-ai-agent-exploring-the-ibm-maximo-mcp-server)
+- [IBM MAS 9.2 and MCP: What Changes for Maximo Teams (Naviam)](https://www.naviam.io/resources/blog/ibm-mas-9-2-and-mcp-what-changes-for-maximo-teams)
+- [Code execution with MCP: Building more efficient agents (Anthropic Engineering)](https://www.anthropic.com/engineering/code-execution-with-mcp)
+- [FastMCP — Tools (including annotations)](https://gofastmcp.com/docs/servers/tools)
+- [Dynamous AI Mastery community](https://dynamous.ai)
+
+---
+
+🧰 **From TheMaximoGuys toolbox:** [Max_Interfaces](https://github.com/themaximoguys/Max_Interfaces) (open source, MIT) catalogues 2,439+ Maximo endpoints with OpenAPI and Postman files: the menu to design narrow tools from. [Max_mcp](https://github.com/themaximoguys/Max_mcp) (npm `@themaximoguys/maximo-mcp`, 175 tools across 20 modules, proprietary, available on npm) gives Claude, Bob, Copilot or your own agent a ready Maximo tool layer; allow-list it per job. [Max_autoscripts](https://github.com/themaximoguys/Max_autoscripts) (MIT) holds sample scripts and standards for building script-backed tools.
+
+---
+
+## Series Navigation
+
+**The Agentic AI Playbook for Maximo**
+
+- [Part 0: Series Index: The Agentic AI Playbook for Maximo](/blog/map-00-series-index)
+- [Part 1: What Is an AI Agent, Really? A Field Guide for Maximo Teams](/blog/map-01-what-is-an-ai-agent-maximo)
+- [Part 2: Prompts, Tools and Context for Maximo Agents: Designing What the Model Actually Sees](/blog/map-02-prompts-tools-context-maximo)
+- [Part 3: RAG Strategies for Maximo Data: Which Retrieval for Which Records](/blog/map-03-rag-strategies-maximo-data)
+- **Part 4: MCP and Tool Design for Maximo: Fewer, Sharper Tools Beat a 175-Tool Buffet** (you are here)
+- [Part 5: Securing Maximo Agents: The Lethal Trifecta, Prompt Injection and Guardrails That Hold](/blog/map-05-agent-security-guardrails-maximo)
+- [Part 6: The AI Layer for Maximo Development: Rules, Commands, Hooks and Validation for Agentic Coding](/blog/map-06-ai-layer-agentic-coding-maximo)
+- [Part 7: Local and Self-Hosted AI for Maximo: A Playbook for Regulated Shops](/blog/map-07-local-self-hosted-ai-maximo)
+- [Part 8: Maximo Agents in Production: Deployment, Voice in the Field, and Agents That Run While You Sleep](/blog/map-08-production-agents-voice-long-running)
+
+**Companion builds:** [agm-03: Building a Typed Maximo Agent with Pydantic AI](/blog/agm-03-pydantic-ai-maximo-agent) · [agm-07: Multi-Agent Maximo: A2A, MCP Gateways, watsonx Orchestrate](/blog/agm-07-multi-agent-a2a-orchestrate)
