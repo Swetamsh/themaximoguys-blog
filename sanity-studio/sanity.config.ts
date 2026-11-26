@@ -40,6 +40,11 @@ import { technology } from './schemas/technology'
 import { metric } from './schemas/metric'
 import { processStep } from './schemas/processStep'
 
+// Schema imports — Resources (AI skills & vulnerabilities, seeded from the Next.js repo scripts)
+import { aiSkill } from './schemas/aiSkill'
+import { vulnerability } from './schemas/vulnerability'
+import { vulnSource } from './schemas/vulnSource'
+
 // Singleton document IDs
 const SINGLETONS = ['siteSettings', 'homePage', 'aboutPage', 'contactPage']
 
@@ -113,6 +118,31 @@ const structure = (S: StructureBuilder) =>
               S.documentTypeListItem('technology').title('Tech Stack'),
             ])
         ),
+
+      S.divider(),
+
+      // ─── Resources ───
+      S.listItem()
+        .title('Resources')
+        .icon(() => '🧰')
+        .child(
+          S.list()
+            .title('Resources')
+            .items([
+              S.listItem().title('AI skills on the page').icon(() => '⭐').child(
+                S.documentList().title('Curated AI skills').schemaType('aiSkill').filter('_type == "aiSkill" && curated == true').defaultOrdering([{ field: 'rank', direction: 'asc' }])
+              ),
+              S.documentTypeListItem('aiSkill').title('All AI skills'),
+              S.divider(),
+              S.listItem().title('Maximo & MAS CVEs').icon(() => '🛡️').child(
+                S.documentList().title('Maximo & MAS CVEs').schemaType('vulnerability').filter('_type == "vulnerability" && kind == "maximo"').defaultOrdering([{ field: 'published', direction: 'desc' }])
+              ),
+              S.listItem().title('AI & ML vulnerabilities').icon(() => '🤖').child(
+                S.documentList().title('AI & ML vulnerabilities').schemaType('vulnerability').filter('_type == "vulnerability" && kind == "ai"').defaultOrdering([{ field: 'published', direction: 'desc' }])
+              ),
+              S.documentTypeListItem('vulnSource').title('Vulnerability sources'),
+            ])
+        ),
     ])
 
 export default defineConfig({
@@ -164,6 +194,10 @@ export default defineConfig({
       technology,
       metric,
       processStep,
+      // Resources
+      aiSkill,
+      vulnerability,
+      vulnSource,
     ],
     // Prevent singletons from appearing in "New document" menu
     templates: (prev) => prev.filter(({ schemaType }) => !SINGLETONS.includes(schemaType)),
